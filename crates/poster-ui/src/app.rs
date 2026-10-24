@@ -10,13 +10,15 @@ use std::time::Duration;
 
 use egui::ViewportCommand;
 use poster_app::core::execution::{ExecutionRecord, Response};
-use poster_app::core::ids::{CollectionId, ExecutionId, FolderId, RequestId};
-use poster_app::core::model::{FormItem, Request};
+use poster_app::core::ids::{CollectionId, EnvironmentId, ExecutionId, FolderId, RequestId};
+use poster_app::core::model::{FormItem, Request, Variables};
 use poster_app::core::settings::AppSettings;
+use poster_app::core::variables::Snapshot;
 use poster_app::executor::{self, ExecuteError, Executed};
 use poster_app::runtime::{Bridge, TaskId};
 use poster_app::saver::{Saver, State as SaveState};
 use poster_app::store::collections::{self, Collection, Tree};
+use poster_app::store::environments::{self, Environment};
 use poster_app::store::executions::{self, ExecutionSummary};
 use poster_app::store::kv::{self, Table};
 use poster_app::store::{Store, StoreError, StoreHandle};
@@ -28,7 +30,8 @@ use crate::editor::{Editor, InvalidOptions, OptionField};
 use crate::layout::{Orientation, WorkspaceLayout};
 use crate::theme::{self, Tone};
 use crate::tree::{NodeId, TreeView};
-use crate::widgets::{FileRequest, ViewerState};
+use crate::vars::{self, Scope};
+use crate::widgets::{FileRequest, Inspection, ViewerState};
 
 /// How long shutdown waits for background work before aborting it.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
@@ -51,6 +54,8 @@ fn failure(error: impl std::fmt::Display) -> Failure {
 pub struct Startup {
     settings: AppSettings,
     collections: Vec<Collection>,
+    environments: Vec<Environment>,
+    active_environment: Option<EnvironmentId>,
     last: Last,
     layout: Value,
     draft: Option<Request>,
@@ -124,6 +129,22 @@ pub enum Message {
         reload_collections: bool,
         result: Result<(), Failure>,
     },
+    Snapshot {
+        generation: u64,
+        result: Result<Box<Snapshot>, Failure>,
+    },
+    Environments {
+        select: Option<Scope>,
+        result: Result<(Vec<Environment>, Option<EnvironmentId>), Failure>,
+    },
+    VariablesLoaded {
+        scope: Scope,
+        result: Result<Variables, Failure>,
+    },
+    VariablesSaved {
+        scope: Scope,
+        result: Result<(), Failure>,
+    },
     Flushed(Result<(), Failure>),
     /// Background work with nothing to apply (it logs its own failures).
     Done,
@@ -149,11 +170,68 @@ pub enum Action {
     Send,
     PickFile(FileRequest),
     ShowRun(ExecutionId),
+    Screen(Screen),
+    /// Switch the active execution environment (`None`: globals only).
+    SetEnvironment(Option<EnvironmentId>),
+    /// The inspector's "Open definition": edit `name` in `scope`.
+    OpenDefinition(Scope, String),
+    Variables(VariablesAction),
     /// The editor changed: `url` when the URL itself was edited, `params` for the query rows.
     Edited {
         url: bool,
         params: bool,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Screen {
+    #[default]
+    Requests,
+    Variables,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VariablesAction {
+    SelectScope(Scope),
+    Save,
+    Reload,
+    Edited,
+    NewEnvironment,
+    RenameEnvironment(EnvironmentId),
+    DeleteEnvironment(EnvironmentId),
+}
+
+/// Changes that replace the Variables screen's rows go through its own guard.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum VarTransition {
+    Scope(Scope),
+    Reload,
+    NewEnvironment,
+    RenameEnvironment(EnvironmentId),
+    DeleteEnvironment(EnvironmentId),
+    OpenDefinition(Scope, String),
+    Close,
+}
+
+/// The Variables screen: one scope's rows, edited independently of requests.
+#[derive(Debug, Default)]
+pub struct VariablesScreen {
+    pub scope: Scope,
+    pub rows: Vec<vars::Row>,
+    baseline: Vec<(String, String)>,
+    pub status: Option<(String, Tone)>,
+    pub loaded: bool,
+    pub confirm_clear: bool,
+    /// A name to highlight after "Open definition".
+    pub highlight: Option<String>,
+    pending: Option<VarTransition>,
+    saving: bool,
+}
+
+impl VariablesScreen {
+    pub fn dirty(&self) -> bool {
+        self.loaded && vars::entries(&self.rows) != self.baseline
+    }
 }
 
 /// Navigations that replace the editor go through the unsaved-changes guard.
@@ -310,6 +388,15 @@ pub struct State {
     pub orientation: Option<Orientation>,
     pub dialog: Option<Dialog>,
     pub status: String,
+    pub screen: Screen,
+    pub environments: Vec<Environment>,
+    pub active_environment: Option<EnvironmentId>,
+    /// Variables the open request resolves against, with provenance.
+    pub snapshot: Option<Snapshot>,
+    pub snapshot_error: Option<String>,
+    snapshot_generation: u64,
+    pub inspect: Option<Inspection>,
+    pub variables: VariablesScreen,
     /// Bumped by every navigation; results of older work are ignored.
     pub generation: u64,
     tree_generation: u64,
@@ -354,6 +441,14 @@ impl PosterApp {
                 orientation: None,
                 dialog: None,
                 status: "Starting…".into(),
+                screen: Screen::Requests,
+                environments: Vec::new(),
+                active_environment: None,
+                snapshot: None,
+                snapshot_error: None,
+                snapshot_generation: 0,
+                inspect: None,
+                variables: VariablesScreen::default(),
                 generation: 0,
                 tree_generation: 0,
                 autosave_due: None,
@@ -373,6 +468,8 @@ impl PosterApp {
                 Ok(Startup {
                     settings: kv::app_settings(db)?,
                     collections: collections::collections(db)?,
+                    environments: environments::environments(db)?,
+                    active_environment: environments::active_environment(db)?,
                     last: kv::get(db, Table::UiState, LAST_KEY)?.unwrap_or_default(),
                     layout: kv::get(db, Table::UiState, LAYOUT_KEY)?.unwrap_or(Value::Null),
                     draft: kv::get(db, Table::UiState, DRAFT_KEY)?.flatten(),
@@ -538,6 +635,37 @@ impl PosterApp {
                     self.reload_tree();
                 }
             }
+            Message::Snapshot { generation, result } => {
+                if generation == self.state.snapshot_generation {
+                    match result {
+                        Ok(snapshot) => {
+                            self.state.snapshot = Some(*snapshot);
+                            self.state.snapshot_error = None;
+                        }
+                        Err(_) => {
+                            self.state.snapshot_error =
+                                Some("Variable definitions could not be loaded".into());
+                        }
+                    }
+                }
+            }
+            Message::Environments { select, result } => match result {
+                Ok((environments, active)) => {
+                    self.state.environments = environments;
+                    self.state.active_environment = active;
+                    if let Some(scope) = select {
+                        self.load_variables(scope);
+                    } else if let Scope::Environment(id) = self.state.variables.scope
+                        && !self.state.environments.iter().any(|e| e.id == id)
+                    {
+                        self.load_variables(Scope::Global);
+                    }
+                    self.load_snapshot();
+                }
+                Err(error) => self.error("Environment operation failed", error),
+            },
+            Message::VariablesLoaded { scope, result } => self.variables_loaded(scope, result),
+            Message::VariablesSaved { scope, result } => self.variables_saved(scope, result),
             Message::Flushed(Ok(())) => self.state.close = CloseState::Ready,
             Message::Flushed(Err(error)) => {
                 self.state.close = CloseState::Open;
@@ -578,6 +706,8 @@ impl PosterApp {
         state.settings = startup.settings;
         state.layout = WorkspaceLayout::from_stored(&startup.layout);
         state.status = "Ready".into();
+        state.environments = startup.environments;
+        state.active_environment = startup.active_environment;
         if let Some(draft) = startup.draft {
             self.load_editor(&draft);
             self.status(
@@ -661,6 +791,8 @@ impl PosterApp {
         } else {
             "Unsaved draft"
         });
+        self.state.inspect = None;
+        self.load_snapshot();
         if let Some(id) = id {
             self.load_runs(id);
             self.remember_selection();
@@ -765,12 +897,7 @@ impl PosterApp {
                 self.bridge.spawn(move |_| async move {
                     let result = db
                         .call(move |tx| {
-                            collections::create_collection(
-                                tx,
-                                &name,
-                                "",
-                                &poster_app::core::model::Variables::new(),
-                            )
+                            collections::create_collection(tx, &name, "", &Variables::new())
                         })
                         .await;
                     match result {
@@ -788,10 +915,7 @@ impl PosterApp {
                     }
                 });
             }
-            Navigation::Close => {
-                self.state.close = CloseState::Flushing;
-                self.flush_ui_state();
-            }
+            Navigation::Close => self.variables_navigate(VarTransition::Close),
         }
     }
 
@@ -1279,6 +1403,45 @@ impl PosterApp {
                 self.task(move |db| collections::rename_request(db, id, &name), reload);
             }
             NamePurpose::SaveDraft(collection) => self.save_draft(collection, name),
+            NamePurpose::NewEnvironment => {
+                let db = self.db.clone();
+                self.bridge.spawn(move |_| async move {
+                    let result = db
+                        .call(move |tx| {
+                            let created =
+                                environments::create_environment(tx, &name, &Variables::new())?;
+                            Ok((
+                                created.id,
+                                environments::environments(tx)?,
+                                environments::active_environment(tx)?,
+                            ))
+                        })
+                        .await;
+                    match result {
+                        Ok((id, list, active)) => Message::Environments {
+                            select: Some(Scope::Environment(id)),
+                            result: Ok((list, active)),
+                        },
+                        Err(error) => Message::Environments {
+                            select: None,
+                            result: Err(failure(error)),
+                        },
+                    }
+                });
+            }
+            NamePurpose::RenameEnvironment(id) => self.task(
+                move |db| {
+                    environments::rename_environment(db, id, &name)?;
+                    Ok((
+                        environments::environments(db)?,
+                        environments::active_environment(db)?,
+                    ))
+                },
+                |result| Message::Environments {
+                    select: None,
+                    result: result.map_err(failure),
+                },
+            ),
         }
     }
 
@@ -1326,6 +1489,23 @@ impl PosterApp {
                         self.task(move |db| collections::delete_request(db, id), reload);
                     }
                 }
+            }
+            ConfirmPurpose::DeleteEnvironment(id) => {
+                let select =
+                    (self.state.variables.scope == Scope::Environment(id)).then_some(Scope::Global);
+                self.task(
+                    move |db| {
+                        environments::delete_environment(db, id)?;
+                        Ok((
+                            environments::environments(db)?,
+                            environments::active_environment(db)?,
+                        ))
+                    },
+                    move |result| Message::Environments {
+                        select,
+                        result: result.map_err(failure),
+                    },
+                );
             }
             ConfirmPurpose::DiscardOnClose => {
                 self.state.saver.discard(None);
@@ -1378,7 +1558,9 @@ impl PosterApp {
             Action::Prompt(dialog) => self.state.dialog = Some(dialog),
             Action::Move { node, target } => self.move_node(node, target),
             Action::Save => {
-                if self.state.guard.is_none() {
+                if self.state.screen == Screen::Variables {
+                    self.save_variables();
+                } else if self.state.guard.is_none() {
                     self.save_current();
                 }
             }
@@ -1397,6 +1579,18 @@ impl PosterApp {
             }
             Action::ShowRun(id) => self.show_run(id),
             Action::Edited { url, params } => self.edited(url, params, now),
+            Action::Screen(screen) => {
+                self.state.screen = screen;
+                if screen == Screen::Variables && !self.state.variables.loaded {
+                    let scope = self.state.variables.scope;
+                    self.load_variables(scope);
+                }
+            }
+            Action::SetEnvironment(id) => self.set_environment(id),
+            Action::OpenDefinition(scope, name) => {
+                self.variables_navigate(VarTransition::OpenDefinition(scope, name));
+            }
+            Action::Variables(action) => self.variables_action(action),
         }
     }
 
@@ -1426,11 +1620,287 @@ impl PosterApp {
                 self.state.dialog = None;
                 self.guard_choice(choice);
             }
+            Outcome::VariablesGuard(choice) => {
+                self.state.dialog = None;
+                self.variables_choice(choice);
+            }
             Outcome::Move(node, target) => {
                 self.state.dialog = None;
                 self.move_node(node, target);
             }
         }
+    }
+
+    // ---- variables ------------------------------------------------------------------------------
+
+    /// Reload what the open request's variables resolve to (after a load, an environment switch
+    /// or saved variables). Uses the executor's own snapshot code.
+    fn load_snapshot(&mut self) {
+        let Some(request) = self.state.editor.as_ref().map(|p| {
+            p.editor
+                .to_request()
+                .unwrap_or_else(|_| p.editor.identity().clone())
+        }) else {
+            self.state.snapshot = None;
+            return;
+        };
+        self.state.snapshot_generation += 1;
+        let generation = self.state.snapshot_generation;
+        let db = self.db.clone();
+        self.bridge.spawn(move |_| async move {
+            let result = executor::inputs(&db, &request)
+                .await
+                .map(|inputs| Box::new(inputs.snapshot))
+                .map_err(failure);
+            Message::Snapshot { generation, result }
+        });
+    }
+
+    fn set_environment(&mut self, id: Option<EnvironmentId>) {
+        if id == self.state.active_environment {
+            return;
+        }
+        self.state.active_environment = id;
+        self.task(
+            move |db| {
+                environments::set_active_environment(db, id)?;
+                Ok((
+                    environments::environments(db)?,
+                    environments::active_environment(db)?,
+                ))
+            },
+            |result| Message::Environments {
+                select: None,
+                result: result.map_err(failure),
+            },
+        );
+        let name = id
+            .and_then(|id| self.state.environments.iter().find(|e| e.id == id))
+            .map_or("Global (no environment)".to_owned(), |e| e.name.clone());
+        self.status(&format!("Environment: {name}"));
+    }
+
+    fn load_variables(&mut self, scope: Scope) {
+        self.state.variables.scope = scope;
+        self.state.variables.loaded = false;
+        self.task(
+            move |db| match scope {
+                Scope::Global => environments::globals(db),
+                Scope::Environment(id) => environments::environment(db, id)?
+                    .map(|e| e.variables)
+                    .ok_or(StoreError::NotFound("environment")),
+                Scope::Collection(id) => collections::collection(db, id)?
+                    .map(|c| c.variables)
+                    .ok_or(StoreError::NotFound("collection")),
+            },
+            move |result| Message::VariablesLoaded {
+                scope,
+                result: result.map_err(failure),
+            },
+        );
+    }
+
+    fn variables_loaded(&mut self, scope: Scope, result: Result<Variables, Failure>) {
+        let screen = &mut self.state.variables;
+        if scope != screen.scope {
+            return;
+        }
+        match result {
+            Ok(variables) => {
+                screen.rows = vars::rows(&variables);
+                screen.baseline = vars::entries(&screen.rows);
+                screen.loaded = true;
+                screen.status = None;
+            }
+            Err(error) => {
+                screen.status = Some((
+                    format!("Variables could not be loaded: {error}"),
+                    Tone::Error,
+                ));
+            }
+        }
+    }
+
+    /// Run `transition` now if the Variables screen has no unsaved rows, otherwise ask first.
+    fn variables_navigate(&mut self, transition: VarTransition) {
+        if self.state.variables.dirty() {
+            self.state.variables.pending = Some(transition);
+            self.state.dialog = Some(Dialog::VariablesGuard);
+        } else {
+            self.variables_perform(transition);
+        }
+    }
+
+    fn variables_perform(&mut self, transition: VarTransition) {
+        match transition {
+            VarTransition::Scope(scope) => self.load_variables(scope),
+            VarTransition::Reload => {
+                let scope = self.state.variables.scope;
+                self.load_variables(scope);
+            }
+            VarTransition::NewEnvironment => {
+                self.state.dialog = Some(Dialog::name(
+                    "New Environment",
+                    "Environment Name:",
+                    "",
+                    NamePurpose::NewEnvironment,
+                ));
+            }
+            VarTransition::RenameEnvironment(id) => {
+                let current = self.environment_name(id);
+                self.state.dialog = Some(Dialog::name(
+                    "Rename Environment",
+                    "Name:",
+                    &current,
+                    NamePurpose::RenameEnvironment(id),
+                ));
+            }
+            VarTransition::DeleteEnvironment(id) => {
+                let current = self.environment_name(id);
+                self.state.dialog = Some(Dialog::Confirm {
+                    title: "Delete Environment".into(),
+                    message: format!("Delete the environment \"{current}\" and its variables?"),
+                    confirm: "Delete".into(),
+                    purpose: ConfirmPurpose::DeleteEnvironment(id),
+                });
+            }
+            VarTransition::OpenDefinition(scope, name) => {
+                self.state.screen = Screen::Variables;
+                self.state.variables.highlight = Some(name);
+                self.load_variables(scope);
+            }
+            VarTransition::Close => {
+                self.state.close = CloseState::Flushing;
+                self.flush_ui_state();
+            }
+        }
+    }
+
+    fn environment_name(&self, id: EnvironmentId) -> String {
+        self.state
+            .environments
+            .iter()
+            .find(|e| e.id == id)
+            .map_or_else(String::new, |e| e.name.clone())
+    }
+
+    fn variables_choice(&mut self, choice: GuardChoice) {
+        let Some(transition) = self.state.variables.pending.take() else {
+            return;
+        };
+        match choice {
+            GuardChoice::Save => {
+                self.state.variables.pending = Some(transition);
+                self.save_variables();
+            }
+            GuardChoice::Discard => {
+                let screen = &mut self.state.variables;
+                screen.rows = screen
+                    .baseline
+                    .iter()
+                    .map(|(name, value)| vars::Row {
+                        name: name.clone(),
+                        value: value.clone(),
+                    })
+                    .collect();
+                screen.status = None;
+                self.variables_perform(transition);
+            }
+            GuardChoice::Cancel => {
+                if transition == VarTransition::Close {
+                    self.state.close = CloseState::Open;
+                }
+            }
+        }
+    }
+
+    fn save_variables(&mut self) {
+        let screen = &mut self.state.variables;
+        if !screen.loaded || screen.saving {
+            return;
+        }
+        let variables = match vars::to_variables(&screen.rows) {
+            Ok(variables) => variables,
+            Err(error) => {
+                screen.status = Some((error.to_string(), Tone::Error));
+                if screen.pending.take() == Some(VarTransition::Close) {
+                    self.state.close = CloseState::Open;
+                }
+                return;
+            }
+        };
+        screen.saving = true;
+        let scope = screen.scope;
+        self.task(
+            move |db| match scope {
+                Scope::Global => environments::set_globals(db, &variables),
+                Scope::Environment(id) => {
+                    environments::set_environment_variables(db, id, &variables)
+                }
+                Scope::Collection(id) => collections::set_collection_variables(db, id, &variables),
+            },
+            move |result| Message::VariablesSaved {
+                scope,
+                result: result.map_err(failure),
+            },
+        );
+    }
+
+    fn variables_saved(&mut self, scope: Scope, result: Result<(), Failure>) {
+        let screen = &mut self.state.variables;
+        screen.saving = false;
+        match result {
+            Ok(()) => {
+                if scope == screen.scope {
+                    screen.baseline = vars::entries(&screen.rows);
+                    screen.status = Some(("Variables saved".into(), Tone::Ok));
+                }
+                if let Some(transition) = screen.pending.take() {
+                    self.variables_perform(transition);
+                }
+                self.load_snapshot();
+            }
+            Err(error) => {
+                screen.status = Some((
+                    format!("Save failed, changes retained: {error}"),
+                    Tone::Error,
+                ));
+                if screen.pending.take() == Some(VarTransition::Close) {
+                    self.state.close = CloseState::Open;
+                }
+            }
+        }
+    }
+
+    fn variables_action(&mut self, action: VariablesAction) {
+        match action {
+            VariablesAction::SelectScope(scope) => {
+                if scope != self.state.variables.scope || !self.state.variables.loaded {
+                    self.variables_navigate(VarTransition::Scope(scope));
+                }
+            }
+            VariablesAction::Save => self.save_variables(),
+            VariablesAction::Reload => self.variables_navigate(VarTransition::Reload),
+            VariablesAction::Edited => {
+                let screen = &mut self.state.variables;
+                screen.status = screen
+                    .dirty()
+                    .then(|| ("Unsaved variable changes".to_owned(), Tone::Warning));
+            }
+            VariablesAction::NewEnvironment => {
+                self.variables_navigate(VarTransition::NewEnvironment);
+            }
+            VariablesAction::RenameEnvironment(id) => {
+                self.variables_navigate(VarTransition::RenameEnvironment(id));
+            }
+            VariablesAction::DeleteEnvironment(id) => {
+                self.variables_navigate(VarTransition::DeleteEnvironment(id));
+            }
+        }
+    }
+
+    pub fn variables_dirty(&self) -> bool {
+        self.state.variables.dirty()
     }
 
     // ---- closing --------------------------------------------------------------------------

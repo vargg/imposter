@@ -10,6 +10,8 @@ pub struct Palette {
     pub surface: Color32,
     /// Text inputs and code areas.
     pub input: Color32,
+    pub hover: Color32,
+    pub selected: Color32,
     pub border: Color32,
     pub text: Color32,
     pub text_muted: Color32,
@@ -22,18 +24,30 @@ pub struct Palette {
 }
 
 pub const PALETTE: Palette = Palette {
-    background: Color32::from_rgb(0x1e, 0x1e, 0x1e),
-    surface: Color32::from_rgb(0x25, 0x25, 0x26),
-    input: Color32::from_rgb(0x16, 0x16, 0x16),
-    border: Color32::from_rgb(0x3c, 0x3c, 0x3c),
-    text: Color32::from_rgb(0xe6, 0xe6, 0xe6),
-    text_muted: Color32::from_rgb(0xa8, 0xa8, 0xa8),
+    background: Color32::from_rgb(0x11, 0x13, 0x18),
+    surface: Color32::from_rgb(0x1a, 0x1d, 0x24),
+    input: Color32::from_rgb(0x13, 0x16, 0x1c),
+    hover: Color32::from_rgb(0x28, 0x2d, 0x37),
+    selected: Color32::from_rgb(0x3b, 0x2a, 0x24),
+    border: Color32::from_rgb(0x30, 0x35, 0x40),
+    text: Color32::from_rgb(0xea, 0xed, 0xf3),
+    text_muted: Color32::from_rgb(0xa3, 0xad, 0xbf),
     accent: Color32::from_rgb(0xff, 0x6c, 0x37),
     on_accent: Color32::from_rgb(0x1a, 0x1a, 0x1a),
     ok: Color32::from_rgb(0x5f, 0xd0, 0x8a),
     warning: Color32::from_rgb(0xf0, 0xc0, 0x5a),
     error: Color32::from_rgb(0xff, 0x6b, 0x6b),
 };
+
+pub fn method_color(method: &str) -> Color32 {
+    match method {
+        "GET" => PALETTE.ok,
+        "POST" => PALETTE.warning,
+        "DELETE" => PALETTE.error,
+        "PUT" | "PATCH" => token_color(crate::highlight::Token::Key),
+        _ => PALETTE.text_muted,
+    }
+}
 
 /// Syntax colors for the viewer and editors, readable on the input background.
 pub fn token_color(token: crate::highlight::Token) -> Color32 {
@@ -85,10 +99,12 @@ pub fn visuals(palette: &Palette) -> Visuals {
     visuals.hyperlink_color = palette.accent;
     visuals.warn_fg_color = palette.warning;
     visuals.error_fg_color = palette.error;
-    visuals.selection.bg_fill = palette.accent.gamma_multiply(0.45);
+    visuals.selection.bg_fill = palette.selected;
     visuals.selection.stroke = Stroke::new(1.0, palette.text);
+    visuals.window_corner_radius = CornerRadius::same(12);
+    visuals.menu_corner_radius = CornerRadius::same(8);
 
-    let radius = CornerRadius::same(4);
+    let radius = CornerRadius::same(6);
     for widget in [
         &mut visuals.widgets.noninteractive,
         &mut visuals.widgets.inactive,
@@ -103,8 +119,16 @@ pub fn visuals(palette: &Palette) -> Visuals {
     visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, palette.border);
     visuals.widgets.inactive.weak_bg_fill = palette.surface;
     visuals.widgets.inactive.bg_fill = palette.surface;
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, palette.border);
+    visuals.widgets.hovered.weak_bg_fill = palette.hover;
+    visuals.widgets.hovered.bg_fill = palette.hover;
     visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, palette.accent);
+    visuals.widgets.active.weak_bg_fill = palette.selected;
+    visuals.widgets.active.bg_fill = palette.selected;
     visuals.widgets.active.bg_stroke = Stroke::new(1.0, palette.accent);
+    visuals.widgets.open.weak_bg_fill = palette.hover;
+    visuals.widgets.open.bg_fill = palette.hover;
+    visuals.widgets.open.bg_stroke = Stroke::new(1.0, palette.border);
     visuals
 }
 
@@ -112,6 +136,18 @@ pub fn visuals(palette: &Palette) -> Visuals {
 pub fn apply(ctx: &egui::Context) {
     ctx.set_visuals_of(Theme::Dark, visuals(&PALETTE));
     ctx.set_theme(Theme::Dark);
+    ctx.style_mut_of(Theme::Dark, |style| {
+        style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+        style.spacing.button_padding = egui::vec2(10.0, 5.0);
+        style.spacing.interact_size.y = 28.0;
+        style.spacing.window_margin = egui::Margin::same(16);
+        style
+            .text_styles
+            .insert(egui::TextStyle::Small, egui::FontId::proportional(11.0));
+        style
+            .text_styles
+            .insert(egui::TextStyle::Heading, egui::FontId::proportional(18.0));
+    });
 }
 
 /// WCAG 2 relative luminance of an sRGB color.
@@ -151,7 +187,13 @@ mod tests {
 
     #[test]
     fn every_text_tone_is_readable_on_every_background() {
-        for background in [PALETTE.background, PALETTE.surface, PALETTE.input] {
+        for background in [
+            PALETTE.background,
+            PALETTE.surface,
+            PALETTE.input,
+            PALETTE.hover,
+            PALETTE.selected,
+        ] {
             for tone in [
                 Tone::Normal,
                 Tone::Muted,

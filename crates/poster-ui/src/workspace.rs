@@ -5,30 +5,103 @@ use egui::{Align, Layout, Rect, RichText, Sense, Ui, UiBuilder, vec2};
 use poster_app::core::ids::FolderId;
 use poster_app::core::model::BodyType;
 
-use crate::app::{Action, EditorTab, PosterApp, ResponseTab, State};
+use crate::app::{Action, EditorTab, PosterApp, ResponseTab, Screen, State};
 use crate::dialogs::{ConfirmPurpose, Dialog, NamePurpose};
 use crate::editor::BODY_CHOICES;
+use crate::icons::{self, Icon};
 use crate::layout::{
     LayoutMode, Orientation, SIDEBAR_WIDTH, WorkspaceLayout, effective_orientation,
 };
-use crate::theme::{PALETTE, Tone};
+use crate::theme::{PALETTE, Tone, method_color};
 use crate::tree::{Node, NodeId};
 use crate::viewer::{self, Language};
-use crate::widgets::{self, FileRequest, name, tone_text};
+use crate::widgets::{self, FileRequest, VarUi, name, tone_text};
 
-const SEPARATOR: f32 = 6.0;
+const SEPARATOR: f32 = 12.0;
 
 pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
     let save = app.save_label();
     let save_text = app.save_button_text();
     let executing = app.is_executing();
+    let variables_dirty = app.variables_dirty();
     let state = &mut app.state;
 
-    egui::Panel::bottom("status").show(ui, |ui| {
-        ui.label(tone_text(state.status.as_str(), Tone::Muted));
-    });
+    egui::Panel::top("screens")
+        .frame(
+            egui::Frame::new()
+                .fill(PALETTE.surface)
+                .inner_margin(egui::Margin::symmetric(16, 10)),
+        )
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                egui::Frame::new()
+                    .fill(PALETTE.accent)
+                    .corner_radius(8)
+                    .inner_margin(egui::Margin::symmetric(9, 4))
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new("P")
+                                .size(18.0)
+                                .strong()
+                                .color(PALETTE.on_accent),
+                        );
+                    });
+                ui.label(RichText::new("Poster").size(20.0).strong());
+                ui.add_space(24.0);
+                for (screen, label) in [
+                    (Screen::Requests, "Requests"),
+                    (Screen::Variables, "Variables"),
+                ] {
+                    let text = if screen == Screen::Variables && variables_dirty {
+                        format!("{label} •")
+                    } else {
+                        label.to_owned()
+                    };
+                    let tab = widgets::tab(ui, state.screen == screen, &text);
+                    name(&tab, label);
+                    if tab.clicked() {
+                        state.actions.push(Action::Screen(screen));
+                    }
+                }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    environment_picker(state, ui);
+                });
+            });
+        });
+    egui::Panel::bottom("status")
+        .frame(
+            egui::Frame::new()
+                .fill(PALETTE.surface)
+                .inner_margin(egui::Margin::symmetric(16, 5)),
+        )
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let toggle = if state.layout.sidebar_visible {
+                    "Hide Collections"
+                } else {
+                    "Show Collections"
+                };
+                if icons::button(ui, Icon::Sidebar, toggle, state.layout.sidebar_visible).clicked()
+                {
+                    state.layout.sidebar_visible = !state.layout.sidebar_visible;
+                }
+                layout_menu(&mut state.layout, ui);
+                ui.separator();
+                ui.label(tone_text(state.status.as_str(), Tone::Muted).small());
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(tone_text("HTTP / 1.1", Tone::Muted).small().monospace());
+                });
+            });
+        });
+    if state.screen == Screen::Variables {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
+            .show(ui, |ui| crate::variables_screen::draw(state, ui));
+        return;
+    }
     if state.layout.sidebar_visible {
         let panel = egui::Panel::left("sidebar")
+            .frame(egui::Frame::new().fill(PALETTE.surface).inner_margin(12))
             .resizable(true)
             .default_size(state.layout.sidebar_width)
             .size_range(SIDEBAR_WIDTH.0..=SIDEBAR_WIDTH.1)
@@ -40,101 +113,140 @@ pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
             .clamp(SIDEBAR_WIDTH.0, SIDEBAR_WIDTH.1)
             .round();
     }
-    egui::CentralPanel::default().show(ui, |ui| {
-        context_bar(state, ui, save, save_text);
-        command_bar(state, ui, executing);
-        ui.add_space(4.0);
-        split(state, ui);
-    });
+    egui::CentralPanel::default()
+        .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
+        .show(ui, |ui| {
+            context_bar(state, ui, save, save_text);
+            ui.add_space(8.0);
+            command_bar(state, ui, executing);
+            ui.add_space(12.0);
+            split(state, ui);
+        });
+    let name = state.inspect.as_ref().map(|i| i.name.clone());
+    if let Some(scope) = widgets::inspector(
+        ui.ctx(),
+        &mut state.inspect,
+        state.snapshot.as_ref(),
+        state.snapshot_error.as_deref(),
+    ) && let Some(name) = name
+    {
+        state.actions.push(Action::OpenDefinition(scope, name));
+    }
 }
 
 // ---- sidebar ------------------------------------------------------------------------------
 
-fn sidebar(state: &mut State, ui: &mut Ui) {
-    ui.horizontal(|ui| {
-        ui.heading("Collections");
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.menu_button("New", |ui| {
-                if ui.button("New Collection").clicked() {
-                    state.actions.push(Action::Prompt(Dialog::name(
-                        "New Collection",
-                        "Name:",
-                        "",
-                        NamePurpose::NewCollection,
-                    )));
-                }
-                let parent = selected_folder(state);
-                if ui
-                    .add_enabled(state.collection.is_some(), egui::Button::new("New Folder"))
-                    .clicked()
-                {
-                    state.actions.push(Action::Prompt(Dialog::name(
-                        "New Folder",
-                        "Name:",
-                        "",
-                        NamePurpose::NewFolder { parent },
-                    )));
-                }
-                if ui
-                    .add_enabled(state.collection.is_some(), egui::Button::new("New Request"))
-                    .clicked()
-                {
-                    state.actions.push(Action::Prompt(Dialog::name(
-                        "New Request",
-                        "Name:",
-                        "",
-                        NamePurpose::NewRequest { folder: parent },
-                    )));
-                }
-            });
-        });
+fn new_menu(state: &mut State, ui: &mut Ui) {
+    icons::menu(ui, Icon::Plus, "New", |ui| {
+        if ui.button("New Collection").clicked() {
+            state.actions.push(Action::Prompt(Dialog::name(
+                "New Collection",
+                "Name:",
+                "",
+                NamePurpose::NewCollection,
+            )));
+        }
+        let parent = selected_folder(state);
+        if ui
+            .add_enabled(state.collection.is_some(), egui::Button::new("New Folder"))
+            .clicked()
+        {
+            state.actions.push(Action::Prompt(Dialog::name(
+                "New Folder",
+                "Name:",
+                "",
+                NamePurpose::NewFolder { parent },
+            )));
+        }
+        if ui
+            .add_enabled(state.collection.is_some(), egui::Button::new("New Request"))
+            .clicked()
+        {
+            state.actions.push(Action::Prompt(Dialog::name(
+                "New Request",
+                "Name:",
+                "",
+                NamePurpose::NewRequest { folder: parent },
+            )));
+        }
     });
-    if state.collections.is_empty() {
-        ui.label(tone_text(
-            "No collections yet. Create one with New.",
-            Tone::Muted,
-        ));
-        return;
-    }
+}
+
+fn sidebar(state: &mut State, ui: &mut Ui) {
+    ui.add_space(4.0);
+    ui.heading("Collections");
+    ui.add_space(8.0);
     let current = state
         .collections
         .iter()
         .find(|c| Some(c.id) == state.collection)
         .map(|c| (c.id, c.name.clone()));
-    let picker = egui::ComboBox::from_id_salt("collection")
-        .width(ui.available_width() - 8.0)
-        .selected_text(
-            current
-                .as_ref()
-                .map_or("Select a collection", |(_, name)| name.as_str()),
-        )
-        .show_ui(ui, |ui| {
-            for collection in &state.collections {
-                if ui
-                    .selectable_label(Some(collection.id) == state.collection, &collection.name)
-                    .clicked()
-                {
-                    state.actions.push(Action::SelectCollection(collection.id));
+    ui.horizontal(|ui| {
+        let picker_width = ui.available_width() - 2.0 * (28.0 + ui.spacing().item_spacing.x);
+        ui.add_enabled_ui(!state.collections.is_empty(), |ui| {
+            ui.set_width(picker_width);
+            let picker = egui::ComboBox::from_id_salt("collection")
+                .width(picker_width)
+                .truncate()
+                .selected_text(
+                    current
+                        .as_ref()
+                        .map_or("Select a collection", |(_, name)| name.as_str()),
+                )
+                .show_ui(ui, |ui| {
+                    for collection in &state.collections {
+                        if ui
+                            .selectable_label(
+                                Some(collection.id) == state.collection,
+                                &collection.name,
+                            )
+                            .clicked()
+                        {
+                            state.actions.push(Action::SelectCollection(collection.id));
+                        }
+                    }
+                });
+            name(&picker.response, "Collection");
+        });
+        new_menu(state, ui);
+        if let Some((id, collection_name)) = current {
+            icons::menu(ui, Icon::More, "Collection actions", |ui| {
+                if ui.button("Rename Collection").clicked() {
+                    state.actions.push(Action::Prompt(Dialog::name(
+                        "Rename Collection",
+                        "Name:",
+                        &collection_name,
+                        NamePurpose::RenameCollection(id),
+                    )));
                 }
-            }
-        });
-    name(&picker.response, "Collection");
-    if let Some((id, collection_name)) = current {
-        ui.menu_button("Collection actions", |ui| {
-            if ui.button("Rename Collection").clicked() {
-                state.actions.push(Action::Prompt(Dialog::name("Rename Collection", "Name:", &collection_name, NamePurpose::RenameCollection(id))));
-            }
-            if ui.button("Delete Collection").clicked() {
-                state.actions.push(Action::Prompt(Dialog::Confirm {
-                    title: "Delete collection".into(),
-                    message: format!("Delete \"{collection_name}\" and its contents, including any unsaved edits?"),
-                    confirm: "Delete".into(),
-                    purpose: ConfirmPurpose::DeleteCollection(id),
-                }));
-            }
-        });
+                if ui.button("Delete Collection").clicked() {
+                    state.actions.push(Action::Prompt(Dialog::Confirm {
+                        title: "Delete collection".into(),
+                        message: format!(
+                            "Delete \"{collection_name}\" and its contents, \
+                         including any unsaved edits?"
+                        ),
+                        confirm: "Delete".into(),
+                        purpose: ConfirmPurpose::DeleteCollection(id),
+                    }));
+                }
+            });
+        } else {
+            ui.add_enabled_ui(false, |ui| {
+                icons::button(ui, Icon::More, "Collection actions", false)
+            });
+        }
+    });
+    if state.collections.is_empty() {
+        ui.label(tone_text(
+            "No collections yet. Create one with +.",
+            Tone::Muted,
+        ));
+        return;
     }
+    ui.add_space(6.0);
     ui.separator();
+    ui.add_space(6.0);
     egui::ScrollArea::vertical()
         .id_salt("tree")
         .auto_shrink([false, false])
@@ -145,7 +257,7 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
             };
             if tree.roots.is_empty() {
                 ui.label(tone_text(
-                    "This collection is empty. Add a request with New.",
+                    "This collection is empty. Add a request with +.",
                     Tone::Muted,
                 ));
             }
@@ -250,16 +362,6 @@ fn folder_of(node: &Node) -> Option<FolderId> {
     }
 }
 
-fn method_color(method: &str) -> egui::Color32 {
-    match method {
-        "GET" => PALETTE.ok,
-        "POST" => PALETTE.warning,
-        "DELETE" => PALETTE.error,
-        "PUT" | "PATCH" => crate::theme::token_color(crate::highlight::Token::Key),
-        _ => PALETTE.text_muted,
-    }
-}
-
 fn nodes(
     ui: &mut Ui,
     list: &[Node],
@@ -326,8 +428,9 @@ fn nodes(
                         ..Default::default()
                     },
                 );
-                let response = ui.add(
-                    egui::Button::selectable(selected == Some(id), text)
+                let response = ui.add_sized(
+                    [ui.available_width(), 32.0],
+                    egui::Button::selectable(selected == Some(id), (text, egui::Atom::grow()))
                         .sense(Sense::click_and_drag()),
                 );
                 name(&response, &format!("{} {}", request.method, request.name));
@@ -372,17 +475,8 @@ fn context_bar(
                     .unwrap_or_else(|| pane.editor.name().to_owned()),
             },
         };
-        ui.label(RichText::new(path).strong());
+        ui.add(egui::Label::new(RichText::new(path).strong().size(14.0)).truncate());
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            layout_menu(&mut state.layout, ui);
-            let toggle = if state.layout.sidebar_visible {
-                "Hide Collections"
-            } else {
-                "Show Collections"
-            };
-            if ui.button(toggle).clicked() {
-                state.layout.sidebar_visible = !state.layout.sidebar_visible;
-            }
             if let Some((status, enabled, tone)) = save {
                 if ui
                     .add_enabled(enabled, egui::Button::new(save_text))
@@ -396,8 +490,40 @@ fn context_bar(
     });
 }
 
+fn environment_picker(state: &mut State, ui: &mut Ui) {
+    let active = state.active_environment;
+    let selected = active
+        .and_then(|id| state.environments.iter().find(|e| e.id == id))
+        .map_or("Global (no environment)".to_owned(), |e| e.name.clone());
+    let combo = egui::ComboBox::from_id_salt("environment")
+        .width(170.0)
+        .selected_text(selected)
+        .show_ui(ui, |ui| {
+            if ui
+                .selectable_label(active.is_none(), "Global (no environment)")
+                .clicked()
+            {
+                state.actions.push(Action::SetEnvironment(None));
+            }
+            for environment in &state.environments {
+                if ui
+                    .selectable_label(active == Some(environment.id), &environment.name)
+                    .clicked()
+                {
+                    state
+                        .actions
+                        .push(Action::SetEnvironment(Some(environment.id)));
+                }
+            }
+        });
+    name(&combo.response, "Environment");
+    combo.response.on_hover_text(
+        "Global uses global and collection variables without an environment override.",
+    );
+}
+
 fn layout_menu(layout: &mut WorkspaceLayout, ui: &mut Ui) {
-    ui.menu_button("Layout", |ui| {
+    icons::menu(ui, Icon::Layout, "Layout", |ui| {
         for (mode, label) in [
             (LayoutMode::Auto, "Auto"),
             (LayoutMode::SideBySide, "Side by side"),
@@ -417,41 +543,65 @@ fn layout_menu(layout: &mut WorkspaceLayout, ui: &mut Ui) {
 }
 
 fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
-    let Some(pane) = &mut state.editor else {
-        return;
+    let State {
+        editor,
+        snapshot,
+        inspect,
+        actions,
+        ..
+    } = state;
+    let Some(pane) = editor else { return };
+    let mut vars = VarUi {
+        snapshot: snapshot.as_ref(),
+        inspect,
     };
     let mut url_edited = false;
     let mut edited = false;
-    ui.horizontal(|ui| {
-        edited |= widgets::method_picker(ui, &mut pane.editor.method, &mut pane.custom_method);
-        let send_width = 90.0;
-        let url = ui.add(
-            egui::TextEdit::singleline(&mut pane.editor.url)
-                .hint_text("Enter request URL")
-                .desired_width(ui.available_width() - send_width - 8.0),
-        );
-        name(&url, "Request URL");
-        url_edited = url.changed();
-        let (label, fill) = if executing {
-            ("Cancel", PALETTE.warning)
-        } else {
-            ("Send", PALETTE.accent)
-        };
-        let send = ui.add_sized(
-            vec2(send_width, 26.0),
-            egui::Button::new(RichText::new(label).color(PALETTE.on_accent).strong()).fill(fill),
-        );
-        let shortcut = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Enter);
-        if send.clicked() || ui.input_mut(|i| i.consume_shortcut(&shortcut)) {
-            state.actions.push(Action::Send);
-        }
-    });
+    egui::Frame::new()
+        .fill(PALETTE.surface)
+        .stroke(egui::Stroke::new(1.0, PALETTE.border))
+        .corner_radius(10)
+        .inner_margin(8)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().interact_size.y = 36.0;
+                edited |=
+                    widgets::method_picker(ui, &mut pane.editor.method, &mut pane.custom_method);
+                let send_width = 96.0;
+                let width =
+                    (ui.available_width() - send_width - ui.spacing().item_spacing.x).max(80.0);
+                url_edited = widgets::var_edit(
+                    ui,
+                    &mut pane.editor.url,
+                    "Request URL",
+                    width,
+                    false,
+                    &mut vars,
+                )
+                .changed();
+                let (label, fill) = if executing {
+                    ("Cancel", PALETTE.warning)
+                } else {
+                    ("Send", PALETTE.accent)
+                };
+                let send = ui.add_sized(
+                    vec2(send_width, 36.0),
+                    egui::Button::new(RichText::new(label).color(PALETTE.on_accent).strong())
+                        .fill(fill),
+                );
+                let shortcut =
+                    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Enter);
+                if send.clicked() || ui.input_mut(|i| i.consume_shortcut(&shortcut)) {
+                    actions.push(Action::Send);
+                }
+            })
+        });
     let save = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S);
     if ui.input_mut(|i| i.consume_shortcut(&save)) {
-        state.actions.push(Action::Save);
+        actions.push(Action::Save);
     }
     if url_edited || edited {
-        state.actions.push(Action::Edited {
+        actions.push(Action::Edited {
             url: url_edited,
             params: false,
         });
@@ -509,34 +659,80 @@ fn split(state: &mut State, ui: &mut Ui) {
     } else {
         PALETTE.border
     };
-    ui.painter().rect_filled(handle.shrink(2.0), 2.0, color);
+    let grip = match orientation {
+        Orientation::SideBySide => vec2(3.0, 32.0),
+        Orientation::Stacked => vec2(32.0, 3.0),
+    };
+    ui.painter()
+        .rect_filled(Rect::from_center_size(handle.center(), grip), 2.0, color);
+    for rect in [first, second] {
+        ui.painter().rect(
+            rect,
+            12.0,
+            PALETTE.surface,
+            egui::Stroke::new(1.0, PALETTE.border),
+            egui::StrokeKind::Inside,
+        );
+    }
     ui.scope_builder(
-        UiBuilder::new().max_rect(first).id_salt("request pane"),
-        |ui| request_pane(state, ui),
+        UiBuilder::new()
+            .max_rect(first.shrink(14.0))
+            .id_salt("request pane"),
+        |ui| {
+            ui.set_clip_rect(ui.clip_rect().intersect(first));
+            request_pane(state, ui);
+        },
     );
     ui.scope_builder(
         UiBuilder::new()
-            .max_rect(second.shrink2(vec2(4.0, 0.0)))
+            .max_rect(second.shrink(14.0))
             .id_salt("response pane"),
-        |ui| response_pane(state, ui),
+        |ui| {
+            ui.set_clip_rect(ui.clip_rect().intersect(second));
+            response_pane(state, ui);
+        },
     );
     ui.allocate_rect(area, Sense::hover());
 }
 
 fn request_pane(state: &mut State, ui: &mut Ui) {
-    let defaults = state.settings.clone();
-    let Some(pane) = &mut state.editor else {
-        ui.centered_and_justified(|ui| {
+    let State {
+        editor,
+        snapshot,
+        inspect,
+        settings,
+        actions,
+        ..
+    } = state;
+    let Some(pane) = editor else {
+        ui.add_space((ui.available_height() * 0.25).min(100.0));
+        ui.vertical_centered(|ui| {
+            ui.label(
+                RichText::new(">_")
+                    .monospace()
+                    .size(32.0)
+                    .color(PALETTE.accent),
+            );
+            ui.heading("Start with a request");
+            ui.add_space(4.0);
             ui.label(tone_text(
-                "Select a request in the sidebar, or create one with New.",
+                "Select a request in the sidebar, or create one with +.",
                 Tone::Muted,
-            ))
+            ));
         });
         return;
     };
+    let mut vars = VarUi {
+        snapshot: snapshot.as_ref(),
+        inspect,
+    };
     ui.horizontal_wrapped(|ui| {
+        ui.heading("Request");
+        ui.add_space(8.0);
         for (tab, label) in EditorTab::ALL {
-            ui.selectable_value(&mut pane.tab, tab, label);
+            if widgets::tab(ui, pane.tab == tab, label).clicked() {
+                pane.tab = tab;
+            }
         }
     });
     ui.separator();
@@ -553,6 +749,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                     "Params",
                     &mut pane.editor.queries,
                     &mut pane.confirm_clear[0],
+                    &mut vars,
                 );
             }
             EditorTab::Headers => {
@@ -561,6 +758,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                     "Headers",
                     &mut pane.editor.headers,
                     &mut pane.confirm_clear[1],
+                    &mut vars,
                 );
             }
             EditorTab::Cookies => {
@@ -569,12 +767,18 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                     "Cookies",
                     &mut pane.editor.cookies,
                     &mut pane.confirm_clear[2],
+                    &mut vars,
                 );
             }
-            EditorTab::Auth => edited = widgets::auth_form(ui, &mut pane.editor.auth),
+            EditorTab::Auth => edited = widgets::auth_form(ui, &mut pane.editor.auth, &mut vars),
             EditorTab::Settings => {
-                edited =
-                    widgets::options_form(ui, &mut pane.editor.options, &defaults, &pane.invalid);
+                edited = widgets::options_form(
+                    ui,
+                    &mut pane.editor.options,
+                    settings,
+                    &pane.invalid,
+                    &mut vars,
+                );
             }
             EditorTab::Body => {
                 ui.horizontal(|ui| {
@@ -599,11 +803,9 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                         ui.label(tone_text("This request has no body", Tone::Muted));
                     }
                     BodyType::Json | BodyType::Plain | BodyType::Text => {
-                        edited |= widgets::body_editor(
-                            ui,
-                            &mut pane.editor.body_text,
-                            pane.editor.body_type == BodyType::Json,
-                        );
+                        let json = pane.editor.body_type == BodyType::Json;
+                        edited |=
+                            widgets::body_editor(ui, &mut pane.editor.body_text, json, &mut vars);
                     }
                     BodyType::Urlencoded | BodyType::FormData => {
                         edited |= widgets::rows_table(
@@ -611,6 +813,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                             "Fields",
                             &mut pane.editor.form,
                             &mut pane.confirm_clear[3],
+                            &mut vars,
                         );
                     }
                     BodyType::Multipart => {
@@ -619,17 +822,21 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                             &mut pane.editor.multipart,
                             &mut pane.confirm_clear[4],
                             &mut pick,
+                            &mut vars,
                         );
                     }
                     BodyType::Binary => {
                         ui.horizontal(|ui| {
-                            let path = ui.add(
-                                egui::TextEdit::singleline(&mut pane.editor.binary_path)
-                                    .hint_text("File path")
-                                    .desired_width(ui.available_width() - 110.0),
-                            );
-                            name(&path, "Binary file path");
-                            edited |= path.changed();
+                            let width = ui.available_width() - 110.0;
+                            edited |= widgets::var_edit(
+                                ui,
+                                &mut pane.editor.binary_path,
+                                "Binary file path",
+                                width,
+                                false,
+                                &mut vars,
+                            )
+                            .changed();
                             if ui.button("Choose file…").clicked() {
                                 pick = Some(FileRequest::Binary);
                             }
@@ -639,10 +846,10 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
             }
         });
     if let Some(target) = pick {
-        state.actions.push(Action::PickFile(target));
+        actions.push(Action::PickFile(target));
     }
     if edited || params {
-        state.actions.push(Action::Edited { url: false, params });
+        actions.push(Action::Edited { url: false, params });
     }
 }
 
@@ -677,12 +884,12 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
     });
     if let Some(response) = &response_state.response {
         let status = viewer::status(response);
-        ui.horizontal(|ui| {
-            ui.label(tone_text(status.text.as_str(), status.tone))
+        ui.horizontal_wrapped(|ui| {
+            widgets::badge(ui, status.text.as_str(), status.tone)
                 .on_hover_text(status.detail.as_str());
-            ui.label(viewer::format_duration(response.elapsed));
+            widgets::badge(ui, &viewer::format_duration(response.elapsed), Tone::Muted);
             if response.outcome == poster_app::core::execution::Outcome::Response {
-                ui.label(viewer::size_text(response));
+                widgets::badge(ui, &viewer::size_text(response), Tone::Muted);
                 let content_type = viewer::content_type(&response.headers);
                 ui.label(tone_text(
                     content_type.split(';').next().unwrap_or_default(),
@@ -696,54 +903,66 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
         ui.label(tone_text(notice.as_str(), *tone));
     }
     let Some((preview, headers)) = &response_state.preview else {
+        ui.add_space(20.0);
+        ui.vertical_centered(|ui| {
+            ui.label(RichText::new("Your response will appear here").strong());
+            ui.label(tone_text(
+                "Send a request to inspect its status, headers and body.",
+                Tone::Muted,
+            ));
+        });
         return;
     };
+    let body = response_state
+        .response
+        .as_ref()
+        .filter(|response| response.outcome == poster_app::core::execution::Outcome::TransportError)
+        .map_or(preview.text.as_str(), |response| response.reason.as_str());
+    let copy_body = if preview.limited {
+        "Copy displayed body"
+    } else {
+        "Copy body"
+    };
+    let copy_headers = if preview.limited {
+        "Copy displayed headers"
+    } else {
+        "Copy headers"
+    };
     ui.horizontal(|ui| {
-        ui.selectable_value(&mut response_state.tab, ResponseTab::Body, "Body");
-        ui.selectable_value(&mut response_state.tab, ResponseTab::Headers, "Headers");
+        for (tab, label) in [
+            (ResponseTab::Body, "Body"),
+            (ResponseTab::Headers, "Headers"),
+        ] {
+            if widgets::tab(ui, response_state.tab == tab, label).clicked() {
+                response_state.tab = tab;
+            }
+        }
+        match response_state.tab {
+            ResponseTab::Body => {
+                widgets::viewer_tools(ui, &mut response_state.body_view, body, copy_body);
+            }
+            ResponseTab::Headers => {
+                widgets::viewer_tools(ui, &mut response_state.headers_view, headers, copy_headers);
+            }
+        }
     });
-    let limited = preview.limited;
     match response_state.tab {
         ResponseTab::Body => {
-            let copy = if limited {
-                "Copy displayed body"
-            } else {
-                "Copy body"
-            };
-            let text =
-                if response_state.response.as_ref().is_some_and(|r| {
-                    r.outcome == poster_app::core::execution::Outcome::TransportError
-                }) {
-                    response_state
-                        .response
-                        .as_ref()
-                        .map(|r| r.reason.clone())
-                        .unwrap_or_default()
-                } else {
-                    preview.text.clone()
-                };
             widgets::code_viewer(
                 ui,
                 "response body",
                 &mut response_state.body_view,
-                &text,
+                body,
                 preview.language,
-                copy,
             );
         }
         ResponseTab::Headers => {
-            let copy = if limited {
-                "Copy displayed headers"
-            } else {
-                "Copy headers"
-            };
             widgets::code_viewer(
                 ui,
                 "response headers",
                 &mut response_state.headers_view,
                 headers,
                 Language::Plain,
-                copy,
             );
         }
     }

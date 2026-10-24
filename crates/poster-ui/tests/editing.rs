@@ -250,6 +250,17 @@ fn the_viewer_finds_text_in_the_response() {
         });
     app.harness.run_steps(2);
 
+    app.harness.get_by_label("Copy body").click();
+    app.harness.step();
+    assert!(app.harness.output().platform_output.commands.iter().any(|command| {
+        matches!(command, egui::OutputCommand::CopyText(text) if text == "alpha beta\nALPHA gamma\nalpha")
+    }));
+    let wrapped = app.harness.state().state.response.body_view.wrap;
+    click(&mut app.harness, "Wrap");
+    assert_eq!(app.harness.state().state.response.body_view.wrap, !wrapped);
+    click(&mut app.harness, "Wrap");
+    assert_eq!(app.harness.state().state.response.body_view.wrap, wrapped);
+
     click(&mut app.harness, "Find");
     app.harness
         .get_by_label("Find in response body")
@@ -288,6 +299,130 @@ fn layout_controls_change_mode_hide_the_sidebar_and_reset() {
     click(&mut app.harness, "Layout");
     click(&mut app.harness, "Reset layout");
     assert_eq!(app.harness.state().state.layout.mode, LayoutMode::Auto);
+}
+
+#[test]
+fn collection_controls_share_a_row_and_plus_creates_a_folder() {
+    let mut app = start_with(|store| {
+        collection(
+            store,
+            "A collection with a name much wider than the sidebar",
+        );
+    });
+    let picker = app.harness.get_by_label("Collection").rect();
+    let plus = app.harness.get_by_label("New").rect();
+    let more = app.harness.get_by_label("Collection actions").rect();
+    assert!(picker.right() < plus.left() && plus.right() < more.left());
+    for icon in [plus, more] {
+        assert!((icon.center().y - picker.center().y).abs() < 1.0);
+        assert!(
+            icon.right() < app.harness.state().state.layout.sidebar_width,
+            "picker: {picker:?}, plus: {plus:?}, more: {more:?}, sidebar: {}",
+            app.harness.state().state.layout.sidebar_width
+        );
+    }
+    click(&mut app.harness, "New");
+    click(&mut app.harness, "New Folder");
+    answer_name(&mut app.harness, "Users");
+    app.harness.get_by_label("Folder Users");
+    let collection = app.harness.state().state.collection.unwrap();
+    let tree = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(move |db| collections::tree(db, collection))
+        .unwrap()
+        .unwrap();
+    assert_eq!(tree.folders.len(), 1);
+    assert_eq!(tree.folders[0].name, "Users");
+}
+
+#[test]
+fn response_tools_share_the_tab_row_with_copy_at_the_right() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Viewer", "http://x");
+    });
+    open(&mut app, "GET Viewer");
+    app.harness
+        .state_mut()
+        .state
+        .response
+        .show(poster_app::core::execution::Response {
+            status: 200,
+            headers: vec![("content-type".into(), "text/plain".into())],
+            body: b"response body".to_vec(),
+            ..Default::default()
+        });
+    for size in [egui::vec2(1000.0, 650.0), egui::vec2(1500.0, 850.0)] {
+        app.harness.set_size(size);
+        app.harness.run_steps(2);
+        for (tab, copy_label, copied) in [
+            ("Body", "Copy body", "response body"),
+            ("Headers", "Copy headers", "content-type: text/plain"),
+        ] {
+            app.harness
+                .get_all_by_label(tab)
+                .next_back()
+                .unwrap()
+                .click();
+            app.harness.run_steps(2);
+            let tab_rect = app
+                .harness
+                .get_all_by_label(tab)
+                .next_back()
+                .unwrap()
+                .rect();
+            let wrap = app.harness.get_by_label("Wrap").rect();
+            let search = app.harness.get_by_label("Find").rect();
+            let copy = app.harness.get_by_label(copy_label).rect();
+            assert!(tab_rect.right() < wrap.left());
+            assert!(wrap.right() < search.left() && search.right() < copy.left());
+            for tool in [wrap, search, copy] {
+                assert!((tool.center().y - tab_rect.center().y).abs() < 1.0);
+            }
+            assert!(
+                (copy.right() - (size.x - 30.0)).abs() < 2.0,
+                "Copy is anchored to the panel's right inset"
+            );
+            app.harness.get_by_label(copy_label).click();
+            app.harness.step();
+            assert!(
+                app.harness
+                    .output()
+                    .platform_output
+                    .commands
+                    .iter()
+                    .any(|command| {
+                        matches!(command, egui::OutputCommand::CopyText(text) if text == copied)
+                    })
+            );
+        }
+    }
+}
+
+#[test]
+fn sidebar_icon_stays_in_the_bottom_left_and_supports_the_keyboard() {
+    let mut app = start_with(|store| {
+        collection(store, "API");
+    });
+    for size in [egui::vec2(1000.0, 650.0), egui::vec2(1500.0, 850.0)] {
+        app.harness.set_size(size);
+        app.harness.run_steps(2);
+        let visible = app.harness.get_by_label("Hide Collections").rect();
+        assert!(visible.left() < 32.0 && visible.bottom() > size.y - 20.0);
+        assert!(visible.width() >= 28.0 && visible.height() >= 28.0);
+        app.harness.get_by_label("Hide Collections").focus();
+        app.harness.run_steps(2);
+        assert!(app.harness.get_by_label("Hide Collections").is_focused());
+        app.harness.key_press(egui::Key::Space);
+        app.harness.run_steps(2);
+        assert!(!app.harness.state().state.layout.sidebar_visible);
+        assert!(app.harness.query_by_label("Collection").is_none());
+        assert_eq!(app.harness.get_by_label("Show Collections").rect(), visible);
+        click(&mut app.harness, "Show Collections");
+        app.harness.get_by_label("Collection");
+    }
 }
 
 #[test]

@@ -222,6 +222,16 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
   exists. Only characters present in egui's bundled fonts are used; kittest fails on a missing
   glyph, which would otherwise render as a box. `cargo run -p poster-ui --example screenshot --
   <dir>` renders the app offscreen (wgpu) for looking at layouts.
+- **Variables in the editor:** fields mark `{{name}}` tokens with the Python app's highlight
+  pattern (`\{\{([^{}\n]+)\}\}`, stricter than the resolution pattern): defined names in the
+  accent color, unknown ones in the error color. Typing `{{` suggests names with their scope and
+  source, never values. Values appear only in the inspector, opened explicitly (click on a token
+  or Alt+Enter); from a password field they stay masked until "Reveal". The inspector and
+  execution share `executor::inputs`, so it explains exactly what a send would use.
+- **The Variables screen edits one scope at a time** (Global, an environment, a collection),
+  independently of the active execution environment, with its own unsaved-changes guard for
+  scope changes, reloads, environment management, "Open definition" and closing. Closing
+  resolves the request guard first, then the variables guard, then writes UI state.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their

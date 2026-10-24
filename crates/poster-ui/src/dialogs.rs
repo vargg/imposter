@@ -1,7 +1,7 @@
 //! Modal dialogs. Each returns what the user chose; the app decides what that means.
 
 use egui::{Id, RichText};
-use poster_app::core::ids::{CollectionId, FolderId};
+use poster_app::core::ids::{CollectionId, EnvironmentId, FolderId};
 
 use crate::theme::Tone;
 use crate::tree::NodeId;
@@ -15,12 +15,15 @@ pub enum NamePurpose {
     RenameCollection(CollectionId),
     Rename(NodeId),
     SaveDraft(CollectionId),
+    NewEnvironment,
+    RenameEnvironment(EnvironmentId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmPurpose {
     DeleteCollection(CollectionId),
     Delete(NodeId),
+    DeleteEnvironment(EnvironmentId),
     DiscardOnClose,
 }
 
@@ -50,6 +53,8 @@ pub enum Dialog {
         request: String,
         failed: Option<String>,
     },
+    /// Unsaved rows on the Variables screen.
+    VariablesGuard,
     Move {
         node: NodeId,
         options: Vec<(String, Option<FolderId>)>,
@@ -68,6 +73,7 @@ pub enum Outcome {
     Name(NamePurpose, String),
     Confirmed(ConfirmPurpose),
     Guard(GuardChoice),
+    VariablesGuard(GuardChoice),
     Move(NodeId, Option<FolderId>),
     /// Cancelled, closed or acknowledged.
     Closed,
@@ -183,6 +189,22 @@ impl Dialog {
                         }
                     });
                 }
+                Self::VariablesGuard => {
+                    ui.heading("Unsaved variables");
+                    ui.label("Save variable changes before continuing?");
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Save").clicked() {
+                            outcome = Outcome::VariablesGuard(GuardChoice::Save);
+                        }
+                        if ui.button("Discard").clicked() {
+                            outcome = Outcome::VariablesGuard(GuardChoice::Discard);
+                        }
+                        if ui.button("Cancel").clicked() {
+                            outcome = Outcome::VariablesGuard(GuardChoice::Cancel);
+                        }
+                    });
+                }
                 Self::Move {
                     node,
                     options,
@@ -230,6 +252,7 @@ impl Dialog {
         if outcome == Outcome::Open && modal.should_close() {
             outcome = match self {
                 Self::Guard { .. } => Outcome::Guard(GuardChoice::Cancel),
+                Self::VariablesGuard => Outcome::VariablesGuard(GuardChoice::Cancel),
                 _ => Outcome::Closed,
             };
         }

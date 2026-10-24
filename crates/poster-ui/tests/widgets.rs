@@ -211,6 +211,18 @@ fn a_custom_method_keeps_its_case() {
     let mut app = opened();
     click(&mut app.harness, "HTTP method");
     click(&mut app.harness, "Custom method…");
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .custom_method
+            .as_deref(),
+        Some("GET"),
+        "choosing a custom method opens its editor"
+    );
     type_into(&mut app.harness, "Custom HTTP method", "-search");
     app.harness.get_by_label("Use");
     type_into(&mut app.harness, "Custom HTTP method", " bad");

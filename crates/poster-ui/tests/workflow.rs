@@ -3,7 +3,7 @@
 
 mod support;
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use poster_app::core::settings::AppSettings;
 use poster_app::store::{collections, executions, kv};
 use poster_testkit::{Server, response};
@@ -15,13 +15,49 @@ fn an_empty_database_offers_to_create_a_collection() {
     let mut app = start();
 
     app.harness
-        .get_by_label("No collections yet. Create one with New.");
+        .get_by_label("No collections yet. Create one with +.");
+    assert!(
+        app.harness
+            .get_by_label("Collection")
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(
+        app.harness
+            .get_by_label("Collection actions")
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(
+        !app.harness
+            .get_by_label("New")
+            .accesskit_node()
+            .is_disabled()
+    );
     click(&mut app.harness, "New");
+    assert!(
+        app.harness
+            .get_by_label("New Folder")
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(
+        app.harness
+            .get_by_label("New Request")
+            .accesskit_node()
+            .is_disabled()
+    );
     click(&mut app.harness, "New Collection");
     answer_name(&mut app.harness, "My API");
 
     app.harness
-        .get_by_label("This collection is empty. Add a request with New.");
+        .get_by_label("This collection is empty. Add a request with +.");
+    assert!(
+        !app.harness
+            .get_by_label("Collection actions")
+            .accesskit_node()
+            .is_disabled()
+    );
     let stored = app
         .harness
         .state()
@@ -365,4 +401,51 @@ fn the_workspace_stacks_on_narrow_windows_and_sits_side_by_side_on_wide_ones() {
         wide.state().state.orientation,
         Some(poster_ui::layout::Orientation::SideBySide)
     );
+}
+
+#[test]
+fn navigation_and_request_controls_fit_the_minimum_window() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Health", "http://localhost/health");
+    });
+    let size = egui::vec2(1000.0, 650.0);
+    app.harness.set_size(size);
+    app.harness.run_steps(2);
+    click(&mut app.harness, "GET Health");
+    settle(&mut app.harness);
+    let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+    for label in [
+        "Request URL",
+        "Send",
+        "Environment",
+        "Layout",
+        "Settings",
+        "Add param",
+    ] {
+        assert!(
+            viewport.contains_rect(app.harness.get_by_label(label).rect()),
+            "{label} must fit the window"
+        );
+    }
+    click(&mut app.harness, "Auth");
+    app.harness
+        .get_by_label("No authentication is configured for this request.");
+    assert_eq!(
+        app.harness.state().state.editor.as_ref().unwrap().tab,
+        poster_ui::app::EditorTab::Auth
+    );
+
+    click(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Variable scopes");
+    click(&mut app.harness, "Add Variable");
+    type_into(&mut app.harness, "Variable 1 name", "base_url");
+    type_into(&mut app.harness, "Variable 1 value", "http://localhost");
+    click(&mut app.harness, "Save Variables");
+    settle(&mut app.harness);
+    assert!(!app.harness.state().variables_dirty());
+    click(&mut app.harness, "Requests");
+    app.harness.get_by_label("API / Health");
+    app.harness.get_by_label("Send");
 }

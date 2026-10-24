@@ -80,6 +80,11 @@ fn main() {
             }
         };
         settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-empty.png")))
+            .unwrap();
         harness.get_by_label("GET List users").click();
         settle(&mut harness);
         harness.get_by_label("Send").click();
@@ -88,5 +93,53 @@ fn main() {
         let path = out.join(format!("{label}.png"));
         image.save(&path).unwrap();
         println!("{}", path.display());
+        harness.get_by_label("New").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-new-menu.png")))
+            .unwrap();
+        harness.key_press(egui::Key::Escape);
+        settle(&mut harness);
+        harness.get_by_label("Hide Collections").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-sidebar-hidden.png")))
+            .unwrap();
+        harness.get_by_label("Layout").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-layout-menu.png")))
+            .unwrap();
+        harness.key_press(egui::Key::Escape);
+        settle(&mut harness);
+        harness.get_by_label("Show Collections").click();
+        settle(&mut harness);
+        harness.get_by_label("HTTP method").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-method-menu.png")))
+            .unwrap();
+        harness.get_by_label("Custom method…").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-custom-method.png")))
+            .unwrap();
+        harness.get_by_label("Variables").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-variables.png")))
+            .unwrap();
     }
 }
