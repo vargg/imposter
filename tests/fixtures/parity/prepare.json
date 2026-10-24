@@ -1,0 +1,1665 @@
+[
+  {
+    "name": "url query kept when no rows",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h/p?a=1&b=&c&a=2",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h/p?a=1&b=&c=&a=2",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "rows replace url query",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h/p?ignored=1",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [
+        {
+          "name": "a",
+          "value": "1",
+          "is_enabled": true
+        },
+        {
+          "name": "b",
+          "value": "2",
+          "is_enabled": true
+        }
+      ],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h/p?a=1&b=2",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "disabled and nameless rows skipped",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h/p?ignored=1",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [
+        {
+          "name": "x",
+          "value": "1",
+          "is_enabled": false
+        },
+        {
+          "name": "",
+          "value": "v",
+          "is_enabled": true
+        },
+        {
+          "name": "keep",
+          "value": "",
+          "is_enabled": true
+        }
+      ],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h/p?keep=",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "all rows disabled still replace url query",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h/p?ignored=1",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [
+        {
+          "name": "x",
+          "value": "1",
+          "is_enabled": false
+        }
+      ],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h/p",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "query encoding",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h/p",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [
+        {
+          "name": "a b",
+          "value": "~*!'()/é?&=+",
+          "is_enabled": true
+        },
+        {
+          "name": "ключ",
+          "value": "значение",
+          "is_enabled": true
+        }
+      ],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h/p?a+b=~%2A%21%27%28%29%2F%C3%A9%3F%26%3D%2B&%D0%BA%D0%BB%D1%8E%D1%87=%D0%B7%D0%BD%D0%B0%D1%87%D0%B5%D0%BD%D0%B8%D0%B5",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "url query decoding",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h/p?q=a+b%20c&bad=%zz&utf=%C3%A9&lat=%ff;x",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h/p?q=a+b+c&bad=%25zz&utf=%C3%A9&lat=%EF%BF%BD%3Bx",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "fragment dropped",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h/p?a=1#frag",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h/p?a=1",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "scheme lowercased",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "HTTP://Example.COM:8080/Path",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://Example.COM:8080/Path",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "path kept verbatim",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h/a b/ü",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h/a b/ü",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "no path",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "userinfo kept",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://u:p@h/x",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://u:p@h/x",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "ipv6 host",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://[::1]:8080/x",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://[::1]:8080/x",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "not http",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "ftp://h/x",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "error": "Enter an absolute HTTP or HTTPS URL"
+    }
+  },
+  {
+    "name": "relative",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "/x",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "error": "Enter an absolute HTTP or HTTPS URL"
+    }
+  },
+  {
+    "name": "missing host",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http:///x",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "error": "Enter an absolute HTTP or HTTPS URL"
+    }
+  },
+  {
+    "name": "host and port without scheme",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "localhost:8080/x",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "error": "Enter an absolute HTTP or HTTPS URL"
+    }
+  },
+  {
+    "name": "empty url",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "error": "Enter an absolute HTTP or HTTPS URL"
+    }
+  },
+  {
+    "name": "headers in order with duplicates and empties",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [
+        {
+          "name": "A",
+          "value": "1",
+          "is_enabled": true
+        },
+        {
+          "name": "B",
+          "value": "2",
+          "is_enabled": true
+        },
+        {
+          "name": "A",
+          "value": "3",
+          "is_enabled": true
+        },
+        {
+          "name": "Empty",
+          "value": "",
+          "is_enabled": true
+        },
+        {
+          "name": "",
+          "value": "nameless",
+          "is_enabled": true
+        },
+        {
+          "name": "Off",
+          "value": "x",
+          "is_enabled": false
+        }
+      ],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "A",
+          "1"
+        ],
+        [
+          "B",
+          "2"
+        ],
+        [
+          "A",
+          "3"
+        ],
+        [
+          "Empty",
+          ""
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "auth conflicts with authorization header",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": "bearer_token",
+        "basic": null,
+        "digest": null,
+        "bearer_token": {
+          "token": "t"
+        }
+      },
+      "queries": [],
+      "headers": [
+        {
+          "name": "authorization",
+          "value": "x",
+          "is_enabled": true
+        }
+      ],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "error": "Use either Authentication or an Authorization header"
+    }
+  },
+  {
+    "name": "disabled authorization header does not conflict",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": "bearer_token",
+        "basic": null,
+        "digest": null,
+        "bearer_token": {
+          "token": "t"
+        }
+      },
+      "queries": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "x",
+          "is_enabled": false
+        }
+      ],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "cookies appended",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [
+        {
+          "name": "a",
+          "value": "1",
+          "is_enabled": true
+        },
+        {
+          "name": "b",
+          "value": "2",
+          "is_enabled": false
+        },
+        {
+          "name": "c",
+          "value": "",
+          "is_enabled": true
+        }
+      ],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Cookie",
+          "a=1; c="
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "cookies conflict with cookie header",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [
+        {
+          "name": "COOKIE",
+          "value": "x",
+          "is_enabled": true
+        }
+      ],
+      "cookies": [
+        {
+          "name": "a",
+          "value": "1",
+          "is_enabled": true
+        }
+      ],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "error": "Use either Cookies or a Cookie header"
+    }
+  },
+  {
+    "name": "cookies ignored when not attached",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [
+        {
+          "name": "Cookie",
+          "value": "x",
+          "is_enabled": true
+        }
+      ],
+      "cookies": [
+        {
+          "name": "a",
+          "value": "1",
+          "is_enabled": true
+        }
+      ],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {
+      "attach_cookies": false
+    },
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Cookie",
+          "x"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "json body adds content type",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "eyJhIjogMX0=",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": "eyJhIjogMX0="
+    }
+  },
+  {
+    "name": "json body keeps explicit content type",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [
+        {
+          "name": "content-TYPE",
+          "value": "application/vnd+json",
+          "is_enabled": true
+        }
+      ],
+      "cookies": [],
+      "body": "e30=",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "content-TYPE",
+          "application/vnd+json"
+        ]
+      ],
+      "body": "e30="
+    }
+  },
+  {
+    "name": "plain body",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "aGk=",
+      "body_type": "plain",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Content-Type",
+          "text/plain"
+        ]
+      ],
+      "body": "aGk="
+    }
+  },
+  {
+    "name": "text body",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "aGk=",
+      "body_type": "text",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Content-Type",
+          "text/plain"
+        ]
+      ],
+      "body": "aGk="
+    }
+  },
+  {
+    "name": "none body drops bytes",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "bGVmdG92ZXI=",
+      "body_type": "none",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [],
+      "body": ""
+    }
+  },
+  {
+    "name": "empty json body",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "json",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "urlencoded body",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "W3sibmFtZSI6ICJhIiwgInZhbHVlIjogIjEiLCAiaXNfZW5hYmxlZCI6IHRydWV9LCB7Im5hbWUiOiAiYSIsICJ2YWx1ZSI6ICJ4IHkiLCAiaXNfZW5hYmxlZCI6IHRydWV9LCB7Im5hbWUiOiAiIiwgInZhbHVlIjogIm5hbWVsZXNzIiwgImlzX2VuYWJsZWQiOiB0cnVlfSwgeyJuYW1lIjogIm9mZiIsICJ2YWx1ZSI6ICIxIiwgImlzX2VuYWJsZWQiOiBmYWxzZX1d",
+      "body_type": "urlencoded",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Content-Type",
+          "application/x-www-form-urlencoded"
+        ]
+      ],
+      "body": "YT0xJmE9eCt5"
+    }
+  },
+  {
+    "name": "form-data body",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "W3sibmFtZSI6ICJrIiwgInZhbHVlIjogInYvXHUwMGU5IiwgImlzX2VuYWJsZWQiOiB0cnVlfV0=",
+      "body_type": "form-data",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Content-Type",
+          "application/x-www-form-urlencoded"
+        ]
+      ],
+      "body": "az12JTJGJUMzJUE5"
+    }
+  },
+  {
+    "name": "empty urlencoded body",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "",
+      "body_type": "urlencoded",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [
+        [
+          "Content-Type",
+          "application/x-www-form-urlencoded"
+        ]
+      ],
+      "body": ""
+    }
+  },
+  {
+    "name": "multipart left for transport",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "W3sibmFtZSI6ICJrIiwgInZhbHVlIjogInYiLCAiaXNfZW5hYmxlZCI6IHRydWUsICJraW5kIjogInRleHQiLCAiY29udGVudF90eXBlIjogIiIsICJmaWxlbmFtZSI6ICIifV0=",
+      "body_type": "multipart",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [],
+      "body": "W3sibmFtZSI6ICJrIiwgInZhbHVlIjogInYiLCAiaXNfZW5hYmxlZCI6IHRydWUsICJraW5kIjogInRleHQiLCAiY29udGVudF90eXBlIjogIiIsICJmaWxlbmFtZSI6ICIifV0="
+    }
+  },
+  {
+    "name": "binary left for transport",
+    "request": {
+      "position": 0,
+      "name": "",
+      "description": "",
+      "method": "GET",
+      "protocol": "",
+      "url": "http://h",
+      "path": "",
+      "auth": {
+        "type": null,
+        "basic": null,
+        "digest": null,
+        "bearer_token": null
+      },
+      "queries": [],
+      "headers": [],
+      "cookies": [],
+      "body": "L3BhdGgvZmlsZS5iaW4=",
+      "body_type": "binary",
+      "options": {
+        "follow_redirects": null,
+        "verify_ssl": null,
+        "attach_cookies": null,
+        "proxy_url": null,
+        "timeout": null,
+        "ca_bundle": null,
+        "certificate_path": null,
+        "key_file": null,
+        "password": null,
+        "download_limit": null
+      }
+    },
+    "settings": {},
+    "expected": {
+      "url": "http://h",
+      "headers": [],
+      "body": "L3BhdGgvZmlsZS5iaW4="
+    }
+  }
+]

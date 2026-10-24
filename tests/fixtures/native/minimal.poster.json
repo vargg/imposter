@@ -1,0 +1,13 @@
+{
+  "format": "poster",
+  "version": 1,
+  "collection": {
+    "name": "Minimal",
+    "description": "",
+    "variables": {},
+    "folders": [],
+    "requests": []
+  },
+  "environments": [],
+  "globals": {}
+}

@@ -1,0 +1,22 @@
+# poster-core does no IO (AGENTS.md). Clippy uses only the nearest clippy.toml, so the root
+# settings are repeated here.
+allow-unwrap-in-tests = true
+
+disallowed-types = [
+    { path = "std::fs::File", reason = "poster-core does no IO" },
+    { path = "std::net::TcpStream", reason = "poster-core does no IO" },
+    { path = "std::net::TcpListener", reason = "poster-core does no IO" },
+    { path = "std::net::UdpSocket", reason = "poster-core does no IO" },
+    { path = "std::time::Instant", reason = "poster-core reads no clock; take time as input" },
+    { path = "std::time::SystemTime", reason = "poster-core reads no clock; take time as input" },
+]
+disallowed-methods = [
+    { path = "std::fs::read", reason = "poster-core does no IO" },
+    { path = "std::fs::read_to_string", reason = "poster-core does no IO" },
+    { path = "std::fs::write", reason = "poster-core does no IO" },
+    { path = "std::fs::read_dir", reason = "poster-core does no IO" },
+    { path = "std::fs::metadata", reason = "poster-core does no IO" },
+    { path = "std::env::var", reason = "poster-core reads no environment" },
+    { path = "std::env::var_os", reason = "poster-core reads no environment" },
+    { path = "std::thread::sleep", reason = "poster-core does no IO" },
+]

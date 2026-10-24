@@ -55,6 +55,7 @@ pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow" # crate-prefixed type names read better at call sites
 must_use_candidate = "allow"      # too noisy for small getters
 missing_errors_doc = "allow"      # error enums document themselves
+struct_excessive_bools = "allow"  # settings and options mirror independent user toggles
 # Restriction lints backing the rules in AGENTS.md.
 unwrap_used = "deny"   # tests are exempt via clippy.toml
 dbg_macro = "deny"

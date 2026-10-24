@@ -66,7 +66,8 @@ From stage 2 on, coverage must also stay at or above 85% lines (`cargo-llvm-cov`
 - **`poster-core` does no IO** (no files, network, database, clock or environment).
   Why: the domain rules (variables, settings resolution, validation) can then be tested
   exhaustively, quickly and deterministically.
-  Enforced by: `poster-core` has no IO dependencies. Use of `std::fs`/`std::net` is a gap.
+  Enforced by: `crates/poster-core/clippy.toml` (`disallowed-types` / `disallowed-methods` for
+  files, sockets, clocks, environment and sleeping); tests that read fixtures allow it locally.
 - **The UI thread never blocks or awaits.** Background work starts through the app handle and
   its results come back over a channel drained at the start of each frame.
   Why: egui redraws every frame on that thread; any block freezes the whole window.
@@ -153,7 +154,14 @@ From stage 2 on, coverage must also stay at or above 85% lines (`cargo-llvm-cov`
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their
-  collections from the Python app; golden tests with Python exports guard it.
+  collections from the Python app. Python exports must round-trip byte for byte
+  (`poster-transfer/tests/native_golden.rs`). Bytes are base64 with the URL-safe alphabet and
+  padding, as Pydantic writes them; both alphabets are read.
+- **Parity with the Python app is tested against fixtures produced by running the Python code**
+  (`tests/fixtures/python/generate.py`), never against expectations written by hand. Why: a
+  port written from reading code copies the reader's misreadings. Change a fixture only by
+  regenerating it; a deliberate divergence is asserted in its own test with the reason.
+  Current divergences: no empty `Cookie:` header when every cookie is disabled.
 - **Toolchain pinned in `rust-toolchain.toml`, `Cargo.lock` committed, CI uses `--locked`.**
   Why: every machine and CI run builds the same thing.
 
@@ -164,6 +172,5 @@ Open questions are in `PLAN.md` ("Open questions"); their outcomes are recorded 
 Rules above that no tool checks yet. Close a gap together with the first code it applies to.
 
 - Allowed crate dependency graph: a workspace test over `cargo metadata`.
-- No IO in `poster-core` and no blocking calls in `poster-ui`: `disallowed_methods` /
-  `disallowed_types` in a per-crate `clippy.toml`.
+- No blocking calls in `poster-ui`: `disallowed-methods` in its own `clippy.toml`.
 - `thiserror`/`anyhow` placement: the same dependency-graph test.

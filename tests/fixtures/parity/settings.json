@@ -1,0 +1,178 @@
+[
+  {
+    "base": {
+      "timeout": 30.0,
+      "follow_redirects": true,
+      "verify_ssl": true,
+      "attach_cookies": true,
+      "proxy_url": "http://default:1",
+      "ca_bundle": "/default/ca.pem",
+      "certificate_path": "",
+      "key_file": "",
+      "password": "",
+      "download_limit": 10,
+      "autosave": true,
+      "history_max_entries": 1000,
+      "history_max_bytes": 262144000
+    },
+    "options": {
+      "follow_redirects": null,
+      "verify_ssl": null,
+      "attach_cookies": null,
+      "proxy_url": null,
+      "timeout": null,
+      "ca_bundle": null,
+      "certificate_path": null,
+      "key_file": null,
+      "password": null,
+      "download_limit": null
+    },
+    "expected": {
+      "timeout": 30.0,
+      "follow_redirects": true,
+      "verify_ssl": true,
+      "attach_cookies": true,
+      "proxy_url": "http://default:1",
+      "ca_bundle": "/default/ca.pem",
+      "certificate_path": "",
+      "key_file": "",
+      "password": "",
+      "download_limit": 10,
+      "autosave": true,
+      "history_max_entries": 1000,
+      "history_max_bytes": 262144000
+    }
+  },
+  {
+    "base": {
+      "timeout": 30.0,
+      "follow_redirects": true,
+      "verify_ssl": true,
+      "attach_cookies": true,
+      "proxy_url": "http://default:1",
+      "ca_bundle": "/default/ca.pem",
+      "certificate_path": "",
+      "key_file": "",
+      "password": "",
+      "download_limit": 10,
+      "autosave": true,
+      "history_max_entries": 1000,
+      "history_max_bytes": 262144000
+    },
+    "options": {
+      "follow_redirects": false,
+      "verify_ssl": false,
+      "attach_cookies": false,
+      "proxy_url": null,
+      "timeout": 1.5,
+      "ca_bundle": null,
+      "certificate_path": null,
+      "key_file": null,
+      "password": null,
+      "download_limit": null
+    },
+    "expected": {
+      "timeout": 1.5,
+      "follow_redirects": false,
+      "verify_ssl": false,
+      "attach_cookies": false,
+      "proxy_url": "http://default:1",
+      "ca_bundle": "/default/ca.pem",
+      "certificate_path": "",
+      "key_file": "",
+      "password": "",
+      "download_limit": 10,
+      "autosave": true,
+      "history_max_entries": 1000,
+      "history_max_bytes": 262144000
+    }
+  },
+  {
+    "base": {
+      "timeout": 30.0,
+      "follow_redirects": true,
+      "verify_ssl": true,
+      "attach_cookies": true,
+      "proxy_url": "http://default:1",
+      "ca_bundle": "/default/ca.pem",
+      "certificate_path": "",
+      "key_file": "",
+      "password": "",
+      "download_limit": 10,
+      "autosave": true,
+      "history_max_entries": 1000,
+      "history_max_bytes": 262144000
+    },
+    "options": {
+      "follow_redirects": null,
+      "verify_ssl": null,
+      "attach_cookies": null,
+      "proxy_url": "",
+      "timeout": null,
+      "ca_bundle": "",
+      "certificate_path": "",
+      "key_file": "",
+      "password": "",
+      "download_limit": null
+    },
+    "expected": {
+      "timeout": 30.0,
+      "follow_redirects": true,
+      "verify_ssl": true,
+      "attach_cookies": true,
+      "proxy_url": "",
+      "ca_bundle": "",
+      "certificate_path": "",
+      "key_file": "",
+      "password": "",
+      "download_limit": 10,
+      "autosave": true,
+      "history_max_entries": 1000,
+      "history_max_bytes": 262144000
+    }
+  },
+  {
+    "base": {
+      "timeout": 30.0,
+      "follow_redirects": true,
+      "verify_ssl": true,
+      "attach_cookies": true,
+      "proxy_url": "http://default:1",
+      "ca_bundle": "/default/ca.pem",
+      "certificate_path": "",
+      "key_file": "",
+      "password": "",
+      "download_limit": 10,
+      "autosave": true,
+      "history_max_entries": 1000,
+      "history_max_bytes": 262144000
+    },
+    "options": {
+      "follow_redirects": null,
+      "verify_ssl": null,
+      "attach_cookies": null,
+      "proxy_url": "http://proxy:3128",
+      "timeout": null,
+      "ca_bundle": null,
+      "certificate_path": null,
+      "key_file": null,
+      "password": null,
+      "download_limit": 0
+    },
+    "expected": {
+      "timeout": 30.0,
+      "follow_redirects": true,
+      "verify_ssl": true,
+      "attach_cookies": true,
+      "proxy_url": "http://proxy:3128",
+      "ca_bundle": "/default/ca.pem",
+      "certificate_path": "",
+      "key_file": "",
+      "password": "",
+      "download_limit": 0,
+      "autosave": true,
+      "history_max_entries": 1000,
+      "history_max_bytes": 262144000
+    }
+  }
+]

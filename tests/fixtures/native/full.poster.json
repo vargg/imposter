@@ -1,0 +1,412 @@
+{
+  "format": "poster",
+  "version": 1,
+  "collection": {
+    "name": "Full collection",
+    "description": "Every field the native format carries",
+    "variables": {
+      "host": "api.example.com",
+      "zeta": "last",
+      "alpha": "first",
+      "empty": ""
+    },
+    "folders": [
+      {
+        "name": "Folder",
+        "description": "",
+        "position": 2,
+        "folders": [
+          {
+            "name": "Nested",
+            "description": "Inner folder",
+            "position": 1,
+            "folders": [
+              {
+                "name": "Deep",
+                "description": "",
+                "position": 0,
+                "folders": [],
+                "requests": [
+                  {
+                    "position": 6,
+                    "name": "Multipart",
+                    "description": "",
+                    "method": "POST",
+                    "protocol": "",
+                    "url": "http://localhost/upload",
+                    "path": "",
+                    "auth": {
+                      "type": null,
+                      "basic": null,
+                      "digest": null,
+                      "bearer_token": null
+                    },
+                    "queries": [],
+                    "headers": [],
+                    "cookies": [],
+                    "body": "W3sibmFtZSI6ICJmaWVsZCIsICJ2YWx1ZSI6ICJ0ZXh0IHZhbHVlIiwgImlzX2VuYWJsZWQiOiB0cnVlLCAia2luZCI6ICJ0ZXh0IiwgImNvbnRlbnRfdHlwZSI6ICIiLCAiZmlsZW5hbWUiOiAiIn0sIHsibmFtZSI6ICJqc29uIiwgInZhbHVlIjogInt9IiwgImlzX2VuYWJsZWQiOiB0cnVlLCAia2luZCI6ICJ0ZXh0IiwgImNvbnRlbnRfdHlwZSI6ICJhcHBsaWNhdGlvbi9qc29uIiwgImZpbGVuYW1lIjogIiJ9LCB7Im5hbWUiOiAiZmlsZSIsICJ2YWx1ZSI6ICIvdG1wL3t7ZmlsZX19IiwgImlzX2VuYWJsZWQiOiB0cnVlLCAia2luZCI6ICJmaWxlIiwgImNvbnRlbnRfdHlwZSI6ICIiLCAiZmlsZW5hbWUiOiAiY3VzdG9tLmJpbiJ9LCB7Im5hbWUiOiAib2ZmIiwgInZhbHVlIjogIi94IiwgImlzX2VuYWJsZWQiOiBmYWxzZSwgImtpbmQiOiAiZmlsZSIsICJjb250ZW50X3R5cGUiOiAiIiwgImZpbGVuYW1lIjogIiJ9XQ==",
+                    "body_type": "multipart",
+                    "options": {
+                      "follow_redirects": null,
+                      "verify_ssl": null,
+                      "attach_cookies": null,
+                      "proxy_url": null,
+                      "timeout": null,
+                      "ca_bundle": null,
+                      "certificate_path": null,
+                      "key_file": null,
+                      "password": null,
+                      "download_limit": null
+                    }
+                  }
+                ]
+              }
+            ],
+            "requests": [
+              {
+                "position": 4,
+                "name": "Form data",
+                "description": "",
+                "method": "POST",
+                "protocol": "",
+                "url": "http://localhost/form",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "W3sibmFtZSI6ICJhIiwgInZhbHVlIjogIjEiLCAiaXNfZW5hYmxlZCI6IHRydWV9LCB7Im5hbWUiOiAiYSIsICJ2YWx1ZSI6ICIyIiwgImlzX2VuYWJsZWQiOiB0cnVlfSwgeyJuYW1lIjogIm9mZiIsICJ2YWx1ZSI6ICJ4IiwgImlzX2VuYWJsZWQiOiBmYWxzZX1d",
+                "body_type": "form-data",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              },
+              {
+                "position": 5,
+                "name": "Urlencoded",
+                "description": "",
+                "method": "POST",
+                "protocol": "",
+                "url": "http://localhost/urlencoded",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "W3sibmFtZSI6ICJxIiwgInZhbHVlIjogImEgYiZjIiwgImlzX2VuYWJsZWQiOiB0cnVlfSwgeyJuYW1lIjogImVtcHR5IiwgInZhbHVlIjogIiIsICJpc19lbmFibGVkIjogdHJ1ZX1d",
+                "body_type": "urlencoded",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          }
+        ],
+        "requests": [
+          {
+            "position": 2,
+            "name": "Plain",
+            "description": "",
+            "method": "put",
+            "protocol": "",
+            "url": "http://localhost:8080/text",
+            "path": "",
+            "auth": {
+              "type": "basic",
+              "basic": {
+                "username": "user",
+                "password": "p@ss:word"
+              },
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "bGluZSAxCmxpbmUgMg0K",
+            "body_type": "plain",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          },
+          {
+            "position": 3,
+            "name": "Text",
+            "description": "",
+            "method": "PROPFIND",
+            "protocol": "",
+            "url": "http://localhost/dav",
+            "path": "",
+            "auth": {
+              "type": "digest",
+              "basic": null,
+              "digest": {
+                "username": "dig",
+                "password": "est"
+              },
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "dGV4dCBib2R5",
+            "body_type": "text",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": false,
+              "attach_cookies": false,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": "/etc/ca.pem",
+              "certificate_path": "{{cert}}",
+              "key_file": "/keys/client.key",
+              "password": "secret",
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      {
+        "name": "Empty folder",
+        "description": "",
+        "position": 0,
+        "folders": [],
+        "requests": []
+      }
+    ],
+    "requests": [
+      {
+        "position": 0,
+        "name": "Get users",
+        "description": "List with ünïcode ✓",
+        "method": "GET",
+        "protocol": "",
+        "url": "https://{{host}}/users?page=1",
+        "path": "",
+        "auth": {
+          "type": null,
+          "basic": null,
+          "digest": null,
+          "bearer_token": null
+        },
+        "queries": [
+          {
+            "name": "page",
+            "value": "1",
+            "is_enabled": true
+          },
+          {
+            "name": "debug",
+            "value": "",
+            "is_enabled": false
+          },
+          {
+            "name": "tag",
+            "value": "a",
+            "is_enabled": true
+          },
+          {
+            "name": "tag",
+            "value": "b",
+            "is_enabled": true
+          }
+        ],
+        "headers": [
+          {
+            "name": "Accept",
+            "value": "application/json",
+            "is_enabled": true
+          },
+          {
+            "name": "X-Dup",
+            "value": "1",
+            "is_enabled": true
+          },
+          {
+            "name": "X-Dup",
+            "value": "2",
+            "is_enabled": true
+          },
+          {
+            "name": "X-Empty",
+            "value": "",
+            "is_enabled": true
+          }
+        ],
+        "cookies": [
+          {
+            "name": "session",
+            "value": "{{token}}",
+            "is_enabled": true
+          }
+        ],
+        "body": "",
+        "body_type": "none",
+        "options": {
+          "follow_redirects": null,
+          "verify_ssl": null,
+          "attach_cookies": null,
+          "proxy_url": null,
+          "timeout": null,
+          "ca_bundle": null,
+          "certificate_path": null,
+          "key_file": null,
+          "password": null,
+          "download_limit": null
+        }
+      },
+      {
+        "position": 1,
+        "name": "Create (json)",
+        "description": "",
+        "method": "POST",
+        "protocol": "",
+        "url": "https://{{host}}/users",
+        "path": "",
+        "auth": {
+          "type": "bearer_token",
+          "basic": null,
+          "digest": null,
+          "bearer_token": {
+            "token": "{{token}}"
+          }
+        },
+        "queries": [],
+        "headers": [],
+        "cookies": [],
+        "body": "eyJuYW1lIjogIkFubiIsICJlbW9qaSI6ICLwn5iAIn0=",
+        "body_type": "json",
+        "options": {
+          "follow_redirects": false,
+          "verify_ssl": null,
+          "attach_cookies": null,
+          "proxy_url": "",
+          "timeout": 2.5,
+          "ca_bundle": null,
+          "certificate_path": null,
+          "key_file": null,
+          "password": null,
+          "download_limit": 0
+        }
+      },
+      {
+        "position": 7,
+        "name": "Binary",
+        "description": "",
+        "method": "POST",
+        "protocol": "",
+        "url": "http://localhost/binary",
+        "path": "",
+        "auth": {
+          "type": null,
+          "basic": null,
+          "digest": null,
+          "bearer_token": null
+        },
+        "queries": [],
+        "headers": [],
+        "cookies": [],
+        "body": "L2RhdGEve3tmaWxlfX0=",
+        "body_type": "binary",
+        "options": {
+          "follow_redirects": null,
+          "verify_ssl": null,
+          "attach_cookies": null,
+          "proxy_url": null,
+          "timeout": null,
+          "ca_bundle": null,
+          "certificate_path": null,
+          "key_file": null,
+          "password": null,
+          "download_limit": null
+        }
+      },
+      {
+        "position": 8,
+        "name": "Leftover bytes",
+        "description": "",
+        "method": "DELETE",
+        "protocol": "",
+        "url": "http://localhost/x",
+        "path": "",
+        "auth": {
+          "type": null,
+          "basic": null,
+          "digest": null,
+          "bearer_token": null
+        },
+        "queries": [],
+        "headers": [],
+        "cookies": [],
+        "body": "-_8APj8=",
+        "body_type": "none",
+        "options": {
+          "follow_redirects": null,
+          "verify_ssl": null,
+          "attach_cookies": null,
+          "proxy_url": null,
+          "timeout": null,
+          "ca_bundle": null,
+          "certificate_path": null,
+          "key_file": null,
+          "password": null,
+          "download_limit": null
+        }
+      }
+    ]
+  },
+  "environments": [
+    {
+      "name": "Dev",
+      "variables": {
+        "host": "dev.local",
+        "token": "dev-token"
+      }
+    },
+    {
+      "name": "Empty env",
+      "variables": {}
+    }
+  ],
+  "globals": {
+    "token": "global-token",
+    "file": "upload.bin"
+  }
+}

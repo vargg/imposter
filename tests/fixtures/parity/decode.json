@@ -1,0 +1,739 @@
+[
+  {
+    "name": "minimal",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": []
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "empty request object uses defaults",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "",
+            "path": "",
+            "auth": {
+              "type": null,
+              "basic": null,
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "unknown top-level field",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}, \"extra\": 1}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "unknown collection field",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [], \"extra\": 1}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "unknown request field",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"bogus\": 1}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "unknown auth field",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": null, \"oauth\": null}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "unknown option",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"retries\": 3}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "unknown param field",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"headers\": [{\"name\": \"a\", \"value\": \"b\", \"note\": \"\"}]}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "version 2",
+    "document": "{\"format\": \"poster\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "other format",
+    "document": "{\"format\": \"postman\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "missing format uses default",
+    "document": "{\"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": []
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "missing collection",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "empty collection name",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "empty folder name",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [{\"name\": \"\"}], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "empty environment name",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [{\"name\": \"\"}], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "custom method token",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"PROPFIND\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "",
+            "description": "",
+            "method": "PROPFIND",
+            "protocol": "",
+            "url": "",
+            "path": "",
+            "auth": {
+              "type": null,
+              "basic": null,
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "lowercase method",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"get\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "",
+            "description": "",
+            "method": "get",
+            "protocol": "",
+            "url": "",
+            "path": "",
+            "auth": {
+              "type": null,
+              "basic": null,
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "method with space",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"GE T\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValueError"
+  },
+  {
+    "name": "empty method",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValueError"
+  },
+  {
+    "name": "non-ascii method",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"GÉT\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValueError"
+  },
+  {
+    "name": "auth type without config",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": \"basic\"}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValueError"
+  },
+  {
+    "name": "auth with config",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": \"basic\", \"basic\": {\"username\": \"u\", \"password\": \"p\"}}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "",
+            "path": "",
+            "auth": {
+              "type": "basic",
+              "basic": {
+                "username": "u",
+                "password": "p"
+              },
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "unknown auth type",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": \"oauth2\"}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "unknown body type",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"graphql\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "form body not an array",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"urlencoded\", \"body\": \"eyJhIjogMX0=\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValueError"
+  },
+  {
+    "name": "form body bad item",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"form-data\", \"body\": \"W3sibmFtZSI6ICJhIn1d\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "form body item with kind",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"urlencoded\", \"body\": \"W3sibmFtZSI6ICJhIiwgInZhbHVlIjogImIiLCAia2luZCI6ICJmaWxlIn1d\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "multipart item with kind",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"W3sibmFtZSI6ICJhIiwgInZhbHVlIjogImIiLCAia2luZCI6ICJmaWxlIn1d\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "",
+            "path": "",
+            "auth": {
+              "type": null,
+              "basic": null,
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "W3sibmFtZSI6ICJhIiwgInZhbHVlIjogImIiLCAia2luZCI6ICJmaWxlIn1d",
+            "body_type": "multipart",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "multipart bad kind",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"W3sibmFtZSI6ICJhIiwgInZhbHVlIjogImIiLCAia2luZCI6ICJ1cmwifV0=\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "form body not json",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"bm90IGpzb24=\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "JSONDecodeError"
+  },
+  {
+    "name": "empty form body",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "",
+            "path": "",
+            "auth": {
+              "type": null,
+              "basic": null,
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "multipart",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "standard base64 alphabet",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body\": \"+/8APj8=\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "",
+            "path": "",
+            "auth": {
+              "type": null,
+              "basic": null,
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "-_8APj8=",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "unpadded base64",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body\": \"-_8APj8\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "",
+            "path": "",
+            "auth": {
+              "type": null,
+              "basic": null,
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "-_8APj8=",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "invalid base64",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body\": \"a b\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "zero timeout",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"timeout\": 0}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "negative download limit",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"download_limit\": -1}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "integer timeout",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"timeout\": 5}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "",
+            "path": "",
+            "auth": {
+              "type": null,
+              "basic": null,
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": 5.0,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "null param value",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"headers\": [{\"name\": \"a\", \"value\": null}]}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false,
+    "result": "ValidationError"
+  },
+  {
+    "name": "param without is_enabled",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"headers\": [{\"name\": \"a\", \"value\": \"b\"}]}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "",
+            "path": "",
+            "auth": {
+              "type": null,
+              "basic": null,
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [
+              {
+                "name": "a",
+                "value": "b",
+                "is_enabled": true
+              }
+            ],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "duplicate variables keep the last",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"variables\": {\"a\": \"1\", \"a\": \"2\"}}}",
+    "accepted": true,
+    "result": {
+      "format": "poster",
+      "version": 1,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {
+          "a": "2"
+        },
+        "folders": [],
+        "requests": []
+      },
+      "environments": [],
+      "globals": {}
+    }
+  }
+]
