@@ -19,6 +19,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true
 rfd.workspace = true
+jiff.workspace = true
 
 [dev-dependencies]
 image.workspace = true

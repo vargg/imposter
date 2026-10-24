@@ -232,6 +232,9 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
   independently of the active execution environment, with its own unsaved-changes guard for
   scope changes, reloads, environment management, "Open definition" and closing. Closing
   resolves the request guard first, then the variables guard, then writes UI state.
+- **History shows times in the system time zone** (via `jiff`, display only); records store UTC
+  milliseconds. Restoring an entry opens an unsaved draft through the unsaved-changes guard and
+  never sends; the draft keeps the captured collection variables for a deleted collection.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their

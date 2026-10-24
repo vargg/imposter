@@ -145,6 +145,14 @@ pub enum Message {
         scope: Scope,
         result: Result<(), Failure>,
     },
+    HistoryPage {
+        generation: u64,
+        result: Result<Vec<ExecutionSummary>, Failure>,
+    },
+    HistoryRecord {
+        id: ExecutionId,
+        result: Result<Option<Box<ExecutionRecord>>, Failure>,
+    },
     Flushed(Result<(), Failure>),
     /// Background work with nothing to apply (it logs its own failures).
     Done,
@@ -176,6 +184,7 @@ pub enum Action {
     /// The inspector's "Open definition": edit `name` in `scope`.
     OpenDefinition(Scope, String),
     Variables(VariablesAction),
+    History(HistoryAction),
     /// The editor changed: `url` when the URL itself was edited, `params` for the query rows.
     Edited {
         url: bool,
@@ -188,6 +197,54 @@ pub enum Screen {
     #[default]
     Requests,
     Variables,
+    History,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryAction {
+    Refresh,
+    Newer,
+    Older,
+    OnlyCurrent(bool),
+    Select(ExecutionId),
+    Restore,
+    Clear,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HistoryTab {
+    #[default]
+    Request,
+    Response,
+}
+
+pub const HISTORY_PAGE: u64 = 50;
+
+/// The History screen: pages of executions and the details of the selected one.
+#[derive(Default)]
+pub struct HistoryScreen {
+    pub only_current: bool,
+    pub offset: u64,
+    pub rows: Vec<ExecutionSummary>,
+    pub selected: Option<ExecutionId>,
+    pub record: Option<ExecutionRecord>,
+    /// The executed request as readable JSON (body as text, bounded).
+    pub request_text: String,
+    pub request_view: ViewerState,
+    pub response: ResponsePane,
+    pub tab: HistoryTab,
+    pub status: Option<(String, Tone)>,
+    pub loaded: bool,
+    generation: u64,
+}
+
+/// The resolved request of a record as indented JSON, the body shown as text up to 256 KiB.
+pub fn executed_request_text(record: &ExecutionRecord) -> String {
+    let mut value = serde_json::to_value(&record.resolved.template).unwrap_or(Value::Null);
+    let body = &record.resolved.template.body;
+    let shown = &body[..body.len().min(crate::viewer::PREVIEW_LIMIT)];
+    value["body"] = Value::String(String::from_utf8_lossy(shown).into_owned());
+    serde_json::to_string_pretty(&value).unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -235,7 +292,7 @@ impl VariablesScreen {
 }
 
 /// Navigations that replace the editor go through the unsaved-changes guard.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 enum Navigation {
     Open(RequestId),
     SelectCollection(CollectionId),
@@ -244,6 +301,8 @@ enum Navigation {
         name: String,
     },
     CreateCollection(String),
+    /// Put a history entry's request in the editor as an unsaved draft.
+    Restore(Box<Request>),
     Close,
 }
 
@@ -255,7 +314,7 @@ enum GuardStage {
     NamingDraft,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Guard {
     next: Navigation,
     stage: GuardStage,
@@ -397,6 +456,7 @@ pub struct State {
     snapshot_generation: u64,
     pub inspect: Option<Inspection>,
     pub variables: VariablesScreen,
+    pub history: HistoryScreen,
     /// Bumped by every navigation; results of older work are ignored.
     pub generation: u64,
     tree_generation: u64,
@@ -449,6 +509,7 @@ impl PosterApp {
                 snapshot_generation: 0,
                 inspect: None,
                 variables: VariablesScreen::default(),
+                history: HistoryScreen::default(),
                 generation: 0,
                 tree_generation: 0,
                 autosave_due: None,
@@ -666,6 +727,29 @@ impl PosterApp {
             },
             Message::VariablesLoaded { scope, result } => self.variables_loaded(scope, result),
             Message::VariablesSaved { scope, result } => self.variables_saved(scope, result),
+            Message::HistoryPage { generation, result } => self.history_page(generation, result),
+            Message::HistoryRecord { id, result } => {
+                if self.state.history.selected == Some(id) {
+                    match result {
+                        Ok(Some(record)) => {
+                            let history = &mut self.state.history;
+                            history.request_text = executed_request_text(&record);
+                            history.response.show(record.response.clone());
+                            history.record = Some(*record);
+                        }
+                        Ok(None) => {
+                            self.state.history.status = Some((
+                                "That execution is no longer in history".into(),
+                                Tone::Warning,
+                            ));
+                        }
+                        Err(error) => {
+                            self.state.history.status =
+                                Some((format!("History unavailable: {error}"), Tone::Error));
+                        }
+                    }
+                }
+            }
             Message::Flushed(Ok(())) => self.state.close = CloseState::Ready,
             Message::Flushed(Err(error)) => {
                 self.state.close = CloseState::Open;
@@ -916,6 +1000,12 @@ impl PosterApp {
                 });
             }
             Navigation::Close => self.variables_navigate(VarTransition::Close),
+            Navigation::Restore(request) => {
+                self.state.generation += 1;
+                self.load_editor(&request);
+                self.state.screen = Screen::Requests;
+                self.status("Restored unsaved draft — Send to execute, Save to add to the selected collection");
+            }
         }
     }
 
@@ -1314,6 +1404,9 @@ impl PosterApp {
     fn executed(&mut self, generation: u64, result: Result<Box<Executed>, Failure>) {
         self.state.execution = None;
         self.state.response.pending = false;
+        if self.state.history.loaded {
+            self.load_history();
+        }
         if generation != self.state.generation {
             return;
         }
@@ -1507,6 +1600,19 @@ impl PosterApp {
                     },
                 );
             }
+            ConfirmPurpose::ClearHistory => self.task(
+                |db| executions::clear(db),
+                |result| match result {
+                    Ok(()) => Message::HistoryPage {
+                        generation: 0,
+                        result: Ok(Vec::new()),
+                    },
+                    Err(error) => Message::HistoryPage {
+                        generation: 0,
+                        result: Err(failure(error)),
+                    },
+                },
+            ),
             ConfirmPurpose::DiscardOnClose => {
                 self.state.saver.discard(None);
                 self.state.close = CloseState::Ready;
@@ -1581,6 +1687,9 @@ impl PosterApp {
             Action::Edited { url, params } => self.edited(url, params, now),
             Action::Screen(screen) => {
                 self.state.screen = screen;
+                if screen == Screen::History && !self.state.history.loaded {
+                    self.load_history();
+                }
                 if screen == Screen::Variables && !self.state.variables.loaded {
                     let scope = self.state.variables.scope;
                     self.load_variables(scope);
@@ -1591,6 +1700,7 @@ impl PosterApp {
                 self.variables_navigate(VarTransition::OpenDefinition(scope, name));
             }
             Action::Variables(action) => self.variables_action(action),
+            Action::History(action) => self.history_action(action),
         }
     }
 
@@ -1901,6 +2011,126 @@ impl PosterApp {
 
     pub fn variables_dirty(&self) -> bool {
         self.state.variables.dirty()
+    }
+
+    // ---- history --------------------------------------------------------------------------------
+
+    fn load_history(&mut self) {
+        let history = &mut self.state.history;
+        history.generation += 1;
+        let generation = history.generation;
+        let offset = history.offset;
+        let filter = if history.only_current {
+            // No open saved request: an id that matches nothing, as the Python app did.
+            Some(
+                self.state
+                    .editor
+                    .as_ref()
+                    .and_then(|p| p.editor.id())
+                    .unwrap_or(RequestId(-1)),
+            )
+        } else {
+            None
+        };
+        history.status = Some(("Loading history…".into(), Tone::Muted));
+        self.task(
+            move |db| executions::page(db, filter, offset, HISTORY_PAGE),
+            move |result| Message::HistoryPage {
+                generation,
+                result: result.map_err(failure),
+            },
+        );
+    }
+
+    fn history_page(&mut self, generation: u64, result: Result<Vec<ExecutionSummary>, Failure>) {
+        let history = &mut self.state.history;
+        // Generation 0 answers "clear all history", which always applies.
+        if generation != 0 && generation != history.generation {
+            return;
+        }
+        if generation == 0 {
+            history.offset = 0;
+        }
+        match result {
+            Ok(rows) => {
+                history.status = Some(if rows.is_empty() {
+                    ("No executions yet".to_owned(), Tone::Muted)
+                } else {
+                    (
+                        format!(
+                            "Executions {}-{}",
+                            history.offset + 1,
+                            history.offset + rows.len() as u64
+                        ),
+                        Tone::Muted,
+                    )
+                });
+                history.rows = rows;
+                history.loaded = true;
+                if history
+                    .selected
+                    .is_some_and(|id| !history.rows.iter().any(|r| r.id == id))
+                {
+                    history.selected = None;
+                    history.record = None;
+                    history.request_text.clear();
+                    history.response = ResponsePane::default();
+                }
+            }
+            Err(error) => {
+                history.status = Some((format!("History unavailable: {error}"), Tone::Error));
+            }
+        }
+    }
+
+    fn history_action(&mut self, action: HistoryAction) {
+        match action {
+            HistoryAction::Refresh => {
+                self.state.history.offset = 0;
+                self.load_history();
+            }
+            HistoryAction::Newer => {
+                self.state.history.offset = self.state.history.offset.saturating_sub(HISTORY_PAGE);
+                self.load_history();
+            }
+            HistoryAction::Older => {
+                if self.state.history.rows.len() as u64 == HISTORY_PAGE {
+                    self.state.history.offset += HISTORY_PAGE;
+                    self.load_history();
+                }
+            }
+            HistoryAction::OnlyCurrent(only) => {
+                self.state.history.only_current = only;
+                self.state.history.offset = 0;
+                self.load_history();
+            }
+            HistoryAction::Select(id) => {
+                self.state.history.selected = Some(id);
+                self.state.history.record = None;
+                self.task(
+                    move |db| executions::execution(db, id),
+                    move |result| Message::HistoryRecord {
+                        id,
+                        result: result.map(|r| r.map(Box::new)).map_err(failure),
+                    },
+                );
+            }
+            HistoryAction::Restore => {
+                if let Some(record) = &self.state.history.record {
+                    let draft = record.restore();
+                    self.navigate(Navigation::Restore(Box::new(draft)));
+                }
+            }
+            HistoryAction::Clear => {
+                self.state.dialog = Some(Dialog::Confirm {
+                    title: "Clear all history".into(),
+                    message: "Delete all execution history? Saved requests are not affected."
+                        .into(),
+                    confirm: "Delete history".into(),
+                    purpose: ConfirmPurpose::ClearHistory,
+                });
+            }
+        }
     }
 
     // ---- closing --------------------------------------------------------------------------

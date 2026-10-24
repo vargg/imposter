@@ -377,7 +377,7 @@ pub fn spans_job(text: &str, spans: &Spans, font: &FontId, wrap: f32) -> LayoutJ
 }
 
 /// A left-aligned muted heading occupying exactly `width`.
-fn heading_cell(ui: &mut Ui, width: f32, text: &str) {
+pub fn heading_cell(ui: &mut Ui, width: f32, text: &str) {
     let height = ui.spacing().interact_size.y;
     ui.allocate_ui_with_layout(
         egui::vec2(width, height),

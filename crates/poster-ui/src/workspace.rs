@@ -51,6 +51,7 @@ pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
                 for (screen, label) in [
                     (Screen::Requests, "Requests"),
                     (Screen::Variables, "Variables"),
+                    (Screen::History, "History"),
                 ] {
                     let text = if screen == Screen::Variables && variables_dirty {
                         format!("{label} •")
@@ -97,6 +98,12 @@ pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
             .show(ui, |ui| crate::variables_screen::draw(state, ui));
+        return;
+    }
+    if state.screen == Screen::History {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
+            .show(ui, |ui| crate::history_screen::draw(state, ui));
         return;
     }
     if state.layout.sidebar_visible {
@@ -882,6 +889,11 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
             }
         });
     });
+    response_body(ui, response_state, "response");
+}
+
+/// Status, notice, body and headers of `pane`'s response; `id` names its viewers.
+pub fn response_body(ui: &mut Ui, response_state: &mut crate::app::ResponsePane, id: &str) {
     if let Some(response) = &response_state.response {
         let status = viewer::status(response);
         ui.horizontal_wrapped(|ui| {
@@ -950,7 +962,7 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
         ResponseTab::Body => {
             widgets::code_viewer(
                 ui,
-                "response body",
+                &format!("{id} body"),
                 &mut response_state.body_view,
                 body,
                 preview.language,
@@ -959,7 +971,7 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
         ResponseTab::Headers => {
             widgets::code_viewer(
                 ui,
-                "response headers",
+                &format!("{id} headers"),
                 &mut response_state.headers_view,
                 headers,
                 Language::Plain,
@@ -969,8 +981,7 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
 }
 
 fn run_label(run: &poster_app::store::executions::ExecutionSummary) -> String {
-    let time = run.timestamp.to_rfc3339();
-    let when = time.get(..19).unwrap_or(&time).replace('T', " ");
+    let when = viewer::local_time(run.timestamp);
     match run.outcome {
         poster_app::core::execution::Outcome::Response => format!("{when} · {}", run.status),
         poster_app::core::execution::Outcome::TransportError => format!("{when} · failed"),

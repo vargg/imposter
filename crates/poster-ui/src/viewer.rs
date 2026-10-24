@@ -195,6 +195,19 @@ pub fn status(response: &Response) -> Status {
     }
 }
 
+/// A history timestamp in the system time zone: "24 Oct 2026, 21:05:35".
+pub fn local_time(timestamp: poster_app::core::execution::Timestamp) -> String {
+    jiff::Timestamp::from_millisecond(timestamp.0).map_or_else(
+        |_| timestamp.to_rfc3339(),
+        |instant| {
+            instant
+                .to_zoned(jiff::tz::TimeZone::system())
+                .strftime("%d %b %Y, %H:%M:%S")
+                .to_string()
+        },
+    )
+}
+
 pub fn format_duration(seconds: f64) -> String {
     if seconds < 1.0 {
         format!("Time: {:.0} ms", seconds * 1000.0)
@@ -427,6 +440,17 @@ mod tests {
         assert_eq!(format_duration(0.1234), "Time: 123 ms");
         assert_eq!(format_duration(2.5), "Time: 2.50s");
         assert_eq!(headers_text(&response(b"", "a/b")), "content-type: a/b");
+    }
+
+    #[test]
+    fn local_times_use_a_readable_format() {
+        let text = local_time(poster_app::core::execution::Timestamp(1_793_000_000_000));
+        assert!(text.contains("2026"), "{text}");
+        assert_eq!(text.len(), "26 Oct 2026, 07:33:20".len());
+        assert_eq!(
+            local_time(poster_app::core::execution::Timestamp(i64::MAX)),
+            poster_app::core::execution::Timestamp(i64::MAX).to_rfc3339()
+        );
     }
 
     #[test]

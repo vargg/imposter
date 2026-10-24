@@ -141,5 +141,18 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-variables.png")))
             .unwrap();
+        harness.get_by_label("History").click();
+        settle(&mut harness);
+        harness
+            .get_all_by_label_contains("History GET")
+            .next()
+            .unwrap()
+            .click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-history.png")))
+            .unwrap();
     }
 }

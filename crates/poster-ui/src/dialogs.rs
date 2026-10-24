@@ -24,6 +24,7 @@ pub enum ConfirmPurpose {
     DeleteCollection(CollectionId),
     Delete(NodeId),
     DeleteEnvironment(EnvironmentId),
+    ClearHistory,
     DiscardOnClose,
 }
 
