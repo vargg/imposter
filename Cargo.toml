@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[workspace.dependencies]
+poster-core = { path = "crates/poster-core" }
+poster-http = { path = "crates/poster-http" }
+poster-store = { path = "crates/poster-store" }
+poster-transfer = { path = "crates/poster-transfer" }
+poster-app = { path = "crates/poster-app" }
+poster-ui = { path = "crates/poster-ui" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Selective pedantic allows. Add new ones here with a reason, not per crate.
+module_name_repetitions = "allow" # crate-prefixed type names read better at call sites
+must_use_candidate = "allow"      # too noisy for small getters
+missing_errors_doc = "allow"      # error enums document themselves

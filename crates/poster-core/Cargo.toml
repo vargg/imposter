@@ -1,0 +1,10 @@
+[package]
+name = "poster-core"
+description = "Pure domain: DTOs, settings resolution, variables, URL/query/header logic. No IO."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

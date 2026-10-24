@@ -1,0 +1,16 @@
+[package]
+name = "poster-app"
+description = "Services and runtime glue: executor, saver, history retention, task registry."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+poster-core.workspace = true
+poster-http.workspace = true
+poster-store.workspace = true
+poster-transfer.workspace = true

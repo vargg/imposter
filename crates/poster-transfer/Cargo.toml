@@ -1,0 +1,13 @@
+[package]
+name = "poster-transfer"
+description = "Native .poster.json v1 and Postman v2.1 conversion, validation and import preview."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+poster-core.workspace = true
