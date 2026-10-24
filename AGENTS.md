@@ -89,7 +89,9 @@ From stage 2 on, coverage must also stay at or above 85% lines (`cargo-llvm-cov`
 - **No `unwrap()` outside tests; `expect()` only for real invariants, and its message states
   the invariant.** Errors go up with `?`.
   Why: a desktop app must report a failure, not crash on it.
-  Enforced by: `clippy::unwrap_used` (allowed in tests via `clippy.toml`).
+  Enforced by: `clippy::unwrap_used`, allowed in test code via `clippy.toml`. Clippy only counts
+  `#[test]` functions and `#[cfg(test)]` modules as test code, so every integration-test file
+  (`tests/*.rs`, `tests/support/`) starts with `#![cfg(test)]`.
 - **No `dbg!`, `todo!` or `unimplemented!` in committed code.** Do the work, or put it in `PLAN.md`.
   Enforced by: `clippy::dbg_macro`, `clippy::todo`, `clippy::unimplemented`.
 - **Errors: `thiserror` enums in library crates; `anyhow` only in the `poster` binary.**
@@ -101,8 +103,9 @@ From stage 2 on, coverage must also stay at or above 85% lines (`cargo-llvm-cov`
 - **Comments explain why, never what.** No commented-out code; git keeps it.
 - **Lint levels are set only in the root `Cargo.toml`** (`[workspace.lints]`: clippy pedantic
   plus the restriction lints above), and every crate sets `[lints] workspace = true`. Lint
-  settings go in `clippy.toml` (the root one, or a crate's own for crate-specific lists). Add an
-  allow there with a reason, not as a scattered `#[allow]`.
+  settings go in `clippy.toml` (the root one, or a crate's own for crate-specific lists).
+  Workspace-wide allows go in the root with a reason. A local `#[allow]` is only for a reason
+  specific to that item, stated in a comment on the same line.
   Why: one visible policy instead of exceptions spread through the code.
 - **Never log credentials, tokens, or request or response bodies.**
   Why: logs end up in bug reports and screenshots.
@@ -116,12 +119,39 @@ From stage 2 on, coverage must also stay at or above 85% lines (`cargo-llvm-cov`
 - **Rust only, one native binary per OS; no webview, JVM or own C/C++.** Why: the Python app was
   hard to distribute (a specific interpreter plus a resolved environment). Speed and memory must
   not get worse, but are secondary.
-- **GUI: egui + eframe; fallback Iced.** Why: the most mature tables, trees and panels, custom
-  text layout for `{{var}}` highlighting, and a UI test harness (`egui_kittest`). Slint was
-  rejected for limited text-editing control and license conditions; gpui for an unstable API.
-  Accepted trade-off: a custom dark theme (accent `#ff6c37`), not a native look.
-  To be confirmed by the stage 0 spike.
-- **TLS: rustls, not OpenSSL.** Why: no system OpenSSL to find or ship on any OS.
+- **GUI: egui + eframe (glow backend); Iced not needed.** Why: the most mature tables, trees and
+  panels, custom text layout for `{{var}}` highlighting, and a UI test harness (`egui_kittest`,
+  headless, no GPU). Slint was rejected for limited text-editing control and license
+  conditions; gpui for an unstable API. Accepted trade-off: a custom dark theme (accent
+  `#ff6c37`), not a native look. Confirmed in stage 0: release binary 5.6 MiB (LTO, stripped,
+  macOS arm64); first frame about 225 ms after process start (24 ms after app creation).
+- **Response viewer: virtualized rows, never one big text widget.** Only visible rows are laid
+  out (`ScrollArea::show_rows`, monospace, wrap by column count). Why: a 5 MiB read-only
+  `TextEdit` costs about 730 ms per frame; virtualized rows cost about 0.1 ms, highlighted or
+  not. Measured by `cargo run --release -p poster-ui --example text_perf` (M-series Mac).
+- **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
+  256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
+  dependency.
+- **Body editor: egui `TextEdit`; `{{var}}`/JSON highlighting only up to 64 KiB.** Why: per
+  interactive frame the editor costs about 4 ms at 64 KiB, 24 ms at 256 KiB and 130 ms at 1 MiB
+  (plain), and highlighting adds about 30%. Larger bodies stay editable but slow; a custom
+  virtualized editor would be needed to fix that and is out of scope.
+- **TLS: rustls with the `ring` provider, configured by us** (`poster_http::tls`) and passed to
+  every reqwest client with `use_preconfigured_tls`, including plain-HTTP clients (reqwest
+  panics without a provider). Why: no OpenSSL, cmake or system library on any OS; full control
+  of roots, verification and client keys. A custom CA bundle replaces the platform roots.
+- **Client keys: PKCS#8 (plain or encrypted, PBES2), PKCS#1 and SEC1. Legacy encrypted PEM
+  (`Proc-Type: 4,ENCRYPTED`) is rejected** with advice to run `openssl pkcs8 -topk8`. Why:
+  rustls and RustCrypto do not implement the legacy OpenSSL scheme. PBKDF2-HMAC-SHA1 is enabled
+  because LibreSSL and older OpenSSL use it by default (fixtures in `poster-http/tests/fixtures`).
+- **HTTP/1.1 only.** Why: matches the Python app (httpx default) and keeps the wire format the
+  tests pin; HTTP/2 settings are out of scope.
+- **Header order: values of one name keep their order; names go out in first-occurrence order,
+  lowercased.** So `A, B, A` is sent as `a, a, b`. Why: hyper stores headers in a `HeaderMap`
+  and its order-preserving extensions are private; writing our own HTTP/1.1 client is not
+  worth the risk. Pinned by `poster-http/tests/header_order.rs`.
+- **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
+  tokio and must not abort the app.
 - **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their
   collections from the Python app; golden tests with Python exports guard it.
 - **Toolchain pinned in `rust-toolchain.toml`, `Cargo.lock` committed, CI uses `--locked`.**

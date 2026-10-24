@@ -12,3 +12,8 @@ workspace = true
 [dependencies]
 poster-app.workspace = true
 poster-ui.workspace = true
+eframe.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+egui.workspace = true

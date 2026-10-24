@@ -38,7 +38,7 @@ Reusable assets from `~/dev/pystman`:
 | GUI | **egui + eframe** (glow/wgpu backend) | immediate mode; good for dev tools; custom text layouters for `{{var}}` highlighting |
 | Panels / splitters | egui `SidePanel`/`TopBottomPanel` + **egui_tiles** (or hand-rolled split) | must support switching between horizontal and vertical layout |
 | Tables | `egui_extras::TableBuilder` | key/value editors (headers, queries, form, cookies) |
-| Syntax highlighting | **syntect** (via `egui_extras` syntect feature or own layouter) | JSON/XML/HTML response preview, capped at 256 KiB |
+| Syntax highlighting | hand-written tokenizers (stage 0: syntect was ~50× slower) | JSON/XML/HTML response preview, capped at 256 KiB |
 | Async runtime | **tokio** (multi-thread, in background threads) | UI thread never awaits; see "Concurrency model" |
 | HTTP | **reqwest** (rustls, stream) on hyper | exact header-order requirement must be validated in stage 0 |
 | TLS | **rustls** + `rustls-platform-verifier` (default roots) | custom CA bundle replaces default roots; `pkcs8` (encryption feature) for encrypted keys |
@@ -259,6 +259,9 @@ Each stage ends green on: `cargo fmt --check`, `cargo clippy --all-targets -D wa
 ---
 
 ## Open questions (settled in stage 0)
+
+All four were settled in stage 0; the outcomes and their reasons are under "Decisions" in
+`AGENTS.md`.
 
 1. **Exact cross-name header order.** reqwest/hyper store headers in `HeaderMap`, which groups values
    by name (A, B, A becomes A, A, B). The Python app sends exactly in editor order.

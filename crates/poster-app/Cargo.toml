@@ -14,3 +14,7 @@ poster-core.workspace = true
 poster-http.workspace = true
 poster-store.workspace = true
 poster-transfer.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+thiserror.workspace = true

@@ -16,6 +16,35 @@ poster-transfer = { path = "crates/poster-transfer" }
 poster-app = { path = "crates/poster-app" }
 poster-ui = { path = "crates/poster-ui" }
 
+# Third-party. Versions live only here (see AGENTS.md).
+anyhow = "1.0.104"
+base64 = "0.23.1"
+bytes = "1.12.1"
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts", "wayland", "x11", "accesskit", "clipboard"] }
+egui = "0.37.0"
+egui_extras = { version = "0.37.0", default-features = false }
+egui_kittest = { version = "0.37.0", features = ["eframe"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
+# PBKDF2-HMAC-SHA1 is the default PRF of LibreSSL and OpenSSL < 1.1 encrypted keys; SHA-1 is
+# only a KDF there, where its collision weakness does not apply.
+pkcs5 = { version = "0.8.1", features = ["sha1-insecure"] }
+pkcs8 = { version = "0.11.0", features = ["encryption", "pem", "std", "getrandom"] }
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "pem", "ring"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "gzip", "deflate", "brotli"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pki-types = { version = "1.15.1", features = ["std"] }
+rustls-platform-verifier = "0.7.1"
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
+indexmap = { version = "2.14.2", features = ["serde"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "fs"] }
+tokio-util = "0.7.20"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 unused_qualifications = "warn"
@@ -31,3 +60,10 @@ unwrap_used = "deny"   # tests are exempt via clippy.toml
 dbg_macro = "deny"
 todo = "deny"
 unimplemented = "deny"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+# Keep unwinding: a panic inside one background task must not take the whole app down.
+panic = "unwind"
