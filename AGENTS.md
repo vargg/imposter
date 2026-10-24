@@ -53,7 +53,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-From stage 2 on, coverage must also stay at or above 85% lines (`cargo-llvm-cov`). Each stage in
+Coverage must stay at or above 85% of lines and 70% of regions (stable Rust has no branch
+coverage; regions are the closest measure). CI runs the same command:
+
+```sh
+cargo llvm-cov --workspace --fail-under-lines 85 --fail-under-regions 70 \
+  --ignore-filename-regex 'crates/poster/src/main\.rs$'
+```
+
+`main.rs` only opens the window; the installed-binary smoke test covers it. Each stage in
 `PLAN.md` is its own commit.
 
 ## Architecture principles
@@ -151,6 +159,23 @@ From stage 2 on, coverage must also stay at or above 85% lines (`cargo-llvm-cov`
   lowercased.** So `A, B, A` is sent as `a, a, b`. Why: hyper stores headers in a `HeaderMap`
   and its order-preserving extensions are private; writing our own HTTP/1.1 client is not
   worth the risk. Pinned by `poster-http/tests/header_order.rs`.
+- **Migrations: our own runner over `user_version`, not `rusqlite_migration`.** Each migration
+  runs in its own transaction and must pass `foreign_key_check`; an existing database is copied
+  to `poster.db.bak-<version>` with SQLite's backup API first; a database from a newer app is
+  refused. Why: about 40 lines, no second rusqlite version to keep in step, and the backup
+  happens exactly before the first change. Released migrations are frozen
+  (`poster-store/tests/schema.rs` pins their fingerprints); schema changes are new migrations.
+- **A request row stores its template as JSON, the single source of truth.** The tree reads
+  `name`, `method` and `position` through generated columns, so it never decodes bodies;
+  rename and reorder use `json_set`. Why: one copy of every field, and new template fields
+  need no migration (serde defaults).
+- **Variables are ordered JSON objects** (collections, environments, the single `globals` row).
+  No environment may be named `Global`, which names the globals scope. Why: order is kept for
+  display and export, and saving a scope replaces it whole, as in the Python app.
+- **History rows carry summary columns** (name, method, URL, status, outcome, elapsed) next to
+  the JSON payload. Why: the list must not decode multi-megabyte payloads; details load one.
+  Retention deletes oldest first by count and total payload size; a record larger than the
+  whole budget is refused.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their
