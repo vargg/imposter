@@ -1,60 +1,139 @@
 # Poster agent manual
 
-Poster is a local desktop HTTP API client written in Rust (egui/eframe). It is a rewrite of the
-Python/PyQt6 prototype at `~/dev/pystman`; that app stays the reference implementation, and its
+Poster is a local desktop HTTP API client written in Rust (egui/eframe). It rewrites the
+Python/PyQt6 prototype at `~/dev/pystman`, which stays the reference implementation; its
 `AGENTS.md` is the behavioral spec. Port behaviors, not code structure.
 
-`PLAN.md` holds the tech stack, behavioral spec, persistence rules and the staged roadmap.
+## About this file
 
-## Workspace
+- **This file does not describe the codebase. The code describes itself.** Names, types, crate
+  docs (`//!`), each crate's `description` in `Cargo.toml`, and tests (the executable spec) say
+  what exists and how it works. Do not list modules, files, functions or data flows here.
+  Why: such lists go stale on the next refactor, and a stale manual misleads more than none.
+- **This file holds only architecture principles, rules and decisions, each with its reason.**
+  Why: a rule without a reason gets misapplied at the edges or "fixed" by the next contributor.
+- **A rule that a tool can check is checked by a tool**, and the rule names that check. Prose is
+  the fallback for what tools cannot express. Rules not yet checked are listed in
+  [Enforcement gaps](#enforcement-gaps). Why: agents and people forget prose; CI does not.
+- **`PLAN.md` is the roadmap; this file is the durable record.** When a stage settles an open
+  question from `PLAN.md`, record the outcome and its reason under [Decisions](#decisions) in
+  the same commit.
+- **Changing a rule or decision updates this file in the same commit.** Replace a superseded
+  decision rather than keeping both; mention the rejected option in the reason when that stops
+  someone from proposing it again. Git keeps the history.
 
-```
-crates/
-  poster-core/      pure domain: DTOs, settings, variables, URL/query/header logic. No IO.
-  poster-http/      transport: reqwest client, TLS, auth, uploads, capped streaming, cancellation
-  poster-store/     SQLite: schema, migrations, backup, repositories, DB actor thread
-  poster-transfer/  native .poster.json v1 + Postman v2.1 conversion and validation
-  poster-app/       services: executor, saver, history retention, task registry
-  poster-ui/        egui widgets and screens (library, tested with egui_kittest)
-  poster/           binary: main(), eframe setup, logging, paths
-```
+## Verification
 
-Dependency direction: `core` <- `http`, `store`, `transfer` <- `app` <- `ui` <- `poster`.
-Never add a dependency against this direction. `poster-core` must stay free of IO.
+- **Every feature, decision, bug fix and change is covered by tests or lints.**
+  - Feature: behavior tests at the boundary it affects.
+  - Bug: a regression test that fails before the fix and passes after it.
+  - Decision: a test or lint that fails when the decision is violated (for example, a loopback
+    test that checks header order in the raw bytes received).
+  - Refactor: keeps existing behavioral coverage; no test is weakened to make it pass.
 
-Internal crates and shared third-party versions are declared once in the root
-`[workspace.dependencies]`; crates use `dep.workspace = true`.
-
-## Commands
+  Why: the tests and lints are the only record of past decisions and bugs that is checked on
+  every change.
+- **Never weaken a check to get green.** No lowered coverage floors, no `#[ignore]` on failing
+  tests, no deleted assertions, no `#[allow]` without a reason next to it.
+  Why: a gate that bends under pressure stops being a gate.
+- **Test at the real boundary.** HTTP: loopback servers on ephemeral ports, asserting the bytes
+  received. SQLite: a real database in a temp dir. UI: real actions through `egui_kittest`. Mock
+  only the boundary a fault-injection test targets.
+  Why: mocks confirm what we assumed; real boundaries catch what we did not.
+- **Tests are deterministic and independent.** No fixed sleeps: wait on channels or events with a
+  deadline. No external network, no personal data directory (`POSTER_DATA_DIR` points at a temp
+  dir). Every test owns and cleans up its resources.
+  Why: flaky tests train people to ignore red CI.
+- **Report only what was run.** A change is done when the commands below pass locally; say which
+  checks ran and which did not (for example, CI on other OSes).
 
 ```sh
-cargo fmt --all
+cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo run -p poster
 ```
 
-A stage (see `PLAN.md`) is done only when fmt, clippy and tests are green, plus the coverage floor
-from stage 2 on (85% lines). Each stage is its own commit.
+From stage 2 on, coverage must also stay at or above 85% lines (`cargo-llvm-cov`). Each stage in
+`PLAN.md` is its own commit.
+
+## Architecture principles
+
+- **Dependency direction: `core` <- `http`, `store`, `transfer` <- `app` <- `ui` <- `poster`.**
+  Never add an edge against it.
+  Why: each layer stays testable without the ones above it, and `ui` can change without touching
+  the domain.
+  Enforced by: Cargo rejects dependency cycles. The full allowed graph is a gap.
+- **`poster-core` does no IO** (no files, network, database, clock or environment).
+  Why: the domain rules (variables, settings resolution, validation) can then be tested
+  exhaustively, quickly and deterministically.
+  Enforced by: `poster-core` has no IO dependencies. Use of `std::fs`/`std::net` is a gap.
+- **The UI thread never blocks or awaits.** Background work starts through the app handle and
+  its results come back over a channel drained at the start of each frame.
+  Why: egui redraws every frame on that thread; any block freezes the whole window.
+- **One thread owns the SQLite connection**; every other part sends it commands, and one
+  command is one transaction.
+  Why: writes are serialized without locks, and a failed command rolls back as a unit.
+- **Dependencies are declared once** in the root `[workspace.dependencies]`; crates use
+  `name.workspace = true`.
+  Why: one version per dependency across the workspace, upgraded in one place.
+- **Dependencies must build on macOS, Windows and Linux without system libraries** (pure Rust, or
+  C sources vendored by the crate, as with `rusqlite`'s `bundled` feature). No C/C++ code of our
+  own.
+  Why: the product is one self-contained binary per OS.
+  Enforced by: the CI matrix builds on all three OSes.
 
 ## Rules
 
-- Toolchain is pinned in `rust-toolchain.toml`; `Cargo.lock` is committed. Use `--locked` in CI.
-- Lints live in the root `Cargo.toml` (`[workspace.lints]`, clippy pedantic). Add allows there with
-  a reason, not with `#[allow]` scattered through the code.
-- No `unsafe` in our code.
-- Errors: `thiserror` in library crates, `anyhow` only in the `poster` binary.
-- The UI thread never blocks or awaits. Background work goes through the app handle and comes back
-  over a channel drained each frame.
-- Never log credentials or request/response bodies.
-- The app's data lives in `~/.poster/poster.db` (override: `POSTER_DATA_DIR`). Never touch the
-  Python app's database files.
+- **No `unsafe`.** Why: nothing in this app needs it, and it cancels the compiler's guarantees.
+  Enforced by: `unsafe_code = "deny"`.
+- **No `unwrap()` outside tests; `expect()` only for real invariants, and its message states
+  the invariant.** Errors go up with `?`.
+  Why: a desktop app must report a failure, not crash on it.
+  Enforced by: `clippy::unwrap_used` (allowed in tests via `clippy.toml`).
+- **No `dbg!`, `todo!` or `unimplemented!` in committed code.** Do the work, or put it in `PLAN.md`.
+  Enforced by: `clippy::dbg_macro`, `clippy::todo`, `clippy::unimplemented`.
+- **Errors: `thiserror` enums in library crates; `anyhow` only in the `poster` binary.**
+  Why: callers match on error variants (the UI shows a validation error differently from a
+  network error); only the binary just reports them.
+- **Make invalid states unrepresentable** (enums, newtypes, private fields with checked
+  constructors) instead of documenting invariants in comments.
+  Why: the compiler then checks them, which is how the code describes itself.
+- **Comments explain why, never what.** No commented-out code; git keeps it.
+- **Lint levels are set only in the root `Cargo.toml`** (`[workspace.lints]`: clippy pedantic
+  plus the restriction lints above), and every crate sets `[lints] workspace = true`. Lint
+  settings go in `clippy.toml` (the root one, or a crate's own for crate-specific lists). Add an
+  allow there with a reason, not as a scattered `#[allow]`.
+  Why: one visible policy instead of exceptions spread through the code.
+- **Never log credentials, tokens, or request or response bodies.**
+  Why: logs end up in bug reports and screenshots.
+  Enforced by: tests that capture `tracing` output (from stage 3 on).
+- **The app's data is `~/.poster/poster.db`, overridable with `POSTER_DATA_DIR`. Never read or
+  write the Python app's database files.**
+  Why: the Python app must keep working; users migrate through `.poster.json` export and import.
 
-## Stage 0 decisions
+## Decisions
 
-Record the outcome of each open question from `PLAN.md` here once settled.
+- **Rust only, one native binary per OS; no webview, JVM or own C/C++.** Why: the Python app was
+  hard to distribute (a specific interpreter plus a resolved environment). Speed and memory must
+  not get worse, but are secondary.
+- **GUI: egui + eframe; fallback Iced.** Why: the most mature tables, trees and panels, custom
+  text layout for `{{var}}` highlighting, and a UI test harness (`egui_kittest`). Slint was
+  rejected for limited text-editing control and license conditions; gpui for an unstable API.
+  Accepted trade-off: a custom dark theme (accent `#ff6c37`), not a native look.
+  To be confirmed by the stage 0 spike.
+- **TLS: rustls, not OpenSSL.** Why: no system OpenSSL to find or ship on any OS.
+- **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their
+  collections from the Python app; golden tests with Python exports guard it.
+- **Toolchain pinned in `rust-toolchain.toml`, `Cargo.lock` committed, CI uses `--locked`.**
+  Why: every machine and CI run builds the same thing.
 
-- egui vs Iced: _pending_
-- Cross-name header order on the wire: _pending_
-- Legacy encrypted PEM keys: _pending_ (default: PKCS#8 only)
-- Large body editor responsiveness: _pending_
+Open questions are in `PLAN.md` ("Open questions"); their outcomes are recorded here.
+
+## Enforcement gaps
+
+Rules above that no tool checks yet. Close a gap together with the first code it applies to.
+
+- Allowed crate dependency graph: a workspace test over `cargo metadata`.
+- No IO in `poster-core` and no blocking calls in `poster-ui`: `disallowed_methods` /
+  `disallowed_types` in a per-crate `clippy.toml`.
+- `thiserror`/`anyhow` placement: the same dependency-graph test.

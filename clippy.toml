@@ -1,0 +1,2 @@
+# Tests may unwrap: a panic there is a clear test failure, not a user-facing crash.
+allow-unwrap-in-tests = true
