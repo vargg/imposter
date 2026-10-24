@@ -1,5 +1,6 @@
 //! The History screen: list, details, filter, paging, restore as draft and clearing.
 #![cfg(test)]
+#![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 
 mod support;
 

@@ -1,5 +1,6 @@
 //! Tree operations, editor details, drafts, cancellation, the viewer and the layout.
 #![cfg(test)]
+#![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 
 mod support;
 

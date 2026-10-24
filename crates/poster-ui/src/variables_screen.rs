@@ -183,9 +183,6 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     if edited {
         actions.push(Action::Variables(VariablesAction::Edited));
     }
-    let save = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S);
-    if ui.input_mut(|i| i.consume_shortcut(&save)) {
-        actions.push(Action::Save);
-    }
+
     state.actions.extend(actions);
 }

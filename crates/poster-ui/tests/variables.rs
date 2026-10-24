@@ -1,6 +1,7 @@
 //! Variables and environments: the screen, its guard, the environment picker, autocomplete and
 //! the inspector, through the real UI and database.
 #![cfg(test)]
+#![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 
 mod support;
 

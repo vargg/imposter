@@ -2,6 +2,7 @@
 //! decisions in AGENTS.md. Re-run after egui upgrades:
 //! `cargo run --release -p poster-ui --example text_perf`.
 //! Times egui passes (layout and shapes, no GPU) through kittest, plus highlighting and search.
+#![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 #![allow(clippy::unwrap_used)] // measurement program, not app code
 
 use std::fmt::Write as _;

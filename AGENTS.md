@@ -235,6 +235,20 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
 - **History shows times in the system time zone** (via `jiff`, display only); records store UTC
   milliseconds. Restoring an entry opens an unsaved draft through the unsaved-changes guard and
   never sends; the draft keeps the captured collection variables for a deleted collection.
+- **The UI thread never blocks.** `poster-ui/clippy.toml` disallows blocking database calls,
+  file IO, sleeps, `block_on` and synchronous file dialogs. Only test and example crates allow
+  them, at their top, and `window_state`, which runs before the window exists. Why: a frozen
+  window is the most visible failure a desktop app has.
+- **Settings follow the Python screen** (fields, ranges, units, messages) and save only on Save
+  Settings, against a baseline: undoing an edit is not a change. Settings the screen does not
+  show are kept. Closing asks about unsaved settings after the request and variables guards.
+  Saving applies history retention at once (the Python app waited for the next send), so the
+  limits the History screen shows are already true.
+- **Shortcuts are handled in one place before widgets draw** (`shortcuts::handle`) and do
+  nothing while a dialog is open: Cmd/Ctrl+Enter and Cmd/Ctrl+R send (R is the Python app's
+  Run), Cmd/Ctrl+S saves the current screen, Cmd/Ctrl+N opens New Request (New Collection when
+  there is none). Find stays with each viewer and applies to the one under the pointer. Why:
+  one handler means a body editor cannot swallow Send and a dialog cannot be bypassed.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their
@@ -274,4 +288,4 @@ Open questions are in `PLAN.md` ("Open questions"); their outcomes are recorded 
 
 Rules above that no tool checks yet. Close a gap together with the first code it applies to.
 
-- No blocking calls in `poster-ui`: `disallowed-methods` in its own `clippy.toml`.
+None at the moment.

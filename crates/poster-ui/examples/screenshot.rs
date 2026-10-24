@@ -1,5 +1,6 @@
 //! Render the real app with sample data to PNG files, for looking at the layout without a
 //! display: `cargo run -p poster-ui --example screenshot -- <output-dir>`.
+#![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 #![allow(clippy::unwrap_used)] // developer tool, not app code
 
 use std::time::Duration;

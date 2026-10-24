@@ -892,8 +892,9 @@ pub fn viewer_tools(ui: &mut Ui, state: &mut ViewerState, text: &str, copy_label
 /// A read-only viewer over bounded text: only visible rows are laid out.
 pub fn code_viewer(ui: &mut Ui, id: &str, state: &mut ViewerState, text: &str, language: Language) {
     let area = ui.max_rect();
-    let shortcut = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::F);
-    if ui.rect_contains_pointer(area) && ui.input_mut(|i| i.consume_shortcut(&shortcut)) {
+    if ui.rect_contains_pointer(area)
+        && ui.input_mut(|i| i.consume_shortcut(&crate::shortcuts::FIND))
+    {
         state.open_find();
     }
     if state.find_open {

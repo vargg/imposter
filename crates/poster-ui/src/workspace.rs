@@ -24,7 +24,9 @@ pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
     let save_text = app.save_button_text();
     let executing = app.is_executing();
     let variables_dirty = app.variables_dirty();
+    let settings_dirty = app.state.settings_screen.dirty();
     let state = &mut app.state;
+    crate::shortcuts::handle(state, ui.ctx());
 
     egui::Panel::top("screens")
         .frame(
@@ -52,8 +54,14 @@ pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
                     (Screen::Requests, "Requests"),
                     (Screen::Variables, "Variables"),
                     (Screen::History, "History"),
+                    (Screen::Settings, "Settings"),
                 ] {
-                    let text = if screen == Screen::Variables && variables_dirty {
+                    let dirty = match screen {
+                        Screen::Variables => variables_dirty,
+                        Screen::Settings => settings_dirty,
+                        Screen::Requests | Screen::History => false,
+                    };
+                    let text = if dirty {
                         format!("{label} •")
                     } else {
                         label.to_owned()
@@ -104,6 +112,12 @@ pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
             .show(ui, |ui| crate::history_screen::draw(state, ui));
+        return;
+    }
+    if state.screen == Screen::Settings {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
+            .show(ui, |ui| crate::settings_screen::draw(state, ui));
         return;
     }
     if state.layout.sidebar_visible {
@@ -299,7 +313,7 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
         });
 }
 
-fn selected_folder(state: &State) -> Option<FolderId> {
+pub(crate) fn selected_folder(state: &State) -> Option<FolderId> {
     match state.selected? {
         NodeId::Folder(id) => Some(id),
         NodeId::Request(id) => state.tree.as_ref()?.request(id)?.folder_id,
@@ -492,8 +506,10 @@ fn context_bar(
         ui.add(egui::Label::new(RichText::new(path).strong().size(14.0)).truncate());
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if let Some((status, enabled, tone)) = save {
+                let hint = crate::shortcuts::hint(ui.ctx(), save_text, &crate::shortcuts::SAVE);
                 if ui
                     .add_enabled(enabled, egui::Button::new(save_text))
+                    .on_hover_text(hint)
                     .clicked()
                 {
                     state.actions.push(Action::Save);
@@ -603,17 +619,16 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                     egui::Button::new(RichText::new(label).color(PALETTE.on_accent).strong())
                         .fill(fill),
                 );
-                let shortcut =
-                    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Enter);
-                if send.clicked() || ui.input_mut(|i| i.consume_shortcut(&shortcut)) {
+                let send = send.on_hover_text(crate::shortcuts::hint(
+                    ui.ctx(),
+                    label,
+                    &crate::shortcuts::SEND,
+                ));
+                if send.clicked() {
                     actions.push(Action::Send);
                 }
             })
         });
-    let save = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S);
-    if ui.input_mut(|i| i.consume_shortcut(&save)) {
-        actions.push(Action::Save);
-    }
     if url_edited || edited {
         actions.push(Action::Edited {
             url: url_edited,
@@ -744,7 +759,12 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         ui.heading("Request");
         ui.add_space(8.0);
         for (tab, label) in EditorTab::ALL {
-            if widgets::tab(ui, pane.tab == tab, label).clicked() {
+            let response = widgets::tab(ui, pane.tab == tab, label);
+            if tab == EditorTab::Settings {
+                // The Settings screen tab has the same text; screen readers need them apart.
+                name(&response, "Request settings");
+            }
+            if response.clicked() {
                 pane.tab = tab;
             }
         }

@@ -61,6 +61,8 @@ pub enum Dialog {
     },
     /// Unsaved rows on the Variables screen.
     VariablesGuard,
+    /// Unsaved application settings while closing.
+    SettingsGuard,
     Move {
         node: NodeId,
         options: Vec<(String, Option<FolderId>)>,
@@ -93,6 +95,7 @@ pub enum Outcome {
     Confirmed(ConfirmPurpose),
     Guard(GuardChoice),
     VariablesGuard(GuardChoice),
+    SettingsGuard(GuardChoice),
     Move(NodeId, Option<FolderId>),
     /// Read companion files (`true`) or import the file alone.
     Companions(bool),
@@ -220,17 +223,17 @@ impl Dialog {
                     ui.heading("Unsaved variables");
                     ui.label("Save variable changes before continuing?");
                     ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Save").clicked() {
-                            outcome = Outcome::VariablesGuard(GuardChoice::Save);
-                        }
-                        if ui.button("Discard").clicked() {
-                            outcome = Outcome::VariablesGuard(GuardChoice::Discard);
-                        }
-                        if ui.button("Cancel").clicked() {
-                            outcome = Outcome::VariablesGuard(GuardChoice::Cancel);
-                        }
-                    });
+                    if let Some(choice) = guard_buttons(ui) {
+                        outcome = Outcome::VariablesGuard(choice);
+                    }
+                }
+                Self::SettingsGuard => {
+                    ui.heading("Unsaved application settings");
+                    ui.label("Save application settings before exiting?");
+                    ui.add_space(8.0);
+                    if let Some(choice) = guard_buttons(ui) {
+                        outcome = Outcome::SettingsGuard(choice);
+                    }
                 }
                 Self::Move {
                     node,
@@ -302,11 +305,28 @@ impl Dialog {
             outcome = match self {
                 Self::Guard { .. } => Outcome::Guard(GuardChoice::Cancel),
                 Self::VariablesGuard => Outcome::VariablesGuard(GuardChoice::Cancel),
+                Self::SettingsGuard => Outcome::SettingsGuard(GuardChoice::Cancel),
                 _ => Outcome::Closed,
             };
         }
         outcome
     }
+}
+
+fn guard_buttons(ui: &mut egui::Ui) -> Option<GuardChoice> {
+    let mut choice = None;
+    ui.horizontal(|ui| {
+        if ui.button("Save").clicked() {
+            choice = Some(GuardChoice::Save);
+        }
+        if ui.button("Discard").clicked() {
+            choice = Some(GuardChoice::Discard);
+        }
+        if ui.button("Cancel").clicked() {
+            choice = Some(GuardChoice::Cancel);
+        }
+    });
+    choice
 }
 
 fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outcome {

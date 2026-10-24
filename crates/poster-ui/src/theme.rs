@@ -229,8 +229,27 @@ mod tests {
     }
 
     #[test]
-    fn text_on_the_accent_fill_is_readable() {
-        assert!(contrast(PALETTE.on_accent, PALETTE.accent) >= AA);
+    fn text_on_the_send_button_is_readable_in_both_states() {
+        // Send uses the accent fill; Cancel (while a request runs) the warning fill.
+        for fill in [PALETTE.accent, PALETTE.warning] {
+            let ratio = contrast(PALETTE.on_accent, fill);
+            assert!(ratio >= AA, "{fill:?}: {ratio:.2}");
+        }
+    }
+
+    #[test]
+    fn method_colors_are_readable_where_the_tree_and_history_draw_them() {
+        for method in ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] {
+            for background in [
+                PALETTE.background,
+                PALETTE.surface,
+                PALETTE.hover,
+                PALETTE.selected,
+            ] {
+                let ratio = contrast(method_color(method), background);
+                assert!(ratio >= AA, "{method} on {background:?}: {ratio:.2}");
+            }
+        }
     }
 
     #[test]

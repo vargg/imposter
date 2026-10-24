@@ -31,6 +31,7 @@ use serde_json::Value;
 use crate::dialogs::{ConfirmPurpose, Dialog, GuardChoice, NamePurpose, Outcome};
 use crate::editor::{Editor, InvalidOptions, OptionField};
 use crate::layout::{Orientation, WorkspaceLayout};
+use crate::settings_screen::SettingsForm;
 use crate::theme::{self, Tone};
 use crate::tree::{NodeId, TreeView};
 use crate::vars::{self, Scope};
@@ -81,6 +82,8 @@ pub struct WindowState {
     pub maximized: bool,
 }
 
+/// Read before the window opens, so blocking is fine: no UI thread is running yet.
+#[allow(clippy::disallowed_methods)]
 pub fn window_state(store: &StoreHandle) -> Option<WindowState> {
     store
         .call_blocking(|db| kv::get::<WindowState>(db, Table::UiState, WINDOW_KEY))
@@ -177,6 +180,11 @@ pub enum Message {
     PostmanReady(Result<Box<PostmanExport>, Failure>),
     PostmanExportPicked(Option<PathBuf>),
     Exported(Result<PathBuf, Failure>),
+    SettingsLoaded(Result<AppSettings, Failure>),
+    SettingsSaved {
+        form: SettingsForm,
+        result: Result<AppSettings, Failure>,
+    },
 }
 
 /// A Postman export waiting for review of its warnings and a destination.
@@ -232,6 +240,8 @@ pub enum Action {
     Import,
     /// Choose what to export from the selected collection.
     Export,
+    /// A Settings screen field changed.
+    SettingsEdited,
     /// The editor changed: `url` when the URL itself was edited, `params` for the query rows.
     Edited {
         url: bool,
@@ -245,6 +255,58 @@ pub enum Screen {
     Requests,
     Variables,
     History,
+    Settings,
+}
+
+/// The Settings screen: the form, the saved baseline it is compared with, and save state.
+#[derive(Debug)]
+pub struct SettingsScreen {
+    pub form: SettingsForm,
+    /// The stored settings, including those the screen does not show.
+    base: AppSettings,
+    baseline: Option<SettingsForm>,
+    pub status: Option<(String, Tone)>,
+    saving: bool,
+    loading: bool,
+    /// Saving or discarding resolves an app close.
+    closing: bool,
+}
+
+impl Default for SettingsScreen {
+    fn default() -> Self {
+        let base = AppSettings::default();
+        Self {
+            form: SettingsForm::new(&base),
+            base,
+            baseline: None,
+            status: None,
+            saving: false,
+            loading: false,
+            closing: false,
+        }
+    }
+}
+
+impl SettingsScreen {
+    pub fn is_loaded(&self) -> bool {
+        self.baseline.is_some()
+    }
+
+    pub fn is_saving(&self) -> bool {
+        self.saving
+    }
+
+    pub fn dirty(&self) -> bool {
+        self.baseline.as_ref().is_some_and(|b| *b != self.form)
+    }
+
+    fn refresh_status(&mut self) {
+        self.status = Some(if self.dirty() {
+            ("Unsaved application settings".into(), Tone::Warning)
+        } else {
+            ("Application settings saved".into(), Tone::Muted)
+        });
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -509,6 +571,7 @@ pub struct State {
     pub inspect: Option<Inspection>,
     pub variables: VariablesScreen,
     pub history: HistoryScreen,
+    pub settings_screen: SettingsScreen,
     /// Bumped by every navigation; results of older work are ignored.
     pub generation: u64,
     tree_generation: u64,
@@ -566,6 +629,7 @@ impl PosterApp {
                 inspect: None,
                 variables: VariablesScreen::default(),
                 history: HistoryScreen::default(),
+                settings_screen: SettingsScreen::default(),
                 generation: 0,
                 tree_generation: 0,
                 autosave_due: None,
@@ -955,6 +1019,8 @@ impl PosterApp {
             Message::PostmanReady(Err(error)) | Message::Exported(Err(error)) => {
                 self.error("Export failed", error);
             }
+            Message::SettingsLoaded(result) => self.settings_loaded(result),
+            Message::SettingsSaved { form, result } => self.settings_saved(form, result),
             Message::Exported(Ok(path)) => {
                 self.state.dialog = Some(Dialog::info(
                     "Export complete",
@@ -1870,13 +1936,13 @@ impl PosterApp {
             Action::OpenRequest(id) => self.navigate(Navigation::Open(id)),
             Action::Prompt(dialog) => self.state.dialog = Some(dialog),
             Action::Move { node, target } => self.move_node(node, target),
-            Action::Save => {
-                if self.state.screen == Screen::Variables {
-                    self.save_variables();
-                } else if self.state.guard.is_none() {
-                    self.save_current();
-                }
-            }
+            Action::Save => match self.state.screen {
+                Screen::Variables => self.save_variables(),
+                Screen::Settings => self.save_settings(),
+                Screen::Requests if self.state.guard.is_none() => self.save_current(),
+                Screen::Requests | Screen::History => {}
+            },
+            Action::SettingsEdited => self.state.settings_screen.refresh_status(),
             Action::Send => self.send(),
             Action::PickFile(target) => self.pick(
                 FileDialog::Open {
@@ -1906,6 +1972,9 @@ impl PosterApp {
                 if screen == Screen::Variables && !self.state.variables.loaded {
                     let scope = self.state.variables.scope;
                     self.load_variables(scope);
+                }
+                if screen == Screen::Settings && !self.state.settings_screen.is_loaded() {
+                    self.load_settings();
                 }
             }
             Action::SetEnvironment(id) => self.set_environment(id),
@@ -1946,6 +2015,10 @@ impl PosterApp {
             Outcome::VariablesGuard(choice) => {
                 self.state.dialog = None;
                 self.variables_choice(choice);
+            }
+            Outcome::SettingsGuard(choice) => {
+                self.state.dialog = None;
+                self.settings_choice(choice);
             }
             Outcome::Move(node, target) => {
                 self.state.dialog = None;
@@ -2262,10 +2335,7 @@ impl PosterApp {
                 self.state.variables.highlight = Some(name);
                 self.load_variables(scope);
             }
-            VarTransition::Close => {
-                self.state.close = CloseState::Flushing;
-                self.flush_ui_state();
-            }
+            VarTransition::Close => self.settings_close(),
         }
     }
 
@@ -2394,6 +2464,134 @@ impl PosterApp {
 
     pub fn variables_dirty(&self) -> bool {
         self.state.variables.dirty()
+    }
+
+    // ---- settings -------------------------------------------------------------------------------
+
+    fn load_settings(&mut self) {
+        let screen = &mut self.state.settings_screen;
+        if screen.loading {
+            return;
+        }
+        screen.loading = true;
+        self.task(
+            |db| kv::app_settings(db),
+            |result| Message::SettingsLoaded(result.map_err(failure)),
+        );
+    }
+
+    fn settings_loaded(&mut self, result: Result<AppSettings, Failure>) {
+        let screen = &mut self.state.settings_screen;
+        screen.loading = false;
+        match result {
+            Ok(settings) => {
+                screen.form = SettingsForm::new(&settings);
+                screen.baseline = Some(screen.form.clone());
+                screen.base = settings;
+                screen.refresh_status();
+            }
+            Err(_) => {
+                screen.status = Some(("Settings could not be loaded".into(), Tone::Error));
+            }
+        }
+    }
+
+    /// Save the form; history retention applies to the new limits at once.
+    fn save_settings(&mut self) {
+        let screen = &mut self.state.settings_screen;
+        if !screen.is_loaded() || screen.saving {
+            return;
+        }
+        let form = screen.form.clone();
+        let settings = form.apply(&screen.base);
+        if let Err(error) = settings.validate() {
+            screen.status = Some((format!("Failed to save settings: {error}"), Tone::Error));
+            self.settings_close_failed();
+            return;
+        }
+        screen.saving = true;
+        self.task(
+            move |db| {
+                kv::set_app_settings(db, &settings)?;
+                executions::enforce_retention(
+                    db,
+                    settings.history_max_entries,
+                    settings.history_max_bytes,
+                )?;
+                Ok(settings)
+            },
+            move |result| Message::SettingsSaved {
+                form,
+                result: result.map_err(failure),
+            },
+        );
+    }
+
+    fn settings_saved(&mut self, form: SettingsForm, result: Result<AppSettings, Failure>) {
+        let screen = &mut self.state.settings_screen;
+        screen.saving = false;
+        match result {
+            Ok(settings) => {
+                screen.baseline = Some(form);
+                screen.base = settings.clone();
+                screen.status = Some(if screen.dirty() {
+                    ("Unsaved application settings".into(), Tone::Warning)
+                } else {
+                    ("Settings saved successfully!".into(), Tone::Ok)
+                });
+                if !settings.autosave {
+                    self.state.autosave_due = None;
+                }
+                self.state.settings = settings;
+                if self.state.history.loaded {
+                    self.load_history();
+                }
+                if std::mem::take(&mut self.state.settings_screen.closing) {
+                    self.finish_close();
+                }
+            }
+            Err(error) => {
+                screen.status = Some((format!("Failed to save settings: {error}"), Tone::Error));
+                self.settings_close_failed();
+            }
+        }
+    }
+
+    /// The last close step before writing UI state: unsaved settings ask first.
+    fn settings_close(&mut self) {
+        if self.state.settings_screen.dirty() {
+            self.state.settings_screen.closing = true;
+            self.state.dialog = Some(Dialog::SettingsGuard);
+        } else {
+            self.finish_close();
+        }
+    }
+
+    fn settings_close_failed(&mut self) {
+        if std::mem::take(&mut self.state.settings_screen.closing) {
+            self.state.close = CloseState::Open;
+        }
+    }
+
+    fn settings_choice(&mut self, choice: GuardChoice) {
+        match choice {
+            GuardChoice::Save => self.save_settings(),
+            GuardChoice::Discard => {
+                let screen = &mut self.state.settings_screen;
+                if let Some(baseline) = &screen.baseline {
+                    screen.form = baseline.clone();
+                }
+                screen.refresh_status();
+                screen.closing = false;
+                self.finish_close();
+            }
+            GuardChoice::Cancel => self.settings_close_failed(),
+        }
+    }
+
+    fn finish_close(&mut self) {
+        self.state.close = CloseState::Flushing;
+        self.flush_ui_state();
     }
 
     // ---- history --------------------------------------------------------------------------------

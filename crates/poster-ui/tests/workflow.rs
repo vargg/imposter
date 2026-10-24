@@ -1,5 +1,6 @@
 //! The request workflow through the real UI and a real database.
 #![cfg(test)]
+#![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 
 mod support;
 
@@ -421,6 +422,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
         "Environment",
         "Layout",
         "Settings",
+        "Request settings",
         "Add param",
     ] {
         assert!(

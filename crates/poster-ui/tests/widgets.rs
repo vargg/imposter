@@ -1,5 +1,6 @@
 //! Editor widgets through the UI: auth, rows, multipart, binary bodies and custom methods.
 #![cfg(test)]
+#![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 
 mod support;
 

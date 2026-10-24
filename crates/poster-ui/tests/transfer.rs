@@ -1,6 +1,7 @@
 //! Import and export through the real dialogs. File dialogs are scripted: native ones cannot be
 //! driven by tests.
 #![cfg(test)]
+#![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 
 mod support;
 
