@@ -249,6 +249,18 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
   Run), Cmd/Ctrl+S saves the current screen, Cmd/Ctrl+N opens New Request (New Collection when
   there is none). Find stays with each viewer and applies to the one under the pointer. Why:
   one handler means a body editor cannot swallow Send and a dialog cannot be bypassed.
+- **Packaging: cargo-packager** (`.app`/`.dmg`, `.deb`/`.AppImage`, NSIS per-user installer),
+  configured in `crates/poster/Cargo.toml`. Releases are drafts built from `v*` tags; packages
+  are unsigned unless the signing secrets exist (`docs/release.md`). Why: one tool and one
+  config for all three OSes; a draft keeps a human between CI and users.
+- **The packaged binary is smoke-tested through the real app** (`poster --smoke-test <url>`,
+  driven by `scripts/smoke.py`): window, migrations, HTTP, history and the close sequence, with
+  a throwaway `POSTER_DATA_DIR`. It is the binary's only argument. Why: packaging breaks
+  things unit tests cannot see (missing GL, TLS provider, bundled SQLite, paths). The app-side
+  flow is covered by `poster-ui/tests/smoke.rs`, CI runs the script on Linux on every push.
+- **The app icon is drawn in code** (`icons::app_icon`): the window icon at runtime and the
+  packaging PNGs, which a test compares with the drawing. Why: no design files to lose, and
+  the icon cannot drift from the theme.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their

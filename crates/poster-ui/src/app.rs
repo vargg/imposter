@@ -7,10 +7,11 @@
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use egui::ViewportCommand;
-use poster_app::core::execution::{ExecutionRecord, Response};
+use poster_app::core::execution::{ExecutionRecord, Outcome as ExchangeOutcome, Response};
 use poster_app::core::ids::{CollectionId, EnvironmentId, ExecutionId, FolderId, RequestId};
 use poster_app::core::model::{FormItem, Request, Variables};
 use poster_app::core::settings::AppSettings;
@@ -89,6 +90,16 @@ pub fn window_state(store: &StoreHandle) -> Option<WindowState> {
         .call_blocking(|db| kv::get::<WindowState>(db, Table::UiState, WINDOW_KEY))
         .ok()
         .flatten()
+}
+
+/// What `--smoke-test` reports: the response status, or why there was none.
+pub type SmokeResult = Result<u16, String>;
+
+/// `--smoke-test`: send one request through the real app as soon as it started, then close.
+struct SmokeTest {
+    url: String,
+    sent: bool,
+    result: Arc<OnceLock<SmokeResult>>,
 }
 
 /// Results of background work, applied on the UI thread.
@@ -595,6 +606,7 @@ pub struct PosterApp {
     first_frame: Option<std::time::Instant>,
     /// Scripted file dialog answers (tests); `None` opens native dialogs.
     file_answers: Option<VecDeque<Option<PathBuf>>>,
+    smoke: Option<SmokeTest>,
 }
 
 impl PosterApp {
@@ -644,6 +656,7 @@ impl PosterApp {
             window: None,
             first_frame: Some(std::time::Instant::now()),
             file_answers: None,
+            smoke: None,
         };
         app.state.response.clear("No request selected");
         app.task(
@@ -677,6 +690,42 @@ impl PosterApp {
 
     pub fn is_started(&self) -> bool {
         self.state.started
+    }
+
+    /// Send `GET url` as an unsaved draft once started, then close the app; the outcome lands
+    /// in `report`. Used by the packaged-binary smoke test.
+    pub fn smoke_test(&mut self, url: String, report: Arc<OnceLock<SmokeResult>>) {
+        self.smoke = Some(SmokeTest {
+            url,
+            sent: false,
+            result: report,
+        });
+        self.start_smoke();
+    }
+
+    fn start_smoke(&mut self) {
+        let Some(smoke) = &mut self.smoke else {
+            return;
+        };
+        if smoke.sent || !self.state.started {
+            return;
+        }
+        smoke.sent = true;
+        let mut request = Request::default();
+        request.template.name = "Smoke test".into();
+        request.template.url.clone_from(&smoke.url);
+        self.load_editor(&request);
+        self.send();
+    }
+
+    fn finish_smoke(&mut self, result: SmokeResult) {
+        let Some(smoke) = self.smoke.take() else {
+            return;
+        };
+        let _ = smoke.result.set(result);
+        // The draft was only a vehicle; closing must not ask about it.
+        self.state.editor = None;
+        self.request_close();
     }
 
     /// Answer the next file dialogs with these paths (`None`: cancelled) instead of opening
@@ -793,9 +842,15 @@ impl PosterApp {
     fn apply(&mut self, message: Message) {
         match message {
             Message::Done => {}
-            Message::Started(Ok(startup)) => self.started(*startup),
+            Message::Started(Ok(startup)) => {
+                self.started(*startup);
+                self.start_smoke();
+            }
             Message::Started(Err(error)) => {
                 self.state.started = true;
+                if self.smoke.is_some() {
+                    return self.finish_smoke(Err(format!("Cannot load your data: {error}")));
+                }
                 self.error("Cannot load your data", error);
             }
             Message::Collections {
@@ -1676,6 +1731,21 @@ impl PosterApp {
     fn executed(&mut self, generation: u64, result: Result<Box<Executed>, Failure>) {
         self.state.execution = None;
         self.state.response.pending = false;
+        if self.smoke.as_ref().is_some_and(|s| s.sent) {
+            let outcome = match &result {
+                Ok(executed) if executed.response.outcome == ExchangeOutcome::Response => {
+                    Ok(executed.response.status)
+                }
+                Ok(executed) => Err(format!(
+                    "{:?} {}: {}",
+                    executed.response.outcome,
+                    executed.response.error_kind,
+                    executed.response.reason
+                )),
+                Err(error) => Err(error.clone()),
+            };
+            return self.finish_smoke(outcome);
+        }
         if self.state.history.loaded {
             self.load_history();
         }

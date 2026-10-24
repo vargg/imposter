@@ -1,0 +1,120 @@
+name: Release
+
+# A `v*` tag builds the packages on each OS, smoke-tests every packaged binary, and attaches
+# them to a draft GitHub release for review (docs/release.md).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Tells cargo-packager to skip the Finder styling of the DMG, which needs a GUI session.
+  CI: "true"
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-latest
+            formats: app,dmg
+          - name: linux-x86_64
+            # The oldest supported runner: the binary runs on this glibc and newer.
+            os: ubuntu-22.04
+            formats: deb,appimage
+          - name: windows-x86_64
+            os: windows-latest
+            formats: nsis
+    runs-on: ${{ matrix.os }}
+    env:
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-packager --locked --version 0.11.8
+
+      # cargo-packager reads the signing identity only from its config; the certificate and
+      # notarization credentials come from the APPLE_* variables above.
+      - name: Configure macOS signing
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_IDENTITY != ''
+        shell: bash
+        run: |
+          python3 - <<'EOF'
+          import os, pathlib
+          path = pathlib.Path("crates/poster/Cargo.toml")
+          section = "[package.metadata.packager.macos]\n"
+          identity = os.environ["APPLE_SIGNING_IDENTITY"].replace('"', '\\"')
+          text = path.read_text()
+          assert section in text, "packager macOS section missing"
+          path.write_text(text.replace(section, f'{section}signing-identity = "{identity}"\n'))
+          EOF
+
+      - run: cargo packager -p poster --release --formats ${{ matrix.formats }}
+
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: python3 scripts/smoke.py target/packages/Poster.app/Contents/MacOS/poster
+
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libegl1 libxkbcommon-x11-0
+          sudo apt-get install -y ./target/packages/*.deb
+          xvfb-run -a python3 scripts/smoke.py /usr/bin/poster
+          chmod +x target/packages/*.AppImage
+          # No FUSE on runners: the AppImage runtime extracts itself instead.
+          APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a python3 scripts/smoke.py target/packages/*.AppImage
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "PosterInstall"
+          $installer = Get-ChildItem target/packages/*-setup.exe | Select-Object -First 1
+          Start-Process -Wait -FilePath $installer.FullName -ArgumentList "/S", "/D=$dir"
+          # Runners have no GPU OpenGL; Mesa's software driver next to the binary provides
+          # it for this test only. Users' machines use their own drivers.
+          $mesa = "https://github.com/pal1000/mesa-dist-win/releases/download/24.2.7/mesa3d-24.2.7-release-msvc.7z"
+          Invoke-WebRequest $mesa -OutFile "$env:RUNNER_TEMP\mesa.7z"
+          7z x "$env:RUNNER_TEMP\mesa.7z" "-o$env:RUNNER_TEMP\mesa" | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\mesa\x64\*.dll" $dir
+          python scripts/smoke.py (Join-Path $dir "poster.exe")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: poster-${{ matrix.name }}
+          path: |
+            target/packages/*.dmg
+            target/packages/*.deb
+            target/packages/*.AppImage
+            target/packages/*-setup.exe
+          if-no-files-found: error
+
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: packages/*
