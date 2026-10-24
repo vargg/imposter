@@ -81,6 +81,7 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
 - **Dependencies are declared once** in the root `[workspace.dependencies]`; crates use
   `name.workspace = true`.
   Why: one version per dependency across the workspace, upgraded in one place.
+  Enforced by: the architecture test (no crate manifest sets its own version).
 - **Dependencies must build on macOS, Windows and Linux without system libraries** (pure Rust, or
   C sources vendored by the crate, as with `rusqlite`'s `bundled` feature). No C/C++ code of our
   own.

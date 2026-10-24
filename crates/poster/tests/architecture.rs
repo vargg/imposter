@@ -29,6 +29,8 @@ struct Manifest {
     normal: BTreeSet<String>,
     dev: BTreeSet<String>,
     lints_from_workspace: bool,
+    /// Dependencies that set their own version instead of inheriting the workspace one.
+    own_versions: Vec<String>,
 }
 
 /// Enough TOML for our manifests: section headers and `name = …` / `name.workspace = …` keys.
@@ -46,6 +48,10 @@ fn read(path: &Path) -> Manifest {
         };
         let key = key.trim();
         let name = key.split('.').next().unwrap().trim().to_owned();
+        let inherits = key.ends_with(".workspace") || value.contains("workspace = true");
+        if section.ends_with("dependencies") && !inherits {
+            manifest.own_versions.push(name.clone());
+        }
         match section.as_str() {
             "dependencies" | "build-dependencies" => {
                 manifest.normal.insert(name);
@@ -107,6 +113,17 @@ fn internal_dependencies_follow_the_allowed_direction() {
         assert!(
             extra.is_empty(),
             "{name} must not depend on {extra:?} (see AGENTS.md)"
+        );
+    }
+}
+
+#[test]
+fn dependency_versions_are_declared_once_in_the_workspace() {
+    for (name, manifest) in manifests() {
+        assert!(
+            manifest.own_versions.is_empty(),
+            "{name} sets its own versions for {:?}; declare them in the root Cargo.toml",
+            manifest.own_versions
         );
     }
 }
