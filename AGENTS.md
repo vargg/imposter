@@ -204,6 +204,23 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
 - **The saver is plain UI-side state** (`poster_app::saver`): one write in flight at a time,
   the newest snapshot per request, failures kept for retry or explicit discard. The UI runs
   the writes through the bridge.
+- **UI architecture: widgets emit actions, background work returns messages.** Widgets edit the
+  editor's form state in place and push `Action`s; the app applies them after the frame and runs
+  database and network work through the bridge; results come back as `Message`s drained at the
+  start of the next frame. Every navigation bumps a generation and results carry the generation
+  they started under, so a late result never lands on another request. Why: immediate-mode
+  drawing stays free of IO, and the workflow (guard, saves, close) is testable as state.
+- **Every navigation that replaces the editor goes through one guard**: clean → proceed; saved
+  request with autosave on → save first (failure asks Retry/Discard/Cancel); otherwise ask
+  Save/Discard/Cancel. Closing uses the same guard after background work drained, then writes
+  UI state (layout, last selection, window) and closes; any failure keeps the window open.
+- **The tree is refreshed after a save that changed a request's method or name** (the Python app
+  left it stale).
+- **UI tests drive the real app through AccessKit** (`egui_kittest`): every widget a test or a
+  screen reader needs has an accessible name, set with `widgets::name` when no visible label
+  exists. Only characters present in egui's bundled fonts are used; kittest fails on a missing
+  glyph, which would otherwise render as a box. `cargo run -p poster-ui --example screenshot --
+  <dir>` renders the app offscreen (wgpu) for looking at layouts.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their

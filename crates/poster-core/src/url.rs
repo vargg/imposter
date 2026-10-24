@@ -77,6 +77,16 @@ pub fn join(parts: &UrlParts) -> String {
     url
 }
 
+/// Like [`join`], keeping the fragment: for rebuilding the URL the user edits.
+pub fn join_with_fragment(parts: &UrlParts) -> String {
+    let mut url = join(parts);
+    if !parts.fragment.is_empty() {
+        url.push('#');
+        url.push_str(&parts.fragment);
+    }
+    url
+}
+
 /// Python's `quote_plus(value, safe="")`: letters, digits and `_.-~` stay, space becomes `+`.
 pub fn quote_plus(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
@@ -186,6 +196,8 @@ mod tests {
             fragment: "f".into(),
         };
         assert_eq!(join(&parts), "http://h/x?a=1");
+        assert_eq!(join_with_fragment(&parts), "http://h/x?a=1#f");
+        assert_eq!(join_with_fragment(&split("example.com/x")), "example.com/x");
     }
 
     #[test]

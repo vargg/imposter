@@ -34,6 +34,7 @@ pkcs5 = { version = "0.8.1", features = ["sha1-insecure"] }
 pkcs8 = { version = "0.11.0", features = ["encryption", "pem", "std", "getrandom"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "pem", "ring"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "gzip", "deflate", "brotli"] }
+rfd = "0.17.2"
 rusqlite = { version = "0.41.0", features = ["bundled", "backup"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
@@ -63,6 +64,7 @@ module_name_repetitions = "allow" # crate-prefixed type names read better at cal
 must_use_candidate = "allow"      # too noisy for small getters
 missing_errors_doc = "allow"      # error enums document themselves
 struct_excessive_bools = "allow"  # settings and options mirror independent user toggles
+too_many_lines = "allow"          # dispatch matches and UI layouts read best whole; length alone is no defect
 # Restriction lints backing the rules in AGENTS.md.
 unwrap_used = "deny"   # tests are exempt via clippy.toml
 dbg_macro = "deny"

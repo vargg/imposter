@@ -35,6 +35,21 @@ pub const PALETTE: Palette = Palette {
     error: Color32::from_rgb(0xff, 0x6b, 0x6b),
 };
 
+/// Syntax colors for the viewer and editors, readable on the input background.
+pub fn token_color(token: crate::highlight::Token) -> Color32 {
+    use crate::highlight::Token;
+    match token {
+        Token::Plain => PALETTE.text,
+        Token::Key | Token::Attribute => Color32::from_rgb(0x9c, 0xdc, 0xfe),
+        Token::String => Color32::from_rgb(0xce, 0x91, 0x78),
+        Token::Number => Color32::from_rgb(0xb5, 0xce, 0xa8),
+        Token::Keyword => Color32::from_rgb(0x56, 0x9c, 0xd6),
+        Token::Punctuation => PALETTE.text_muted,
+        Token::Tag => Color32::from_rgb(0x4e, 0xc9, 0xb0),
+        Token::Comment => Color32::from_rgb(0x8a, 0x99, 0x8a),
+    }
+}
+
 /// Meaning-bearing states, so widgets never pick raw colors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tone {
@@ -149,6 +164,25 @@ mod tests {
             }
             let accent = contrast(PALETTE.accent, background);
             assert!(accent >= AA, "accent on {background:?}: {accent:.2}");
+        }
+    }
+
+    #[test]
+    fn syntax_colors_are_readable_on_inputs() {
+        use crate::highlight::Token;
+        for token in [
+            Token::Plain,
+            Token::Key,
+            Token::String,
+            Token::Number,
+            Token::Keyword,
+            Token::Punctuation,
+            Token::Tag,
+            Token::Attribute,
+            Token::Comment,
+        ] {
+            let ratio = contrast(token_color(token), PALETTE.input);
+            assert!(ratio >= AA, "{token:?}: {ratio:.2}");
         }
     }
 

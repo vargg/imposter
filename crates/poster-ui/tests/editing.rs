@@ -1,0 +1,348 @@
+//! Tree operations, editor details, drafts, cancellation, the viewer and the layout.
+#![cfg(test)]
+
+mod support;
+
+use std::time::Duration;
+
+use egui_kittest::kittest::Queryable;
+use poster_app::core::model::{BodyType, Request, RequestTemplate};
+use poster_app::store::{collections, executions, kv};
+use poster_ui::app::{CloseState, EditorTab};
+use poster_ui::layout::{LayoutMode, Orientation};
+use support::{
+    answer_name, click, click_button, collection, request, settle, start_with, type_into,
+};
+
+fn open(app: &mut support::App, label: &str) {
+    click(&mut app.harness, label);
+    settle(&mut app.harness);
+}
+
+#[test]
+fn tree_context_menus_rename_move_and_create_inside_folders() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Old name", "http://x");
+        let id = api.id;
+        store
+            .call_blocking(move |db| collections::create_folder(db, id, None, "Users", "", 5))
+            .unwrap();
+    });
+    open(&mut app, "GET Old name");
+
+    app.harness.get_by_label("GET Old name").click_secondary();
+    app.harness.run_steps(2);
+    click(&mut app.harness, "Rename");
+    app.harness.get_by_label("Name:").type_text(" (renamed)");
+    app.harness.run_steps(1);
+    click(&mut app.harness, "OK");
+    settle(&mut app.harness);
+    app.harness.get_by_label("API / Old name (renamed)");
+
+    app.harness
+        .get_by_label("GET Old name (renamed)")
+        .click_secondary();
+    app.harness.run_steps(2);
+    click(&mut app.harness, "Move…");
+    click_button(&mut app.harness, "Move");
+    settle(&mut app.harness);
+    app.harness.get_by_label("API / Users / Old name (renamed)");
+
+    app.harness.get_by_label("Folder Users").click_secondary();
+    app.harness.run_steps(2);
+    click(&mut app.harness, "New Folder here");
+    answer_name(&mut app.harness, "Admins");
+    app.harness.get_by_label("Folder Admins");
+
+    let stored = app.harness.state().store().call_blocking(|db| {
+        let api = collections::collections(db)?[0].id;
+        collections::tree(db, api)
+    });
+    let tree = stored.unwrap().unwrap();
+    assert_eq!(tree.requests[0].name, "Old name (renamed)");
+    assert!(tree.requests[0].folder_id.is_some());
+    assert!(
+        tree.folders
+            .iter()
+            .any(|f| f.name == "Admins" && f.parent_id.is_some())
+    );
+}
+
+#[test]
+fn dragging_a_request_onto_a_folder_moves_it() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Mover", "http://x");
+        let id = api.id;
+        store
+            .call_blocking(move |db| collections::create_folder(db, id, None, "Target", "", 5))
+            .unwrap();
+    });
+    let from = app.harness.get_by_label("GET Mover").rect().center();
+    let to = app.harness.get_by_label("Folder Target").rect().center();
+
+    app.harness.drag_at(from);
+    app.harness.run_steps(1);
+    for step in 1..=6 {
+        #[allow(clippy::cast_precision_loss)] // six small steps
+        app.harness
+            .hover_at(from + (to - from) * (step as f32 / 6.0));
+        app.harness.run_steps(1);
+    }
+    app.harness.drop_at(to);
+    app.harness.run_steps(2);
+    settle(&mut app.harness);
+
+    let tree = app.harness.state().store().call_blocking(|db| {
+        let api = collections::collections(db)?[0].id;
+        collections::tree(db, api)
+    });
+    let tree = tree.unwrap().unwrap();
+    let target = tree.folders.iter().find(|f| f.name == "Target").unwrap().id;
+    assert_eq!(tree.requests[0].folder_id, Some(target));
+}
+
+#[test]
+fn body_types_and_invalid_settings_reach_the_saved_request() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Upload", "http://x");
+    });
+    open(&mut app, "GET Upload");
+
+    app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Body;
+    app.harness.run_steps(2);
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .body_type = BodyType::Json;
+    app.harness.run_steps(1);
+    type_into(&mut app.harness, "Request body", r#"{"a": 1}"#);
+    app.harness.get_by_label("Valid JSON");
+
+    app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Settings;
+    app.harness.run_steps(2);
+    click(
+        &mut app.harness,
+        "Use application default for Timeout (seconds)",
+    );
+    type_into(&mut app.harness, "Timeout (seconds)", "abc");
+    app.harness
+        .get_by_label("Fix the highlighted fields to save");
+    app.harness
+        .get_by_label("Enter a positive number of seconds.");
+
+    click(
+        &mut app.harness,
+        "Use application default for Timeout (seconds)",
+    );
+    for _ in 0..4 {
+        app.harness.step();
+    }
+    settle(&mut app.harness);
+    let saved = app.harness.state().store().call_blocking(|db| {
+        let api = collections::collections(db)?[0].id;
+        let tree = collections::tree(db, api)?.unwrap();
+        collections::request(db, tree.requests[0].id)
+    });
+    let saved = saved.unwrap().unwrap();
+    assert_eq!(saved.template.body_type, BodyType::Json);
+    assert_eq!(saved.template.body, br#"{"a": 1}"#);
+    assert_eq!(saved.template.options.timeout, None);
+}
+
+#[test]
+fn a_restored_draft_is_saved_into_the_selected_collection() {
+    let mut app = start_with(|store| {
+        collection(store, "API");
+        let draft = Request {
+            template: RequestTemplate {
+                name: "Draft".into(),
+                url: "http://draft".into(),
+                ..RequestTemplate::default()
+            },
+            ..Request::default()
+        };
+        store
+            .call_blocking(move |db| kv::set(db, kv::Table::UiState, "draft", &draft))
+            .unwrap();
+    });
+    app.harness.get_by_label("Unsaved draft / Draft");
+    app.harness.get_by_label("Not saved to a collection");
+
+    click(&mut app.harness, "Save to collection…");
+    app.harness.get_by_label("Request name in API:");
+    click(&mut app.harness, "OK");
+    settle(&mut app.harness);
+
+    app.harness.get_by_label("API / Draft");
+    let tree = app.harness.state().store().call_blocking(|db| {
+        let api = collections::collections(db)?[0].id;
+        collections::tree(db, api)
+    });
+    assert_eq!(tree.unwrap().unwrap().requests[0].name, "Draft");
+}
+
+#[test]
+fn cancelling_a_running_request_records_a_cancelled_run() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let listener = runtime
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let url = format!(
+        "http://127.0.0.1:{}/slow",
+        listener.local_addr().unwrap().port()
+    );
+    let (accepted_tx, accepted_rx) = std::sync::mpsc::channel();
+    runtime.spawn(async move {
+        let (_stream, _) = listener.accept().await.unwrap();
+        accepted_tx.send(()).unwrap();
+        std::future::pending::<()>().await;
+    });
+    let mut app = start_with(move |store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Slow", &url);
+    });
+    open(&mut app, "GET Slow");
+
+    click(&mut app.harness, "Send");
+    accepted_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    app.harness.run_steps(1);
+    app.harness.get_by_label("Request in progress");
+    click(&mut app.harness, "Cancel");
+    settle(&mut app.harness);
+
+    app.harness.get_by_label("Cancelled");
+    let summary = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| executions::page(db, None, 0, 1))
+        .unwrap();
+    assert_eq!(
+        summary[0].outcome,
+        poster_app::core::execution::Outcome::Cancelled
+    );
+}
+
+#[test]
+fn the_viewer_finds_text_in_the_response() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Viewer", "http://x");
+    });
+    open(&mut app, "GET Viewer");
+    app.harness
+        .state_mut()
+        .state
+        .response
+        .show(poster_app::core::execution::Response {
+            status: 200,
+            reason: "OK".into(),
+            headers: vec![("content-type".into(), "text/plain".into())],
+            body: b"alpha beta\nALPHA gamma\nalpha".to_vec(),
+            ..Default::default()
+        });
+    app.harness.run_steps(2);
+
+    click(&mut app.harness, "Find");
+    app.harness
+        .get_by_label("Find in response body")
+        .type_text("alpha");
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Match 1 of 3");
+    click(&mut app.harness, "Next");
+    app.harness.get_by_label("Match 2 of 3");
+    click(&mut app.harness, "Previous");
+    click(&mut app.harness, "Previous");
+    app.harness.get_by_label("Match 3 of 3");
+    click(&mut app.harness, "Close");
+    assert!(app.harness.query_by_label("Match 3 of 3").is_none());
+
+    app.harness.state_mut().state.response.tab = poster_ui::app::ResponseTab::Headers;
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Copy headers");
+}
+
+#[test]
+fn layout_controls_change_mode_hide_the_sidebar_and_reset() {
+    let mut app = start_with(|store| {
+        collection(store, "API");
+    });
+    click(&mut app.harness, "Layout");
+    click(&mut app.harness, "Stacked");
+    app.harness.run_steps(2);
+    assert_eq!(
+        app.harness.state().state.orientation,
+        Some(Orientation::Stacked)
+    );
+    click(&mut app.harness, "Hide Collections");
+    assert!(!app.harness.state().state.layout.sidebar_visible);
+    click(&mut app.harness, "Show Collections");
+
+    click(&mut app.harness, "Layout");
+    click(&mut app.harness, "Reset layout");
+    assert_eq!(app.harness.state().state.layout.mode, LayoutMode::Auto);
+}
+
+#[test]
+fn switching_collections_clears_a_request_from_another_collection_and_deleting_one_selects_the_next()
+ {
+    let mut app = start_with(|store| {
+        let a = collection(store, "A");
+        request(store, a.id, "In A", "http://a");
+        collection(store, "B");
+    });
+    open(&mut app, "GET In A");
+
+    click(&mut app.harness, "Collection");
+    click(&mut app.harness, "B");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Select a request");
+
+    click(&mut app.harness, "Collection actions");
+    click(&mut app.harness, "Delete Collection");
+    click_button(&mut app.harness, "Delete");
+    settle(&mut app.harness);
+    let names: Vec<String> = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| collections::collections(db))
+        .unwrap()
+        .into_iter()
+        .map(|c| c.name)
+        .collect();
+    assert_eq!(names, ["A"]);
+    assert_eq!(app.harness.state().state.collections.len(), 1);
+}
+
+#[test]
+fn closing_with_invalid_edits_asks_and_cancel_keeps_the_window_open() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Edited", "http://x");
+    });
+    open(&mut app, "GET Edited");
+    app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Settings;
+    app.harness.run_steps(2);
+    click(
+        &mut app.harness,
+        "Use application default for Timeout (seconds)",
+    );
+    type_into(&mut app.harness, "Timeout (seconds)", "x");
+
+    app.harness.state_mut().request_close();
+    settle(&mut app.harness);
+    app.harness
+        .get_by_label("Save changes to \"Edited\" before continuing?");
+    click(&mut app.harness, "Cancel");
+    settle(&mut app.harness);
+
+    assert_eq!(app.harness.state().close_state(), CloseState::Open);
+}
