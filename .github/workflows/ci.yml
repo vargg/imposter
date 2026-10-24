@@ -38,4 +38,4 @@ jobs:
       - run: >-
           cargo llvm-cov --workspace --locked
           --fail-under-lines 85 --fail-under-regions 70
-          --ignore-filename-regex 'crates/poster/src/main\.rs$'
+          --ignore-filename-regex '(crates/poster/src/main\.rs|crates/poster-testkit/)'

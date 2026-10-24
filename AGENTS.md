@@ -58,10 +58,11 @@ coverage; regions are the closest measure). CI runs the same command:
 
 ```sh
 cargo llvm-cov --workspace --fail-under-lines 85 --fail-under-regions 70 \
-  --ignore-filename-regex 'crates/poster/src/main\.rs$'
+  --ignore-filename-regex '(crates/poster/src/main\.rs|crates/poster-testkit/)'
 ```
 
-`main.rs` only opens the window; the installed-binary smoke test covers it. Each stage in
+`main.rs` only opens the window; the installed-binary smoke test covers it. `poster-testkit` is
+test code and would inflate the numbers. Each stage in
 `PLAN.md` is its own commit.
 
 ## Architecture principles
@@ -70,7 +71,8 @@ cargo llvm-cov --workspace --fail-under-lines 85 --fail-under-regions 70 \
   Never add an edge against it.
   Why: each layer stays testable without the ones above it, and `ui` can change without touching
   the domain.
-  Enforced by: Cargo rejects dependency cycles. The full allowed graph is a gap.
+  Enforced by: `crates/poster/tests/architecture.rs` (every manifest against the allowed
+  graph). `poster-ui` reaches the store and transfer crates only through `poster-app`.
 - **`poster-core` does no IO** (no files, network, database, clock or environment).
   Why: the domain rules (variables, settings resolution, validation) can then be tested
   exhaustively, quickly and deterministically.
@@ -103,7 +105,10 @@ cargo llvm-cov --workspace --fail-under-lines 85 --fail-under-regions 70 \
   (`tests/*.rs`, `tests/support/`) starts with `#![cfg(test)]`.
 - **No `dbg!`, `todo!` or `unimplemented!` in committed code.** Do the work, or put it in `PLAN.md`.
   Enforced by: `clippy::dbg_macro`, `clippy::todo`, `clippy::unimplemented`.
+- **Test support lives in `poster-testkit`, used only as a dev-dependency.** Enforced by the
+  architecture test.
 - **Errors: `thiserror` enums in library crates; `anyhow` only in the `poster` binary.**
+  Enforced by the architecture test.
   Why: callers match on error variants (the UI shows a validation error differently from a
   network error); only the binary just reports them.
 - **Make invalid states unrepresentable** (enums, newtypes, private fields with checked
@@ -194,6 +199,17 @@ cargo llvm-cov --workspace --fail-under-lines 85 --fail-under-regions 70 \
   nor custom reason phrases. Values of one name keep their order.
 - **`User-Agent: Poster/<version>`** unless the request sets one; environment and system proxies
   are never used, only the configured one.
+- **An execution reads its settings, variables and collection in one database command.**
+  The database thread runs commands in order, so this is the snapshot taken before the first
+  await: an environment switch queued before Send applies, a later one cannot change a running
+  request. The variable inspector uses the same function (`executor::inputs`).
+- **Requests that cannot be sent are not history.** Unresolved variables, a bad URL, auth or
+  cookie conflicts are reported and nothing is recorded (the Python app recorded URL errors as
+  transport errors). Cancelled and failed sends are recorded with their outcome. A failed
+  history write keeps the response and says so (`history_error`).
+- **The saver is plain UI-side state** (`poster_app::saver`): one write in flight at a time,
+  the newest snapshot per request, failures kept for retry or explicit discard. The UI runs
+  the writes through the bridge.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their
@@ -214,6 +230,4 @@ Open questions are in `PLAN.md` ("Open questions"); their outcomes are recorded 
 
 Rules above that no tool checks yet. Close a gap together with the first code it applies to.
 
-- Allowed crate dependency graph: a workspace test over `cargo metadata`.
 - No blocking calls in `poster-ui`: `disallowed-methods` in its own `clippy.toml`.
-- `thiserror`/`anyhow` placement: the same dependency-graph test.

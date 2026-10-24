@@ -1,7 +1,6 @@
-//! Loopback servers and test certificates. Every server binds an ephemeral port and serves a
-//! fixed number of connections, returning the raw request bytes it received.
-#![cfg(test)]
-#![allow(dead_code)] // each test binary uses a different subset
+//! Test support shared by the crates' tests: loopback HTTP servers that record the raw
+//! requests they receive, and generated certificates. Never a dependency of app code.
+#![allow(clippy::unwrap_used, clippy::missing_panics_doc)] // test support: a panic here is a failed test
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -82,7 +81,7 @@ impl Pki {
 
     /// TLS server config that requires a client certificate signed by the test CA.
     pub fn server_config(&self, require_client_cert: bool) -> Arc<ServerConfig> {
-        let provider = poster_http::tls::provider();
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
         let builder = ServerConfig::builder_with_provider(provider.clone())
             .with_safe_default_protocol_versions()
             .unwrap();

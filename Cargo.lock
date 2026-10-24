@@ -3095,7 +3095,9 @@ dependencies = [
  "poster-core",
  "poster-http",
  "poster-store",
+ "poster-testkit",
  "poster-transfer",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -3126,7 +3128,7 @@ dependencies = [
  "pkcs5",
  "pkcs8",
  "poster-core",
- "rcgen",
+ "poster-testkit",
  "reqwest",
  "rustls",
  "rustls-pki-types",
@@ -3137,7 +3139,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tokio-rustls",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
@@ -3155,6 +3156,18 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "poster-testkit"
+version = "0.1.0"
+dependencies = [
+ "pkcs8",
+ "rcgen",
+ "rustls",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]

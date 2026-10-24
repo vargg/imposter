@@ -15,6 +15,7 @@ poster-store = { path = "crates/poster-store" }
 poster-transfer = { path = "crates/poster-transfer" }
 poster-app = { path = "crates/poster-app" }
 poster-ui = { path = "crates/poster-ui" }
+poster-testkit = { path = "crates/poster-testkit" }
 
 # Third-party. Versions live only here (see AGENTS.md).
 anyhow = "1.0.104"

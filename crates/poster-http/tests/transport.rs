@@ -1,8 +1,6 @@
 //! The transport against loopback servers, checking the bytes that actually arrive.
 #![cfg(test)]
 
-mod support;
-
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -14,8 +12,8 @@ use poster_http::tls::TlsSettings;
 use poster_http::transport::collect;
 use poster_http::upload::multipart_stream;
 use poster_http::{ErrorKind, Policy, SendError, send};
+use poster_testkit::{Pki, Received, Server, response};
 use serde_json::Value;
-use support::{Pki, Received, Server, response};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio_util::sync::CancellationToken;
 
@@ -498,7 +496,8 @@ async fn a_401_without_a_digest_challenge_is_returned() {
 async fn https_requests_use_the_tls_policy() {
     let dir = tempfile::tempdir().unwrap();
     let pki = Pki::generate(dir.path());
-    let (url, server) = support::https_once(pki.server_config(false), support::OK_RESPONSE).await;
+    let (url, server) =
+        poster_testkit::https_once(pki.server_config(false), poster_testkit::OK_RESPONSE).await;
     let url = url.replace("localhost", "127.0.0.1");
     let tls = TlsSettings {
         verify: false,
@@ -515,7 +514,8 @@ async fn https_requests_use_the_tls_policy() {
 async fn untrusted_certificates_are_tls_errors() {
     let dir = tempfile::tempdir().unwrap();
     let pki = Pki::generate(dir.path());
-    let (url, _server) = support::https_once(pki.server_config(false), support::OK_RESPONSE).await;
+    let (url, _server) =
+        poster_testkit::https_once(pki.server_config(false), poster_testkit::OK_RESPONSE).await;
 
     let (kind, message) = failure(
         &request("GET", &url.replace("localhost", "127.0.0.1")),
@@ -592,7 +592,7 @@ async fn a_server_that_hangs_up_mid_response_is_an_error() {
     );
     tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        support::read_request(&mut stream).await;
+        poster_testkit::read_request(&mut stream).await;
         stream
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\npartial")
             .await
@@ -614,7 +614,7 @@ async fn cancelling_mid_stream_returns_at_once_and_closes_the_connection() {
     let (streaming_tx, streaming_rx) = tokio::sync::oneshot::channel();
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        support::read_request(&mut stream).await;
+        poster_testkit::read_request(&mut stream).await;
         stream
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\n\r\nfirst bytes")
             .await

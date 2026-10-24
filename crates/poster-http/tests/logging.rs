@@ -2,8 +2,6 @@
 //! `log` records (the app's subscriber bridges them).
 #![cfg(test)]
 
-mod support;
-
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -12,7 +10,7 @@ use poster_core::model::Credentials;
 use poster_core::prepare::{Prepared, PreparedAuth, PreparedBody};
 use poster_http::tls::TlsSettings;
 use poster_http::{Policy, send};
-use support::{Server, response};
+use poster_testkit::{Server, response};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Default)]

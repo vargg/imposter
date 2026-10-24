@@ -1,13 +1,11 @@
 //! TLS policy against loopback servers using generated certificates.
 #![cfg(test)]
 
-mod support;
-
 use std::net::SocketAddr;
 use std::path::Path;
 
 use poster_http::tls::{TlsError, TlsSettings, client_config, read_private_key};
-use support::{OK_RESPONSE, Pki, https_once};
+use poster_testkit::{OK_RESPONSE, Pki, https_once};
 
 fn client(settings: &TlsSettings, url: &str) -> reqwest::Client {
     let port = url.rsplit(':').next().unwrap().parse::<u16>().unwrap();

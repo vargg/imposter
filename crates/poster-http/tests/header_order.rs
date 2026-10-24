@@ -3,10 +3,8 @@
 //! lowercase, and empty values are sent.
 #![cfg(test)]
 
-mod support;
-
+use poster_testkit::{OK_RESPONSE, http_once};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use support::{OK_RESPONSE, http_once};
 
 #[tokio::test]
 async fn same_name_values_keep_order_and_names_follow_first_occurrence() {
