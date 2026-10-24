@@ -22,8 +22,17 @@ tokio.workspace = true
 bytes.workspace = true
 futures-util.workspace = true
 tracing.workspace = true
+getrandom.workspace = true
+md-5.workspace = true
+mime_guess.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+tokio-util.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
+serde_json.workspace = true
+tracing-subscriber.workspace = true
 rcgen.workspace = true
 tokio-rustls.workspace = true
 tempfile.workspace = true

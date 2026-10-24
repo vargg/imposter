@@ -118,7 +118,8 @@ cargo llvm-cov --workspace --fail-under-lines 85 --fail-under-regions 70 \
   Why: one visible policy instead of exceptions spread through the code.
 - **Never log credentials, tokens, or request or response bodies.**
   Why: logs end up in bug reports and screenshots.
-  Enforced by: tests that capture `tracing` output (from stage 3 on).
+  Enforced by: `poster-http/tests/logging.rs` (trace-level capture, dependencies included).
+  Transport error messages drop the URL, which can carry `user:password@`.
 - **The app's data is `~/.poster/poster.db`, overridable with `POSTER_DATA_DIR`. Never read or
   write the Python app's database files.**
   Why: the Python app must keep working; users migrate through `.poster.json` export and import.
@@ -176,6 +177,23 @@ cargo llvm-cov --workspace --fail-under-lines 85 --fail-under-regions 70 \
   the JSON payload. Why: the list must not decode multi-megabyte payloads; details load one.
   Retention deletes oldest first by count and total payload size; a record larger than the
   whole budget is refused.
+- **Redirects are followed by `poster-http`, not reqwest, with httpx's rules:** at most 20;
+  303 becomes GET (except HEAD), 301/302 turn POST into a bodiless GET; 307/308 keep the method
+  and replay the body; `Authorization` is dropped across origins (except an http→https upgrade
+  of the same host); explicit `Cookie` headers are never carried to the next location. Why:
+  reqwest cannot replay streamed uploads, and users expect the Python app's behavior.
+- **Digest is answered once per hop** (MD5, SHA, SHA-256, SHA-512, `-sess`, qop `auth`; not
+  `auth-int`), rebuilding the body for the retry. Verified against the RFC 2617/7616 vectors.
+- **Uploads stream with chunked transfer encoding** (no `Content-Length`), as httpx does, and
+  are reopened for every attempt. Multipart parts match the Python app byte for byte
+  (`parity/multipart.json`).
+- **Timeouts apply to connecting and to each read**, not to the whole exchange, as in httpx: a
+  slow but steady download is not cut off.
+- **Response headers arrive grouped by name and lowercased, and the reason phrase is the
+  standard one for the status.** Why: hyper exposes neither the received order across names
+  nor custom reason phrases. Values of one name keep their order.
+- **`User-Agent: Poster/<version>`** unless the request sets one; environment and system proxies
+  are never used, only the configured one.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Compatibility contract: native `.poster.json` version 1.** Why: it is how users move their

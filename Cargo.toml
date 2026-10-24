@@ -27,6 +27,8 @@ egui_kittest = { version = "0.37.0", features = ["eframe"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 # PBKDF2-HMAC-SHA1 is the default PRF of LibreSSL and OpenSSL < 1.1 encrypted keys; SHA-1 is
 # only a KDF there, where its collision weakness does not apply.
+md-5 = "0.11.0"
+mime_guess = "2.0.5"
 pkcs5 = { version = "0.8.1", features = ["sha1-insecure"] }
 pkcs8 = { version = "0.11.0", features = ["encryption", "pem", "std", "getrandom"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "pem", "ring"] }
@@ -36,9 +38,12 @@ rustls = { version = "0.23.46", default-features = false, features = ["ring", "s
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
 rustls-platform-verifier = "0.7.1"
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
+getrandom = "0.4.3"
 indexmap = { version = "2.14.2", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
+sha1 = "0.11.0"
+sha2 = "0.11.1"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "fs"] }

@@ -10,6 +10,7 @@ Outputs (relative to tests/fixtures/):
 - parity/prepare.json: request preparation (URL, headers, body) or the error raised.
 - parity/resolve.json: variable resolution of request templates or the error raised.
 - parity/settings.json: application settings resolved against request options.
+- parity/multipart.json: multipart and binary upload bodies streamed by the Python transport.
 """
 
 import base64
@@ -362,6 +363,49 @@ def settings_cases() -> list[dict]:
     ]
 
 
+def multipart_cases() -> list[dict]:
+    """Wire bodies from Python's UploadStream with a fixed boundary over tests/fixtures/uploads."""
+    import asyncio
+
+    from poster.adapters.uploads import UploadStream
+
+    uploads = ROOT / "uploads"
+
+    def f(name, file, **extra):
+        return {"name": name, "value": file, "kind": "file", **extra}
+
+    cases = {
+        "text field": [{"name": "field", "value": "text value"}],
+        "text with content type": [{"name": "json", "value": "{}", "content_type": "application/json"}],
+        "empty text": [{"name": "empty", "value": ""}],
+        "unicode text": [{"name": "ключ", "value": "значение ✓"}],
+        "file with guessed type": [f("upload", "hello.txt")],
+        "file with custom filename and type": [f("upload", "hello.txt", filename="other.dat", content_type="text/x-custom")],
+        "binary file larger than a chunk": [f("blob", "data.bin")],
+        "file without extension": [f("blob", "noext")],
+        "json file": [f("doc", "report.json")],
+        "quoted names": [{"name": 'a "quoted"\r\nname', "value": "v"}, f("f", "hello.txt", filename='x"y\nz.txt')],
+        "mixed": [{"name": "a", "value": "1"}, f("b", "hello.txt"), {"name": "a", "value": "2"}],
+        "no fields": [],
+    }
+
+    async def body(fields):
+        stream = UploadStream(fields=[FormItem(**{**field, "value": str(uploads / field["value"]) if field.get("kind") == "file" else field["value"]}) for field in fields])
+        stream.boundary = "BOUNDARY"
+        return b"".join([chunk async for chunk in stream])
+
+    async def binary(name):
+        stream = UploadStream(path=str(uploads / name))
+        return b"".join([chunk async for chunk in stream])
+
+    out = [
+        {"name": label, "fields": fields, "body": base64.urlsafe_b64encode(asyncio.run(body(fields))).decode()}
+        for label, fields in cases.items()
+    ]
+    out.append({"name": "binary body", "file": "data.bin", "body": base64.urlsafe_b64encode(asyncio.run(binary("data.bin"))).decode()})
+    return out
+
+
 def write(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
@@ -379,6 +423,7 @@ def main() -> None:
     write(ROOT / "parity" / "prepare.json", pretty(prepare_cases()))
     write(ROOT / "parity" / "resolve.json", pretty(resolve_cases()))
     write(ROOT / "parity" / "settings.json", pretty(settings_cases()))
+    write(ROOT / "parity" / "multipart.json", pretty(multipart_cases()))
 
 
 if __name__ == "__main__":
