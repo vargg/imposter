@@ -44,26 +44,20 @@ Python/PyQt6 prototype at `~/dev/pystman`, which stays the reference implementat
   deadline. No external network, no personal data directory (`POSTER_DATA_DIR` points at a temp
   dir). Every test owns and cleans up its resources.
   Why: flaky tests train people to ignore red CI.
-- **Report only what was run.** A change is done when the commands below pass locally; say which
-  checks ran and which did not (for example, CI on other OSes).
+- **Report only what was run.** A change is done when `scripts/check.sh` passes locally; say
+  which checks ran and which did not (for example, CI on other OSes). Commit only after it
+  passed: the script stops at the first failure, so never chain a commit after it with `;`.
 
 ```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+scripts/check.sh     # fmt, clippy (-D warnings), all tests under the coverage floor; as CI
+cargo test -p <crate>
+cargo run -p poster
 ```
 
 Coverage must stay at or above 85% of lines and 70% of regions (stable Rust has no branch
-coverage; regions are the closest measure). CI runs the same command:
-
-```sh
-cargo llvm-cov --workspace --fail-under-lines 85 --fail-under-regions 70 \
-  --ignore-filename-regex '(crates/poster/src/main\.rs|crates/poster-testkit/)'
-```
-
-`main.rs` only opens the window; the installed-binary smoke test covers it. `poster-testkit` is
-test code and would inflate the numbers. Each stage in
-`PLAN.md` is its own commit.
+coverage; regions are the closest measure). `main.rs` only opens the window; the
+installed-binary smoke test covers it. `poster-testkit` is test code and would inflate the
+numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
 
 ## Architecture principles
 
