@@ -241,6 +241,25 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
   collections from the Python app. Python exports must round-trip byte for byte
   (`poster-transfer/tests/native_golden.rs`). Bytes are base64 with the URL-safe alphabet and
   padding, as Pydantic writes them; both alphabets are read.
+- **Imports never change existing data and write nothing before review.** The preview computes
+  fresh names (`Name (2)`) and global conflicts first; the import is one transaction; existing
+  global values win, with a warning. Postman losses that change how a request runs (scripts,
+  unsupported auth or bodies) need the explicit "Remove the listed unsupported execution
+  features" consent, enforced by the service (`TransferError::ConsentRequired`), not only by
+  the dialog. Other losses are warnings. Why: the Python app's contract; an import must be
+  undoable by deleting the new collection.
+- **Postman files are validated against the bundled v2.1 schema (draft 4), offline.** The file
+  is pinned by SHA-256 (`poster-transfer/schemas/README.md`, checked by `tests/schema_pin.rs`).
+- **Exports are opt-in and atomic.** Environments and globals are included only when checked.
+  The open request is exported as the editor shows it, unsaved edits included. Files are
+  written to a temporary file and renamed; a Postman bundle with companions goes to a new
+  directory and never overwrites one. Tied sibling positions are renumbered on export, as the
+  Python app does, so a trip through the database keeps content and order, not tied numbers.
+- **File dialogs go through one seam** (`PosterApp::pick`); tests answer them with
+  `script_file_dialogs`, since native dialogs cannot be driven headless.
+- **Each dialog kind has its own modal id.** Why: a dialog replacing another (the import review
+  followed by the unsaved-changes guard) inherited the old one's area, so a click on its buttons
+  counted as a click outside and cancelled it.
 - **Parity with the Python app is tested against fixtures produced by running the Python code**
   (`tests/fixtures/python/generate.py`), never against expectations written by hand. Why: a
   port written from reading code copies the reader's misreadings. Change a fixture only by

@@ -1,0 +1,14 @@
+{
+  "info": {"name": "Local API", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json", "description": "Sample local API"},
+  "variable": [{"key": "base", "value": "http://127.0.0.1:8765"}, {"key": "empty", "value": ""}],
+  "auth": {"type": "basic", "basic": [{"key": "username", "value": "test"}, {"key": "password", "value": "fixture"}]},
+  "item": [
+    {"name": "Health", "request": {"method": "GET", "url": "{{base}}/health?a=1&a=", "header": [{"key":"X-Test", "value":""}, {"key":"X-Test", "value":"disabled", "disabled":true}]}},
+    {"name": "Nested", "description": "Folder", "auth": {"type":"bearer", "bearer":[{"key":"token", "value":"{{token}}"}]}, "item":[
+      {"name":"JSON", "request":{"method":"POST", "url":{"raw":"{{base}}/items", "query":[{"key":"x","value":"", "disabled":true}]}, "body":{"mode":"raw", "raw":"{\"ok\":true}", "options":{"raw":{"language":"json"}}}}},
+      {"name":"Form", "request":{"method":"PUT", "url":"{{base}}/form", "auth":{"type":"noauth"}, "body":{"mode":"urlencoded", "urlencoded":[{"key":"x","value":"1"},{"key":"x","value":""}]}}},
+      {"name":"Files", "request":{"method":"PATCH", "url":"{{base}}/files", "body":{"mode":"formdata", "formdata":[{"key":"file","type":"file","src":["one.txt","two.txt"]},{"key":"note","type":"text","value":"", "disabled":true}]}}},
+      {"name":"Binary", "request":{"method":"POST", "url":"{{base}}/file", "body":{"mode":"file", "file":{"src":"{{path}}"}}}}
+    ]}
+  ]
+}

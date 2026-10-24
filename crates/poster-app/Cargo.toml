@@ -18,7 +18,9 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
+poster-core.workspace = true
 poster-testkit.workspace = true
 tempfile.workspace = true

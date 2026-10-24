@@ -15,7 +15,7 @@ fn an_empty_database_offers_to_create_a_collection() {
     let mut app = start();
 
     app.harness
-        .get_by_label("No collections yet. Create one with +.");
+        .get_by_label("No collections yet. Create or import one with +.");
     assert!(
         app.harness
             .get_by_label("Collection")

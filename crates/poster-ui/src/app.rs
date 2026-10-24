@@ -5,6 +5,7 @@
 //! drained at the start of each frame. Results carry the selection generation they were
 //! started under, so a late result never replaces another request's state.
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -15,6 +16,7 @@ use poster_app::core::model::{FormItem, Request, Variables};
 use poster_app::core::settings::AppSettings;
 use poster_app::core::variables::Snapshot;
 use poster_app::executor::{self, ExecuteError, Executed};
+use poster_app::formats::native::NativeDocument;
 use poster_app::runtime::{Bridge, TaskId};
 use poster_app::saver::{Saver, State as SaveState};
 use poster_app::store::collections::{self, Collection, Tree};
@@ -22,6 +24,7 @@ use poster_app::store::environments::{self, Environment};
 use poster_app::store::executions::{self, ExecutionSummary};
 use poster_app::store::kv::{self, Table};
 use poster_app::store::{Store, StoreError, StoreHandle};
+use poster_app::transfer::{self, ExportScope, ImportPreview};
 use poster_app::{ops, store};
 use serde_json::Value;
 
@@ -160,6 +163,46 @@ pub enum Message {
         target: FileRequest,
         path: Option<PathBuf>,
     },
+    ImportPicked(Option<PathBuf>),
+    CompanionsPicked {
+        path: PathBuf,
+        companions: Vec<PathBuf>,
+    },
+    ImportPreviewed(Result<Box<ImportPreview>, Failure>),
+    Imported(Result<CollectionId, Failure>),
+    NativeExportPicked {
+        scope: Box<ExportScope>,
+        path: Option<PathBuf>,
+    },
+    PostmanReady(Result<Box<PostmanExport>, Failure>),
+    PostmanExportPicked(Option<PathBuf>),
+    Exported(Result<PathBuf, Failure>),
+}
+
+/// A Postman export waiting for review of its warnings and a destination.
+#[derive(Debug)]
+pub struct PostmanExport {
+    document: NativeDocument,
+    data: Value,
+    warnings: Vec<String>,
+}
+
+/// A native file dialog. Tests script the answers instead (see
+/// [`PosterApp::script_file_dialogs`]).
+#[derive(Debug, Clone)]
+enum FileDialog {
+    Open {
+        title: &'static str,
+        filter: Option<(&'static str, &'static str)>,
+    },
+    OpenMany {
+        title: &'static str,
+    },
+    Save {
+        title: &'static str,
+        name: &'static str,
+        filter: Option<(&'static str, &'static str)>,
+    },
 }
 
 /// What the user asked for while drawing a frame.
@@ -185,6 +228,10 @@ pub enum Action {
     OpenDefinition(Scope, String),
     Variables(VariablesAction),
     History(HistoryAction),
+    /// Pick a collection file and review its import.
+    Import,
+    /// Choose what to export from the selected collection.
+    Export,
     /// The editor changed: `url` when the URL itself was edited, `params` for the query rows.
     Edited {
         url: bool,
@@ -303,6 +350,11 @@ enum Navigation {
     CreateCollection(String),
     /// Put a history entry's request in the editor as an unsaved draft.
     Restore(Box<Request>),
+    /// Write a reviewed import, then show the new collection.
+    Import {
+        preview: Box<ImportPreview>,
+        remove_unsupported: bool,
+    },
     Close,
 }
 
@@ -466,6 +518,8 @@ pub struct State {
     close: CloseState,
     restore: Option<RequestId>,
     started: bool,
+    /// A reviewed Postman export waiting for its destination.
+    postman: Option<PostmanExport>,
     pub actions: Vec<Action>,
 }
 
@@ -476,6 +530,8 @@ pub struct PosterApp {
     pub state: State,
     window: Option<WindowState>,
     first_frame: Option<std::time::Instant>,
+    /// Scripted file dialog answers (tests); `None` opens native dialogs.
+    file_answers: Option<VecDeque<Option<PathBuf>>>,
 }
 
 impl PosterApp {
@@ -518,10 +574,12 @@ impl PosterApp {
                 close: CloseState::Open,
                 restore: None,
                 started: false,
+                postman: None,
                 actions: Vec::new(),
             },
             window: None,
             first_frame: Some(std::time::Instant::now()),
+            file_answers: None,
         };
         app.state.response.clear("No request selected");
         app.task(
@@ -555,6 +613,82 @@ impl PosterApp {
 
     pub fn is_started(&self) -> bool {
         self.state.started
+    }
+
+    /// Answer the next file dialogs with these paths (`None`: cancelled) instead of opening
+    /// native dialogs, which tests cannot drive. Multi-file dialogs take one answer per file
+    /// until a `None`.
+    pub fn script_file_dialogs(&mut self, answers: impl IntoIterator<Item = Option<PathBuf>>) {
+        self.file_answers
+            .get_or_insert_with(VecDeque::new)
+            .extend(answers);
+    }
+
+    /// Show a file dialog in the background; `done` turns the chosen paths (none when
+    /// cancelled) into a message.
+    fn pick<M>(&mut self, dialog: FileDialog, done: M)
+    where
+        M: FnOnce(Vec<PathBuf>) -> Message + Send + 'static,
+    {
+        if let Some(answers) = &mut self.file_answers {
+            let mut paths = Vec::new();
+            match dialog {
+                FileDialog::OpenMany { .. } => {
+                    while let Some(Some(path)) = answers.pop_front() {
+                        paths.push(path);
+                    }
+                }
+                FileDialog::Open { .. } | FileDialog::Save { .. } => {
+                    paths.extend(answers.pop_front().flatten());
+                }
+            }
+            self.bridge.spawn(move |_| async move { done(paths) });
+            return;
+        }
+        self.bridge.spawn(move |_| async move {
+            let paths = match dialog {
+                FileDialog::Open { title, filter } => {
+                    let mut builder = rfd::AsyncFileDialog::new().set_title(title);
+                    if let Some((label, extension)) = filter {
+                        builder = builder.add_filter(label, &[extension]);
+                    }
+                    builder
+                        .pick_file()
+                        .await
+                        .into_iter()
+                        .map(|file| file.path().to_owned())
+                        .collect()
+                }
+                FileDialog::OpenMany { title } => rfd::AsyncFileDialog::new()
+                    .set_title(title)
+                    .add_filter("JSON", &["json"])
+                    .pick_files()
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|file| file.path().to_owned())
+                    .collect(),
+                FileDialog::Save {
+                    title,
+                    name,
+                    filter,
+                } => {
+                    let mut builder = rfd::AsyncFileDialog::new()
+                        .set_title(title)
+                        .set_file_name(name);
+                    if let Some((label, extension)) = filter {
+                        builder = builder.add_filter(label, &[extension]);
+                    }
+                    builder
+                        .save_file()
+                        .await
+                        .into_iter()
+                        .map(|file| file.path().to_owned())
+                        .collect()
+                }
+            };
+            done(paths)
+        });
     }
 
     /// Run one database command in the background and turn its result into a message.
@@ -764,6 +898,68 @@ impl PosterApp {
                 if let Some(path) = path {
                     self.file_picked(target, &path);
                 }
+            }
+            Message::ImportPicked(path) => {
+                if let Some(path) = path {
+                    if path.to_string_lossy().ends_with(".poster.json") {
+                        self.read_import(path, Vec::new());
+                    } else {
+                        self.state.dialog = Some(Dialog::Companions { path });
+                    }
+                }
+            }
+            Message::CompanionsPicked { path, companions } => self.read_import(path, companions),
+            Message::ImportPreviewed(Ok(preview)) => {
+                self.state.dialog = Some(Dialog::Import {
+                    preview,
+                    remove_unsupported: false,
+                });
+            }
+            Message::ImportPreviewed(Err(error)) | Message::Imported(Err(error)) => {
+                self.error("Import failed", error);
+            }
+            Message::Imported(Ok(id)) => self.imported(id),
+            Message::NativeExportPicked { scope, path } => {
+                if let Some(path) = path {
+                    let db = self.db.clone();
+                    self.bridge.spawn(move |_| async move {
+                        let result = transfer::export_native(&db, *scope, path.clone()).await;
+                        Message::Exported(result.map(|()| path).map_err(failure))
+                    });
+                }
+            }
+            Message::PostmanReady(Ok(export)) => {
+                let warnings = export.warnings.join("\n");
+                self.state.postman = Some(*export);
+                if warnings.is_empty() {
+                    self.pick_postman_destination();
+                } else {
+                    self.state.dialog = Some(Dialog::Confirm {
+                        title: "Postman export limitations".into(),
+                        message: warnings,
+                        confirm: "Export".into(),
+                        purpose: ConfirmPurpose::PostmanExport,
+                    });
+                }
+            }
+            Message::PostmanExportPicked(path) => {
+                if let (Some(path), Some(export)) = (path, self.state.postman.take()) {
+                    self.bridge.spawn(move |_| async move {
+                        let result =
+                            transfer::write_postman(export.document, export.data, path.clone())
+                                .await;
+                        Message::Exported(result.map(|()| path).map_err(failure))
+                    });
+                }
+            }
+            Message::PostmanReady(Err(error)) | Message::Exported(Err(error)) => {
+                self.error("Export failed", error);
+            }
+            Message::Exported(Ok(path)) => {
+                self.state.dialog = Some(Dialog::info(
+                    "Export complete",
+                    format!("Saved {}", path.display()),
+                ));
             }
             Message::Collections {
                 result: Err(error), ..
@@ -1000,6 +1196,16 @@ impl PosterApp {
                 });
             }
             Navigation::Close => self.variables_navigate(VarTransition::Close),
+            Navigation::Import {
+                preview,
+                remove_unsupported,
+            } => {
+                let db = self.db.clone();
+                self.bridge.spawn(move |_| async move {
+                    let result = transfer::import(&db, *preview, remove_unsupported).await;
+                    Message::Imported(result.map_err(failure))
+                });
+            }
             Navigation::Restore(request) => {
                 self.state.generation += 1;
                 self.load_editor(&request);
@@ -1617,6 +1823,7 @@ impl PosterApp {
                 self.state.saver.discard(None);
                 self.state.close = CloseState::Ready;
             }
+            ConfirmPurpose::PostmanExport => self.pick_postman_destination(),
         }
     }
 
@@ -1671,18 +1878,24 @@ impl PosterApp {
                 }
             }
             Action::Send => self.send(),
-            Action::PickFile(target) => {
-                self.bridge.spawn(move |_| async move {
-                    let picked = rfd::AsyncFileDialog::new()
-                        .set_title("Choose upload file")
-                        .pick_file()
-                        .await;
-                    Message::FilePicked {
-                        target,
-                        path: picked.map(|file| file.path().to_owned()),
-                    }
-                });
-            }
+            Action::PickFile(target) => self.pick(
+                FileDialog::Open {
+                    title: "Choose upload file",
+                    filter: None,
+                },
+                move |paths| Message::FilePicked {
+                    target,
+                    path: paths.into_iter().next(),
+                },
+            ),
+            Action::Import => self.pick(
+                FileDialog::Open {
+                    title: "Import collection",
+                    filter: Some(("Collections", "json")),
+                },
+                |paths| Message::ImportPicked(paths.into_iter().next()),
+            ),
+            Action::Export => self.prompt_export(),
             Action::ShowRun(id) => self.show_run(id),
             Action::Edited { url, params } => self.edited(url, params, now),
             Action::Screen(screen) => {
@@ -1738,7 +1951,177 @@ impl PosterApp {
                 self.state.dialog = None;
                 self.move_node(node, target);
             }
+            Outcome::Companions(include) => {
+                let Some(Dialog::Companions { path }) = self.state.dialog.take() else {
+                    return;
+                };
+                if include {
+                    self.pick(
+                        FileDialog::OpenMany {
+                            title: "Select companion files",
+                        },
+                        move |companions| Message::CompanionsPicked { path, companions },
+                    );
+                } else {
+                    self.read_import(path, Vec::new());
+                }
+            }
+            Outcome::Import => {
+                if let Some(Dialog::Import {
+                    preview,
+                    remove_unsupported,
+                }) = self.state.dialog.take()
+                {
+                    self.navigate(Navigation::Import {
+                        preview,
+                        remove_unsupported,
+                    });
+                }
+            }
+            Outcome::Export => {
+                if let Some(Dialog::Export {
+                    environments,
+                    globals,
+                    postman,
+                }) = self.state.dialog.take()
+                {
+                    let chosen = environments
+                        .into_iter()
+                        .filter(|(_, _, include)| *include)
+                        .map(|(id, _, _)| id)
+                        .collect();
+                    self.export(chosen, globals, postman);
+                }
+            }
         }
+    }
+
+    // ---- import and export ----------------------------------------------------------------------
+
+    fn read_import(&mut self, path: PathBuf, companions: Vec<PathBuf>) {
+        let db = self.db.clone();
+        self.bridge.spawn(move |_| async move {
+            let result = transfer::read_preview(&db, path, companions).await;
+            Message::ImportPreviewed(result.map(Box::new).map_err(failure))
+        });
+    }
+
+    /// Show the imported collection and reload the variables it may have added.
+    fn imported(&mut self, id: CollectionId) {
+        self.reload_collections(Some(id));
+        let screen = &self.state.variables;
+        let select = (screen.loaded && !screen.dirty()).then_some(screen.scope);
+        self.task(
+            |db| {
+                Ok((
+                    environments::environments(db)?,
+                    environments::active_environment(db)?,
+                ))
+            },
+            move |result| Message::Environments {
+                select,
+                result: result.map_err(failure),
+            },
+        );
+        self.status("Collection imported");
+    }
+
+    fn prompt_export(&mut self) {
+        if self.state.collection.is_none() {
+            self.state.dialog = Some(Dialog::info(
+                "Export collection",
+                "Select a collection first",
+            ));
+            return;
+        }
+        self.state.dialog = Some(Dialog::Export {
+            environments: self
+                .state
+                .environments
+                .iter()
+                .map(|e| (e.id, e.name.clone(), false))
+                .collect(),
+            globals: false,
+            postman: false,
+        });
+    }
+
+    /// Export the selected collection as the editor shows it: unsaved edits of the open
+    /// request are included, and pending autosaves are written too.
+    fn export(&mut self, environments: Vec<EnvironmentId>, globals: bool, postman: bool) {
+        let Some(collection) = self.state.collection else {
+            return;
+        };
+        let draft = self
+            .state
+            .editor
+            .as_ref()
+            .and_then(|pane| pane.editor.to_request().ok());
+        if self.state.settings.autosave {
+            self.state.autosave_due = None;
+            self.pump_saves(None);
+        }
+        let scope = ExportScope {
+            collection: Some(collection),
+            environments,
+            globals,
+            draft,
+        };
+        if postman {
+            let db = self.db.clone();
+            self.bridge.spawn(move |_| async move {
+                let result =
+                    transfer::postman_export(&db, scope)
+                        .await
+                        .map(|(document, data, warnings)| {
+                            Box::new(PostmanExport {
+                                document,
+                                data,
+                                warnings,
+                            })
+                        });
+                Message::PostmanReady(result.map_err(failure))
+            });
+        } else {
+            let scope = Box::new(scope);
+            self.pick(
+                FileDialog::Save {
+                    title: "Export collection",
+                    name: "collection.poster.json",
+                    filter: Some(("Poster", "json")),
+                },
+                move |paths| Message::NativeExportPicked {
+                    scope,
+                    path: paths.into_iter().next(),
+                },
+            );
+        }
+    }
+
+    /// A bundle with environments or globals goes to a new directory, a lone collection to a
+    /// file.
+    fn pick_postman_destination(&mut self) {
+        let Some(export) = &self.state.postman else {
+            return;
+        };
+        let bundle =
+            !export.document.environments.is_empty() || !export.document.globals.is_empty();
+        let dialog = if bundle {
+            FileDialog::Save {
+                title: "New destination directory",
+                name: "collection-export",
+                filter: None,
+            }
+        } else {
+            FileDialog::Save {
+                title: "Export Postman collection",
+                name: "collection.postman_collection.json",
+                filter: Some(("Postman", "json")),
+            }
+        };
+        self.pick(dialog, |paths| {
+            Message::PostmanExportPicked(paths.into_iter().next())
+        });
     }
 
     // ---- variables ------------------------------------------------------------------------------

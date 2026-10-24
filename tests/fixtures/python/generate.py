@@ -11,6 +11,7 @@ Outputs (relative to tests/fixtures/):
 - parity/resolve.json: variable resolution of request templates or the error raised.
 - parity/settings.json: application settings resolved against request options.
 - parity/multipart.json: multipart and binary upload bodies streamed by the Python transport.
+- parity/postman.json: Postman v2.1 decoding (warnings, consent) and encoding by the Python adapter.
 """
 
 import base64
@@ -406,6 +407,76 @@ def multipart_cases() -> list[dict]:
     return out
 
 
+def postman_cases() -> dict:
+    """Postman decoding (with warnings and consent flags) and encoding by the Python adapter."""
+    from poster.adapters import postman
+
+    schema = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+
+    def collection(items, **extra):
+        return {"info": {"name": "C", "schema": schema}, "item": items, **extra}
+
+    def req(**fields):
+        return {"name": "R", "request": {"method": "GET", "url": "http://h/", **fields}}
+
+    fixture = json.loads((ROOT / "postman-v2.1.json").read_text())
+    decode = {
+        "fixture": fixture,
+        "scripts and examples": collection([{**req(), "event": [{"listen": "test", "script": {"exec": ["x"]}}], "response": [{"name": "ex"}]}]),
+        "unsupported auth": collection([req(auth={"type": "oauth2", "oauth2": [{"key": "accessToken", "value": "t"}]})]),
+        "extra auth parameters": collection([req(auth={"type": "basic", "basic": [{"key": "username", "value": "u"}, {"key": "showPassword", "value": True}]})]),
+        "dynamic variables": collection([req(url="http://h/{{$guid}}?t={{ $timestamp }}", header=[{"key": "X", "value": "{{$randomInt}}"}])]),
+        "url object without raw": collection([req(url={"protocol": "https", "host": ["api", "example", "com"], "port": "8443", "path": ["v1", {"value": "users"}], "query": [{"key": "q", "value": "1"}]})]),
+        "url variables": collection([req(url={"raw": "http://h/users/:id/:missing", "variable": [{"key": "id", "value": "7"}, {"key": "missing", "value": "x", "disabled": True}]})]),
+        "header string": collection([req(header="A: 1\nB:  two \n\n")]),
+        "string request": collection([{"name": "S", "request": "http://h/plain"}]),
+        "folder variables and disabled items": collection([{"name": "F", "variable": [{"key": "v", "value": "1"}], "item": [{**req(), "disabled": True}]}]),
+        "proxy certificate protocol settings": collection([{**req(proxy={"host": "p"}, certificate={"name": "c"}), "protocolProfileBehavior": {"disableBodyPruning": True}}]),
+        "parameter descriptions": collection([req(header=[{"key": "A", "value": "1", "description": "doc"}])]),
+        "graphql body": collection([req(body={"mode": "graphql", "graphql": {"query": "{a}"}})]),
+        "disabled body": collection([req(body={"mode": "raw", "raw": "x", "disabled": True})]),
+        "raw text body": collection([req(body={"mode": "raw", "raw": "plain text"})]),
+        "unsupported multipart field": collection([req(body={"mode": "formdata", "formdata": [{"key": "k", "type": "other", "value": "v"}]})]),
+        "variables": collection([req()], variable=[{"key": "a", "value": "1"}, {"key": "a", "value": "2"}, {"key": "", "value": "x"}, {"key": "off", "value": "1", "disabled": True}, {"id": "byid", "value": 3}]),
+        "description object": collection([{"name": "D", "description": {"content": "desc", "type": "text/plain"}, "request": {"method": "GET", "url": "http://h/", "description": {"content": "rd"}}}]),
+        "invalid against schema": {"info": {"name": "C"}, "item": "nope"},
+        "version 2.0": {"info": {"name": "C", "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"}, "item": []},
+    }
+    decoded = []
+    for name, data in decode.items():
+        decoder = postman.Decoder()
+        try:
+            document = decoder.decode(json.loads(json.dumps(data)))
+            result = {"document": json.loads(native.encode(document)), "warnings": decoder.warnings, "requires_removal": decoder.requires_removal}
+        except Exception as error:  # noqa: BLE001
+            result = {"error": type(error).__name__}
+        decoded.append({"name": name, "input": data, "expected": result})
+
+    companions = []
+    for name, data in {
+        "environment": {"name": "Dev", "values": [{"key": "a", "value": "1"}, {"key": "b", "value": "x", "enabled": False}]},
+        "unnamed environment": {"values": []},
+        "globals": {"_postman_variable_scope": "globals", "values": [{"key": "g", "value": "1"}]},
+        "bad scope": {"_postman_variable_scope": "collection", "values": []},
+        "missing values": {"name": "X"},
+    }.items():
+        decoder = postman.Decoder()
+        document = NativeDocument(collection=TransferCollection(name="C"))
+        try:
+            decoder.companion(data, document)
+            result = {"document": json.loads(native.encode(document)), "warnings": decoder.warnings}
+        except Exception as error:  # noqa: BLE001
+            result = {"error": type(error).__name__}
+        companions.append({"name": name, "input": data, "expected": result})
+
+    encoded = []
+    for name, document in {"full": full_document(), "minimal": NativeDocument(collection=TransferCollection(name="Minimal"))}.items():
+        data, warnings = postman.encode(document)
+        encoded.append({"name": name, "document": json.loads(native.encode(document)), "postman": json.loads(data), "warnings": warnings})
+    bundle = postman.companion_bytes("Dev", {"a": "1"}, "environment")
+    return {"decode": decoded, "companions": companions, "encode": encoded, "companion_bytes": json.loads(bundle)}
+
+
 def write(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
@@ -424,6 +495,7 @@ def main() -> None:
     write(ROOT / "parity" / "resolve.json", pretty(resolve_cases()))
     write(ROOT / "parity" / "settings.json", pretty(settings_cases()))
     write(ROOT / "parity" / "multipart.json", pretty(multipart_cases()))
+    write(ROOT / "parity" / "postman.json", pretty(postman_cases()))
 
 
 if __name__ == "__main__":

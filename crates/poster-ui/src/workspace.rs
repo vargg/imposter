@@ -176,6 +176,10 @@ fn new_menu(state: &mut State, ui: &mut Ui) {
                 NamePurpose::NewRequest { folder: parent },
             )));
         }
+        ui.separator();
+        if ui.button("Import Collection…").clicked() {
+            state.actions.push(Action::Import);
+        }
     });
 }
 
@@ -226,6 +230,9 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                         NamePurpose::RenameCollection(id),
                     )));
                 }
+                if ui.button("Export Collection…").clicked() {
+                    state.actions.push(Action::Export);
+                }
                 if ui.button("Delete Collection").clicked() {
                     state.actions.push(Action::Prompt(Dialog::Confirm {
                         title: "Delete collection".into(),
@@ -246,7 +253,7 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
     });
     if state.collections.is_empty() {
         ui.label(tone_text(
-            "No collections yet. Create one with +.",
+            "No collections yet. Create or import one with +.",
             Tone::Muted,
         ));
         return;

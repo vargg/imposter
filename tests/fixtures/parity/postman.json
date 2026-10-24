@@ -1,0 +1,2698 @@
+{
+  "decode": [
+    {
+      "name": "fixture",
+      "input": {
+        "info": {
+          "name": "Local API",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+          "description": "Sample local API"
+        },
+        "variable": [
+          {
+            "key": "base",
+            "value": "http://127.0.0.1:8765"
+          },
+          {
+            "key": "empty",
+            "value": ""
+          }
+        ],
+        "auth": {
+          "type": "basic",
+          "basic": [
+            {
+              "key": "username",
+              "value": "test"
+            },
+            {
+              "key": "password",
+              "value": "fixture"
+            }
+          ]
+        },
+        "item": [
+          {
+            "name": "Health",
+            "request": {
+              "method": "GET",
+              "url": "{{base}}/health?a=1&a=",
+              "header": [
+                {
+                  "key": "X-Test",
+                  "value": ""
+                },
+                {
+                  "key": "X-Test",
+                  "value": "disabled",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          {
+            "name": "Nested",
+            "description": "Folder",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}"
+                }
+              ]
+            },
+            "item": [
+              {
+                "name": "JSON",
+                "request": {
+                  "method": "POST",
+                  "url": {
+                    "raw": "{{base}}/items",
+                    "query": [
+                      {
+                        "key": "x",
+                        "value": "",
+                        "disabled": true
+                      }
+                    ]
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "raw": "{\"ok\":true}",
+                    "options": {
+                      "raw": {
+                        "language": "json"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Form",
+                "request": {
+                  "method": "PUT",
+                  "url": "{{base}}/form",
+                  "auth": {
+                    "type": "noauth"
+                  },
+                  "body": {
+                    "mode": "urlencoded",
+                    "urlencoded": [
+                      {
+                        "key": "x",
+                        "value": "1"
+                      },
+                      {
+                        "key": "x",
+                        "value": ""
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Files",
+                "request": {
+                  "method": "PATCH",
+                  "url": "{{base}}/files",
+                  "body": {
+                    "mode": "formdata",
+                    "formdata": [
+                      {
+                        "key": "file",
+                        "type": "file",
+                        "src": [
+                          "one.txt",
+                          "two.txt"
+                        ]
+                      },
+                      {
+                        "key": "note",
+                        "type": "text",
+                        "value": "",
+                        "disabled": true
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Binary",
+                "request": {
+                  "method": "POST",
+                  "url": "{{base}}/file",
+                  "body": {
+                    "mode": "file",
+                    "file": {
+                      "src": "{{path}}"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "Local API",
+            "description": "Sample local API",
+            "variables": {
+              "base": "http://127.0.0.1:8765",
+              "empty": ""
+            },
+            "folders": [
+              {
+                "name": "Nested",
+                "description": "Folder",
+                "position": 1,
+                "folders": [],
+                "requests": [
+                  {
+                    "position": 0,
+                    "name": "JSON",
+                    "description": "",
+                    "method": "POST",
+                    "protocol": "",
+                    "url": "{{base}}/items",
+                    "path": "",
+                    "auth": {
+                      "type": "bearer_token",
+                      "basic": null,
+                      "digest": null,
+                      "bearer_token": {
+                        "token": "{{token}}"
+                      }
+                    },
+                    "queries": [
+                      {
+                        "name": "x",
+                        "value": "",
+                        "is_enabled": false
+                      }
+                    ],
+                    "headers": [],
+                    "cookies": [],
+                    "body": "eyJvayI6dHJ1ZX0=",
+                    "body_type": "json",
+                    "options": {
+                      "follow_redirects": null,
+                      "verify_ssl": null,
+                      "attach_cookies": null,
+                      "proxy_url": null,
+                      "timeout": null,
+                      "ca_bundle": null,
+                      "certificate_path": null,
+                      "key_file": null,
+                      "password": null,
+                      "download_limit": null
+                    }
+                  },
+                  {
+                    "position": 1,
+                    "name": "Form",
+                    "description": "",
+                    "method": "PUT",
+                    "protocol": "",
+                    "url": "{{base}}/form",
+                    "path": "",
+                    "auth": {
+                      "type": null,
+                      "basic": null,
+                      "digest": null,
+                      "bearer_token": null
+                    },
+                    "queries": [],
+                    "headers": [],
+                    "cookies": [],
+                    "body": "W3sibmFtZSI6ICJ4IiwgInZhbHVlIjogIjEiLCAiaXNfZW5hYmxlZCI6IHRydWV9LCB7Im5hbWUiOiAieCIsICJ2YWx1ZSI6ICIiLCAiaXNfZW5hYmxlZCI6IHRydWV9XQ==",
+                    "body_type": "urlencoded",
+                    "options": {
+                      "follow_redirects": null,
+                      "verify_ssl": null,
+                      "attach_cookies": null,
+                      "proxy_url": null,
+                      "timeout": null,
+                      "ca_bundle": null,
+                      "certificate_path": null,
+                      "key_file": null,
+                      "password": null,
+                      "download_limit": null
+                    }
+                  },
+                  {
+                    "position": 2,
+                    "name": "Files",
+                    "description": "",
+                    "method": "PATCH",
+                    "protocol": "",
+                    "url": "{{base}}/files",
+                    "path": "",
+                    "auth": {
+                      "type": "bearer_token",
+                      "basic": null,
+                      "digest": null,
+                      "bearer_token": {
+                        "token": "{{token}}"
+                      }
+                    },
+                    "queries": [],
+                    "headers": [],
+                    "cookies": [],
+                    "body": "W3sibmFtZSI6ICJmaWxlIiwgInZhbHVlIjogIm9uZS50eHQiLCAiaXNfZW5hYmxlZCI6IHRydWUsICJraW5kIjogImZpbGUiLCAiY29udGVudF90eXBlIjogIiIsICJmaWxlbmFtZSI6ICIifSwgeyJuYW1lIjogImZpbGUiLCAidmFsdWUiOiAidHdvLnR4dCIsICJpc19lbmFibGVkIjogdHJ1ZSwgImtpbmQiOiAiZmlsZSIsICJjb250ZW50X3R5cGUiOiAiIiwgImZpbGVuYW1lIjogIiJ9LCB7Im5hbWUiOiAibm90ZSIsICJ2YWx1ZSI6ICIiLCAiaXNfZW5hYmxlZCI6IGZhbHNlLCAia2luZCI6ICJ0ZXh0IiwgImNvbnRlbnRfdHlwZSI6ICIiLCAiZmlsZW5hbWUiOiAiIn1d",
+                    "body_type": "multipart",
+                    "options": {
+                      "follow_redirects": null,
+                      "verify_ssl": null,
+                      "attach_cookies": null,
+                      "proxy_url": null,
+                      "timeout": null,
+                      "ca_bundle": null,
+                      "certificate_path": null,
+                      "key_file": null,
+                      "password": null,
+                      "download_limit": null
+                    }
+                  },
+                  {
+                    "position": 3,
+                    "name": "Binary",
+                    "description": "",
+                    "method": "POST",
+                    "protocol": "",
+                    "url": "{{base}}/file",
+                    "path": "",
+                    "auth": {
+                      "type": "bearer_token",
+                      "basic": null,
+                      "digest": null,
+                      "bearer_token": {
+                        "token": "{{token}}"
+                      }
+                    },
+                    "queries": [],
+                    "headers": [],
+                    "cookies": [],
+                    "body": "e3twYXRofX0=",
+                    "body_type": "binary",
+                    "options": {
+                      "follow_redirects": null,
+                      "verify_ssl": null,
+                      "attach_cookies": null,
+                      "proxy_url": null,
+                      "timeout": null,
+                      "ca_bundle": null,
+                      "certificate_path": null,
+                      "key_file": null,
+                      "password": null,
+                      "download_limit": null
+                    }
+                  }
+                ]
+              }
+            ],
+            "requests": [
+              {
+                "position": 0,
+                "name": "Health",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "{{base}}/health",
+                "path": "",
+                "auth": {
+                  "type": "basic",
+                  "basic": {
+                    "username": "test",
+                    "password": "fixture"
+                  },
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [
+                  {
+                    "name": "a",
+                    "value": "1",
+                    "is_enabled": true
+                  },
+                  {
+                    "name": "a",
+                    "value": "",
+                    "is_enabled": true
+                  }
+                ],
+                "headers": [
+                  {
+                    "name": "X-Test",
+                    "value": "",
+                    "is_enabled": true
+                  },
+                  {
+                    "name": "X-Test",
+                    "value": "disabled",
+                    "is_enabled": false
+                  }
+                ],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [],
+        "requires_removal": false
+      }
+    },
+    {
+      "name": "scripts and examples",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/"
+            },
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "x"
+                  ]
+                }
+              }
+            ],
+            "response": [
+              {
+                "name": "ex"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [
+          "C/R: scripts will be removed",
+          "C/R: saved response examples will be removed"
+        ],
+        "requires_removal": true
+      }
+    },
+    {
+      "name": "unsupported auth",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/",
+              "auth": {
+                "type": "oauth2",
+                "oauth2": [
+                  {
+                    "key": "accessToken",
+                    "value": "t"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [
+          "C/R: oauth2 authentication will be removed"
+        ],
+        "requires_removal": true
+      }
+    },
+    {
+      "name": "extra auth parameters",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/",
+              "auth": {
+                "type": "basic",
+                "basic": [
+                  {
+                    "key": "username",
+                    "value": "u"
+                  },
+                  {
+                    "key": "showPassword",
+                    "value": true
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": "basic",
+                  "basic": {
+                    "username": "u",
+                    "password": ""
+                  },
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [
+          "C/R: additional authentication parameters will be removed"
+        ],
+        "requires_removal": true
+      }
+    },
+    {
+      "name": "dynamic variables",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/{{$guid}}?t={{ $timestamp }}",
+              "header": [
+                {
+                  "key": "X",
+                  "value": "{{$randomInt}}"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [
+                  {
+                    "name": "t",
+                    "value": "",
+                    "is_enabled": true
+                  }
+                ],
+                "headers": [
+                  {
+                    "name": "X",
+                    "value": "",
+                    "is_enabled": true
+                  }
+                ],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [
+          "C/R: Postman dynamic variables will be removed",
+          "C/R: Postman dynamic variables will be removed"
+        ],
+        "requires_removal": true
+      }
+    },
+    {
+      "name": "url object without raw",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": {
+                "protocol": "https",
+                "host": [
+                  "api",
+                  "example",
+                  "com"
+                ],
+                "port": "8443",
+                "path": [
+                  "v1",
+                  {
+                    "value": "users"
+                  }
+                ],
+                "query": [
+                  {
+                    "key": "q",
+                    "value": "1"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "https://api.example.com:8443/v1/users",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [
+                  {
+                    "name": "q",
+                    "value": "1",
+                    "is_enabled": true
+                  }
+                ],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [],
+        "requires_removal": false
+      }
+    },
+    {
+      "name": "url variables",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": {
+                "raw": "http://h/users/:id/:missing",
+                "variable": [
+                  {
+                    "key": "id",
+                    "value": "7"
+                  },
+                  {
+                    "key": "missing",
+                    "value": "x",
+                    "disabled": true
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/users/7/:missing",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [
+          "C/R: disabled URL variable will be removed"
+        ],
+        "requires_removal": true
+      }
+    },
+    {
+      "name": "header string",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/",
+              "header": "A: 1\nB:  two \n\n"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [
+                  {
+                    "name": "A",
+                    "value": "1",
+                    "is_enabled": true
+                  },
+                  {
+                    "name": "B",
+                    "value": "two",
+                    "is_enabled": true
+                  }
+                ],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [],
+        "requires_removal": false
+      }
+    },
+    {
+      "name": "string request",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "S",
+            "request": "http://h/plain"
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "S",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/plain",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [],
+        "requires_removal": false
+      }
+    },
+    {
+      "name": "folder variables and disabled items",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "F",
+            "variable": [
+              {
+                "key": "v",
+                "value": "1"
+              }
+            ],
+            "item": [
+              {
+                "name": "R",
+                "request": {
+                  "method": "GET",
+                  "url": "http://h/"
+                },
+                "disabled": true
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [
+              {
+                "name": "F",
+                "description": "",
+                "position": 0,
+                "folders": [],
+                "requests": [
+                  {
+                    "position": 0,
+                    "name": "R",
+                    "description": "",
+                    "method": "GET",
+                    "protocol": "",
+                    "url": "http://h/",
+                    "path": "",
+                    "auth": {
+                      "type": null,
+                      "basic": null,
+                      "digest": null,
+                      "bearer_token": null
+                    },
+                    "queries": [],
+                    "headers": [],
+                    "cookies": [],
+                    "body": "",
+                    "body_type": "none",
+                    "options": {
+                      "follow_redirects": null,
+                      "verify_ssl": null,
+                      "attach_cookies": null,
+                      "proxy_url": null,
+                      "timeout": null,
+                      "ca_bundle": null,
+                      "certificate_path": null,
+                      "key_file": null,
+                      "password": null,
+                      "download_limit": null
+                    }
+                  }
+                ]
+              }
+            ],
+            "requests": []
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [
+          "C/F: folder variables will be removed",
+          "C/F/R: disabled request/folder state will be removed"
+        ],
+        "requires_removal": true
+      }
+    },
+    {
+      "name": "proxy certificate protocol settings",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/",
+              "proxy": {
+                "host": "p"
+              },
+              "certificate": {
+                "name": "c"
+              }
+            },
+            "protocolProfileBehavior": {
+              "disableBodyPruning": true
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [
+          "C/R: protocol settings will be removed",
+          "C/R: proxy configuration will be removed",
+          "C/R: certificate configuration will be removed"
+        ],
+        "requires_removal": true
+      }
+    },
+    {
+      "name": "parameter descriptions",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/",
+              "header": [
+                {
+                  "key": "A",
+                  "value": "1",
+                  "description": "doc"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [
+                  {
+                    "name": "A",
+                    "value": "1",
+                    "is_enabled": true
+                  }
+                ],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [
+          "C/R: parameter/header descriptions will be removed"
+        ],
+        "requires_removal": false
+      }
+    },
+    {
+      "name": "graphql body",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/",
+              "body": {
+                "mode": "graphql",
+                "graphql": {
+                  "query": "{a}"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [
+          "C/R: graphql body will be removed"
+        ],
+        "requires_removal": true
+      }
+    },
+    {
+      "name": "disabled body",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/",
+              "body": {
+                "mode": "raw",
+                "raw": "x",
+                "disabled": true
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [],
+        "requires_removal": false
+      }
+    },
+    {
+      "name": "raw text body",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/",
+              "body": {
+                "mode": "raw",
+                "raw": "plain text"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "cGxhaW4gdGV4dA==",
+                "body_type": "plain",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [],
+        "requires_removal": false
+      }
+    },
+    {
+      "name": "unsupported multipart field",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/",
+              "body": {
+                "mode": "formdata",
+                "formdata": [
+                  {
+                    "key": "k",
+                    "type": "other",
+                    "value": "v"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "error": "ValidationError"
+      }
+    },
+    {
+      "name": "variables",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "R",
+            "request": {
+              "method": "GET",
+              "url": "http://h/"
+            }
+          }
+        ],
+        "variable": [
+          {
+            "key": "a",
+            "value": "1"
+          },
+          {
+            "key": "a",
+            "value": "2"
+          },
+          {
+            "key": "",
+            "value": "x"
+          },
+          {
+            "key": "off",
+            "value": "1",
+            "disabled": true
+          },
+          {
+            "id": "byid",
+            "value": 3
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {
+              "a": "2",
+              "byid": "3"
+            },
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "R",
+                "description": "",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [
+          "Collection: earlier duplicate variable 'a' will be removed",
+          "Collection: variable without a key will be removed",
+          "Collection: disabled variable 'off' will be removed"
+        ],
+        "requires_removal": true
+      }
+    },
+    {
+      "name": "description object",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "D",
+            "description": {
+              "content": "desc",
+              "type": "text/plain"
+            },
+            "request": {
+              "method": "GET",
+              "url": "http://h/",
+              "description": {
+                "content": "rd"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": [
+              {
+                "position": 0,
+                "name": "D",
+                "description": "rd",
+                "method": "GET",
+                "protocol": "",
+                "url": "http://h/",
+                "path": "",
+                "auth": {
+                  "type": null,
+                  "basic": null,
+                  "digest": null,
+                  "bearer_token": null
+                },
+                "queries": [],
+                "headers": [],
+                "cookies": [],
+                "body": "",
+                "body_type": "none",
+                "options": {
+                  "follow_redirects": null,
+                  "verify_ssl": null,
+                  "attach_cookies": null,
+                  "proxy_url": null,
+                  "timeout": null,
+                  "ca_bundle": null,
+                  "certificate_path": null,
+                  "key_file": null,
+                  "password": null,
+                  "download_limit": null
+                }
+              }
+            ]
+          },
+          "environments": [],
+          "globals": {}
+        },
+        "warnings": [],
+        "requires_removal": false
+      }
+    },
+    {
+      "name": "invalid against schema",
+      "input": {
+        "info": {
+          "name": "C"
+        },
+        "item": "nope"
+      },
+      "expected": {
+        "error": "ValidationError"
+      }
+    },
+    {
+      "name": "version 2.0",
+      "input": {
+        "info": {
+          "name": "C",
+          "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+        },
+        "item": []
+      },
+      "expected": {
+        "error": "ValueError"
+      }
+    }
+  ],
+  "companions": [
+    {
+      "name": "environment",
+      "input": {
+        "name": "Dev",
+        "values": [
+          {
+            "key": "a",
+            "value": "1"
+          },
+          {
+            "key": "b",
+            "value": "x",
+            "enabled": false
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": []
+          },
+          "environments": [
+            {
+              "name": "Dev",
+              "variables": {
+                "a": "1"
+              }
+            }
+          ],
+          "globals": {}
+        },
+        "warnings": [
+          "Companion: disabled variable 'b' will be removed"
+        ]
+      }
+    },
+    {
+      "name": "unnamed environment",
+      "input": {
+        "values": []
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": []
+          },
+          "environments": [
+            {
+              "name": "Imported environment",
+              "variables": {}
+            }
+          ],
+          "globals": {}
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "globals",
+      "input": {
+        "_postman_variable_scope": "globals",
+        "values": [
+          {
+            "key": "g",
+            "value": "1"
+          }
+        ]
+      },
+      "expected": {
+        "document": {
+          "format": "poster",
+          "version": 1,
+          "collection": {
+            "name": "C",
+            "description": "",
+            "variables": {},
+            "folders": [],
+            "requests": []
+          },
+          "environments": [],
+          "globals": {
+            "g": "1"
+          }
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "bad scope",
+      "input": {
+        "_postman_variable_scope": "collection",
+        "values": []
+      },
+      "expected": {
+        "error": "ValueError"
+      }
+    },
+    {
+      "name": "missing values",
+      "input": {
+        "name": "X"
+      },
+      "expected": {
+        "error": "ValueError"
+      }
+    }
+  ],
+  "encode": [
+    {
+      "name": "full",
+      "document": {
+        "format": "poster",
+        "version": 1,
+        "collection": {
+          "name": "Full collection",
+          "description": "Every field the native format carries",
+          "variables": {
+            "host": "api.example.com",
+            "zeta": "last",
+            "alpha": "first",
+            "empty": ""
+          },
+          "folders": [
+            {
+              "name": "Folder",
+              "description": "",
+              "position": 2,
+              "folders": [
+                {
+                  "name": "Nested",
+                  "description": "Inner folder",
+                  "position": 1,
+                  "folders": [
+                    {
+                      "name": "Deep",
+                      "description": "",
+                      "position": 0,
+                      "folders": [],
+                      "requests": [
+                        {
+                          "position": 6,
+                          "name": "Multipart",
+                          "description": "",
+                          "method": "POST",
+                          "protocol": "",
+                          "url": "http://localhost/upload",
+                          "path": "",
+                          "auth": {
+                            "type": null,
+                            "basic": null,
+                            "digest": null,
+                            "bearer_token": null
+                          },
+                          "queries": [],
+                          "headers": [],
+                          "cookies": [],
+                          "body": "W3sibmFtZSI6ICJmaWVsZCIsICJ2YWx1ZSI6ICJ0ZXh0IHZhbHVlIiwgImlzX2VuYWJsZWQiOiB0cnVlLCAia2luZCI6ICJ0ZXh0IiwgImNvbnRlbnRfdHlwZSI6ICIiLCAiZmlsZW5hbWUiOiAiIn0sIHsibmFtZSI6ICJqc29uIiwgInZhbHVlIjogInt9IiwgImlzX2VuYWJsZWQiOiB0cnVlLCAia2luZCI6ICJ0ZXh0IiwgImNvbnRlbnRfdHlwZSI6ICJhcHBsaWNhdGlvbi9qc29uIiwgImZpbGVuYW1lIjogIiJ9LCB7Im5hbWUiOiAiZmlsZSIsICJ2YWx1ZSI6ICIvdG1wL3t7ZmlsZX19IiwgImlzX2VuYWJsZWQiOiB0cnVlLCAia2luZCI6ICJmaWxlIiwgImNvbnRlbnRfdHlwZSI6ICIiLCAiZmlsZW5hbWUiOiAiY3VzdG9tLmJpbiJ9LCB7Im5hbWUiOiAib2ZmIiwgInZhbHVlIjogIi94IiwgImlzX2VuYWJsZWQiOiBmYWxzZSwgImtpbmQiOiAiZmlsZSIsICJjb250ZW50X3R5cGUiOiAiIiwgImZpbGVuYW1lIjogIiJ9XQ==",
+                          "body_type": "multipart",
+                          "options": {
+                            "follow_redirects": null,
+                            "verify_ssl": null,
+                            "attach_cookies": null,
+                            "proxy_url": null,
+                            "timeout": null,
+                            "ca_bundle": null,
+                            "certificate_path": null,
+                            "key_file": null,
+                            "password": null,
+                            "download_limit": null
+                          }
+                        }
+                      ]
+                    }
+                  ],
+                  "requests": [
+                    {
+                      "position": 4,
+                      "name": "Form data",
+                      "description": "",
+                      "method": "POST",
+                      "protocol": "",
+                      "url": "http://localhost/form",
+                      "path": "",
+                      "auth": {
+                        "type": null,
+                        "basic": null,
+                        "digest": null,
+                        "bearer_token": null
+                      },
+                      "queries": [],
+                      "headers": [],
+                      "cookies": [],
+                      "body": "W3sibmFtZSI6ICJhIiwgInZhbHVlIjogIjEiLCAiaXNfZW5hYmxlZCI6IHRydWV9LCB7Im5hbWUiOiAiYSIsICJ2YWx1ZSI6ICIyIiwgImlzX2VuYWJsZWQiOiB0cnVlfSwgeyJuYW1lIjogIm9mZiIsICJ2YWx1ZSI6ICJ4IiwgImlzX2VuYWJsZWQiOiBmYWxzZX1d",
+                      "body_type": "form-data",
+                      "options": {
+                        "follow_redirects": null,
+                        "verify_ssl": null,
+                        "attach_cookies": null,
+                        "proxy_url": null,
+                        "timeout": null,
+                        "ca_bundle": null,
+                        "certificate_path": null,
+                        "key_file": null,
+                        "password": null,
+                        "download_limit": null
+                      }
+                    },
+                    {
+                      "position": 5,
+                      "name": "Urlencoded",
+                      "description": "",
+                      "method": "POST",
+                      "protocol": "",
+                      "url": "http://localhost/urlencoded",
+                      "path": "",
+                      "auth": {
+                        "type": null,
+                        "basic": null,
+                        "digest": null,
+                        "bearer_token": null
+                      },
+                      "queries": [],
+                      "headers": [],
+                      "cookies": [],
+                      "body": "W3sibmFtZSI6ICJxIiwgInZhbHVlIjogImEgYiZjIiwgImlzX2VuYWJsZWQiOiB0cnVlfSwgeyJuYW1lIjogImVtcHR5IiwgInZhbHVlIjogIiIsICJpc19lbmFibGVkIjogdHJ1ZX1d",
+                      "body_type": "urlencoded",
+                      "options": {
+                        "follow_redirects": null,
+                        "verify_ssl": null,
+                        "attach_cookies": null,
+                        "proxy_url": null,
+                        "timeout": null,
+                        "ca_bundle": null,
+                        "certificate_path": null,
+                        "key_file": null,
+                        "password": null,
+                        "download_limit": null
+                      }
+                    }
+                  ]
+                }
+              ],
+              "requests": [
+                {
+                  "position": 2,
+                  "name": "Plain",
+                  "description": "",
+                  "method": "put",
+                  "protocol": "",
+                  "url": "http://localhost:8080/text",
+                  "path": "",
+                  "auth": {
+                    "type": "basic",
+                    "basic": {
+                      "username": "user",
+                      "password": "p@ss:word"
+                    },
+                    "digest": null,
+                    "bearer_token": null
+                  },
+                  "queries": [],
+                  "headers": [],
+                  "cookies": [],
+                  "body": "bGluZSAxCmxpbmUgMg0K",
+                  "body_type": "plain",
+                  "options": {
+                    "follow_redirects": null,
+                    "verify_ssl": null,
+                    "attach_cookies": null,
+                    "proxy_url": null,
+                    "timeout": null,
+                    "ca_bundle": null,
+                    "certificate_path": null,
+                    "key_file": null,
+                    "password": null,
+                    "download_limit": null
+                  }
+                },
+                {
+                  "position": 3,
+                  "name": "Text",
+                  "description": "",
+                  "method": "PROPFIND",
+                  "protocol": "",
+                  "url": "http://localhost/dav",
+                  "path": "",
+                  "auth": {
+                    "type": "digest",
+                    "basic": null,
+                    "digest": {
+                      "username": "dig",
+                      "password": "est"
+                    },
+                    "bearer_token": null
+                  },
+                  "queries": [],
+                  "headers": [],
+                  "cookies": [],
+                  "body": "dGV4dCBib2R5",
+                  "body_type": "text",
+                  "options": {
+                    "follow_redirects": null,
+                    "verify_ssl": false,
+                    "attach_cookies": false,
+                    "proxy_url": null,
+                    "timeout": null,
+                    "ca_bundle": "/etc/ca.pem",
+                    "certificate_path": "{{cert}}",
+                    "key_file": "/keys/client.key",
+                    "password": "secret",
+                    "download_limit": null
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Empty folder",
+              "description": "",
+              "position": 0,
+              "folders": [],
+              "requests": []
+            }
+          ],
+          "requests": [
+            {
+              "position": 0,
+              "name": "Get users",
+              "description": "List with ünïcode ✓",
+              "method": "GET",
+              "protocol": "",
+              "url": "https://{{host}}/users?page=1",
+              "path": "",
+              "auth": {
+                "type": null,
+                "basic": null,
+                "digest": null,
+                "bearer_token": null
+              },
+              "queries": [
+                {
+                  "name": "page",
+                  "value": "1",
+                  "is_enabled": true
+                },
+                {
+                  "name": "debug",
+                  "value": "",
+                  "is_enabled": false
+                },
+                {
+                  "name": "tag",
+                  "value": "a",
+                  "is_enabled": true
+                },
+                {
+                  "name": "tag",
+                  "value": "b",
+                  "is_enabled": true
+                }
+              ],
+              "headers": [
+                {
+                  "name": "Accept",
+                  "value": "application/json",
+                  "is_enabled": true
+                },
+                {
+                  "name": "X-Dup",
+                  "value": "1",
+                  "is_enabled": true
+                },
+                {
+                  "name": "X-Dup",
+                  "value": "2",
+                  "is_enabled": true
+                },
+                {
+                  "name": "X-Empty",
+                  "value": "",
+                  "is_enabled": true
+                }
+              ],
+              "cookies": [
+                {
+                  "name": "session",
+                  "value": "{{token}}",
+                  "is_enabled": true
+                }
+              ],
+              "body": "",
+              "body_type": "none",
+              "options": {
+                "follow_redirects": null,
+                "verify_ssl": null,
+                "attach_cookies": null,
+                "proxy_url": null,
+                "timeout": null,
+                "ca_bundle": null,
+                "certificate_path": null,
+                "key_file": null,
+                "password": null,
+                "download_limit": null
+              }
+            },
+            {
+              "position": 1,
+              "name": "Create (json)",
+              "description": "",
+              "method": "POST",
+              "protocol": "",
+              "url": "https://{{host}}/users",
+              "path": "",
+              "auth": {
+                "type": "bearer_token",
+                "basic": null,
+                "digest": null,
+                "bearer_token": {
+                  "token": "{{token}}"
+                }
+              },
+              "queries": [],
+              "headers": [],
+              "cookies": [],
+              "body": "eyJuYW1lIjogIkFubiIsICJlbW9qaSI6ICLwn5iAIn0=",
+              "body_type": "json",
+              "options": {
+                "follow_redirects": false,
+                "verify_ssl": null,
+                "attach_cookies": null,
+                "proxy_url": "",
+                "timeout": 2.5,
+                "ca_bundle": null,
+                "certificate_path": null,
+                "key_file": null,
+                "password": null,
+                "download_limit": 0
+              }
+            },
+            {
+              "position": 7,
+              "name": "Binary",
+              "description": "",
+              "method": "POST",
+              "protocol": "",
+              "url": "http://localhost/binary",
+              "path": "",
+              "auth": {
+                "type": null,
+                "basic": null,
+                "digest": null,
+                "bearer_token": null
+              },
+              "queries": [],
+              "headers": [],
+              "cookies": [],
+              "body": "L2RhdGEve3tmaWxlfX0=",
+              "body_type": "binary",
+              "options": {
+                "follow_redirects": null,
+                "verify_ssl": null,
+                "attach_cookies": null,
+                "proxy_url": null,
+                "timeout": null,
+                "ca_bundle": null,
+                "certificate_path": null,
+                "key_file": null,
+                "password": null,
+                "download_limit": null
+              }
+            },
+            {
+              "position": 8,
+              "name": "Leftover bytes",
+              "description": "",
+              "method": "DELETE",
+              "protocol": "",
+              "url": "http://localhost/x",
+              "path": "",
+              "auth": {
+                "type": null,
+                "basic": null,
+                "digest": null,
+                "bearer_token": null
+              },
+              "queries": [],
+              "headers": [],
+              "cookies": [],
+              "body": "-_8APj8=",
+              "body_type": "none",
+              "options": {
+                "follow_redirects": null,
+                "verify_ssl": null,
+                "attach_cookies": null,
+                "proxy_url": null,
+                "timeout": null,
+                "ca_bundle": null,
+                "certificate_path": null,
+                "key_file": null,
+                "password": null,
+                "download_limit": null
+              }
+            }
+          ]
+        },
+        "environments": [
+          {
+            "name": "Dev",
+            "variables": {
+              "host": "dev.local",
+              "token": "dev-token"
+            }
+          },
+          {
+            "name": "Empty env",
+            "variables": {}
+          }
+        ],
+        "globals": {
+          "token": "global-token",
+          "file": "upload.bin"
+        }
+      },
+      "postman": {
+        "info": {
+          "name": "Full collection",
+          "description": "Every field the native format carries",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+          {
+            "name": "Empty folder",
+            "description": "",
+            "item": []
+          },
+          {
+            "name": "Get users",
+            "request": {
+              "method": "GET",
+              "description": "List with ünïcode ✓",
+              "url": {
+                "raw": "https://{{host}}/users?page=1&tag=a&tag=b",
+                "query": [
+                  {
+                    "key": "page",
+                    "value": "1",
+                    "disabled": false
+                  },
+                  {
+                    "key": "debug",
+                    "value": "",
+                    "disabled": true
+                  },
+                  {
+                    "key": "tag",
+                    "value": "a",
+                    "disabled": false
+                  },
+                  {
+                    "key": "tag",
+                    "value": "b",
+                    "disabled": false
+                  }
+                ]
+              },
+              "header": [
+                {
+                  "key": "Accept",
+                  "value": "application/json",
+                  "disabled": false
+                },
+                {
+                  "key": "X-Dup",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "X-Dup",
+                  "value": "2",
+                  "disabled": false
+                },
+                {
+                  "key": "X-Empty",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Cookie",
+                  "value": "session={{token}}"
+                }
+              ],
+              "auth": {
+                "type": "noauth"
+              }
+            }
+          },
+          {
+            "name": "Create (json)",
+            "request": {
+              "method": "POST",
+              "description": "",
+              "url": {
+                "raw": "https://{{host}}/users",
+                "query": []
+              },
+              "header": [],
+              "auth": {
+                "type": "bearer",
+                "bearer": [
+                  {
+                    "key": "token",
+                    "value": "{{token}}",
+                    "type": "string"
+                  }
+                ]
+              },
+              "body": {
+                "mode": "raw",
+                "raw": "{\"name\": \"Ann\", \"emoji\": \"😀\"}",
+                "options": {
+                  "raw": {
+                    "language": "json"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "name": "Folder",
+            "description": "",
+            "item": [
+              {
+                "name": "Nested",
+                "description": "Inner folder",
+                "item": [
+                  {
+                    "name": "Deep",
+                    "description": "",
+                    "item": [
+                      {
+                        "name": "Multipart",
+                        "request": {
+                          "method": "POST",
+                          "description": "",
+                          "url": {
+                            "raw": "http://localhost/upload",
+                            "query": []
+                          },
+                          "header": [],
+                          "auth": {
+                            "type": "noauth"
+                          },
+                          "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                              {
+                                "key": "field",
+                                "type": "text",
+                                "disabled": false,
+                                "value": "text value"
+                              },
+                              {
+                                "key": "json",
+                                "type": "text",
+                                "disabled": false,
+                                "value": "{}",
+                                "contentType": "application/json"
+                              },
+                              {
+                                "key": "file",
+                                "type": "file",
+                                "disabled": false,
+                                "src": "/tmp/{{file}}"
+                              },
+                              {
+                                "key": "off",
+                                "type": "file",
+                                "disabled": true,
+                                "src": "/x"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Form data",
+                    "request": {
+                      "method": "POST",
+                      "description": "",
+                      "url": {
+                        "raw": "http://localhost/form",
+                        "query": []
+                      },
+                      "header": [],
+                      "auth": {
+                        "type": "noauth"
+                      },
+                      "body": {
+                        "mode": "urlencoded",
+                        "urlencoded": [
+                          {
+                            "key": "a",
+                            "value": "1",
+                            "disabled": false
+                          },
+                          {
+                            "key": "a",
+                            "value": "2",
+                            "disabled": false
+                          },
+                          {
+                            "key": "off",
+                            "value": "x",
+                            "disabled": true
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "name": "Urlencoded",
+                    "request": {
+                      "method": "POST",
+                      "description": "",
+                      "url": {
+                        "raw": "http://localhost/urlencoded",
+                        "query": []
+                      },
+                      "header": [],
+                      "auth": {
+                        "type": "noauth"
+                      },
+                      "body": {
+                        "mode": "urlencoded",
+                        "urlencoded": [
+                          {
+                            "key": "q",
+                            "value": "a b&c",
+                            "disabled": false
+                          },
+                          {
+                            "key": "empty",
+                            "value": "",
+                            "disabled": false
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "name": "Plain",
+                "request": {
+                  "method": "put",
+                  "description": "",
+                  "url": {
+                    "raw": "http://localhost:8080/text",
+                    "query": []
+                  },
+                  "header": [],
+                  "auth": {
+                    "type": "basic",
+                    "basic": [
+                      {
+                        "key": "username",
+                        "value": "user",
+                        "type": "string"
+                      },
+                      {
+                        "key": "password",
+                        "value": "p@ss:word",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "raw": "line 1\nline 2\r\n",
+                    "options": {
+                      "raw": {
+                        "language": "text"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Text",
+                "request": {
+                  "method": "PROPFIND",
+                  "description": "",
+                  "url": {
+                    "raw": "http://localhost/dav",
+                    "query": []
+                  },
+                  "header": [],
+                  "auth": {
+                    "type": "digest",
+                    "digest": [
+                      {
+                        "key": "username",
+                        "value": "dig",
+                        "type": "string"
+                      },
+                      {
+                        "key": "password",
+                        "value": "est",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "raw": "text body",
+                    "options": {
+                      "raw": {
+                        "language": "text"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Binary",
+            "request": {
+              "method": "POST",
+              "description": "",
+              "url": {
+                "raw": "http://localhost/binary",
+                "query": []
+              },
+              "header": [],
+              "auth": {
+                "type": "noauth"
+              },
+              "body": {
+                "mode": "file",
+                "file": {
+                  "src": "/data/{{file}}"
+                }
+              }
+            }
+          },
+          {
+            "name": "Leftover bytes",
+            "request": {
+              "method": "DELETE",
+              "description": "",
+              "url": {
+                "raw": "http://localhost/x",
+                "query": []
+              },
+              "header": [],
+              "auth": {
+                "type": "noauth"
+              }
+            }
+          }
+        ],
+        "variable": [
+          {
+            "key": "host",
+            "value": "api.example.com",
+            "type": "string"
+          },
+          {
+            "key": "zeta",
+            "value": "last",
+            "type": "string"
+          },
+          {
+            "key": "alpha",
+            "value": "first",
+            "type": "string"
+          },
+          {
+            "key": "empty",
+            "value": "",
+            "type": "string"
+          }
+        ]
+      },
+      "warnings": [
+        "Multipart: custom multipart filename omitted",
+        "Text: per-request settings cannot be represented in Postman and are omitted",
+        "Get users: cookies converted to a Cookie header; disabled cookie entries omitted",
+        "Create (json): per-request settings cannot be represented in Postman and are omitted"
+      ]
+    },
+    {
+      "name": "minimal",
+      "document": {
+        "format": "poster",
+        "version": 1,
+        "collection": {
+          "name": "Minimal",
+          "description": "",
+          "variables": {},
+          "folders": [],
+          "requests": []
+        },
+        "environments": [],
+        "globals": {}
+      },
+      "postman": {
+        "info": {
+          "name": "Minimal",
+          "description": "",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [],
+        "variable": []
+      },
+      "warnings": []
+    }
+  ],
+  "companion_bytes": {
+    "name": "Dev",
+    "_postman_variable_scope": "environment",
+    "values": [
+      {
+        "key": "a",
+        "value": "1",
+        "enabled": true,
+        "type": "default"
+      }
+    ]
+  }
+}

@@ -1,7 +1,10 @@
 //! Modal dialogs. Each returns what the user chose; the app decides what that means.
 
+use std::path::PathBuf;
+
 use egui::{Id, RichText};
 use poster_app::core::ids::{CollectionId, EnvironmentId, FolderId};
+use poster_app::transfer::ImportPreview;
 
 use crate::theme::Tone;
 use crate::tree::NodeId;
@@ -26,6 +29,8 @@ pub enum ConfirmPurpose {
     DeleteEnvironment(EnvironmentId),
     ClearHistory,
     DiscardOnClose,
+    /// Write a Postman export despite the listed limitations.
+    PostmanExport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +71,19 @@ pub enum Dialog {
         message: String,
         tone: Tone,
     },
+    /// Whether a Postman import also reads environment or globals files.
+    Companions { path: PathBuf },
+    /// Review before anything is written; losses that change requests need explicit consent.
+    Import {
+        preview: Box<ImportPreview>,
+        remove_unsupported: bool,
+    },
+    /// What an export includes. Environments and globals are opt-in.
+    Export {
+        environments: Vec<(EnvironmentId, String, bool)>,
+        globals: bool,
+        postman: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +94,12 @@ pub enum Outcome {
     Guard(GuardChoice),
     VariablesGuard(GuardChoice),
     Move(NodeId, Option<FolderId>),
+    /// Read companion files (`true`) or import the file alone.
+    Companions(bool),
+    /// Import the reviewed preview; the dialog still holds it.
+    Import,
+    /// Export with the dialog's choices; the dialog still holds them.
+    Export,
     /// Cancelled, closed or acknowledged.
     Closed,
 }
@@ -108,7 +132,9 @@ impl Dialog {
 
     pub fn show(&mut self, ctx: &egui::Context) -> Outcome {
         let mut outcome = Outcome::Open;
-        let modal = egui::Modal::new(Id::unique("dialog")).show(ctx, |ui| {
+        // One id per kind: a dialog replacing another must not inherit its size and position.
+        let id = Id::unique(("dialog", std::mem::discriminant(self)));
+        let modal = egui::Modal::new(id).show(ctx, |ui| {
             ui.set_min_width(360.0);
             match self {
                 Self::Name {
@@ -248,6 +274,28 @@ impl Dialog {
                         outcome = Outcome::Closed;
                     }
                 }
+                Self::Companions { .. } => {
+                    ui.heading("Companion files");
+                    ui.label("Include Postman environment or global JSON files?");
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Yes").clicked() {
+                            outcome = Outcome::Companions(true);
+                        }
+                        if ui.button("No").clicked() {
+                            outcome = Outcome::Companions(false);
+                        }
+                    });
+                }
+                Self::Import {
+                    preview,
+                    remove_unsupported,
+                } => outcome = import(ui, preview, remove_unsupported),
+                Self::Export {
+                    environments,
+                    globals,
+                    postman,
+                } => outcome = export(ui, environments, globals, postman),
             }
         });
         if outcome == Outcome::Open && modal.should_close() {
@@ -259,4 +307,89 @@ impl Dialog {
         }
         outcome
     }
+}
+
+fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outcome {
+    let mut outcome = Outcome::Open;
+    ui.set_min_width(520.0);
+    ui.heading("Review collection import");
+    ui.label(format!("New collection: {}", preview.collection_name));
+    let environments = if preview.environment_names.is_empty() {
+        "None".to_owned()
+    } else {
+        preview.environment_names.join(", ")
+    };
+    ui.label(format!("New environments: {environments}"));
+    ui.add_space(6.0);
+    egui::ScrollArea::vertical()
+        .max_height(240.0)
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            if preview.warnings.is_empty() {
+                ui.label(tone_text("All supported fields validated.", Tone::Ok));
+            }
+            for warning in &preview.warnings {
+                ui.label(tone_text(warning.as_str(), Tone::Warning));
+            }
+        });
+    if preview.requires_removal {
+        ui.checkbox(remove, "Remove the listed unsupported execution features");
+    }
+    let allowed = !preview.requires_removal || *remove;
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(allowed, egui::Button::new("Import"))
+            .clicked()
+        {
+            outcome = Outcome::Import;
+        }
+        if ui.button("Cancel").clicked() {
+            outcome = Outcome::Closed;
+        }
+    });
+    outcome
+}
+
+fn export(
+    ui: &mut egui::Ui,
+    environments: &mut [(EnvironmentId, String, bool)],
+    globals: &mut bool,
+    postman: &mut bool,
+) -> Outcome {
+    let mut outcome = Outcome::Open;
+    ui.set_min_width(480.0);
+    ui.heading("Export collection");
+    ui.horizontal(|ui| {
+        ui.radio_value(postman, false, "Poster (.poster.json)");
+        ui.radio_value(postman, true, "Postman v2.1");
+    });
+    ui.add_space(6.0);
+    ui.label("Include optional environments:");
+    if environments.is_empty() {
+        ui.label(tone_text("No environments", Tone::Muted));
+    }
+    egui::ScrollArea::vertical()
+        .max_height(200.0)
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            for (_, label, include) in environments.iter_mut() {
+                ui.checkbox(include, label.as_str());
+            }
+        });
+    ui.checkbox(globals, "Include global variables");
+    ui.label(tone_text(
+        "Literal credentials and file paths are included. Uploaded file contents are excluded.",
+        Tone::Muted,
+    ));
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        if ui.button("Export").clicked() {
+            outcome = Outcome::Export;
+        }
+        if ui.button("Cancel").clicked() {
+            outcome = Outcome::Closed;
+        }
+    });
+    outcome
 }
