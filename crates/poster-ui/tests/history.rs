@@ -47,8 +47,12 @@ fn executions_are_listed_with_their_request_and_response() {
     app.harness.run_steps(1);
     settle(&mut app.harness);
 
-    let text = app.harness.state().state.history.request_text.clone();
-    assert!(text.contains(&format!("{}/items", server.url)), "{text}");
+    // The request as sent: no JSON dump of empty template fields.
+    app.harness
+        .get_by_label(&format!("GET {}/items", server.url));
+    app.harness.get_by_label("No body");
+    click(&mut app.harness, "Request headers");
+    app.harness.get_by_label("No headers");
     app.harness.state_mut().state.history.tab = HistoryTab::Response;
     app.harness.run_steps(2);
     app.harness.get_by_label("Status: 201");

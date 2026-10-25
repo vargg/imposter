@@ -234,7 +234,9 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
   scope changes, reloads, environment management, "Open definition" and closing. Closing
   resolves the request guard first, then the variables guard, then writes UI state.
 - **History shows times in the system time zone** (via `jiff`, display only); records store UTC
-  milliseconds. Restoring an entry opens an unsaved draft through the unsaved-changes guard and
+  milliseconds. The request of an execution is shown as sent (`viewer::sent_request`, built
+  with the executor's own `prepare`): `METHOD URL`, then Body and Headers tabs like the
+  response, never a dump of the stored template. Restoring an entry opens an unsaved draft through the unsaved-changes guard and
   never sends; the draft keeps the captured collection variables for a deleted collection.
 - **Save states are one word** ("Saved", "Unsaved", "Saving…", "Save failed", "Draft",
   "Invalid fields") in the request bar, the Variables screen and Settings, colored by tone,

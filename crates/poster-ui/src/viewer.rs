@@ -3,7 +3,9 @@
 
 use std::ops::Range;
 
-use poster_app::core::execution::{Outcome, Response};
+use poster_app::core::execution::{ExecutionRecord, Outcome, Response};
+use poster_app::core::model::FormKind;
+use poster_app::core::prepare::{self, PreparedAuth, PreparedBody};
 
 use crate::theme::Tone;
 
@@ -144,6 +146,87 @@ pub fn preview(response: &Response) -> Preview {
         text,
         language,
         limited,
+    }
+}
+
+/// A recorded request as it went on the wire: `METHOD URL`, its headers and its body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SentRequest {
+    pub summary: String,
+    pub headers: String,
+    pub body: String,
+    pub language: Language,
+}
+
+/// What `record` sent, prepared the same way the executor prepares it. Records that no longer
+/// prepare (older formats) show their method and URL with an explanation.
+pub fn sent_request(record: &ExecutionRecord) -> SentRequest {
+    let template = &record.resolved.template;
+    let prepared = match prepare::prepare(template, record.settings.attach_cookies) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            return SentRequest {
+                summary: format!("{} {}", template.method, template.url),
+                headers: String::new(),
+                body: format!("This request cannot be shown as sent: {error}"),
+                language: Language::Plain,
+            };
+        }
+    };
+    let mut headers: Vec<String> = prepared
+        .headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}"))
+        .collect();
+    if let PreparedAuth::Digest(_) = prepared.auth {
+        headers.push("Authorization: Digest (answered to the server's challenge)".into());
+    }
+    let language = language(content_type(&prepared.headers));
+    let (body, language) = match prepared.body {
+        PreparedBody::Bytes(bytes) if bytes.is_empty() => ("No body".to_owned(), Language::Plain),
+        PreparedBody::Bytes(bytes) => {
+            let cut = bytes.len() > PREVIEW_LIMIT;
+            let mut text = decode(&bytes[..bytes.len().min(PREVIEW_LIMIT)], cut);
+            if cut {
+                text.push_str("\n… Preview limited to 256 KiB");
+                (text, Language::Plain)
+            } else if language == Language::Json
+                && let Some(formatted) = pretty_json(&text)
+            {
+                (formatted, language)
+            } else {
+                (text, language)
+            }
+        }
+        PreparedBody::Multipart(items) => {
+            let lines: Vec<String> = items
+                .iter()
+                .map(|item| {
+                    let kind = match item.kind {
+                        FormKind::File => "file ",
+                        FormKind::Text => "",
+                    };
+                    let content_type = if item.content_type.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" ({})", item.content_type)
+                    };
+                    format!("{}: {kind}{}{content_type}", item.name, item.value)
+                })
+                .collect();
+            (lines.join("\n"), Language::Plain)
+        }
+        PreparedBody::File(path) => (format!("File: {path}"), Language::Plain),
+    };
+    SentRequest {
+        summary: format!("{} {}", prepared.method, prepared.url),
+        headers: if headers.is_empty() {
+            "No headers".to_owned()
+        } else {
+            headers.join("\n")
+        },
+        body,
+        language,
     }
 }
 
@@ -315,6 +398,78 @@ pub fn find_all(haystack: &str, needle: &str) -> Vec<Range<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use poster_app::core::model::{
+        BodyType, FormItem, ParamItem, Request, RequestAuth, RequestTemplate,
+    };
+
+    fn record(template: RequestTemplate) -> ExecutionRecord {
+        let request = Request {
+            template,
+            ..Request::default()
+        };
+        ExecutionRecord {
+            timestamp: poster_app::core::execution::Timestamp(0),
+            request_id: None,
+            template: request.clone(),
+            resolved: request,
+            settings: poster_app::core::settings::AppSettings::default(),
+            environment_id: None,
+            environment: "Global".into(),
+            response: Response::default(),
+        }
+    }
+
+    #[test]
+    fn a_json_post_shows_its_wire_headers_and_formatted_body() {
+        let sent = sent_request(&record(RequestTemplate {
+            method: "POST".into(),
+            url: "http://h/items?a=1".into(),
+            headers: vec![ParamItem::new("X-Trace", "on")],
+            body: br#"{"a":1}"#.to_vec(),
+            body_type: BodyType::Json,
+            ..RequestTemplate::default()
+        }));
+        assert_eq!(sent.summary, "POST http://h/items?a=1");
+        assert!(sent.headers.contains("X-Trace: on"), "{}", sent.headers);
+        assert!(
+            sent.headers
+                .to_lowercase()
+                .contains("content-type: application/json")
+        );
+        assert_eq!(sent.body, "{\n  \"a\": 1\n}");
+        assert_eq!(sent.language, Language::Json);
+    }
+
+    #[test]
+    fn multipart_files_and_digest_are_described() {
+        let mut template = RequestTemplate {
+            method: "POST".into(),
+            url: "http://h/".into(),
+            body_type: BodyType::Multipart,
+            ..RequestTemplate::default()
+        };
+        template.set_multipart_fields(&[
+            FormItem::text("note", "hi"),
+            FormItem::file("upload", "/tmp/a.bin"),
+        ]);
+        template.auth = RequestAuth::digest("u", "p");
+        let sent = sent_request(&record(template));
+        assert_eq!(sent.body, "note: hi\nupload: file /tmp/a.bin");
+        assert!(sent.headers.contains("Digest"), "{}", sent.headers);
+    }
+
+    #[test]
+    fn unpreparable_records_say_why() {
+        let sent = sent_request(&record(RequestTemplate {
+            url: "not a url".into(),
+            ..RequestTemplate::default()
+        }));
+        assert_eq!(sent.summary, "GET not a url");
+        assert!(
+            sent.body
+                .starts_with("This request cannot be shown as sent")
+        );
+    }
 
     fn response(body: &[u8], content_type: &str) -> Response {
         Response {

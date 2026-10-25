@@ -348,23 +348,16 @@ pub struct HistoryScreen {
     pub rows: Vec<ExecutionSummary>,
     pub selected: Option<ExecutionId>,
     pub record: Option<ExecutionRecord>,
-    /// The executed request as readable JSON (body as text, bounded).
-    pub request_text: String,
-    pub request_view: ViewerState,
+    /// The selected execution's request as sent.
+    pub request: Option<crate::viewer::SentRequest>,
+    pub request_tab: ResponseTab,
+    pub request_body_view: ViewerState,
+    pub request_headers_view: ViewerState,
     pub response: ResponsePane,
     pub tab: HistoryTab,
     pub status: Option<(String, Tone)>,
     pub loaded: bool,
     generation: u64,
-}
-
-/// The resolved request of a record as indented JSON, the body shown as text up to 256 KiB.
-pub fn executed_request_text(record: &ExecutionRecord) -> String {
-    let mut value = serde_json::to_value(&record.resolved.template).unwrap_or(Value::Null);
-    let body = &record.resolved.template.body;
-    let shown = &body[..body.len().min(crate::viewer::PREVIEW_LIMIT)];
-    value["body"] = Value::String(String::from_utf8_lossy(shown).into_owned());
-    serde_json::to_string_pretty(&value).unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -995,7 +988,7 @@ impl PosterApp {
                     match result {
                         Ok(Some(record)) => {
                             let history = &mut self.state.history;
-                            history.request_text = executed_request_text(&record);
+                            history.request = Some(crate::viewer::sent_request(&record));
                             history.response.show(record.response.clone());
                             history.record = Some(*record);
                         }
@@ -2755,7 +2748,7 @@ impl PosterApp {
                 {
                     history.selected = None;
                     history.record = None;
-                    history.request_text.clear();
+                    history.request = None;
                     history.response = ResponsePane::default();
                 }
             }

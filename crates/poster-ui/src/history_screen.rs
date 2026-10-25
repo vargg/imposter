@@ -5,7 +5,7 @@ use egui::{Align, Layout, Rect, Sense, Ui, UiBuilder, vec2};
 use poster_app::core::execution::Outcome;
 use poster_app::store::executions::ExecutionSummary;
 
-use crate::app::{Action, HISTORY_PAGE, HistoryAction, HistoryTab, State};
+use crate::app::{Action, HISTORY_PAGE, HistoryAction, HistoryTab, ResponseTab, State};
 use crate::theme::{PALETTE, Tone};
 use crate::viewer::{self, Language};
 use crate::widgets::{self, name, tone_text};
@@ -205,32 +205,16 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             }
             ui.horizontal(|ui| {
                 for (tab, label) in [
-                    (HistoryTab::Request, "Executed request"),
+                    (HistoryTab::Request, "Request"),
                     (HistoryTab::Response, "Response"),
                 ] {
                     if widgets::tab(ui, history.tab == tab, label).clicked() {
                         history.tab = tab;
                     }
                 }
-                if history.tab == HistoryTab::Request {
-                    widgets::viewer_tools(
-                        ui,
-                        &mut history.request_view,
-                        &history.request_text,
-                        "Copy request",
-                    );
-                }
             });
             match history.tab {
-                HistoryTab::Request => {
-                    widgets::code_viewer(
-                        ui,
-                        "executed request",
-                        &mut history.request_view,
-                        &history.request_text,
-                        Language::Json,
-                    );
-                }
+                HistoryTab::Request => sent_request(ui, history),
                 HistoryTab::Response => {
                     crate::workspace::response_body(ui, &mut history.response, "history", true);
                 }
@@ -239,4 +223,63 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     );
     ui.allocate_rect(area, Sense::hover());
     state.actions.extend(actions);
+}
+
+/// The request as sent: `METHOD URL`, then its body or headers, like the response.
+fn sent_request(ui: &mut Ui, history: &mut crate::app::HistoryScreen) {
+    let Some(request) = &history.request else {
+        return;
+    };
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(request.summary.as_str())
+                .monospace()
+                .strong(),
+        )
+        .selectable(true)
+        .truncate(),
+    )
+    .on_hover_text(request.summary.as_str());
+    ui.horizontal(|ui| {
+        for (tab, label) in [
+            (ResponseTab::Body, "Body"),
+            (ResponseTab::Headers, "Headers"),
+        ] {
+            let response = widgets::tab(ui, history.request_tab == tab, label);
+            name(&response, &format!("Request {}", label.to_lowercase()));
+            if response.clicked() {
+                history.request_tab = tab;
+            }
+        }
+        match history.request_tab {
+            ResponseTab::Body => widgets::viewer_tools(
+                ui,
+                &mut history.request_body_view,
+                &request.body,
+                "Copy request body",
+            ),
+            ResponseTab::Headers => widgets::viewer_tools(
+                ui,
+                &mut history.request_headers_view,
+                &request.headers,
+                "Copy request headers",
+            ),
+        }
+    });
+    match history.request_tab {
+        ResponseTab::Body => widgets::code_viewer(
+            ui,
+            "request body",
+            &mut history.request_body_view,
+            &request.body,
+            request.language,
+        ),
+        ResponseTab::Headers => widgets::code_viewer(
+            ui,
+            "request headers",
+            &mut history.request_headers_view,
+            &request.headers,
+            Language::Plain,
+        ),
+    }
 }
