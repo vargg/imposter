@@ -191,6 +191,7 @@ pub enum Message {
     PostmanReady(Result<Box<PostmanExport>, Failure>),
     PostmanExportPicked(Option<PathBuf>),
     Exported(Result<PathBuf, Failure>),
+    Curl(Result<String, Failure>),
     SettingsLoaded(Result<AppSettings, Failure>),
     SettingsSaved {
         form: SettingsForm,
@@ -253,6 +254,8 @@ pub enum Action {
     Export,
     /// A Settings screen field changed.
     SettingsEdited,
+    /// Copy the open request as a curl command with resolved values.
+    CopyCurl,
     /// The editor changed: `url` when the URL itself was edited, `params` for the query rows.
     Edited {
         url: bool,
@@ -328,6 +331,8 @@ pub enum HistoryAction {
     OnlyCurrent(bool),
     Select(ExecutionId),
     Restore,
+    /// Copy the selected execution's request as curl.
+    CopyCurl,
     Clear,
 }
 
@@ -414,8 +419,12 @@ enum Navigation {
         name: String,
     },
     CreateCollection(String),
-    /// Put a history entry's request in the editor as an unsaved draft.
-    Restore(Box<Request>),
+    /// Put a request in the editor as an unsaved draft (from history or curl), then show
+    /// `status`.
+    Restore {
+        request: Box<Request>,
+        status: &'static str,
+    },
     /// Write a reviewed import, then show the new collection.
     Import {
         preview: Box<ImportPreview>,
@@ -596,6 +605,8 @@ pub struct State {
     started: bool,
     /// A reviewed Postman export waiting for its destination.
     postman: Option<PostmanExport>,
+    /// Text to put on the clipboard at the end of this frame.
+    pub clipboard: Option<String>,
     pub actions: Vec<Action>,
 }
 
@@ -653,6 +664,7 @@ impl PosterApp {
                 restore: None,
                 started: false,
                 postman: None,
+                clipboard: None,
                 actions: Vec::new(),
             },
             window: None,
@@ -1077,6 +1089,11 @@ impl PosterApp {
                 self.error("Export failed", error);
             }
             Message::SettingsLoaded(result) => self.settings_loaded(result),
+            Message::Curl(Ok(command)) => {
+                self.state.clipboard = Some(command);
+                self.status("Copied as curl");
+            }
+            Message::Curl(Err(error)) => self.error("Copy as curl failed", error),
             Message::SettingsSaved { form, result } => self.settings_saved(form, result),
             Message::Exported(Ok(path)) => {
                 self.state.dialog = Some(Dialog::info(
@@ -1329,11 +1346,11 @@ impl PosterApp {
                     Message::Imported(result.map_err(failure))
                 });
             }
-            Navigation::Restore(request) => {
+            Navigation::Restore { request, status } => {
                 self.state.generation += 1;
                 self.load_editor(&request);
                 self.state.screen = Screen::Requests;
-                self.status("Restored unsaved draft — Send to execute, Save to add to the selected collection");
+                self.status(status);
             }
         }
     }
@@ -2040,6 +2057,7 @@ impl PosterApp {
                 Screen::Requests | Screen::History => {}
             },
             Action::SettingsEdited => self.state.settings_screen.refresh_status(),
+            Action::CopyCurl => self.copy_curl(),
             Action::Send => self.send(),
             Action::PickFile(target) => self.pick(
                 FileDialog::Open {
@@ -2148,6 +2166,20 @@ impl PosterApp {
                     });
                 }
             }
+            Outcome::Curl => {
+                if let Some(Dialog::Curl { text }) = self.state.dialog.take()
+                    && let Ok(parsed) = poster_app::core::curl::parse(&text)
+                {
+                    let request = Request {
+                        template: parsed.template,
+                        ..Request::default()
+                    };
+                    self.navigate(Navigation::Restore {
+                        request: Box::new(request),
+                        status: "Opened from curl as an unsaved draft — Save to add it to a collection",
+                    });
+                }
+            }
             Outcome::Export => {
                 if let Some(Dialog::Export {
                     environments,
@@ -2167,6 +2199,24 @@ impl PosterApp {
     }
 
     // ---- import and export ----------------------------------------------------------------------
+
+    /// The open request as curl, resolved the way Send would resolve it now.
+    fn copy_curl(&mut self) {
+        let Some(pane) = &self.state.editor else {
+            return;
+        };
+        let Ok(request) = pane.editor.to_request() else {
+            return self.error(
+                "Copy as curl failed",
+                "Fix the highlighted request settings first.",
+            );
+        };
+        let db = self.db.clone();
+        self.bridge.spawn(move |_| async move {
+            let result = executor::curl_command(&db, &request).await;
+            Message::Curl(result.map_err(failure))
+        });
+    }
 
     fn read_import(&mut self, path: PathBuf, companions: Vec<PathBuf>) {
         let db = self.db.clone();
@@ -2793,7 +2843,21 @@ impl PosterApp {
             HistoryAction::Restore => {
                 if let Some(record) = &self.state.history.record {
                     let draft = record.restore();
-                    self.navigate(Navigation::Restore(Box::new(draft)));
+                    self.navigate(Navigation::Restore {
+                        request: Box::new(draft),
+                        status: "Restored unsaved draft — Send to execute, Save to add to the selected collection",
+                    });
+                }
+            }
+            HistoryAction::CopyCurl => {
+                if let Some(record) = &self.state.history.record {
+                    match executor::recorded_curl(record) {
+                        Ok(command) => {
+                            self.state.clipboard = Some(command);
+                            self.state.history.status = Some(("Copied as curl".into(), Tone::Ok));
+                        }
+                        Err(error) => self.error("Copy as curl failed", error.to_string()),
+                    }
                 }
             }
             HistoryAction::Clear => {
@@ -2922,6 +2986,9 @@ impl eframe::App for PosterApp {
         if let Some(dialog) = &mut self.state.dialog {
             let outcome = dialog.show(ui.ctx());
             self.dialog_outcome(outcome);
+        }
+        if let Some(text) = self.state.clipboard.take() {
+            ui.ctx().copy_text(text);
         }
         if let Some(started) = self.first_frame.take() {
             tracing::info!(elapsed_ms = started.elapsed().as_millis(), "first frame");

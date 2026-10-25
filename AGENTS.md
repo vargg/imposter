@@ -293,6 +293,14 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
   written to a temporary file and renamed; a Postman bundle with companions goes to a new
   directory and never overwrites one. Tied sibling positions are renumbered on export, as the
   Python app does, so a trip through the database keeps content and order, not tied numbers.
+- **curl in and out** (`poster_core::curl`; the Python app has none). Import parses POSIX
+  shell quoting (including `$'…'`) and cmd's `^` escapes, maps the options browsers' "Copy as
+  cURL" and hand-written commands use, reports others as warnings, and always opens the result
+  as an unsaved draft. Copy as curl writes what Send would send now (variables resolved, auth
+  headers built, settings as `-L`/`-k`/`--proxy`/TLS options), secrets included, only on
+  explicit request; History copies what was recorded. Why: commands must run as pasted, and
+  a generated command must parse back to the same prepared request
+  (`poster-core/tests/curl.rs`).
 - **File dialogs go through one seam** (`PosterApp::pick`); tests answer them with
   `script_file_dialogs`, since native dialogs cannot be driven headless.
 - **Each dialog kind has its own modal id.** Why: a dialog replacing another (the import review

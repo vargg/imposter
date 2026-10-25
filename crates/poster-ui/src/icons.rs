@@ -16,6 +16,8 @@ pub enum Icon {
     Save,
     Pencil,
     Trash,
+    /// A shell prompt, for curl commands.
+    Terminal,
 }
 
 /// Native buttons keep keyboard and AccessKit behavior even when their label is only a tooltip.
@@ -152,6 +154,14 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
                 stroke,
             ));
             line((9.3, 4.2), (11.8, 6.7));
+        }
+        Icon::Terminal => {
+            rectangle((1.0, 2.0), (15.0, 14.0));
+            painter.add(egui::Shape::line(
+                vec![point(4.0, 5.5), point(6.5, 8.0), point(4.0, 10.5)],
+                stroke,
+            ));
+            line((8.0, 10.5), (12.0, 10.5));
         }
         Icon::Trash => {
             line((2.0, 4.0), (14.0, 4.0));

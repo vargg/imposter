@@ -364,3 +364,30 @@ async fn switching_the_environment_mid_request_does_not_change_it() {
             .contains(&ParamItem::new("X-Scope", "environment"))
     );
 }
+
+#[tokio::test]
+async fn copy_as_curl_resolves_what_send_would_send_without_sending() {
+    let (_dir, store) = open();
+    let request = setup(&store, "http://h").await;
+
+    let command = poster_app::executor::curl_command(&store.handle(), &request)
+        .await
+        .unwrap();
+
+    assert!(command.starts_with("curl 'http://h/items'"), "{command}");
+    assert!(command.contains("-H 'X-Scope: environment'"), "{command}");
+    assert!(
+        command.contains(r#"--data-raw '{"token": "global-token"}'"#),
+        "{command}"
+    );
+    assert_eq!(
+        history_count(&store).await,
+        0,
+        "nothing is sent or recorded"
+    );
+
+    let mut broken = request.clone();
+    broken.template.url = "{{missing}}/x".into();
+    let error = poster_app::executor::curl_command(&store.handle(), &broken).await;
+    assert!(matches!(error, Err(ExecuteError::Invalid(_))));
+}

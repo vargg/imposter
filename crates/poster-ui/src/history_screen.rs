@@ -69,6 +69,13 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         if restore.clicked() {
             actions.push(Action::History(HistoryAction::Restore));
         }
+        if ui
+            .add_enabled(history.record.is_some(), egui::Button::new("Copy as curl"))
+            .on_hover_text("Copy the request as it was sent, as a curl command")
+            .clicked()
+        {
+            actions.push(Action::History(HistoryAction::CopyCurl));
+        }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui.button("Clear all history…").clicked() {
                 actions.push(Action::History(HistoryAction::Clear));

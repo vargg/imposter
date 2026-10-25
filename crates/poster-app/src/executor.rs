@@ -104,6 +104,23 @@ pub fn resolve(request: &Request, inputs: &Inputs) -> Result<(Request, AppSettin
     Ok((resolved, settings))
 }
 
+/// `request` as a curl command with what Send would send now: variables resolved, auth
+/// headers built, settings applied. It contains secrets; only copy it on request.
+pub async fn curl_command(store: &StoreHandle, request: &Request) -> Result<String, ExecuteError> {
+    let inputs = inputs(store, request).await?;
+    let (resolved, settings) = resolve(request, &inputs)?;
+    let prepared = prepare(&resolved.template, settings.attach_cookies)
+        .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
+    Ok(poster_core::curl::to_command(&prepared, &settings))
+}
+
+/// A recorded execution as the curl command of what it sent.
+pub fn recorded_curl(record: &ExecutionRecord) -> Result<String, ExecuteError> {
+    let prepared = prepare(&record.resolved.template, record.settings.attach_cookies)
+        .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
+    Ok(poster_core::curl::to_command(&prepared, &record.settings))
+}
+
 /// Send `request` and record it. `cancel` stops the network exchange; a cancelled execution
 /// is still recorded, like any other outcome.
 pub async fn execute(

@@ -194,6 +194,11 @@ fn new_menu(state: &mut State, ui: &mut Ui) {
         if ui.button("Import Collection…").clicked() {
             state.actions.push(Action::Import);
         }
+        if ui.button("Import from curl…").clicked() {
+            state.actions.push(Action::Prompt(Dialog::Curl {
+                text: String::new(),
+            }));
+        }
     });
 }
 
@@ -512,6 +517,9 @@ fn context_bar(
                     .inner;
                 if button.clicked() {
                     state.actions.push(Action::Save);
+                }
+                if icons::button(ui, Icon::Terminal, "Copy as curl", false).clicked() {
+                    state.actions.push(Action::CopyCurl);
                 }
                 ui.label(tone_text(save.text, save.tone))
                     .on_hover_text(save.detail);

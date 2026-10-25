@@ -80,6 +80,8 @@ pub enum Dialog {
         preview: Box<ImportPreview>,
         remove_unsupported: bool,
     },
+    /// Paste a curl command; it opens as an unsaved draft.
+    Curl { text: String },
     /// What an export includes. Environments and globals are opt-in.
     Export {
         environments: Vec<(EnvironmentId, String, bool)>,
@@ -103,6 +105,8 @@ pub enum Outcome {
     Import,
     /// Export with the dialog's choices; the dialog still holds them.
     Export,
+    /// Open the pasted command as a draft; the dialog still holds it and it parses.
+    Curl,
     /// Cancelled, closed or acknowledged.
     Closed,
 }
@@ -299,6 +303,7 @@ impl Dialog {
                     globals,
                     postman,
                 } => outcome = export(ui, environments, globals, postman),
+                Self::Curl { text } => outcome = curl(ui, text),
             }
         });
         if outcome == Outcome::Open && modal.should_close() {
@@ -327,6 +332,50 @@ fn guard_buttons(ui: &mut egui::Ui) -> Option<GuardChoice> {
         }
     });
     choice
+}
+
+fn curl(ui: &mut egui::Ui, text: &mut String) -> Outcome {
+    let mut outcome = Outcome::Open;
+    ui.set_min_width(560.0);
+    ui.heading("Import from curl");
+    let caption = ui.label("curl command:");
+    let field = ui.add(
+        egui::TextEdit::multiline(text)
+            .code_editor()
+            .desired_rows(8)
+            .desired_width(f32::INFINITY)
+            .hint_text("curl 'https://api.example.com/items' -H 'Accept: application/json'"),
+    );
+    let field = field.labelled_by(caption.id);
+    if !field.has_focus() && ui.memory(|m| m.focused().is_none()) {
+        field.request_focus();
+    }
+    let parsed = (!text.trim().is_empty()).then(|| poster_app::core::curl::parse(text));
+    match &parsed {
+        Some(Ok(parsed)) => {
+            for warning in &parsed.warnings {
+                ui.label(tone_text(warning.as_str(), Tone::Warning));
+            }
+        }
+        Some(Err(error)) => {
+            ui.label(tone_text(error.to_string(), Tone::Error));
+        }
+        None => {}
+    }
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        let valid = matches!(parsed, Some(Ok(_)));
+        if ui
+            .add_enabled(valid, egui::Button::new("Open as draft"))
+            .clicked()
+        {
+            outcome = Outcome::Curl;
+        }
+        if ui.button("Cancel").clicked() {
+            outcome = Outcome::Closed;
+        }
+    });
+    outcome
 }
 
 fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outcome {
