@@ -74,8 +74,12 @@ Release packages are built by CI from version tags: a `.dmg` for macOS (Apple Si
 `.deb` and an `.AppImage` for Linux (x86_64), and an installer for Windows (x86_64). Until
 the first release is published, build from source.
 
-Unsigned packages need one extra step the first time: on macOS, right-click the app and
-choose Open; on Windows, confirm the SmartScreen prompt.
+The packages are not signed with an Apple or Microsoft developer certificate yet, so the first
+launch needs one extra step:
+- **macOS 15 and later:** open Poster once and dismiss the warning, then go to System Settings
+  → Privacy & Security and click **Open Anyway** next to the Poster message.
+- **macOS 14 and earlier:** right-click Poster in Applications, choose Open, then Open again.
+- **Windows:** in the SmartScreen prompt, click More info → Run anyway.
 
 ### From source
 

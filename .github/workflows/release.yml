@@ -46,8 +46,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-packager --locked --version 0.11.8
 
-      # cargo-packager reads the signing identity only from its config; the certificate and
-      # notarization credentials come from the APPLE_* variables above.
+      # cargo-packager reads the signing identity only from its config, where it is "-"
+      # (ad-hoc). With a Developer ID secret it is replaced; the certificate and notarization
+      # credentials come from the APPLE_* variables above.
       - name: Configure macOS signing
         if: runner.os == 'macOS' && env.APPLE_SIGNING_IDENTITY != ''
         shell: bash
@@ -55,14 +56,19 @@ jobs:
           python3 - <<'EOF'
           import os, pathlib
           path = pathlib.Path("crates/poster/Cargo.toml")
-          section = "[package.metadata.packager.macos]\n"
+          adhoc = 'signing-identity = "-"\n'
           identity = os.environ["APPLE_SIGNING_IDENTITY"].replace('"', '\\"')
           text = path.read_text()
-          assert section in text, "packager macOS section missing"
-          path.write_text(text.replace(section, f'{section}signing-identity = "{identity}"\n'))
+          assert adhoc in text, "ad-hoc signing identity missing"
+          path.write_text(text.replace(adhoc, f'signing-identity = "{identity}"\n'))
           EOF
 
       - run: cargo packager -p poster --release --formats ${{ matrix.formats }}
+
+      # An unsealed bundle opens locally but is "damaged" once downloaded.
+      - name: Verify the macOS signature
+        if: runner.os == 'macOS'
+        run: codesign --verify --deep --strict --verbose=2 target/packages/Poster.app
 
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'

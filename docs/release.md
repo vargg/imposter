@@ -44,8 +44,12 @@ every package.
 
 ## Signing
 
-Without the secrets below, packages are **unsigned**. macOS then requires right-click → Open
-the first time, and Windows SmartScreen warns.
+Without the secrets below, the macOS app is **ad-hoc signed** (`signing-identity = "-"`) and
+not notarized; the Windows installer is unsigned. Users then confirm the first launch: on
+macOS 15+ in System Settings → Privacy & Security → Open Anyway (right-click → Open on older
+versions); on Windows in SmartScreen. Never ship a macOS bundle without at least the ad-hoc
+signature: once downloaded, macOS reports it as "damaged" and offers no way to open it. The
+release job checks this with `codesign --verify --deep --strict`.
 
 **macOS signing and notarization.** Repository secrets read by the release workflow:
 

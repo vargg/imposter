@@ -41,6 +41,10 @@ icons = [
 
 [package.metadata.packager.macos]
 minimum-system-version = "11.0"
+# Ad-hoc signature ("-") unless the release workflow substitutes a Developer ID: without a
+# signature over the whole bundle, a downloaded app is reported as "damaged" and cannot be
+# opened at all.
+signing-identity = "-"
 
 [package.metadata.packager.deb]
 # Loaded at runtime (winit, glutin); file dialogs go through the XDG desktop portal.

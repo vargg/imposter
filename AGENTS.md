@@ -270,9 +270,11 @@ numbers, so both are excluded. Each logical change is its own commit.
   there is none). Find stays with each viewer and applies to the one under the pointer. Why:
   one handler means a body editor cannot swallow Send and a dialog cannot be bypassed.
 - **Packaging: cargo-packager** (`.app`/`.dmg`, `.deb`/`.AppImage`, NSIS per-user installer),
-  configured in `crates/poster/Cargo.toml`. Releases are drafts built from `v*` tags; packages
-  are unsigned unless the signing secrets exist (`docs/release.md`). Why: one tool and one
-  config for all three OSes; a draft keeps a human between CI and users.
+  configured in `crates/poster/Cargo.toml`. Releases are drafts built from `v*` tags. The macOS
+  bundle is always signed, ad-hoc unless the Developer ID secrets exist (`docs/release.md`);
+  the release job verifies it with `codesign --verify --deep --strict`. Why: one tool and one
+  config for all three OSes; a draft keeps a human between CI and users; an unsealed bundle
+  is "damaged" to macOS once downloaded (the v0.1.0 draft was).
 - **The packaged binary is smoke-tested through the real app** (`poster --smoke-test <url>`,
   driven by `scripts/smoke.py`): window, migrations, HTTP, history and the close sequence, with
   a throwaway `POSTER_DATA_DIR`. It is the binary's only argument. Why: packaging breaks
