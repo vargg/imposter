@@ -319,6 +319,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   port written from reading code copies the reader's misreadings. Change a fixture only by
   regenerating it; a deliberate divergence is asserted in its own test with the reason.
   Current divergences: no empty `Cookie:` header when every cookie is disabled.
+- **No line-ending conversion** (`.gitattributes`: `* -text`). Why: fixtures, golden exports
+  and the pinned schema are compared byte for byte; a CRLF checkout on Windows broke them.
+  Enforced by: the Windows CI job, which runs those tests.
 - **Toolchain pinned in `rust-toolchain.toml`, `Cargo.lock` committed, CI uses `--locked`.**
   Why: every machine and CI run builds the same thing.
 

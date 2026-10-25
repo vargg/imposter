@@ -1,0 +1,4 @@
+# Check out every file byte for byte as committed, on every OS. Tests compare fixtures,
+# golden exports and the pinned Postman schema exactly; Git for Windows would otherwise
+# convert line endings to CRLF.
+* -text
