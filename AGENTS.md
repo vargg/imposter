@@ -15,9 +15,9 @@ Python/PyQt6 prototype at `~/dev/pystman`, which stays the reference implementat
 - **A rule that a tool can check is checked by a tool**, and the rule names that check. Prose is
   the fallback for what tools cannot express. Rules not yet checked are listed in
   [Enforcement gaps](#enforcement-gaps). Why: agents and people forget prose; CI does not.
-- **`PLAN.md` is the roadmap; this file is the durable record.** When a stage settles an open
-  question from `PLAN.md`, record the outcome and its reason under [Decisions](#decisions) in
-  the same commit.
+- **This file is the durable record; plans and roadmaps are not kept in the repository.** When
+  work settles an open question, record the outcome and its reason under
+  [Decisions](#decisions) in the same commit. User-facing documentation is `README.md`.
 - **Changing a rule or decision updates this file in the same commit.** Replace a superseded
   decision rather than keeping both; mention the rejected option in the reason when that stops
   someone from proposing it again. Git keeps the history.
@@ -57,7 +57,7 @@ cargo run -p poster
 Coverage must stay at or above 85% of lines and 70% of regions (stable Rust has no branch
 coverage; regions are the closest measure). `main.rs` only opens the window; the
 installed-binary smoke test covers it. `poster-testkit` is test code and would inflate the
-numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
+numbers, so both are excluded. Each logical change is its own commit.
 
 ## Architecture principles
 
@@ -98,7 +98,7 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
   Enforced by: `clippy::unwrap_used`, allowed in test code via `clippy.toml`. Clippy only counts
   `#[test]` functions and `#[cfg(test)]` modules as test code, so every integration-test file
   (`tests/*.rs`, `tests/support/`) starts with `#![cfg(test)]`.
-- **No `dbg!`, `todo!` or `unimplemented!` in committed code.** Do the work, or put it in `PLAN.md`.
+- **No `dbg!`, `todo!` or `unimplemented!` in committed code.** Do the work, or open an issue.
   Enforced by: `clippy::dbg_macro`, `clippy::todo`, `clippy::unimplemented`.
 - **Test support lives in `poster-testkit`, used only as a dev-dependency.** Enforced by the
   architecture test.
@@ -321,8 +321,6 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
   Current divergences: no empty `Cookie:` header when every cookie is disabled.
 - **Toolchain pinned in `rust-toolchain.toml`, `Cargo.lock` committed, CI uses `--locked`.**
   Why: every machine and CI run builds the same thing.
-
-Open questions are in `PLAN.md` ("Open questions"); their outcomes are recorded here.
 
 ## Enforcement gaps
 
