@@ -33,31 +33,44 @@ jobs:
             os: windows-latest
             formats: nsis
     runs-on: ${{ matrix.os }}
+    # Under other names: cargo-packager treats a set-but-empty APPLE_* variable as present, so a
+    # missing secret must leave the variable unset (see "Export Apple signing secrets").
     env:
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      SECRET_APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      SECRET_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      SECRET_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      SECRET_APPLE_ID: ${{ secrets.APPLE_ID }}
+      SECRET_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      SECRET_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-packager --locked --version 0.11.8
 
+      - name: Export Apple signing secrets
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            secret="SECRET_$name"
+            if [ -n "${!secret}" ]; then
+              { echo "$name<<END_OF_$name"; echo "${!secret}"; echo "END_OF_$name"; } >> "$GITHUB_ENV"
+            fi
+          done
+
       # cargo-packager reads the signing identity only from its config, where it is "-"
       # (ad-hoc). With a Developer ID secret it is replaced; the certificate and notarization
-      # credentials come from the APPLE_* variables above.
+      # credentials come from the variables exported above.
       - name: Configure macOS signing
-        if: runner.os == 'macOS' && env.APPLE_SIGNING_IDENTITY != ''
+        if: runner.os == 'macOS' && env.SECRET_APPLE_SIGNING_IDENTITY != ''
         shell: bash
         run: |
           python3 - <<'EOF'
           import os, pathlib
           path = pathlib.Path("crates/poster/Cargo.toml")
           adhoc = 'signing-identity = "-"\n'
-          identity = os.environ["APPLE_SIGNING_IDENTITY"].replace('"', '\\"')
+          identity = os.environ["SECRET_APPLE_SIGNING_IDENTITY"].replace('"', '\\"')
           text = path.read_text()
           assert adhoc in text, "ad-hoc signing identity missing"
           path.write_text(text.replace(adhoc, f'signing-identity = "{identity}"\n'))
