@@ -2431,10 +2431,7 @@ impl PosterApp {
                 screen.rows = screen
                     .baseline
                     .iter()
-                    .map(|(name, value)| vars::Row {
-                        name: name.clone(),
-                        value: value.clone(),
-                    })
+                    .map(|(name, value)| vars::Row::new(name.clone(), value.clone()))
                     .collect();
                 screen.status = None;
                 self.variables_perform(transition);

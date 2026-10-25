@@ -402,3 +402,76 @@ fn closing_with_unsaved_variables_asks_and_cancel_stays_open() {
         vars(&[("a", "1x")])
     );
 }
+
+#[test]
+fn a_suggestion_can_be_chosen_with_the_pointer() {
+    let mut app = with_request();
+    type_into(&mut app.harness, "Request URL", "/{{ho");
+
+    // A real press and release: the press takes focus from the field first.
+    let at = app
+        .harness
+        .get_by_label("host · Global · Global")
+        .rect()
+        .center();
+    app.harness.drag_at(at);
+    app.harness.run_steps(1);
+    app.harness.drop_at(at);
+    app.harness.run_steps(2);
+
+    let editor = &app.harness.state().state.editor.as_ref().unwrap().editor;
+    assert_eq!(editor.url, "http://x/{{host}}");
+    assert!(
+        app.harness
+            .query_by_label("host · Global · Global")
+            .is_none(),
+        "the list closes after choosing"
+    );
+}
+
+#[test]
+fn clicking_inside_a_finished_token_does_not_suggest() {
+    let mut app = with_request();
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .url = "http://{{host}}/".into();
+    app.harness.run_steps(2);
+
+    let field = support::text_input(&app.harness, "Request URL").rect();
+    let at = egui::pos2(field.left() + 70.0, field.center().y);
+    app.harness.drag_at(at);
+    app.harness.drop_at(at);
+    app.harness.run_steps(2);
+
+    assert!(app.harness.state().state.inspect.is_some());
+    assert!(
+        app.harness
+            .query_by_label("host · Global · Global")
+            .is_none(),
+        "only the inspector opens"
+    );
+}
+
+#[test]
+fn a_new_variable_keeps_focus_while_its_name_is_typed() {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1")])))
+            .unwrap();
+    });
+    open_screen(&mut app);
+    click(&mut app.harness, "Add Variable");
+    type_into(&mut app.harness, "Variable 2 name", "t");
+    app.harness.get_by_label("Unsaved variable changes");
+
+    // Keep typing without clicking the field again.
+    app.harness.event(egui::Event::Text("oken".into()));
+    app.harness.run_steps(2);
+
+    assert_eq!(app.harness.state().state.variables.rows[1].name, "token");
+}

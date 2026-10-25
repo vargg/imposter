@@ -143,10 +143,24 @@ impl Scope {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// One editable variable. `key` identifies the row's widgets while rows above it are added,
+/// removed or the layout shifts, so typing keeps its focus.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row {
+    pub key: u64,
     pub name: String,
     pub value: String,
+}
+
+impl Row {
+    pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        Self {
+            key: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            name: name.into(),
+            value: value.into(),
+        }
+    }
 }
 
 /// Rows with a name, in order: what the scope holds.
@@ -160,10 +174,7 @@ pub fn entries(rows: &[Row]) -> Vec<(String, String)> {
 pub fn rows(variables: &Variables) -> Vec<Row> {
     variables
         .iter()
-        .map(|(name, value)| Row {
-            name: name.clone(),
-            value: value.clone(),
-        })
+        .map(|(name, value)| Row::new(name.clone(), value.clone()))
         .collect()
 }
 
@@ -306,12 +317,9 @@ mod tests {
             .into_iter()
             .collect();
         let mut edited = rows(&variables);
-        edited.push(Row::default());
+        edited.push(Row::new("", ""));
         assert_eq!(to_variables(&edited).unwrap(), variables);
-        edited.push(Row {
-            name: "a".into(),
-            value: "2".into(),
-        });
+        edited.push(Row::new("a", "2"));
         assert_eq!(to_variables(&edited), Err(DuplicateName("a".into())));
     }
 }

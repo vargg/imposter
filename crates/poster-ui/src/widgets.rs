@@ -76,11 +76,16 @@ pub struct Inspection {
 }
 
 /// Completion popup state of one field, kept in egui memory.
+/// Exists only while suggestions are open: from typing inside an unfinished `{{name` until
+/// it is chosen, dismissed or the cursor leaves the token.
 #[derive(Debug, Clone, Copy, Default)]
 struct Completion {
     selected: usize,
     /// The popup's rect last frame, so clicking it does not count as leaving the field.
     rect: Option<egui::Rect>,
+    /// The token's start and the cursor (bytes), kept for the frame in which pressing the
+    /// popup has already taken focus from the field.
+    token: (usize, usize),
 }
 
 fn char_to_byte(text: &str, chars: usize) -> usize {
@@ -139,9 +144,12 @@ fn var_edit_with(
     let id = ui.make_persistent_id(("variable field", label));
     let ctx = ui.ctx().clone();
     let completion: Option<Completion> = ctx.data(|d| d.get_temp(id));
+    // Not `rect_contains_pointer`: that is false whenever another layer (the popup) is on top.
+    let pointer = ctx.input(|i| i.pointer.latest_pos());
     let hovering_popup = completion
         .and_then(|c| c.rect)
-        .is_some_and(|rect| ui.rect_contains_pointer(rect));
+        .zip(pointer)
+        .is_some_and(|(rect, at)| rect.contains(at));
     let focused = ctx.memory(|m| m.has_focus(id));
     let (mut step, mut accept, mut dismiss) = (0_i64, false, false);
     if focused && completion.is_some() {
@@ -222,16 +230,33 @@ fn var_edit_with(
         });
     }
 
-    // Suggest names while typing an unfinished `{{name`.
-    let open = (response.has_focus() || hovering_popup) && !dismiss;
-    let candidates = match (open, snapshot, cursor) {
-        (true, Some(snapshot), Some(cursor)) => vars::open_token(text, cursor)
-            .map(|(start, query)| (start, cursor, vars::suggestions(snapshot, query))),
+    // Suggest names while typing an unfinished `{{name`; clicking into a token only inspects.
+    let live = cursor
+        .filter(|_| response.has_focus())
+        .and_then(|c| vars::open_token(text, c).map(|(start, _)| (start, c)));
+    let token = match (completion, live) {
+        _ if dismiss => None,
+        (Some(_), Some(token)) => Some(token),
+        (None, Some(token)) if response.changed() => Some(token),
+        (Some(state), None) if hovering_popup && !response.has_focus() => {
+            let (start, at) = state.token;
+            (text.is_char_boundary(at)
+                && vars::open_token(text, at).is_some_and(|(s, _)| s == start))
+            .then_some(state.token)
+        }
+        _ => None,
+    };
+    let candidates = match (token, snapshot) {
+        (Some((start, cursor)), Some(snapshot)) => {
+            let query = &text[start + 2..cursor];
+            Some((start, cursor, vars::suggestions(snapshot, query)))
+        }
         _ => None,
     };
     match candidates {
         Some((start, cursor, items)) if !items.is_empty() => {
             let mut state = completion.unwrap_or_default();
+            state.token = (start, cursor);
             #[allow(
                 clippy::cast_possible_wrap,
                 clippy::cast_possible_truncation,

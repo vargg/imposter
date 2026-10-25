@@ -93,9 +93,13 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         ),
         Tone::Muted,
     ));
-    if let Some((status, tone)) = &state.variables.status {
-        ui.label(tone_text(status.as_str(), *tone));
-    }
+    // Always one line, so the table below does not move when a status appears.
+    let (status, tone) = state
+        .variables
+        .status
+        .as_ref()
+        .map_or((" ", Tone::Muted), |(text, tone)| (text.as_str(), *tone));
+    ui.label(tone_text(status, tone));
     ui.separator();
     if !state.variables.loaded {
         ui.label(tone_text("Loading…", Tone::Muted));
@@ -132,7 +136,9 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                         ui.horizontal(|ui| {
                             let field = ui.add_sized(
                                 [name_width, height],
-                                egui::TextEdit::singleline(&mut row.name).hint_text("name"),
+                                egui::TextEdit::singleline(&mut row.name)
+                                    .id_salt(("variable", row.key, "name"))
+                                    .hint_text("name"),
                             );
                             name(&field, &format!("Variable {} name", index + 1));
                             if highlight.as_deref() == Some(row.name.as_str()) {
@@ -141,7 +147,9 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                             }
                             let value = ui.add_sized(
                                 [value_width, height],
-                                egui::TextEdit::singleline(&mut row.value).hint_text("value"),
+                                egui::TextEdit::singleline(&mut row.value)
+                                    .id_salt(("variable", row.key, "value"))
+                                    .hint_text("value"),
                             );
                             name(&value, &format!("Variable {} value", index + 1));
                             edited |= field.changed() || value.changed();
@@ -160,7 +168,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     }
                     ui.horizontal(|ui| {
                         if ui.button("Add Variable").clicked() {
-                            state.variables.rows.push(vars::Row::default());
+                            state.variables.rows.push(vars::Row::new("", ""));
                         }
                         if !state.variables.rows.is_empty() {
                             if state.variables.confirm_clear {

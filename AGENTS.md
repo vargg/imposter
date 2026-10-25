@@ -225,7 +225,8 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
 - **Variables in the editor:** fields mark `{{name}}` tokens with the Python app's highlight
   pattern (`\{\{([^{}\n]+)\}\}`, stricter than the resolution pattern): defined names in the
   accent color, unknown ones in the error color. Typing `{{` suggests names with their scope and
-  source, never values. Values appear only in the inspector, opened explicitly (click on a token
+  source, never values; the list opens only from typing in an unfinished token (clicking into
+  a token only inspects it) and can be chosen by keyboard or pointer. Values appear only in the inspector, opened explicitly (click on a token
   or Alt+Enter); from a password field they stay masked until "Reveal". The inspector and
   execution share `executor::inputs`, so it explains exactly what a send would use.
 - **The Variables screen edits one scope at a time** (Global, an environment, a collection),
