@@ -9,13 +9,11 @@ use crate::app::{Action, EditorTab, PosterApp, ResponseTab, Screen, State};
 use crate::dialogs::{ConfirmPurpose, Dialog, NamePurpose};
 use crate::editor::BODY_CHOICES;
 use crate::icons::{self, Icon};
-use crate::layout::{
-    LayoutMode, Orientation, SIDEBAR_WIDTH, WorkspaceLayout, effective_orientation,
-};
+use crate::layout::{Orientation, SIDEBAR_WIDTH, WorkspaceLayout};
 use crate::theme::{PALETTE, Tone, method_color};
 use crate::tree::{Node, NodeId};
 use crate::viewer::{self, Language};
-use crate::widgets::{self, FileRequest, VarUi, name, tone_text};
+use crate::widgets::{self, FileRequest, VarUi, ViewerState, name, tone_text};
 
 const SEPARATOR: f32 = 12.0;
 
@@ -36,18 +34,17 @@ pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
         )
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                egui::Frame::new()
-                    .fill(PALETTE.accent)
-                    .corner_radius(8)
-                    .inner_margin(egui::Margin::symmetric(9, 4))
-                    .show(ui, |ui| {
-                        ui.label(
-                            RichText::new("P")
-                                .size(18.0)
-                                .strong()
-                                .color(PALETTE.on_accent),
-                        );
-                    });
+                // The same drawing as the window and Dock icon.
+                let logo = state.logo.get_or_insert_with(|| {
+                    let size = 96;
+                    let image = egui::ColorImage::from_rgba_unmultiplied(
+                        [size, size],
+                        &icons::app_icon(96),
+                    );
+                    ui.ctx()
+                        .load_texture("app icon", image, egui::TextureOptions::LINEAR)
+                });
+                ui.add(egui::Image::new(&*logo).fit_to_exact_size(vec2(34.0, 34.0)));
                 ui.label(RichText::new("Poster").size(20.0).strong());
                 ui.add_space(24.0);
                 for (screen, label) in [
@@ -94,7 +91,7 @@ pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
                 {
                     state.layout.sidebar_visible = !state.layout.sidebar_visible;
                 }
-                layout_menu(&mut state.layout, ui);
+                layout_switch(&mut state.layout, ui);
                 ui.separator();
                 ui.label(tone_text(state.status.as_str(), Tone::Muted).small());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -484,7 +481,7 @@ fn nodes(
 fn context_bar(
     state: &mut State,
     ui: &mut Ui,
-    save: Option<crate::app::SaveLabel>,
+    save: Option<widgets::SaveStatus<'static>>,
     save_text: &str,
 ) {
     ui.horizontal(|ui| {
@@ -509,20 +506,12 @@ fn context_bar(
         ui.add(egui::Label::new(RichText::new(path).strong().size(14.0)).truncate());
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if let Some(save) = save {
-                let hint = crate::shortcuts::hint(ui.ctx(), save_text, &crate::shortcuts::SAVE);
-                let button = ui
-                    .add_enabled_ui(save.enabled, |ui| {
-                        icons::button_with_hint(ui, Icon::Save, save_text, &hint, false)
-                    })
-                    .inner;
-                if button.clicked() {
+                if widgets::save_controls(ui, &save, save_text) {
                     state.actions.push(Action::Save);
                 }
                 if icons::button(ui, Icon::Terminal, "Copy as curl", false).clicked() {
                     state.actions.push(Action::CopyCurl);
                 }
-                ui.label(tone_text(save.text, save.tone))
-                    .on_hover_text(save.detail);
             }
         });
     });
@@ -560,24 +549,15 @@ fn environment_picker(state: &mut State, ui: &mut Ui) {
     );
 }
 
-fn layout_menu(layout: &mut WorkspaceLayout, ui: &mut Ui) {
-    icons::menu(ui, Icon::Layout, "Layout", |ui| {
-        for (mode, label) in [
-            (LayoutMode::Auto, "Auto"),
-            (LayoutMode::SideBySide, "Side by side"),
-            (LayoutMode::Stacked, "Stacked"),
-        ] {
-            if ui.radio(layout.mode == mode, label).clicked() {
-                layout.mode = mode;
-                ui.close();
-            }
-        }
-        ui.separator();
-        if ui.button("Reset layout").clicked() {
-            *layout = WorkspaceLayout::default();
-            ui.close();
-        }
-    });
+/// Switch between side by side and stacked. The icon shows what a click switches to.
+fn layout_switch(layout: &mut WorkspaceLayout, ui: &mut Ui) {
+    let (icon, label) = match layout.orientation {
+        Orientation::SideBySide => (Icon::Rows, "Stack request and response"),
+        Orientation::Stacked => (Icon::Columns, "Put request and response side by side"),
+    };
+    if icons::button(ui, icon, label, false).clicked() {
+        layout.orientation = layout.orientation.switched();
+    }
 }
 
 fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
@@ -649,8 +629,7 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
 
 fn split(state: &mut State, ui: &mut Ui) {
     let area = ui.available_rect_before_wrap();
-    let orientation = effective_orientation(area.width(), state.layout.mode, state.orientation);
-    state.orientation = Some(orientation);
+    let orientation = state.layout.orientation;
     let ratio = state.layout.ratio(orientation);
     let (first, handle, second) = match orientation {
         Orientation::SideBySide => {
@@ -893,39 +872,72 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
     }
 }
 
+/// Below this width the response's status line and run picker get a row each.
+const RESPONSE_HEADER_ROW: f32 = 640.0;
+
 fn response_pane(state: &mut State, ui: &mut Ui) {
     let response_state = &mut state.response;
-    ui.horizontal(|ui| {
-        // The status line takes the place of a "Response" heading.
+    let actions = &mut state.actions;
+    // The status line takes the place of a "Response" heading.
+    if ui.available_width() >= RESPONSE_HEADER_ROW {
+        ui.horizontal(|ui| {
+            if let Some(response) = &response_state.response {
+                status_badges(ui, response);
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                runs_picker(ui, response_state, actions);
+            });
+        });
+    } else {
         if let Some(response) = &response_state.response {
-            status_badges(ui, response);
+            ui.horizontal_wrapped(|ui| status_text(ui, response));
         }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if !response_state.runs.is_empty() {
-                let shown = response_state.shown_run;
-                let label = response_state
-                    .runs
-                    .iter()
-                    .find(|run| Some(run.id) == shown)
-                    .map_or_else(|| "Recorded runs".to_owned(), run_label);
-                let combo = egui::ComboBox::from_id_salt("runs")
-                    .width(220.0)
-                    .selected_text(label)
-                    .show_ui(ui, |ui| {
-                        for run in &response_state.runs {
-                            if ui
-                                .selectable_label(Some(run.id) == shown, run_label(run))
-                                .clicked()
-                            {
-                                state.actions.push(Action::ShowRun(run.id));
-                            }
-                        }
-                    });
-                name(&combo.response, "Recorded runs");
+        ui.horizontal(|ui| runs_picker(ui, response_state, actions));
+    }
+    response_body(ui, response_state, "response", false);
+}
+
+/// The recorded runs of the open request, to show an earlier response.
+fn runs_picker(ui: &mut Ui, response_state: &crate::app::ResponsePane, actions: &mut Vec<Action>) {
+    if response_state.runs.is_empty() {
+        return;
+    }
+    let shown = response_state.shown_run;
+    let label = response_state
+        .runs
+        .iter()
+        .find(|run| Some(run.id) == shown)
+        .map_or_else(|| "Recorded runs".to_owned(), run_label);
+    let combo = egui::ComboBox::from_id_salt("runs")
+        .width(220.0_f32.min(ui.available_width()))
+        .truncate()
+        .selected_text(label)
+        .show_ui(ui, |ui| {
+            for run in &response_state.runs {
+                if ui
+                    .selectable_label(Some(run.id) == shown, run_label(run))
+                    .clicked()
+                {
+                    actions.push(Action::ShowRun(run.id));
+                }
             }
         });
-    });
-    response_body(ui, response_state, "response", false);
+    name(&combo.response, "Recorded runs");
+}
+
+/// The status line as plain text, which wraps in a narrow pane where badges cannot.
+fn status_text(ui: &mut Ui, response: &poster_app::core::execution::Response) {
+    let status = viewer::status(response);
+    let part = |ui: &mut Ui, text: RichText| ui.add(egui::Label::new(text).extend());
+    part(ui, tone_text(status.text.as_str(), status.tone).strong())
+        .on_hover_text(status.detail.as_str());
+    part(
+        ui,
+        tone_text(viewer::format_duration(response.elapsed), Tone::Muted),
+    );
+    if response.outcome == poster_app::core::execution::Outcome::Response {
+        part(ui, tone_text(viewer::size_text(response), Tone::Muted));
+    }
 }
 
 /// Status, time, size and content type of a response, as badges.
@@ -984,6 +996,14 @@ pub fn response_body(
     } else {
         "Copy headers"
     };
+    let narrow = ui.available_width() < widgets::TAB_ROW_MIN;
+    let tools = |ui: &mut Ui,
+                 tab: ResponseTab,
+                 body_view: &mut ViewerState,
+                 headers_view: &mut ViewerState| match tab {
+        ResponseTab::Body => widgets::viewer_tools(ui, body_view, body, copy_body),
+        ResponseTab::Headers => widgets::viewer_tools(ui, headers_view, headers, copy_headers),
+    };
     ui.horizontal(|ui| {
         for (tab, label) in [
             (ResponseTab::Body, "Body"),
@@ -993,15 +1013,27 @@ pub fn response_body(
                 response_state.tab = tab;
             }
         }
-        match response_state.tab {
-            ResponseTab::Body => {
-                widgets::viewer_tools(ui, &mut response_state.body_view, body, copy_body);
-            }
-            ResponseTab::Headers => {
-                widgets::viewer_tools(ui, &mut response_state.headers_view, headers, copy_headers);
-            }
+        if !narrow {
+            let tab = response_state.tab;
+            tools(
+                ui,
+                tab,
+                &mut response_state.body_view,
+                &mut response_state.headers_view,
+            );
         }
     });
+    if narrow {
+        let tab = response_state.tab;
+        ui.horizontal(|ui| {
+            tools(
+                ui,
+                tab,
+                &mut response_state.body_view,
+                &mut response_state.headers_view,
+            );
+        });
+    }
     match response_state.tab {
         ResponseTab::Body => {
             widgets::code_viewer(

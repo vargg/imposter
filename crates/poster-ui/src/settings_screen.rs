@@ -1,12 +1,12 @@
 //! The Settings screen: application defaults, edited against a saved baseline. Fields and
 //! ranges follow the Python app.
 
-use egui::{Grid, Ui};
+use egui::{Align, Grid, Layout, Ui};
 use poster_app::core::settings::AppSettings;
 
 use crate::app::{Action, State};
 use crate::theme::{PALETTE, Tone};
-use crate::widgets::tone_text;
+use crate::widgets::{SaveStatus, save_controls};
 
 const MIB: u64 = 1024 * 1024;
 
@@ -116,9 +116,30 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut edited = false;
     let mut save = false;
     let loaded = screen.is_loaded();
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let (text, tone) = match &screen.status {
+                Some((text, tone)) => (text.as_str(), *tone),
+                None if !loaded => ("Loading…", Tone::Muted),
+                None => ("Saved", Tone::Muted),
+            };
+            let detail = match text {
+                "Unsaved" => "Unsaved application settings",
+                "Saved" => "The application settings are saved",
+                _ => "",
+            };
+            let status = SaveStatus {
+                text,
+                detail,
+                tone,
+                enabled: screen.dirty() && !screen.is_saving(),
+            };
+            save = save_controls(ui, &status, "Save settings");
+        });
+    });
+    ui.separator();
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
-        .max_height(ui.available_height() - 72.0)
         .show(ui, |ui| {
             ui.set_max_width(760.0);
             ui.add_enabled_ui(loaded, |ui| {
@@ -183,19 +204,6 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 });
             });
         });
-    ui.add_space(8.0);
-    if let Some((status, tone)) = &screen.status {
-        ui.label(tone_text(status.as_str(), *tone));
-    } else if !loaded {
-        ui.label(tone_text("Loading settings…", Tone::Muted));
-    }
-    let enabled = screen.dirty() && !screen.is_saving();
-    if ui
-        .add_enabled(enabled, egui::Button::new("Save Settings"))
-        .clicked()
-    {
-        save = true;
-    }
     if edited {
         state.actions.push(Action::SettingsEdited);
     }

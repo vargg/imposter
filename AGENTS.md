@@ -238,6 +238,14 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
   with the executor's own `prepare`): `METHOD URL`, then Body and Headers tabs like the
   response, never a dump of the stored template. Restoring an entry opens an unsaved draft through the unsaved-changes guard and
   never sends; the draft keeps the captured collection variables for a deleted collection.
+- **The layout is a switch, not a mode:** side by side or stacked, changed only by the status
+  bar button, never by the window width. The window can shrink to 720×480 (`MIN_WINDOW`; the
+  Python app's 1000×650 took more than half a laptop screen), so narrow panes adapt instead:
+  status as wrapping text, tabs and tools on separate rows, single-line fields never wrap.
+  Why: an automatic choice next to a manual one made the button seem broken.
+- **Every screen saves the same way:** its state in one word and a disk icon at the top right
+  (`widgets::save_controls`); Variables adds a revert icon. The header logo is the app icon
+  drawing, like the window and Dock icon.
 - **Save states are one word** ("Saved", "Unsaved", "Saving…", "Save failed", "Draft",
   "Invalid fields") in the request bar, the Variables screen and Settings, colored by tone,
   with the explanation in the hover text; Save is an icon button named by its action. Section

@@ -29,7 +29,7 @@ fn stored(app: &support::App) -> AppSettings {
 
 fn save_enabled(app: &support::App) -> bool {
     !app.harness
-        .get_by_role_and_label(Role::Button, "Save Settings")
+        .get_by_role_and_label(Role::Button, "Save settings")
         .accesskit_node()
         .is_disabled()
 }
@@ -51,7 +51,7 @@ fn edits_are_unsaved_until_saved_and_saving_applies_them() {
         "nothing is written before Save"
     );
 
-    click(&mut app.harness, "Save Settings");
+    click(&mut app.harness, "Save settings");
     settle(&mut app.harness);
 
     app.harness.get_by_label("Saved");
@@ -94,7 +94,7 @@ fn settings_the_screen_does_not_show_are_kept() {
     });
     open_settings(&mut app);
     click(&mut app.harness, "Verify SSL certificates");
-    click(&mut app.harness, "Save Settings");
+    click(&mut app.harness, "Save settings");
     settle(&mut app.harness);
 
     let saved = stored(&app);

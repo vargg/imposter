@@ -7,7 +7,7 @@ use crate::app::{Action, State, VariablesAction};
 use crate::icons::{self, Icon};
 use crate::theme::{PALETTE, Tone};
 use crate::vars::{self, Scope};
-use crate::widgets::{name, tone_text};
+use crate::widgets::{SaveStatus, name, save_controls, tone_text};
 
 fn scope_label(state: &State, scope: Scope) -> String {
     match scope {
@@ -27,7 +27,6 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut actions = Vec::new();
     let current = state.variables.scope;
     ui.horizontal(|ui| {
-        let caption = ui.label("Editing");
         let combo = egui::ComboBox::from_id_salt("variables scope")
             .width(260.0)
             .selected_text(scope_label(state, current))
@@ -53,7 +52,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     );
                 }
             });
-        combo.response.labelled_by(caption.id);
+        name(&combo.response, "Variable scope");
         if icons::button(ui, Icon::Plus, "New environment", false).clicked() {
             actions.push(Action::Variables(VariablesAction::NewEnvironment));
         }
@@ -66,31 +65,38 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             }
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let dirty = state.variables.dirty();
-            let hint = crate::shortcuts::hint(ui.ctx(), "Save Variables", &crate::shortcuts::SAVE);
-            if ui
-                .add_enabled(dirty, egui::Button::new("Save Variables"))
-                .on_hover_text(hint)
-                .clicked()
-            {
+            let screen = &state.variables;
+            let dirty = screen.dirty();
+            let (text, tone) = match &screen.status {
+                Some((text, tone)) => (text.as_str(), *tone),
+                None if !screen.loaded => ("Loading…", Tone::Muted),
+                None if dirty => ("Unsaved", Tone::Warning),
+                None => ("Saved", Tone::Muted),
+            };
+            let detail = match text {
+                "Unsaved" => "Unsaved variable changes",
+                "Saved" => "The variables are saved",
+                _ => "",
+            };
+            let status = SaveStatus {
+                text,
+                detail,
+                tone,
+                enabled: dirty,
+            };
+            if save_controls(ui, &status, "Save variables") {
                 actions.push(Action::Variables(VariablesAction::Save));
             }
-            if ui
-                .add_enabled(dirty, egui::Button::new("Revert"))
-                .on_hover_text("Discard unsaved changes")
-                .clicked()
-            {
+            let revert = ui
+                .add_enabled_ui(dirty, |ui| {
+                    icons::button(ui, Icon::Revert, "Revert unsaved changes", false)
+                })
+                .inner;
+            if revert.clicked() {
                 actions.push(Action::Variables(VariablesAction::Revert));
             }
         });
     });
-    // Always one line, so the table below does not move when a status appears.
-    let (status, tone) = state
-        .variables
-        .status
-        .as_ref()
-        .map_or((" ", Tone::Muted), |(text, tone)| (text.as_str(), *tone));
-    ui.label(tone_text(status, tone));
     ui.separator();
     if !state.variables.loaded {
         ui.label(tone_text("Loading…", Tone::Muted));

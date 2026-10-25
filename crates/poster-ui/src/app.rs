@@ -31,12 +31,12 @@ use serde_json::Value;
 
 use crate::dialogs::{ConfirmPurpose, Dialog, GuardChoice, NamePurpose, Outcome};
 use crate::editor::{Editor, InvalidOptions, OptionField};
-use crate::layout::{Orientation, WorkspaceLayout};
+use crate::layout::WorkspaceLayout;
 use crate::settings_screen::SettingsForm;
 use crate::theme::{self, Tone};
 use crate::tree::{NodeId, TreeView};
 use crate::vars::{self, Scope};
-use crate::widgets::{FileRequest, Inspection, ViewerState};
+use crate::widgets::{FileRequest, Inspection, SaveStatus, ViewerState};
 
 /// How long shutdown waits for background work before aborting it.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
@@ -556,15 +556,6 @@ impl ResponsePane {
     }
 }
 
-/// What the context bar shows about saving the open request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SaveLabel {
-    pub text: &'static str,
-    pub detail: &'static str,
-    pub enabled: bool,
-    pub tone: Tone,
-}
-
 struct Execution {
     task: TaskId,
 }
@@ -580,7 +571,6 @@ pub struct State {
     pub saver: Saver,
     pub response: ResponsePane,
     pub layout: WorkspaceLayout,
-    pub orientation: Option<Orientation>,
     pub dialog: Option<Dialog>,
     pub status: String,
     pub screen: Screen,
@@ -607,6 +597,8 @@ pub struct State {
     postman: Option<PostmanExport>,
     /// Text to put on the clipboard at the end of this frame.
     pub clipboard: Option<String>,
+    /// The header logo, uploaded on first use.
+    pub logo: Option<egui::TextureHandle>,
     pub actions: Vec<Action>,
 }
 
@@ -642,7 +634,6 @@ impl PosterApp {
                 saver: Saver::default(),
                 response: ResponsePane::default(),
                 layout: WorkspaceLayout::default(),
-                orientation: None,
                 dialog: None,
                 status: "Starting…".into(),
                 screen: Screen::Requests,
@@ -665,6 +656,7 @@ impl PosterApp {
                 started: false,
                 postman: None,
                 clipboard: None,
+                logo: None,
                 actions: Vec::new(),
             },
             window: None,
@@ -1605,7 +1597,7 @@ impl PosterApp {
 
     /// The short save state next to the Save button, a longer explanation for its hover text,
     /// whether saving is possible now, and its tone.
-    pub fn save_label(&self) -> Option<SaveLabel> {
+    pub fn save_label(&self) -> Option<SaveStatus<'static>> {
         let pane = self.state.editor.as_ref()?;
         let (text, detail, enabled, tone) = if !pane.invalid.is_empty() {
             (
@@ -1640,11 +1632,11 @@ impl PosterApp {
                 Tone::Warning,
             )
         };
-        Some(SaveLabel {
+        Some(SaveStatus {
             text,
             detail,
-            enabled,
             tone,
+            enabled,
         })
     }
 
@@ -2560,7 +2552,7 @@ impl PosterApp {
             Ok(()) => {
                 if scope == screen.scope {
                     screen.baseline = vars::entries(&screen.rows);
-                    screen.status = Some(("Saved".into(), Tone::Ok));
+                    screen.status = Some(("Saved".into(), Tone::Muted));
                 }
                 if let Some(transition) = screen.pending.take() {
                     self.variables_perform(transition);
@@ -2681,7 +2673,7 @@ impl PosterApp {
                 screen.status = Some(if screen.dirty() {
                     ("Unsaved".into(), Tone::Warning)
                 } else {
-                    ("Saved".into(), Tone::Ok)
+                    ("Saved".into(), Tone::Muted)
                 });
                 if !settings.autosave {
                     self.state.autosave_due = None;

@@ -65,7 +65,7 @@ fn main() {
         store.close().unwrap();
     }
     for (label, size) in [
-        ("narrow", egui::vec2(1000.0, 650.0)),
+        ("narrow", egui::Vec2::from(poster_ui::layout::MIN_WINDOW)),
         ("wide", egui::vec2(1500.0, 850.0)),
     ] {
         let store = open_store(dir.path()).unwrap();
@@ -110,14 +110,16 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-sidebar-hidden.png")))
             .unwrap();
-        harness.get_by_label("Layout").click();
+        harness.get_by_label("Stack request and response").click();
         settle(&mut harness);
         harness
             .render()
             .unwrap()
-            .save(out.join(format!("{label}-layout-menu.png")))
+            .save(out.join(format!("{label}-stacked.png")))
             .unwrap();
-        harness.key_press(egui::Key::Escape);
+        harness
+            .get_by_label("Put request and response side by side")
+            .click();
         settle(&mut harness);
         harness.get_by_label("Show Collections").click();
         settle(&mut harness);

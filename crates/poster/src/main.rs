@@ -6,6 +6,7 @@ use std::sync::{Arc, OnceLock};
 use anyhow::Context as _;
 use poster_app::paths;
 use poster_ui::app::{PosterApp, SmokeResult, window_state};
+use poster_ui::layout::MIN_WINDOW;
 
 /// `poster --smoke-test <url>`: start the real app, send `GET <url>`, close, and exit 0 only
 /// when a response arrived. The release workflow runs it on every packaged binary.
@@ -36,7 +37,7 @@ fn main() -> anyhow::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Poster")
         .with_inner_size([1400.0, 800.0])
-        .with_min_inner_size([1000.0, 650.0])
+        .with_min_inner_size(MIN_WINDOW)
         .with_icon(Arc::new(egui::IconData {
             rgba: poster_ui::icons::app_icon(256),
             width: 256,
@@ -44,7 +45,10 @@ fn main() -> anyhow::Result<()> {
         }));
     if let Some(window) = window_state(&store.handle()) {
         viewport = viewport
-            .with_inner_size([window.width.max(1000.0), window.height.max(650.0)])
+            .with_inner_size([
+                window.width.max(MIN_WINDOW[0]),
+                window.height.max(MIN_WINDOW[1]),
+            ])
             .with_position([window.x, window.y])
             .with_maximized(window.maximized);
     }

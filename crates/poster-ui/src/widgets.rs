@@ -56,7 +56,10 @@ pub fn badge(ui: &mut Ui, text: &str, tone: Tone) -> egui::Response {
         .stroke(egui::Stroke::new(1.0, PALETTE.border))
         .corner_radius(6)
         .inner_margin(egui::Margin::symmetric(8, 4))
-        .show(ui, |ui| ui.label(tone_text(text, tone).small().strong()))
+        .show(ui, |ui| {
+            // A badge keeps its text on one line; the row around it wraps instead.
+            ui.add(egui::Label::new(tone_text(text, tone).small().strong()).extend())
+        })
         .inner
 }
 
@@ -167,7 +170,10 @@ fn var_edit_with(
         Some((json, _)) => (FontId::monospace(13.0), json),
         None => (egui::TextStyle::Body.resolve(ui.style()), false),
     };
+    let single_line = multiline.is_none();
     let mut layouter = |ui: &Ui, buffer: &dyn egui::TextBuffer, wrap: f32| {
+        // A single-line field scrolls sideways; wrapping would show its text on two lines.
+        let wrap = if single_line { f32::INFINITY } else { wrap };
         let content = buffer.as_str();
         let spans = if body_json && content.len() <= HIGHLIGHT_LIMIT {
             highlight::json(content)
@@ -412,6 +418,34 @@ pub fn heading_cell(ui: &mut Ui, width: f32, text: &str) {
             ui.label(tone_text(text, Tone::Muted));
         },
     );
+}
+
+/// A screen's save state: one word, its explanation for the hover text, and whether Save
+/// can run now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SaveStatus<'a> {
+    pub text: &'a str,
+    pub detail: &'a str,
+    pub tone: Tone,
+    pub enabled: bool,
+}
+
+/// The save controls every screen shares, at its top right: the state, then a disk icon named
+/// `action` with the shortcut in its hover text. Call inside a right-to-left layout. Returns
+/// whether Save was clicked.
+pub fn save_controls(ui: &mut Ui, status: &SaveStatus<'_>, action: &str) -> bool {
+    let hint = crate::shortcuts::hint(ui.ctx(), action, &crate::shortcuts::SAVE);
+    let clicked = ui
+        .add_enabled_ui(status.enabled, |ui| {
+            icons::button_with_hint(ui, Icon::Save, action, &hint, false)
+        })
+        .inner
+        .clicked();
+    let label = ui.label(tone_text(status.text, status.tone));
+    if !status.detail.is_empty() {
+        label.on_hover_text(status.detail);
+    }
+    clicked
 }
 
 /// How long a remove button stays armed after its first click.
@@ -943,6 +977,9 @@ impl ViewerState {
 }
 
 /// Right-aligned tools, leaving room for the caller's tabs on the same row.
+/// Narrower than this, a viewer's tabs and its tools get a row each instead of sharing one.
+pub const TAB_ROW_MIN: f32 = 280.0;
+
 pub fn viewer_tools(ui: &mut Ui, state: &mut ViewerState, text: &str, copy_label: &str) {
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if icons::button(ui, Icon::Copy, copy_label, false).clicked() {

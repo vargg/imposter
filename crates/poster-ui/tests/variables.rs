@@ -86,7 +86,7 @@ fn globals_are_edited_and_saved_on_the_variables_screen() {
     click(&mut app.harness, "Add Variable");
     type_into(&mut app.harness, "Variable 2 name", "token");
     type_into(&mut app.harness, "Variable 2 value", "t");
-    click(&mut app.harness, "Save Variables");
+    click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
 
     app.harness.get_by_label("Saved");
@@ -109,7 +109,7 @@ fn duplicate_names_are_refused_and_nothing_is_saved() {
     open_screen(&mut app);
     click(&mut app.harness, "Add Variable");
     type_into(&mut app.harness, "Variable 2 name", "a");
-    click(&mut app.harness, "Save Variables");
+    click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
 
     app.harness
@@ -135,7 +135,7 @@ fn switching_scope_with_unsaved_rows_asks_and_discard_keeps_the_stored_values() 
     open_screen(&mut app);
     type_into(&mut app.harness, "Variable 1 value", "2");
 
-    click(&mut app.harness, "Editing");
+    click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Collection · API");
     app.harness
         .get_by_label("Save variable changes before continuing?");
@@ -167,7 +167,7 @@ fn saving_from_the_guard_stores_then_switches() {
     open_screen(&mut app);
     type_into(&mut app.harness, "Variable 1 value", "2");
 
-    click(&mut app.harness, "Editing");
+    click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Collection · API");
     click(&mut app.harness, "Save");
     settle(&mut app.harness);

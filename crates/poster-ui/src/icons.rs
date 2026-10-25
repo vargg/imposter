@@ -7,7 +7,12 @@ use crate::theme::PALETTE;
 #[derive(Clone, Copy)]
 pub enum Icon {
     Sidebar,
-    Layout,
+    /// Two panes next to each other.
+    Columns,
+    /// Two panes above each other.
+    Rows,
+    /// Undo the unsaved changes.
+    Revert,
     More,
     Plus,
     Copy,
@@ -87,10 +92,33 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
             rectangle((1.0, 2.0), (15.0, 14.0));
             line((6.0, 2.0), (6.0, 14.0));
         }
-        Icon::Layout => {
-            rectangle((1.0, 2.0), (6.0, 14.0));
-            rectangle((9.0, 2.0), (15.0, 7.0));
-            rectangle((9.0, 10.0), (15.0, 14.0));
+        Icon::Columns => {
+            rectangle((1.0, 2.0), (15.0, 14.0));
+            line((8.0, 2.0), (8.0, 14.0));
+        }
+        Icon::Rows => {
+            rectangle((1.0, 2.0), (15.0, 14.0));
+            line((1.0, 8.0), (15.0, 8.0));
+        }
+        Icon::Revert => {
+            // A counter-clockwise arrow.
+            let center = point(8.0, 8.5);
+            let arc: Vec<Pos2> = (0..=12_u8)
+                .map(|step| {
+                    let angle = std::f32::consts::PI * (-0.15 + 1.25 * f32::from(step) / 12.0);
+                    center + vec2(angle.cos(), -angle.sin()) * 5.5
+                })
+                .collect();
+            let tip = arc[arc.len() - 1];
+            painter.add(egui::Shape::line(arc, stroke));
+            line(
+                (tip.x - origin.x, tip.y - origin.y),
+                (tip.x - origin.x - 0.5, tip.y - origin.y - 4.0),
+            );
+            line(
+                (tip.x - origin.x, tip.y - origin.y),
+                (tip.x - origin.x + 3.8, tip.y - origin.y - 1.5),
+            );
         }
         Icon::More => {
             for x in [3.0, 8.0, 13.0] {

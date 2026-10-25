@@ -386,21 +386,22 @@ fn deleting_the_open_request_clears_the_editor() {
 }
 
 #[test]
-fn the_workspace_stacks_on_narrow_windows_and_sits_side_by_side_on_wide_ones() {
+fn the_chosen_layout_does_not_change_with_the_window_width() {
+    use poster_ui::layout::Orientation;
     let dir = tempfile::tempdir().unwrap();
-    let mut narrow = support::harness_at(dir.path(), egui::vec2(1000.0, 650.0));
-    narrow.run_steps(2);
-    assert_eq!(
-        narrow.state().state.orientation,
-        Some(poster_ui::layout::Orientation::Stacked)
-    );
-    drop(narrow);
-
     let mut wide = support::harness_at(dir.path(), egui::vec2(1600.0, 900.0));
+    click(&mut wide, "Stack request and response");
+    for width in [1600.0, 900.0, poster_ui::layout::MIN_WINDOW[0]] {
+        wide.set_size(egui::vec2(width, 700.0));
+        wide.run_steps(2);
+        assert_eq!(wide.state().state.layout.orientation, Orientation::Stacked);
+    }
+    click(&mut wide, "Put request and response side by side");
     wide.run_steps(2);
     assert_eq!(
-        wide.state().state.orientation,
-        Some(poster_ui::layout::Orientation::SideBySide)
+        wide.state().state.layout.orientation,
+        Orientation::SideBySide,
+        "side by side even in the narrowest window, when chosen"
     );
 }
 
@@ -410,7 +411,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
         let api = collection(store, "API");
         request(store, api.id, "Health", "http://localhost/health");
     });
-    let size = egui::vec2(1000.0, 650.0);
+    let size = egui::Vec2::from(poster_ui::layout::MIN_WINDOW);
     app.harness.set_size(size);
     app.harness.run_steps(2);
     click(&mut app.harness, "GET Health");
@@ -420,7 +421,9 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
         "Request URL",
         "Send",
         "Environment",
-        "Layout",
+        "Stack request and response",
+        "Save request",
+        "Copy as curl",
         "Settings",
         "Request settings",
         "Add param",
@@ -440,14 +443,47 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
 
     click(&mut app.harness, "Variables");
     settle(&mut app.harness);
-    app.harness.get_by_label("Editing");
+    app.harness.get_by_label("Variable scope");
     click(&mut app.harness, "Add Variable");
     type_into(&mut app.harness, "Variable 1 name", "base_url");
     type_into(&mut app.harness, "Variable 1 value", "http://localhost");
-    click(&mut app.harness, "Save Variables");
+    click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
     assert!(!app.harness.state().variables_dirty());
     click(&mut app.harness, "Requests");
     app.harness.get_by_label("API / Health");
     app.harness.get_by_label("Send");
+}
+
+#[test]
+fn every_screen_saves_from_the_same_place() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Health", "http://localhost/health");
+    });
+    let size = egui::vec2(1400.0, 900.0);
+    click(&mut app.harness, "GET Health");
+    settle(&mut app.harness);
+    for (screen, save) in [
+        ("Requests", "Save request"),
+        ("Variables", "Save variables"),
+        ("Settings", "Save settings"),
+    ] {
+        click(&mut app.harness, screen);
+        settle(&mut app.harness);
+        let icon = app.harness.get_by_label(save).rect();
+        let status = app.harness.get_by_label("Saved").rect();
+        assert!(
+            icon.top() < 120.0 && icon.right() > size.x - 60.0,
+            "{screen}: {icon:?}"
+        );
+        assert!(
+            status.right() <= icon.left() && (status.center().y - icon.center().y).abs() < 4.0,
+            "{screen}: the state sits just left of the icon"
+        );
+    }
+    assert!(
+        app.harness.state().state.logo.is_some(),
+        "the header shows the app icon"
+    );
 }

@@ -3,29 +3,32 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Narrower than this, side by side is never used.
-pub const MIN_SIDE_WIDTH: f32 = 900.0;
+/// The smallest window the app is laid out for (logical points).
+pub const MIN_WINDOW: [f32; 2] = [720.0, 480.0];
 
+/// Request and response side by side or stacked; only the user switches it, never the width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum LayoutMode {
+pub enum Orientation {
     #[default]
-    Auto,
     SideBySide,
     Stacked,
 }
 
-/// Request and response either side by side or stacked; `Auto` picks by width.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Orientation {
-    SideBySide,
-    Stacked,
+impl Orientation {
+    #[must_use]
+    pub fn switched(self) -> Self {
+        match self {
+            Self::SideBySide => Self::Stacked,
+            Self::Stacked => Self::SideBySide,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct WorkspaceLayout {
     pub version: u32,
-    pub mode: LayoutMode,
+    pub orientation: Orientation,
     pub sidebar_visible: bool,
     pub sidebar_width: f32,
     /// Request share of the width when side by side.
@@ -40,7 +43,7 @@ impl Default for WorkspaceLayout {
     fn default() -> Self {
         Self {
             version: 1,
-            mode: LayoutMode::Auto,
+            orientation: Orientation::SideBySide,
             sidebar_visible: true,
             sidebar_width: 240.0,
             side_ratio: 0.5,
@@ -76,10 +79,18 @@ impl WorkspaceLayout {
         };
         Self {
             version: 1,
-            mode: object
-                .get("mode")
-                .and_then(|mode| serde_json::from_value(mode.clone()).ok())
-                .unwrap_or(default.mode),
+            // Before the switch there was a `mode` with an automatic choice: only an explicit
+            // "stacked" stays stacked.
+            orientation: object
+                .get("orientation")
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+                .unwrap_or_else(|| {
+                    if object.get("mode").and_then(Value::as_str) == Some("stacked") {
+                        Orientation::Stacked
+                    } else {
+                        default.orientation
+                    }
+                }),
             sidebar_visible: object
                 .get("sidebar_visible")
                 .and_then(Value::as_bool)
@@ -112,31 +123,6 @@ impl WorkspaceLayout {
     }
 }
 
-/// The orientation for `width`, with hysteresis in `Auto` so a window near the threshold does
-/// not flip back and forth. A manual side-by-side choice still stacks when it cannot fit.
-pub fn effective_orientation(
-    width: f32,
-    mode: LayoutMode,
-    previous: Option<Orientation>,
-) -> Orientation {
-    match mode {
-        LayoutMode::SideBySide if width >= MIN_SIDE_WIDTH => Orientation::SideBySide,
-        LayoutMode::Stacked | LayoutMode::SideBySide => Orientation::Stacked,
-        LayoutMode::Auto => {
-            let threshold = match previous {
-                None => 1060.0,
-                Some(Orientation::SideBySide) => 1020.0,
-                Some(Orientation::Stacked) => 1100.0,
-            };
-            if width >= threshold {
-                Orientation::SideBySide
-            } else {
-                Orientation::Stacked
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -146,10 +132,10 @@ mod tests {
     #[test]
     fn stored_state_is_sanitized_field_by_field() {
         let layout = WorkspaceLayout::from_stored(&json!({
-            "version": 1, "mode": "stacked", "sidebar_visible": "yes",
+            "version": 1, "orientation": "stacked", "sidebar_visible": "yes",
             "sidebar_width": 9999, "side_ratio": 0.01, "stack_ratio": 0.6, "history_ratio": null
         }));
-        assert_eq!(layout.mode, LayoutMode::Stacked);
+        assert_eq!(layout.orientation, Orientation::Stacked);
         assert!(layout.sidebar_visible, "a non-boolean keeps the default");
         assert!((layout.sidebar_width - 400.0).abs() < f32::EPSILON);
         assert!((layout.side_ratio - 0.15).abs() < f32::EPSILON);
@@ -167,57 +153,36 @@ mod tests {
             WorkspaceLayout::from_stored(&json!([1, 2])),
             WorkspaceLayout::default()
         );
+        let orientation = |value| WorkspaceLayout::from_stored(&value).orientation;
         assert_eq!(
-            WorkspaceLayout::from_stored(&json!({"mode": "side_by_side"})).mode,
-            LayoutMode::SideBySide
+            orientation(json!({"orientation": "stacked"})),
+            Orientation::Stacked
         );
         assert_eq!(
-            WorkspaceLayout::from_stored(&json!({"mode": "diagonal"})).mode,
-            LayoutMode::Auto
+            orientation(json!({"orientation": "diagonal"})),
+            Orientation::SideBySide
         );
+    }
+
+    #[test]
+    fn the_old_automatic_mode_keeps_only_an_explicit_stacked_choice() {
+        let orientation = |mode| WorkspaceLayout::from_stored(&json!({"mode": mode})).orientation;
+        assert_eq!(orientation("stacked"), Orientation::Stacked);
+        assert_eq!(orientation("side_by_side"), Orientation::SideBySide);
+        assert_eq!(orientation("auto"), Orientation::SideBySide);
+        assert_eq!(Orientation::SideBySide.switched(), Orientation::Stacked);
+        assert_eq!(Orientation::Stacked.switched(), Orientation::SideBySide);
     }
 
     #[test]
     fn stored_state_round_trips() {
         let layout = WorkspaceLayout {
-            mode: LayoutMode::SideBySide,
+            orientation: Orientation::Stacked,
             sidebar_visible: false,
             side_ratio: 0.3,
             ..WorkspaceLayout::default()
         };
         assert_eq!(WorkspaceLayout::from_stored(&layout.to_stored()), layout);
-    }
-
-    #[test]
-    fn orientation_follows_width_with_hysteresis() {
-        assert_eq!(
-            effective_orientation(1059.0, LayoutMode::Auto, None),
-            Orientation::Stacked
-        );
-        assert_eq!(
-            effective_orientation(1060.0, LayoutMode::Auto, None),
-            Orientation::SideBySide
-        );
-        assert_eq!(
-            effective_orientation(1030.0, LayoutMode::Auto, Some(Orientation::SideBySide)),
-            Orientation::SideBySide
-        );
-        assert_eq!(
-            effective_orientation(1090.0, LayoutMode::Auto, Some(Orientation::Stacked)),
-            Orientation::Stacked
-        );
-        assert_eq!(
-            effective_orientation(950.0, LayoutMode::SideBySide, None),
-            Orientation::SideBySide
-        );
-        assert_eq!(
-            effective_orientation(800.0, LayoutMode::SideBySide, None),
-            Orientation::Stacked
-        );
-        assert_eq!(
-            effective_orientation(3000.0, LayoutMode::Stacked, None),
-            Orientation::Stacked
-        );
     }
 
     #[test]

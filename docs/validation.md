@@ -16,8 +16,10 @@ Run it on macOS, Windows and Linux before each release, with the packaged build.
 **Start and layout**
 - [ ] The window opens quickly at a sensible size; the empty state offers to create or import
       a collection.
-- [ ] At 1000×650 every control is reachable (multipart editor included); in a wide window
-      the request and response sit side by side, in a narrow one they stack.
+- [ ] At the minimum window size (720×480) every control is reachable in both layouts
+      (multipart editor included); the layout switch in the status bar changes side by side
+      and stacked, and resizing the window never changes it.
+- [ ] The header logo, the window icon and the Dock / taskbar icon are the same drawing.
 - [ ] Text is crisp on HiDPI and standard displays; the dark theme is readable.
 
 **Requests**

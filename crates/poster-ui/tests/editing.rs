@@ -10,7 +10,7 @@ use egui_kittest::kittest::Queryable;
 use poster_app::core::model::{BodyType, Request, RequestTemplate};
 use poster_app::store::{collections, executions, kv};
 use poster_ui::app::{CloseState, EditorTab};
-use poster_ui::layout::{LayoutMode, Orientation};
+use poster_ui::layout::{MIN_WINDOW, Orientation};
 use support::{
     answer_name, click, click_button, collection, request, settle, start_with, type_into,
 };
@@ -281,24 +281,29 @@ fn the_viewer_finds_text_in_the_response() {
 }
 
 #[test]
-fn layout_controls_change_mode_hide_the_sidebar_and_reset() {
+fn the_layout_switch_and_the_sidebar_toggle() {
     let mut app = start_with(|store| {
         collection(store, "API");
     });
-    click(&mut app.harness, "Layout");
-    click(&mut app.harness, "Stacked");
-    app.harness.run_steps(2);
     assert_eq!(
-        app.harness.state().state.orientation,
-        Some(Orientation::Stacked)
+        app.harness.state().state.layout.orientation,
+        Orientation::SideBySide
     );
+    click(&mut app.harness, "Stack request and response");
+    assert_eq!(
+        app.harness.state().state.layout.orientation,
+        Orientation::Stacked
+    );
+    click(&mut app.harness, "Put request and response side by side");
+    assert_eq!(
+        app.harness.state().state.layout.orientation,
+        Orientation::SideBySide
+    );
+
     click(&mut app.harness, "Hide Collections");
     assert!(!app.harness.state().state.layout.sidebar_visible);
     click(&mut app.harness, "Show Collections");
-
-    click(&mut app.harness, "Layout");
-    click(&mut app.harness, "Reset layout");
-    assert_eq!(app.harness.state().state.layout.mode, LayoutMode::Auto);
+    assert!(app.harness.state().state.layout.sidebar_visible);
 }
 
 #[test]
@@ -354,7 +359,12 @@ fn response_tools_share_the_tab_row_with_copy_at_the_right() {
             body: b"response body".to_vec(),
             ..Default::default()
         });
-    for size in [egui::vec2(1000.0, 650.0), egui::vec2(1500.0, 850.0)] {
+    // The smallest window stacks the panes, as a user would there.
+    for (size, orientation) in [
+        (egui::Vec2::from(MIN_WINDOW), Orientation::Stacked),
+        (egui::vec2(1500.0, 850.0), Orientation::SideBySide),
+    ] {
+        app.harness.state_mut().state.layout.orientation = orientation;
         app.harness.set_size(size);
         app.harness.run_steps(2);
         for (tab, copy_label, copied) in [
@@ -406,7 +416,7 @@ fn sidebar_icon_stays_in_the_bottom_left_and_supports_the_keyboard() {
     let mut app = start_with(|store| {
         collection(store, "API");
     });
-    for size in [egui::vec2(1000.0, 650.0), egui::vec2(1500.0, 850.0)] {
+    for size in [egui::Vec2::from(MIN_WINDOW), egui::vec2(1500.0, 850.0)] {
         app.harness.set_size(size);
         app.harness.run_steps(2);
         let visible = app.harness.get_by_label("Hide Collections").rect();
@@ -480,4 +490,28 @@ fn closing_with_invalid_edits_asks_and_cancel_keeps_the_window_open() {
     settle(&mut app.harness);
 
     assert_eq!(app.harness.state().close_state(), CloseState::Open);
+}
+
+#[test]
+fn a_long_url_stays_on_one_line_in_a_narrow_pane() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(
+            store,
+            api.id,
+            "Long",
+            "http://localhost:8080/a/rather/long/path/that/does/not/fit?page=1&size=50",
+        );
+    });
+    app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
+    click(&mut app.harness, "GET Long");
+    settle(&mut app.harness);
+
+    let field = support::text_input(&app.harness, "Request URL").rect();
+    let send = app.harness.get_by_label("Send").rect();
+    assert!(
+        field.height() <= send.height() + 1.0,
+        "the URL field grew to {} px",
+        field.height()
+    );
 }
