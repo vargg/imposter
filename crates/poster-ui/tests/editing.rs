@@ -133,8 +133,7 @@ fn body_types_and_invalid_settings_reach_the_saved_request() {
         "Use application default for Timeout (seconds)",
     );
     type_into(&mut app.harness, "Timeout (seconds)", "abc");
-    app.harness
-        .get_by_label("Fix the highlighted fields to save");
+    app.harness.get_by_label("Invalid fields");
     app.harness
         .get_by_label("Enter a positive number of seconds.");
 
@@ -174,7 +173,7 @@ fn a_restored_draft_is_saved_into_the_selected_collection() {
             .unwrap();
     });
     app.harness.get_by_label("Unsaved draft / Draft");
-    app.harness.get_by_label("Not saved to a collection");
+    app.harness.get_by_label("Draft");
 
     click(&mut app.harness, "Save to collection…");
     app.harness.get_by_label("Request name in API:");

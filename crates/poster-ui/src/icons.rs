@@ -13,10 +13,24 @@ pub enum Icon {
     Copy,
     Search,
     Wrap,
+    Save,
+    Pencil,
+    Trash,
 }
 
 /// Native buttons keep keyboard and AccessKit behavior even when their label is only a tooltip.
 pub fn button(ui: &mut Ui, icon: Icon, label: &str, selected: bool) -> Response {
+    button_with_hint(ui, icon, label, label, selected)
+}
+
+/// An icon button named `label` whose hover text is `hint` (for example with its shortcut).
+pub fn button_with_hint(
+    ui: &mut Ui,
+    icon: Icon,
+    label: &str,
+    hint: &str,
+    selected: bool,
+) -> Response {
     let response = ui.add_sized(
         [28.0, 28.0],
         egui::Button::new("")
@@ -25,14 +39,20 @@ pub fn button(ui: &mut Ui, icon: Icon, label: &str, selected: bool) -> Response 
     );
     crate::widgets::name(&response, label);
     if ui.is_rect_visible(response.rect) {
-        let color = if selected || response.hovered() || response.has_focus() {
+        let color = if !ui.is_enabled() {
+            PALETTE.text_muted.gamma_multiply(0.45)
+        } else if selected || response.hovered() || response.has_focus() {
             PALETTE.accent
         } else {
             PALETTE.text_muted
         };
         paint(ui, icon, response.rect.center() - vec2(8.0, 8.0), color);
     }
-    response.on_hover_text(label)
+    if ui.is_enabled() {
+        response.on_hover_text(hint)
+    } else {
+        response.on_disabled_hover_text(hint)
+    }
 }
 
 pub fn menu<R>(
@@ -104,6 +124,57 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
             line((9.0, 10.0), (6.0, 13.0));
             line((6.0, 13.0), (9.0, 16.0));
             line((2.0, 11.0), (4.0, 11.0));
+        }
+        Icon::Save => {
+            // A floppy disk: body, shutter and label.
+            painter.add(egui::Shape::closed_line(
+                vec![
+                    point(2.0, 2.0),
+                    point(11.5, 2.0),
+                    point(14.0, 4.5),
+                    point(14.0, 14.0),
+                    point(2.0, 14.0),
+                ],
+                stroke,
+            ));
+            rectangle((5.0, 2.0), (10.5, 6.0));
+            rectangle((4.5, 9.0), (11.5, 14.0));
+        }
+        Icon::Pencil => {
+            painter.add(egui::Shape::closed_line(
+                vec![
+                    point(2.5, 13.5),
+                    point(3.2, 10.3),
+                    point(11.0, 2.5),
+                    point(13.5, 5.0),
+                    point(5.7, 12.8),
+                ],
+                stroke,
+            ));
+            line((9.3, 4.2), (11.8, 6.7));
+        }
+        Icon::Trash => {
+            line((2.0, 4.0), (14.0, 4.0));
+            painter.add(egui::Shape::line(
+                vec![
+                    point(6.0, 4.0),
+                    point(6.0, 2.0),
+                    point(10.0, 2.0),
+                    point(10.0, 4.0),
+                ],
+                stroke,
+            ));
+            painter.add(egui::Shape::line(
+                vec![
+                    point(3.5, 4.0),
+                    point(4.5, 14.0),
+                    point(11.5, 14.0),
+                    point(12.5, 4.0),
+                ],
+                stroke,
+            ));
+            line((6.5, 7.0), (6.5, 11.5));
+            line((9.5, 7.0), (9.5, 11.5));
         }
     }
 }

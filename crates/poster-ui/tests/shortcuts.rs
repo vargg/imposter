@@ -147,3 +147,39 @@ fn find_opens_in_the_viewer_under_the_pointer() {
 
     app.harness.get_by_label("Find in response body");
 }
+
+#[test]
+fn the_save_icon_saves_and_the_status_is_one_word() {
+    use egui_kittest::kittest::NodeT;
+    let mut app = start_with(|store| {
+        manual_save(store);
+        let api = collection(store, "API");
+        request(store, api.id, "Get", "http://h");
+    });
+    app.harness.state_mut().state.settings.autosave = false;
+    click(&mut app.harness, "GET Get");
+    settle(&mut app.harness);
+    let disabled = |app: &support::App| {
+        app.harness
+            .get_by_label("Save request")
+            .accesskit_node()
+            .is_disabled()
+    };
+    app.harness.get_by_label("Saved");
+    assert!(disabled(&app), "nothing to save");
+
+    type_into(&mut app.harness, "Request URL", "/x");
+    app.harness.get_by_label("Unsaved");
+    assert!(!disabled(&app));
+    click(&mut app.harness, "Save request");
+    settle(&mut app.harness);
+
+    app.harness.get_by_label("Saved");
+    let saved = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| collections::requests(db, poster_app::core::ids::CollectionId(1)))
+        .unwrap();
+    assert_eq!(saved[0].template.url, "http://h/x");
+}

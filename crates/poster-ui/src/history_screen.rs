@@ -37,12 +37,6 @@ fn megabytes(bytes: u64) -> String {
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut actions = Vec::new();
     let history = &mut state.history;
-    ui.heading("History");
-    ui.label(tone_text(
-        "Every request you send, newest first. Restoring opens a draft and never sends.",
-        Tone::Muted,
-    ));
-    ui.add_space(6.0);
     ui.horizontal(|ui| {
         let mut only = history.only_current;
         if ui.checkbox(&mut only, "Current request only").changed() {
@@ -238,7 +232,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     );
                 }
                 HistoryTab::Response => {
-                    crate::workspace::response_body(ui, &mut history.response, "history");
+                    crate::workspace::response_body(ui, &mut history.response, "history", true);
                 }
             }
         },

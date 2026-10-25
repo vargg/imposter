@@ -236,11 +236,20 @@ numbers, so both are excluded. Each stage in `PLAN.md` is its own commit.
 - **History shows times in the system time zone** (via `jiff`, display only); records store UTC
   milliseconds. Restoring an entry opens an unsaved draft through the unsaved-changes guard and
   never sends; the draft keeps the captured collection variables for a deleted collection.
+- **Save states are one word** ("Saved", "Unsaved", "Saving…", "Save failed", "Draft",
+  "Invalid fields") in the request bar, the Variables screen and Settings, colored by tone,
+  with the explanation in the hover text; Save is an icon button named by its action. Section
+  headings and explanatory subtitles are left out where tabs and controls already say it.
+  Why: user review found the longer texts noisy (the Python app's wording was kept until then).
+- **Removing a row takes two clicks** (`widgets::remove_button`): the first arms the × (red,
+  "Click again to remove …"), the second removes; it disarms after a few seconds or when the
+  pointer goes elsewhere. Why: one stray click must not lose a header or variable; this works
+  from the keyboard and screen readers, unlike a double-click.
 - **The UI thread never blocks.** `poster-ui/clippy.toml` disallows blocking database calls,
   file IO, sleeps, `block_on` and synchronous file dialogs. Only test and example crates allow
   them, at their top, and `window_state`, which runs before the window exists. Why: a frozen
   window is the most visible failure a desktop app has.
-- **Settings follow the Python screen** (fields, ranges, units, messages) and save only on Save
+- **Settings follow the Python screen** (fields, ranges, units) and save only on Save
   Settings, against a baseline: undoing an edit is not a change. Settings the screen does not
   show are kept. Closing asks about unsaved settings after the request and variables guards.
   Saving applies history retention at once (the Python app waited for the next send), so the

@@ -414,6 +414,55 @@ pub fn heading_cell(ui: &mut Ui, width: f32, text: &str) {
     );
 }
 
+/// How long a remove button stays armed after its first click.
+pub const REMOVE_ARMED_SECONDS: f64 = 3.0;
+
+/// A × button that removes only on a second click: the first arms it (red, "Click again to
+/// remove …"). It disarms after [`REMOVE_ARMED_SECONDS`] or once the pointer is somewhere
+/// else outside it. Returns whether to remove now.
+pub fn remove_button(ui: &mut Ui, id: egui::Id, what: &str, height: f32) -> bool {
+    let (now, pointer) = ui.input(|i| (i.time, i.pointer.latest_pos()));
+    // When it was armed, and where the pointer was then.
+    let armed_at: Option<(f64, Option<egui::Pos2>)> = ui.data(|d| d.get_temp(id));
+    let armed = armed_at.is_some_and(|(at, _)| now - at < REMOVE_ARMED_SECONDS);
+    let button = if armed {
+        egui::Button::new(RichText::new("×").strong().color(PALETTE.error))
+            .stroke(egui::Stroke::new(1.0, PALETTE.error))
+    } else {
+        egui::Button::new("×")
+    };
+    let response = ui.add_sized([24.0, height], button);
+    let label = if armed {
+        format!("Click again to remove {what}")
+    } else {
+        format!("Remove {what}")
+    };
+    name(&response, &label);
+    let response = response.on_hover_text(&label);
+    let disarm = |ui: &mut Ui| ui.data_mut(|d| d.remove_temp::<(f64, Option<egui::Pos2>)>(id));
+    if response.clicked() {
+        if armed {
+            disarm(ui);
+            return true;
+        }
+        ui.data_mut(|d| d.insert_temp(id, (now, pointer)));
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(REMOVE_ARMED_SECONDS));
+        return false;
+    }
+    if let Some((at, origin)) = armed_at {
+        let away = pointer.is_some_and(|p| !response.rect.contains(p) && Some(p) != origin);
+        if !armed || away {
+            disarm(ui);
+        } else {
+            let left = (REMOVE_ARMED_SECONDS - (now - at)).max(0.0);
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs_f64(left));
+        }
+    }
+    false
+}
+
 /// One editable row list: enabled, name, value, remove; then Add and Clear all.
 pub fn rows_table(
     ui: &mut Ui,
@@ -460,11 +509,8 @@ pub fn rows_table(
                 vars,
             )
             .changed();
-            if ui
-                .add_sized([24.0, height], egui::Button::new("×"))
-                .on_hover_text("Remove row")
-                .clicked()
-            {
+            let what = format!("{id} row {}", index + 1);
+            if remove_button(ui, egui::Id::unique(("remove", id, index)), &what, height) {
                 remove = Some(index);
             }
         });
@@ -599,11 +645,8 @@ pub fn multipart_table(
                 vars,
             )
             .changed();
-            if ui
-                .add_sized([widths[6], height], egui::Button::new("×"))
-                .on_hover_text("Remove field")
-                .clicked()
-            {
+            let what = format!("multipart field {}", index + 1);
+            if remove_button(ui, egui::Id::unique(("remove field", index)), &what, height) {
                 remove = Some(index);
             }
         });

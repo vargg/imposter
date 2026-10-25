@@ -313,9 +313,9 @@ impl SettingsScreen {
 
     fn refresh_status(&mut self) {
         self.status = Some(if self.dirty() {
-            ("Unsaved application settings".into(), Tone::Warning)
+            ("Unsaved".into(), Tone::Warning)
         } else {
-            ("Application settings saved".into(), Tone::Muted)
+            ("Saved".into(), Tone::Muted)
         });
     }
 }
@@ -371,7 +371,8 @@ pub fn executed_request_text(record: &ExecutionRecord) -> String {
 pub enum VariablesAction {
     SelectScope(Scope),
     Save,
-    Reload,
+    /// Back to the stored rows, without asking.
+    Revert,
     Edited,
     NewEnvironment,
     RenameEnvironment(EnvironmentId),
@@ -382,7 +383,6 @@ pub enum VariablesAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum VarTransition {
     Scope(Scope),
-    Reload,
     NewEnvironment,
     RenameEnvironment(EnvironmentId),
     DeleteEnvironment(EnvironmentId),
@@ -552,6 +552,15 @@ impl ResponsePane {
             ..Self::default()
         };
     }
+}
+
+/// What the context bar shows about saving the open request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SaveLabel {
+    pub text: &'static str,
+    pub detail: &'static str,
+    pub enabled: bool,
+    pub tone: Tone,
 }
 
 struct Execution {
@@ -1584,24 +1593,49 @@ impl PosterApp {
         }
     }
 
-    pub fn save_label(&self) -> Option<(String, bool, Tone)> {
+    /// The short save state next to the Save button, a longer explanation for its hover text,
+    /// whether saving is possible now, and its tone.
+    pub fn save_label(&self) -> Option<SaveLabel> {
         let pane = self.state.editor.as_ref()?;
-        let (state, enabled) = if !pane.invalid.is_empty() {
-            (("Fix the highlighted fields to save", Tone::Error), false)
+        let (text, detail, enabled, tone) = if !pane.invalid.is_empty() {
+            (
+                "Invalid fields",
+                "Fix the highlighted fields to save",
+                false,
+                Tone::Error,
+            )
         } else if let Some(id) = pane.editor.id() {
             match self.state.saver.state(id) {
-                SaveState::Saving => (("Saving request…", Tone::Muted), false),
-                SaveState::Failed => (("Request changes could not be saved", Tone::Error), true),
-                SaveState::Dirty => (("Unsaved request changes", Tone::Warning), true),
-                SaveState::Saved if self.state.settings.autosave => {
-                    (("Saved automatically", Tone::Muted), false)
-                }
-                SaveState::Saved => (("Request saved", Tone::Muted), false),
+                SaveState::Saving => ("Saving…", "Saving the request", false, Tone::Muted),
+                SaveState::Failed => (
+                    "Save failed",
+                    "The request changes could not be saved; retry or discard them",
+                    true,
+                    Tone::Error,
+                ),
+                SaveState::Dirty => ("Unsaved", "Unsaved request changes", true, Tone::Warning),
+                SaveState::Saved if self.state.settings.autosave => (
+                    "Saved",
+                    "Changes are saved automatically",
+                    false,
+                    Tone::Muted,
+                ),
+                SaveState::Saved => ("Saved", "The request is saved", false, Tone::Muted),
             }
         } else {
-            (("Not saved to a collection", Tone::Warning), true)
+            (
+                "Draft",
+                "Not saved to a collection yet",
+                true,
+                Tone::Warning,
+            )
         };
-        Some((state.0.to_owned(), enabled, state.1))
+        Some(SaveLabel {
+            text,
+            detail,
+            enabled,
+            tone,
+        })
     }
 
     pub fn save_button_text(&self) -> &'static str {
@@ -2370,10 +2404,6 @@ impl PosterApp {
     fn variables_perform(&mut self, transition: VarTransition) {
         match transition {
             VarTransition::Scope(scope) => self.load_variables(scope),
-            VarTransition::Reload => {
-                let scope = self.state.variables.scope;
-                self.load_variables(scope);
-            }
             VarTransition::NewEnvironment => {
                 self.state.dialog = Some(Dialog::name(
                     "New Environment",
@@ -2427,13 +2457,7 @@ impl PosterApp {
                 self.save_variables();
             }
             GuardChoice::Discard => {
-                let screen = &mut self.state.variables;
-                screen.rows = screen
-                    .baseline
-                    .iter()
-                    .map(|(name, value)| vars::Row::new(name.clone(), value.clone()))
-                    .collect();
-                screen.status = None;
+                self.revert_variables();
                 self.variables_perform(transition);
             }
             GuardChoice::Cancel => {
@@ -2442,6 +2466,16 @@ impl PosterApp {
                 }
             }
         }
+    }
+
+    fn revert_variables(&mut self) {
+        let screen = &mut self.state.variables;
+        screen.rows = screen
+            .baseline
+            .iter()
+            .map(|(name, value)| vars::Row::new(name.clone(), value.clone()))
+            .collect();
+        screen.status = None;
     }
 
     fn save_variables(&mut self) {
@@ -2483,7 +2517,7 @@ impl PosterApp {
             Ok(()) => {
                 if scope == screen.scope {
                     screen.baseline = vars::entries(&screen.rows);
-                    screen.status = Some(("Variables saved".into(), Tone::Ok));
+                    screen.status = Some(("Saved".into(), Tone::Ok));
                 }
                 if let Some(transition) = screen.pending.take() {
                     self.variables_perform(transition);
@@ -2510,12 +2544,12 @@ impl PosterApp {
                 }
             }
             VariablesAction::Save => self.save_variables(),
-            VariablesAction::Reload => self.variables_navigate(VarTransition::Reload),
+            VariablesAction::Revert => self.revert_variables(),
             VariablesAction::Edited => {
                 let screen = &mut self.state.variables;
                 screen.status = screen
                     .dirty()
-                    .then(|| ("Unsaved variable changes".to_owned(), Tone::Warning));
+                    .then(|| ("Unsaved".to_owned(), Tone::Warning));
             }
             VariablesAction::NewEnvironment => {
                 self.variables_navigate(VarTransition::NewEnvironment);
@@ -2602,9 +2636,9 @@ impl PosterApp {
                 screen.baseline = Some(form);
                 screen.base = settings.clone();
                 screen.status = Some(if screen.dirty() {
-                    ("Unsaved application settings".into(), Tone::Warning)
+                    ("Unsaved".into(), Tone::Warning)
                 } else {
-                    ("Settings saved successfully!".into(), Tone::Ok)
+                    ("Saved".into(), Tone::Ok)
                 });
                 if !settings.autosave {
                     self.state.autosave_due = None;

@@ -38,13 +38,12 @@ fn save_enabled(app: &support::App) -> bool {
 fn edits_are_unsaved_until_saved_and_saving_applies_them() {
     let mut app = start();
     open_settings(&mut app);
-    app.harness.get_by_label("Application Settings");
-    app.harness.get_by_label("Application settings saved");
+    app.harness.get_by_label("Saved");
     assert!(!save_enabled(&app), "nothing to save yet");
 
     type_into(&mut app.harness, "Proxy server", "http://proxy:8080");
     click(&mut app.harness, "Automatically save request changes");
-    app.harness.get_by_label("Unsaved application settings");
+    app.harness.get_by_label("Unsaved");
     assert!(save_enabled(&app));
     assert_eq!(
         stored(&app),
@@ -55,7 +54,7 @@ fn edits_are_unsaved_until_saved_and_saving_applies_them() {
     click(&mut app.harness, "Save Settings");
     settle(&mut app.harness);
 
-    app.harness.get_by_label("Settings saved successfully!");
+    app.harness.get_by_label("Saved");
     assert!(!save_enabled(&app));
     let saved = stored(&app);
     assert_eq!(saved.proxy_url, "http://proxy:8080");
@@ -72,9 +71,9 @@ fn undoing_an_edit_is_not_a_change() {
     let mut app = start();
     open_settings(&mut app);
     click(&mut app.harness, "Follow redirects");
-    app.harness.get_by_label("Unsaved application settings");
+    app.harness.get_by_label("Unsaved");
     click(&mut app.harness, "Follow redirects");
-    app.harness.get_by_label("Application settings saved");
+    app.harness.get_by_label("Saved");
     assert!(!save_enabled(&app));
 }
 

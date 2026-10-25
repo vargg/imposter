@@ -199,8 +199,6 @@ fn new_menu(state: &mut State, ui: &mut Ui) {
 
 fn sidebar(state: &mut State, ui: &mut Ui) {
     ui.add_space(4.0);
-    ui.heading("Collections");
-    ui.add_space(8.0);
     let current = state
         .collections
         .iter()
@@ -481,7 +479,7 @@ fn nodes(
 fn context_bar(
     state: &mut State,
     ui: &mut Ui,
-    save: Option<(String, bool, Tone)>,
+    save: Option<crate::app::SaveLabel>,
     save_text: &str,
 ) {
     ui.horizontal(|ui| {
@@ -505,16 +503,18 @@ fn context_bar(
         };
         ui.add(egui::Label::new(RichText::new(path).strong().size(14.0)).truncate());
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if let Some((status, enabled, tone)) = save {
+            if let Some(save) = save {
                 let hint = crate::shortcuts::hint(ui.ctx(), save_text, &crate::shortcuts::SAVE);
-                if ui
-                    .add_enabled(enabled, egui::Button::new(save_text))
-                    .on_hover_text(hint)
-                    .clicked()
-                {
+                let button = ui
+                    .add_enabled_ui(save.enabled, |ui| {
+                        icons::button_with_hint(ui, Icon::Save, save_text, &hint, false)
+                    })
+                    .inner;
+                if button.clicked() {
                     state.actions.push(Action::Save);
                 }
-                ui.label(tone_text(status, tone));
+                ui.label(tone_text(save.text, save.tone))
+                    .on_hover_text(save.detail);
             }
         });
     });
@@ -756,8 +756,6 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         inspect,
     };
     ui.horizontal_wrapped(|ui| {
-        ui.heading("Request");
-        ui.add_space(8.0);
         for (tab, label) in EditorTab::ALL {
             let response = widgets::tab(ui, pane.tab == tab, label);
             if tab == EditorTab::Settings {
@@ -890,7 +888,10 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
 fn response_pane(state: &mut State, ui: &mut Ui) {
     let response_state = &mut state.response;
     ui.horizontal(|ui| {
-        ui.heading("Response");
+        // The status line takes the place of a "Response" heading.
+        if let Some(response) = &response_state.response {
+            status_badges(ui, response);
+        }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if !response_state.runs.is_empty() {
                 let shown = response_state.shown_run;
@@ -916,27 +917,35 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
             }
         });
     });
-    response_body(ui, response_state, "response");
+    response_body(ui, response_state, "response", false);
 }
 
-/// Status, notice, body and headers of `pane`'s response; `id` names its viewers.
-pub fn response_body(ui: &mut Ui, response_state: &mut crate::app::ResponsePane, id: &str) {
-    if let Some(response) = &response_state.response {
-        let status = viewer::status(response);
-        ui.horizontal_wrapped(|ui| {
-            widgets::badge(ui, status.text.as_str(), status.tone)
-                .on_hover_text(status.detail.as_str());
-            widgets::badge(ui, &viewer::format_duration(response.elapsed), Tone::Muted);
-            if response.outcome == poster_app::core::execution::Outcome::Response {
-                widgets::badge(ui, &viewer::size_text(response), Tone::Muted);
-                let content_type = viewer::content_type(&response.headers);
-                ui.label(tone_text(
-                    content_type.split(';').next().unwrap_or_default(),
-                    Tone::Muted,
-                ))
-                .on_hover_text(content_type);
-            }
-        });
+/// Status, time, size and content type of a response, as badges.
+fn status_badges(ui: &mut Ui, response: &poster_app::core::execution::Response) {
+    let status = viewer::status(response);
+    widgets::badge(ui, status.text.as_str(), status.tone).on_hover_text(status.detail.as_str());
+    widgets::badge(ui, &viewer::format_duration(response.elapsed), Tone::Muted);
+    if response.outcome == poster_app::core::execution::Outcome::Response {
+        widgets::badge(ui, &viewer::size_text(response), Tone::Muted);
+        let content_type = viewer::content_type(&response.headers);
+        ui.label(tone_text(
+            content_type.split(';').next().unwrap_or_default(),
+            Tone::Muted,
+        ))
+        .on_hover_text(content_type);
+    }
+}
+
+/// Notice, body and headers of `pane`'s response, with its status line when `status`; `id`
+/// names its viewers.
+pub fn response_body(
+    ui: &mut Ui,
+    response_state: &mut crate::app::ResponsePane,
+    id: &str,
+    status: bool,
+) {
+    if status && let Some(response) = &response_state.response {
+        ui.horizontal_wrapped(|ui| status_badges(ui, response));
     }
     if let Some((notice, tone)) = &response_state.notice {
         ui.label(tone_text(notice.as_str(), *tone));

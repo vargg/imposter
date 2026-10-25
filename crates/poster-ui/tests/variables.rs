@@ -82,14 +82,14 @@ fn globals_are_edited_and_saved_on_the_variables_screen() {
     assert_eq!(app.harness.state().state.screen, Screen::Variables);
 
     type_into(&mut app.harness, "Variable 1 value", "-new");
-    app.harness.get_by_label("Unsaved variable changes");
+    app.harness.get_by_label("Unsaved");
     click(&mut app.harness, "Add Variable");
     type_into(&mut app.harness, "Variable 2 name", "token");
     type_into(&mut app.harness, "Variable 2 value", "t");
     click(&mut app.harness, "Save Variables");
     settle(&mut app.harness);
 
-    app.harness.get_by_label("Variables saved");
+    app.harness.get_by_label("Saved");
     let stored = app
         .harness
         .state()
@@ -191,8 +191,7 @@ fn environments_are_created_renamed_and_deleted() {
     let mut app = start_with(|_| {});
     open_screen(&mut app);
 
-    click(&mut app.harness, "Manage environments");
-    click(&mut app.harness, "New");
+    click(&mut app.harness, "New environment");
     app.harness.run_steps(2);
     app.harness
         .get_by_label("Environment Name:")
@@ -205,8 +204,7 @@ fn environments_are_created_renamed_and_deleted() {
         Scope::Environment(_)
     ));
 
-    click(&mut app.harness, "Manage environments");
-    click(&mut app.harness, "Rename");
+    click(&mut app.harness, "Rename environment");
     app.harness.run_steps(2);
     app.harness.get_by_label("Name:").type_text(" EU");
     app.harness.run_steps(1);
@@ -223,8 +221,7 @@ fn environments_are_created_renamed_and_deleted() {
         .collect();
     assert_eq!(names, ["Staging EU"]);
 
-    click(&mut app.harness, "Manage environments");
-    click(&mut app.harness, "Delete");
+    click(&mut app.harness, "Delete environment");
     click_button(&mut app.harness, "Delete");
     settle(&mut app.harness);
     assert_eq!(
@@ -467,11 +464,47 @@ fn a_new_variable_keeps_focus_while_its_name_is_typed() {
     open_screen(&mut app);
     click(&mut app.harness, "Add Variable");
     type_into(&mut app.harness, "Variable 2 name", "t");
-    app.harness.get_by_label("Unsaved variable changes");
+    app.harness.get_by_label("Unsaved");
 
     // Keep typing without clicking the field again.
     app.harness.event(egui::Event::Text("oken".into()));
     app.harness.run_steps(2);
 
     assert_eq!(app.harness.state().state.variables.rows[1].name, "token");
+}
+
+#[test]
+fn removing_a_row_takes_two_clicks() {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1"), ("b", "2")])))
+            .unwrap();
+    });
+    open_screen(&mut app);
+    let names = |app: &support::App| -> Vec<String> {
+        let rows = &app.harness.state().state.variables.rows;
+        rows.iter().map(|r| r.name.clone()).collect()
+    };
+
+    click(&mut app.harness, "Remove variable 1");
+    assert_eq!(names(&app), ["a", "b"], "the first click only arms");
+    click(&mut app.harness, "Click again to remove variable 1");
+    assert_eq!(names(&app), ["b"]);
+
+    // Moving the pointer away disarms.
+    click(&mut app.harness, "Remove variable 1");
+    app.harness.get_by_label("Click again to remove variable 1");
+    app.harness.hover_at(egui::pos2(5.0, 5.0));
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Remove variable 1");
+
+    // So does waiting.
+    click(&mut app.harness, "Remove variable 1");
+    let armed = app.harness.ctx.input(|i| i.time);
+    while app.harness.ctx.input(|i| i.time) - armed <= poster_ui::widgets::REMOVE_ARMED_SECONDS {
+        app.harness.step();
+    }
+    app.harness.run_steps(1);
+    app.harness.get_by_label("Remove variable 1");
+    assert_eq!(names(&app), ["b"]);
 }

@@ -51,8 +51,10 @@ pub fn settle(harness: &mut Harness<'_, PosterApp>) {
             "background work hung"
         );
         harness.run_steps(2);
-        if harness.state().bridge().running() == 0 && harness.state().bridge().running() == 0 {
-            harness.run_steps(1);
+        if harness.state().bridge().running() == 0 {
+            // Two more frames: a result applied in the last one may open a dialog, which
+            // spends its first frame on an invisible sizing pass.
+            harness.run_steps(2);
             if harness.state().bridge().running() == 0 {
                 return;
             }

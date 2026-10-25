@@ -116,6 +116,17 @@ fn header_rows_can_be_added_edited_disabled_and_cleared() {
     );
     assert!(!headers[1].is_enabled);
 
+    // No saving between the clicks: that takes frames, and the button disarms with time.
+    let rows = |app: &support::App| {
+        let editor = &app.harness.state().state.editor.as_ref().unwrap().editor;
+        editor.headers.len()
+    };
+    click(&mut app.harness, "Remove Headers row 2");
+    assert_eq!(rows(&app), 2, "one click only arms");
+    click(&mut app.harness, "Click again to remove Headers row 2");
+    assert_eq!(rows(&app), 1);
+    assert_eq!(saved(&mut app).template.headers.len(), 1);
+
     click(&mut app.harness, "Clear all");
     app.harness.get_by_label("Remove all rows?");
     click(&mut app.harness, "Remove all");

@@ -115,8 +115,6 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     let screen = &mut state.settings_screen;
     let mut edited = false;
     let mut save = false;
-    ui.heading("Application Settings");
-    ui.add_space(8.0);
     let loaded = screen.is_loaded();
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])

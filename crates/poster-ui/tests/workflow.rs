@@ -87,13 +87,13 @@ fn new_requests_open_in_the_editor_and_autosave_edits() {
         "Request URL",
         "https://example.com/health?verbose=1",
     );
-    app.harness.get_by_label("Unsaved request changes");
+    app.harness.get_by_label("Unsaved");
     for _ in 0..4 {
         app.harness.step();
     }
     settle(&mut app.harness);
 
-    app.harness.get_by_label("Saved automatically");
+    app.harness.get_by_label("Saved");
     let id = app
         .harness
         .state()
@@ -247,7 +247,7 @@ fn saving_from_the_guard_persists_then_navigates() {
     click(&mut app.harness, "GET First");
     settle(&mut app.harness);
     type_into(&mut app.harness, "Request URL", "/saved");
-    app.harness.get_by_label("Unsaved request changes");
+    app.harness.get_by_label("Unsaved");
 
     click(&mut app.harness, "GET Second");
     click(&mut app.harness, "Save");
@@ -440,7 +440,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
 
     click(&mut app.harness, "Variables");
     settle(&mut app.harness);
-    app.harness.get_by_label("Variable scopes");
+    app.harness.get_by_label("Editing");
     click(&mut app.harness, "Add Variable");
     type_into(&mut app.harness, "Variable 1 name", "base_url");
     type_into(&mut app.harness, "Variable 1 value", "http://localhost");

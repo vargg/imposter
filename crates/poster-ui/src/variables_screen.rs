@@ -4,6 +4,7 @@
 use egui::{Align, Layout, RichText, Ui};
 
 use crate::app::{Action, State, VariablesAction};
+use crate::icons::{self, Icon};
 use crate::theme::{PALETTE, Tone};
 use crate::vars::{self, Scope};
 use crate::widgets::{name, tone_text};
@@ -23,9 +24,6 @@ fn scope_label(state: &State, scope: Scope) -> String {
 }
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
-    ui.heading("Variable scopes");
-    ui.label(tone_text("Reusable values for your requests.", Tone::Muted));
-    ui.add_space(12.0);
     let mut actions = Vec::new();
     let current = state.variables.scope;
     ui.horizontal(|ui| {
@@ -56,43 +54,36 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 }
             });
         combo.response.labelled_by(caption.id);
-        ui.menu_button("Manage environments", |ui| {
-            if ui.button("New").clicked() {
-                actions.push(Action::Variables(VariablesAction::NewEnvironment));
+        if icons::button(ui, Icon::Plus, "New environment", false).clicked() {
+            actions.push(Action::Variables(VariablesAction::NewEnvironment));
+        }
+        if let Scope::Environment(id) = current {
+            if icons::button(ui, Icon::Pencil, "Rename environment", false).clicked() {
+                actions.push(Action::Variables(VariablesAction::RenameEnvironment(id)));
             }
-            if let Scope::Environment(id) = current {
-                if ui.button("Rename").clicked() {
-                    actions.push(Action::Variables(VariablesAction::RenameEnvironment(id)));
-                }
-                if ui.button("Delete").clicked() {
-                    actions.push(Action::Variables(VariablesAction::DeleteEnvironment(id)));
-                }
+            if icons::button(ui, Icon::Trash, "Delete environment", false).clicked() {
+                actions.push(Action::Variables(VariablesAction::DeleteEnvironment(id)));
             }
-        });
+        }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.button("Reload").clicked() {
-                actions.push(Action::Variables(VariablesAction::Reload));
-            }
             let dirty = state.variables.dirty();
+            let hint = crate::shortcuts::hint(ui.ctx(), "Save Variables", &crate::shortcuts::SAVE);
             if ui
                 .add_enabled(dirty, egui::Button::new("Save Variables"))
+                .on_hover_text(hint)
                 .clicked()
             {
                 actions.push(Action::Variables(VariablesAction::Save));
             }
+            if ui
+                .add_enabled(dirty, egui::Button::new("Revert"))
+                .on_hover_text("Discard unsaved changes")
+                .clicked()
+            {
+                actions.push(Action::Variables(VariablesAction::Revert));
+            }
         });
     });
-    let active = state
-        .active_environment
-        .and_then(|id| state.environments.iter().find(|e| e.id == id))
-        .map_or("Global (no environment)".to_owned(), |e| e.name.clone());
-    ui.label(tone_text(
-        format!(
-            "Editing variables for {} · Active execution environment: {active}",
-            scope_label(state, current)
-        ),
-        Tone::Muted,
-    ));
     // Always one line, so the table below does not move when a status appears.
     let (status, tone) = state
         .variables
@@ -122,14 +113,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     let name_width = (available * 0.35).clamp(140.0, 320.0);
                     let value_width = (available - name_width).max(160.0);
                     ui.horizontal(|ui| {
-                        ui.add_sized(
-                            [name_width, height],
-                            egui::Label::new(tone_text("Variable name", Tone::Muted)),
-                        );
-                        ui.add_sized(
-                            [value_width, height],
-                            egui::Label::new(tone_text("Value", Tone::Muted)),
-                        );
+                        crate::widgets::heading_cell(ui, name_width, "Variable name");
+                        crate::widgets::heading_cell(ui, value_width, "Value");
                     });
                     let mut remove = None;
                     for (index, row) in state.variables.rows.iter_mut().enumerate() {
@@ -153,11 +138,9 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                             );
                             name(&value, &format!("Variable {} value", index + 1));
                             edited |= field.changed() || value.changed();
-                            if ui
-                                .add_sized([24.0, height], egui::Button::new("×"))
-                                .on_hover_text("Remove variable")
-                                .clicked()
-                            {
+                            let what = format!("variable {}", index + 1);
+                            let id = egui::Id::unique(("remove variable", row.key));
+                            if crate::widgets::remove_button(ui, id, &what, height) {
                                 remove = Some(index);
                             }
                         });
