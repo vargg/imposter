@@ -598,3 +598,121 @@ fn long_request_names_are_single_line_and_available_on_hover() {
         app.harness.run_steps(2);
     }
 }
+
+#[test]
+fn duplication_captures_edits_and_cancel_creates_nothing() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Original", "http://x");
+        store
+            .call_blocking(|db| {
+                kv::set_app_settings(
+                    db,
+                    &poster_app::core::settings::AppSettings {
+                        autosave: false,
+                        ..Default::default()
+                    },
+                )
+            })
+            .unwrap();
+    });
+    open(&mut app, "GET Original");
+    click(&mut app.harness, "Docs");
+    type_into(&mut app.harness, "Request description", "unsaved notes");
+    let duplicate = |app: &mut support::App| {
+        app.harness.get_by_label("GET Original").click_secondary();
+        app.harness.run_steps(2);
+        click(&mut app.harness, "Duplicate");
+    };
+    duplicate(&mut app);
+    click(&mut app.harness, "Cancel");
+    settle(&mut app.harness);
+    assert!(app.harness.query_by_label("GET Original (copy)").is_none());
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .description,
+        "unsaved notes"
+    );
+    duplicate(&mut app);
+    click(&mut app.harness, "Discard");
+    settle(&mut app.harness);
+    app.harness.get_by_label("API / Original (copy)");
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .description,
+        "unsaved notes"
+    );
+    open(&mut app, "GET Original");
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .description,
+        ""
+    );
+    duplicate(&mut app);
+    settle(&mut app.harness);
+    app.harness.get_by_label("API / Original (copy 2)");
+}
+
+#[test]
+fn duplication_of_closed_requests_and_failures_preserve_the_editor() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Open", "http://open");
+        request(store, api.id, "Closed", "http://closed");
+    });
+    open(&mut app, "GET Open");
+    app.harness.get_by_label("GET Closed").click_secondary();
+    app.harness.run_steps(2);
+    click(&mut app.harness, "Duplicate");
+    settle(&mut app.harness);
+    app.harness.get_by_label("API / Closed (copy)");
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .url,
+        "http://closed"
+    );
+    app.harness.state().store().call_blocking(|db| {
+        db.execute_batch("CREATE TRIGGER reject_copy BEFORE INSERT ON requests BEGIN SELECT RAISE(FAIL, 'injected write failure'); END;")?;
+        Ok(())
+    }).unwrap();
+    app.harness.get_by_label("GET Closed").click_secondary();
+    app.harness.run_steps(2);
+    click(&mut app.harness, "Duplicate");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Cannot duplicate request");
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .name(),
+        "Closed (copy)"
+    );
+}

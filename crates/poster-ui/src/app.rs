@@ -118,6 +118,10 @@ pub enum Message {
         generation: u64,
         result: Result<Option<Box<Request>>, Failure>,
     },
+    Duplicated {
+        generation: u64,
+        result: Result<Box<Request>, Failure>,
+    },
     Created {
         result: Result<Box<Request>, Failure>,
     },
@@ -232,6 +236,7 @@ pub enum Action {
     /// Highlight a tree node without opening anything (a folder becomes the parent for new items).
     Select(NodeId),
     OpenRequest(RequestId),
+    DuplicateRequest(RequestId),
     Prompt(Dialog),
     Move {
         node: NodeId,
@@ -413,6 +418,10 @@ impl VariablesScreen {
 #[derive(Debug, Clone, PartialEq)]
 enum Navigation {
     Open(RequestId),
+    Duplicate {
+        id: RequestId,
+        edited: Option<Box<poster_app::core::model::RequestTemplate>>,
+    },
     SelectCollection(CollectionId),
     CreateRequest {
         folder: Option<FolderId>,
@@ -915,6 +924,16 @@ impl PosterApp {
                     None => self.status("That request no longer exists"),
                 }
             }
+            Message::Duplicated { generation, result } => match result {
+                Ok(request) => {
+                    if generation == self.state.generation {
+                        self.state.generation += 1;
+                        self.load_editor(&request);
+                    }
+                    self.reload_tree();
+                }
+                Err(error) => self.error("Cannot duplicate request", error),
+            },
             Message::Created {
                 result: Ok(request),
             } => {
@@ -1291,6 +1310,19 @@ impl PosterApp {
     fn perform(&mut self, next: Navigation) {
         match next {
             Navigation::Open(id) => self.open(id),
+            Navigation::Duplicate { id, edited } => {
+                let db = self.db.clone();
+                let generation = self.state.generation;
+                self.bridge.spawn(move |_| async move {
+                    Message::Duplicated {
+                        generation,
+                        result: ops::duplicate_request(&db, id, edited.map(|t| *t))
+                            .await
+                            .map(Box::new)
+                            .map_err(failure),
+                    }
+                });
+            }
             Navigation::SelectCollection(id) => self.switch_collection(id),
             Navigation::CreateRequest { folder, name } => {
                 let Some(collection) = self.state.collection else {
@@ -2042,6 +2074,23 @@ impl PosterApp {
             Action::OpenRequest(id)
                 if self.state.editor.as_ref().and_then(|p| p.editor.id()) == Some(id) => {}
             Action::OpenRequest(id) => self.navigate(Navigation::Open(id)),
+            Action::DuplicateRequest(id) => {
+                let edited = if let Some(pane) = &mut self.state.editor
+                    && pane.editor.id() == Some(id)
+                {
+                    match pane.editor.to_request() {
+                        Ok(request) => Some(Box::new(request.template)),
+                        Err(InvalidOptions(errors)) => {
+                            pane.invalid = errors;
+                            pane.tab = EditorTab::Settings;
+                            return;
+                        }
+                    }
+                } else {
+                    None
+                };
+                self.navigate(Navigation::Duplicate { id, edited });
+            }
             Action::Prompt(dialog) => self.state.dialog = Some(dialog),
             Action::Move { node, target } => self.move_node(node, target),
             Action::Save => match self.state.screen {

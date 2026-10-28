@@ -182,3 +182,6 @@ PNG files, without a display.
 
 Request tabs open on **Body**, followed by Auth, Query, Headers, Cookies, Settings and Docs.
 Use Docs to edit the request description; it saves and exports with the request.
+
+Right-click a request and choose **Duplicate** to create and open a saved sibling copy.
+An open request copies its current edits; navigation still resolves unsaved changes.

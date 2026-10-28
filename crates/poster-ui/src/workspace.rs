@@ -327,6 +327,11 @@ fn node_menu(
     actions: &mut Vec<Action>,
 ) {
     let id = node.id();
+    if let Node::Request(request) = node
+        && ui.button("Duplicate").clicked()
+    {
+        actions.push(Action::DuplicateRequest(request.id));
+    }
     if let Node::Folder { folder, .. } = node {
         if ui.button("New Request here").clicked() {
             actions.push(Action::Prompt(Dialog::name(

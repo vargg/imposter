@@ -331,6 +331,8 @@ numbers, so both are excluded. Each logical change is its own commit.
 
 - **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `poster-ui/tests/editing.rs`.
 
+- **Duplicate creates a fresh saved sibling, including current editor content when open, through the navigation guard.** Name allocation and insertion are one transaction; history stays with the original. Why: copying must neither lose edits nor overwrite an existing request. Enforced by app operation tests and `poster-ui/tests/editing.rs`.
+
 ## Enforcement gaps
 
 Rules above that no tool checks yet. Close a gap together with the first code it applies to.
