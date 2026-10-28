@@ -572,3 +572,29 @@ fn body_is_default_and_docs_save_with_the_request() {
         saved.template.description
     );
 }
+
+#[test]
+fn long_request_names_are_single_line_and_available_on_hover() {
+    let title = "A long request name that must stay on one line even when the sidebar is narrow";
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, title, "http://x");
+    });
+    open(&mut app, &format!("GET {title}"));
+    app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
+    for orientation in [Orientation::SideBySide, Orientation::Stacked] {
+        app.harness.state_mut().state.layout.orientation = orientation;
+        app.harness.run_steps(2);
+        let rect = app.harness.get_by_label(&format!("GET {title}")).rect();
+        assert!(rect.height() <= 32.0, "{rect:?}");
+        assert!(
+            rect.right() < 350.0,
+            "sidebar row must not expand: {rect:?}"
+        );
+        app.harness.hover_at(rect.center());
+        app.harness.run_steps(45);
+        app.harness.get_by_label(title);
+        app.harness.hover_at(egui::pos2(700.0, 450.0));
+        app.harness.run_steps(2);
+    }
+}

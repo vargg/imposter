@@ -459,10 +459,11 @@ fn nodes(
                 let response = ui.add_sized(
                     [ui.available_width(), 32.0],
                     egui::Button::selectable(selected == Some(id), (text, egui::Atom::grow()))
+                        .truncate()
                         .sense(Sense::click_and_drag()),
                 );
                 name(&response, &format!("{} {}", request.method, request.name));
-                response
+                response.on_hover_text(&request.name)
             }
         };
         response.dnd_set_drag_payload(id);
@@ -503,7 +504,8 @@ fn context_bar(
                     .unwrap_or_else(|| pane.editor.name().to_owned()),
             },
         };
-        ui.add(egui::Label::new(RichText::new(path).strong().size(14.0)).truncate());
+        ui.add(egui::Label::new(RichText::new(&path).strong().size(14.0)).truncate())
+            .on_hover_text(&path);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if let Some(save) = save {
                 if widgets::save_controls(ui, &save, save_text) {
