@@ -12,3 +12,5 @@ pub use poster_core as core;
 pub use poster_http as http;
 pub use poster_store as store;
 pub use poster_transfer as formats;
+
+pub mod mock;

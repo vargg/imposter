@@ -40,6 +40,9 @@ rustls = { version = "0.23.46", default-features = false, features = ["ring", "s
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
 rustls-platform-verifier = "0.7.1"
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
+hyper = { version = "1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+http-body-util = "0.1.5"
 getrandom = "0.4.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 jsonschema = { version = "0.60.1", default-features = false }

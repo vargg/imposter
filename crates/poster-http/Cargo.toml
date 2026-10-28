@@ -29,6 +29,10 @@ sha1.workspace = true
 sha2.workspace = true
 tokio-util.workspace = true
 
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+
 [dev-dependencies]
 poster-testkit.workspace = true
 base64.workspace = true

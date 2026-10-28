@@ -17,3 +17,5 @@ pub mod vars;
 pub mod viewer;
 pub mod widgets;
 pub mod workspace;
+
+pub mod mock_screen;

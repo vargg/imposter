@@ -52,10 +52,12 @@ pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
                     (Screen::Variables, "Variables"),
                     (Screen::History, "History"),
                     (Screen::Settings, "Settings"),
+                    (Screen::Mocks, "Mocks"),
                 ] {
                     let dirty = match screen {
                         Screen::Variables => variables_dirty,
                         Screen::Settings => settings_dirty,
+                        Screen::Mocks => state.mocks.dirty(),
                         Screen::Requests | Screen::History => false,
                     };
                     let text = if dirty {
@@ -109,6 +111,12 @@ pub fn draw(app: &mut PosterApp, ui: &mut Ui) {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
             .show(ui, |ui| crate::history_screen::draw(state, ui));
+        return;
+    }
+    if state.screen == Screen::Mocks {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
+            .show(ui, |ui| crate::mock_screen::draw(state, ui));
         return;
     }
     if state.screen == Screen::Settings {

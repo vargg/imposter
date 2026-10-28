@@ -106,6 +106,39 @@ async fn nothing_secret_reaches_the_logs() {
             .unwrap();
     }
 
+    let (listening, address) = tokio::sync::oneshot::channel();
+    let cancel = CancellationToken::new();
+    let mock = tokio::spawn(poster_http::mock::serve(
+        poster_core::mock::MockConfig {
+            port: 0,
+            routes: vec![poster_core::mock::MockRoute {
+                method: "POST".into(),
+                path: "/mock".into(),
+                body: "response body-secret-value".into(),
+                headers: vec![poster_core::model::ParamItem::new(
+                    "Set-Cookie",
+                    "header-secret",
+                )],
+                ..Default::default()
+            }],
+        },
+        move |bound| {
+            listening.send(bound).unwrap();
+        },
+        cancel.clone(),
+    ));
+    let address = tokio::time::timeout(Duration::from_secs(5), address)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut request = requests[0].clone();
+    request.url = format!("http://{address}/mock");
+    send(&request, &policy, &CancellationToken::new())
+        .await
+        .unwrap();
+    cancel.cancel();
+    mock.await.unwrap().unwrap();
+
     let logs = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
     assert!(
         !logs.is_empty(),

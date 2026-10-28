@@ -59,6 +59,20 @@ fn main() {
                     };
                     collections::create_request(db, api.id, None, &template)?;
                 }
+                poster_app::store::kv::set(
+                    db,
+                    poster_app::store::kv::Table::Settings,
+                    "mock_server",
+                    &poster_app::core::mock::MockConfig {
+                        port: 8080,
+                        routes: vec![poster_app::core::mock::MockRoute {
+                            path: "/users".into(),
+                            body: r#"{"users":[{"id":1,"name":"Ann"}]}"#.into(),
+                            headers: vec![ParamItem::new("Content-Type", "application/json")],
+                            ..Default::default()
+                        }],
+                    },
+                )?;
                 Ok(())
             })
             .unwrap();
@@ -136,6 +150,15 @@ fn main() {
             .render()
             .unwrap()
             .save(out.join(format!("{label}-custom-method.png")))
+            .unwrap();
+        harness.get_by_label("Mocks").click();
+        settle(&mut harness);
+        harness.get_by_label("Mock route 1").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-mocks.png")))
             .unwrap();
         harness.get_by_label("Variables").click();
         settle(&mut harness);

@@ -335,6 +335,8 @@ numbers, so both are excluded. Each logical change is its own commit.
 
 - **Host client identities match an exact normalized HTTPS host and port.** A match replaces global client credentials, then explicit request fields override individually. Each redirect selects again from the execution snapshot; CA and verification settings remain unchanged. Why: one host must never inherit another host’s selected certificate. Curl copies the initial identity and reports that it cannot switch identities across redirects. Enforced by core settings, executor, and loopback TLS tests.
 
+- **Mocks is one saved loopback-only static HTTP/1 server, started and stopped explicitly.** Enabled routes match exact method and encoded path, ignoring query and body; unmatched requests return 404. A running server keeps its start-time configuration until restarted. Why: predictable responses and no implicit listener after startup. Configuration has its own save/reload/close guard; shutdown cancels and drains the listener and all connections before closing. Enforced by mock domain, service, loopback, and UI tests.
+
 ## Enforcement gaps
 
 Rules above that no tool checks yet. Close a gap together with the first code it applies to.

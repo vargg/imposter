@@ -187,3 +187,5 @@ Right-click a request and choose **Duplicate** to create and open a saved siblin
 An open request copies its current edits; navigation still resolves unsaved changes.
 
 Settings → **Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.
+
+Use **Mocks** to configure a local static HTTP server on `127.0.0.1` (port 8080 by default; 0 chooses an available port). Add routes by exact method and encoded path, with a response status, headers and text body. Query strings and request bodies do not affect matching; unmatched requests return 404. Save before Start; edits to a running server apply after Stop and Start. Configuration persists, but the server never starts automatically and stops when Poster closes.

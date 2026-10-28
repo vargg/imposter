@@ -63,6 +63,7 @@ pub enum Dialog {
     VariablesGuard,
     /// Unsaved application settings while closing.
     SettingsGuard,
+    MocksGuard,
     Move {
         node: NodeId,
         options: Vec<(String, Option<FolderId>)>,
@@ -74,14 +75,18 @@ pub enum Dialog {
         tone: Tone,
     },
     /// Whether a Postman import also reads environment or globals files.
-    Companions { path: PathBuf },
+    Companions {
+        path: PathBuf,
+    },
     /// Review before anything is written; losses that change requests need explicit consent.
     Import {
         preview: Box<ImportPreview>,
         remove_unsupported: bool,
     },
     /// Paste a curl command; it opens as an unsaved draft.
-    Curl { text: String },
+    Curl {
+        text: String,
+    },
     /// What an export includes. Environments and globals are opt-in.
     Export {
         environments: Vec<(EnvironmentId, String, bool)>,
@@ -98,6 +103,7 @@ pub enum Outcome {
     Guard(GuardChoice),
     VariablesGuard(GuardChoice),
     SettingsGuard(GuardChoice),
+    MocksGuard(GuardChoice),
     Move(NodeId, Option<FolderId>),
     /// Read companion files (`true`) or import the file alone.
     Companions(bool),
@@ -231,6 +237,13 @@ impl Dialog {
                         outcome = Outcome::VariablesGuard(choice);
                     }
                 }
+                Self::MocksGuard => {
+                    ui.heading("Unsaved mocks");
+                    ui.label("Save mock configuration before continuing?");
+                    if let Some(choice) = guard_buttons(ui) {
+                        outcome = Outcome::MocksGuard(choice);
+                    }
+                }
                 Self::SettingsGuard => {
                     ui.heading("Unsaved application settings");
                     ui.label("Save application settings before exiting?");
@@ -311,6 +324,7 @@ impl Dialog {
                 Self::Guard { .. } => Outcome::Guard(GuardChoice::Cancel),
                 Self::VariablesGuard => Outcome::VariablesGuard(GuardChoice::Cancel),
                 Self::SettingsGuard => Outcome::SettingsGuard(GuardChoice::Cancel),
+                Self::MocksGuard => Outcome::MocksGuard(GuardChoice::Cancel),
                 _ => Outcome::Closed,
             };
         }

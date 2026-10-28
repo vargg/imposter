@@ -9,3 +9,5 @@ pub mod prepare;
 pub mod settings;
 pub mod url;
 pub mod variables;
+
+pub mod mock;

@@ -139,6 +139,17 @@ impl<M: Send + 'static> Bridge<M> {
         id
     }
 
+    /// Deliver intermediate events from a long-running service through the frame channel.
+    pub fn notifier(&self) -> impl Fn(M) + Send + 'static {
+        let sender = self.sender.clone();
+        let wake = Arc::clone(&self.wake);
+        move |message| {
+            if sender.send(message).is_ok() {
+                wake();
+            }
+        }
+    }
+
     /// Ask one task to stop. The task decides how (see its use of the token).
     pub fn cancel(&self, id: TaskId) {
         if let Some(entry) = self.registry.lock().tasks.get(&id) {

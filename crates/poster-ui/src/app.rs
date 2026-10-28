@@ -106,6 +106,19 @@ struct SmokeTest {
 #[derive(Debug)]
 pub enum Message {
     Started(Result<Box<Startup>, Failure>),
+    MocksLoaded(Result<poster_app::core::mock::MockConfig, Failure>),
+    MocksSaved {
+        config: poster_app::core::mock::MockConfig,
+        result: Result<(), Failure>,
+    },
+    MockListening {
+        generation: u64,
+        address: String,
+    },
+    MockStopped {
+        generation: u64,
+        result: Result<(), Failure>,
+    },
     Collections {
         select: Option<CollectionId>,
         result: Result<Vec<Collection>, Failure>,
@@ -259,6 +272,7 @@ pub enum Action {
     Export,
     /// A Settings screen field changed.
     SettingsEdited,
+    Mock(crate::mock_screen::MockAction),
     /// Copy the open request as a curl command with resolved values.
     CopyCurl,
     /// The editor changed: `url` when the URL itself was edited, `params` for the query rows.
@@ -275,6 +289,7 @@ pub enum Screen {
     Variables,
     History,
     Settings,
+    Mocks,
 }
 
 /// The Settings screen: the form, the saved baseline it is compared with, and save state.
@@ -595,6 +610,7 @@ pub struct State {
     pub variables: VariablesScreen,
     pub history: HistoryScreen,
     pub settings_screen: SettingsScreen,
+    pub mocks: crate::mock_screen::MockScreen,
     /// Bumped by every navigation; results of older work are ignored.
     pub generation: u64,
     tree_generation: u64,
@@ -657,6 +673,7 @@ impl PosterApp {
                 variables: VariablesScreen::default(),
                 history: HistoryScreen::default(),
                 settings_screen: SettingsScreen::default(),
+                mocks: crate::mock_screen::MockScreen::default(),
                 generation: 0,
                 tree_generation: 0,
                 autosave_due: None,
@@ -858,6 +875,27 @@ impl PosterApp {
 
     fn apply(&mut self, message: Message) {
         match message {
+            Message::MocksLoaded(result) => self.mocks_loaded(result),
+            Message::MocksSaved { config, result } => self.mocks_saved(config, result),
+            Message::MockListening {
+                generation,
+                address,
+            } => {
+                if generation == self.state.mocks.generation
+                    && let Some(run) = &mut self.state.mocks.run
+                {
+                    run.address = Some(address);
+                }
+            }
+            Message::MockStopped { generation, result } => {
+                if generation == self.state.mocks.generation {
+                    self.state.mocks.run = None;
+                    self.state.mocks.notice = Some(match result {
+                        Ok(()) => "Stopped".into(),
+                        Err(error) => error,
+                    });
+                }
+            }
             Message::Done => {}
             Message::Started(Ok(startup)) => {
                 self.started(*startup);
@@ -2100,9 +2138,11 @@ impl PosterApp {
             Action::Save => match self.state.screen {
                 Screen::Variables => self.save_variables(),
                 Screen::Settings => self.save_settings(),
+                Screen::Mocks => self.save_mocks(),
                 Screen::Requests if self.state.guard.is_none() => self.save_current(),
                 Screen::Requests | Screen::History => {}
             },
+            Action::Mock(action) => self.mock_action(action),
             Action::SettingsEdited => self.state.settings_screen.refresh_status(),
             Action::CopyCurl => self.copy_curl(),
             Action::Send => self.send(),
@@ -2128,6 +2168,9 @@ impl PosterApp {
             Action::Edited { url, params } => self.edited(url, params, now),
             Action::Screen(screen) => {
                 self.state.screen = screen;
+                if screen == Screen::Mocks && !self.state.mocks.loaded() {
+                    self.load_mocks();
+                }
                 if screen == Screen::History && !self.state.history.loaded {
                     self.load_history();
                 }
@@ -2177,6 +2220,10 @@ impl PosterApp {
             Outcome::VariablesGuard(choice) => {
                 self.state.dialog = None;
                 self.variables_choice(choice);
+            }
+            Outcome::MocksGuard(choice) => {
+                self.state.dialog = None;
+                self.mocks_choice(choice);
             }
             Outcome::SettingsGuard(choice) => {
                 self.state.dialog = None;
@@ -2738,7 +2785,7 @@ impl PosterApp {
                     self.load_history();
                 }
                 if std::mem::take(&mut self.state.settings_screen.closing) {
-                    self.finish_close();
+                    self.mocks_transition(crate::mock_screen::Transition::Close);
                 }
             }
             Err(error) => {
@@ -2748,13 +2795,13 @@ impl PosterApp {
         }
     }
 
-    /// The last close step before writing UI state: unsaved settings ask first.
+    /// Resolve settings before the mock configuration guard and final UI-state write.
     fn settings_close(&mut self) {
         if self.state.settings_screen.dirty() {
             self.state.settings_screen.closing = true;
             self.state.dialog = Some(Dialog::SettingsGuard);
         } else {
-            self.finish_close();
+            self.mocks_transition(crate::mock_screen::Transition::Close);
         }
     }
 
@@ -2774,9 +2821,168 @@ impl PosterApp {
                 }
                 screen.refresh_status();
                 screen.closing = false;
-                self.finish_close();
+                self.mocks_transition(crate::mock_screen::Transition::Close);
             }
             GuardChoice::Cancel => self.settings_close_failed(),
+        }
+    }
+
+    fn load_mocks(&mut self) {
+        if self.state.mocks.loading || self.state.mocks.saving {
+            return;
+        }
+        self.state.mocks.loading = true;
+        let db = self.db.clone();
+        self.bridge.spawn(move |_| async move {
+            Message::MocksLoaded(poster_app::mock::load(&db).await.map_err(failure))
+        });
+    }
+
+    fn mocks_loaded(&mut self, result: Result<poster_app::core::mock::MockConfig, Failure>) {
+        let screen = &mut self.state.mocks;
+        screen.loading = false;
+        match result {
+            Ok(config) => {
+                screen.form = config.clone();
+                screen.baseline = Some(config);
+                screen.error = None;
+            }
+            Err(error) => screen.error = Some(error),
+        }
+    }
+
+    fn save_mocks(&mut self) {
+        let screen = &mut self.state.mocks;
+        if !screen.loaded() || screen.saving {
+            return;
+        }
+        let config = screen.form.clone();
+        if let Err(error) = config.validate() {
+            screen.error = Some(error.to_string());
+            self.mocks_cancel_transition();
+            return;
+        }
+        screen.saving = true;
+        screen.error = None;
+        let db = self.db.clone();
+        self.bridge.spawn(move |_| async move {
+            let result = poster_app::mock::save(&db, config.clone())
+                .await
+                .map_err(failure);
+            Message::MocksSaved { config, result }
+        });
+    }
+
+    fn mocks_saved(
+        &mut self,
+        config: poster_app::core::mock::MockConfig,
+        result: Result<(), Failure>,
+    ) {
+        let screen = &mut self.state.mocks;
+        screen.saving = false;
+        match result {
+            Ok(()) => {
+                screen.baseline = Some(config);
+                screen.error = None;
+                if let Some(next) = screen.pending.take() {
+                    self.mocks_transition(next);
+                }
+            }
+            Err(error) => {
+                screen.error = Some(error);
+                self.mocks_cancel_transition();
+            }
+        }
+    }
+
+    fn mock_action(&mut self, action: crate::mock_screen::MockAction) {
+        use crate::mock_screen::MockAction;
+        match action {
+            MockAction::Edited => self.state.mocks.error = None,
+            MockAction::Reload => self.mocks_transition(crate::mock_screen::Transition::Reload),
+            MockAction::Stop => {
+                if let Some(run) = &mut self.state.mocks.run {
+                    run.stopping = true;
+                    self.bridge.cancel(run.task);
+                }
+            }
+            MockAction::Start => {
+                let screen = &mut self.state.mocks;
+                if self.state.close != CloseState::Open
+                    || !screen.loaded()
+                    || screen.dirty()
+                    || screen.saving
+                    || screen.loading
+                    || screen.run.is_some()
+                {
+                    return;
+                }
+                let config = screen
+                    .baseline
+                    .clone()
+                    .expect("loaded mock screen has a baseline");
+                screen.generation += 1;
+                let generation = screen.generation;
+                let notify = self.bridge.notifier();
+                let run_config = config.clone();
+                let task = self.bridge.spawn(move |cancel| async move {
+                    let result = poster_app::mock::run(
+                        run_config,
+                        move |address| {
+                            notify(Message::MockListening {
+                                generation,
+                                address: format!("http://{address}"),
+                            });
+                        },
+                        cancel,
+                    )
+                    .await
+                    .map_err(failure);
+                    Message::MockStopped { generation, result }
+                });
+                screen.notice = None;
+                screen.run = Some(crate::mock_screen::Run {
+                    task,
+                    config,
+                    address: None,
+                    stopping: false,
+                });
+            }
+        }
+    }
+
+    fn mocks_transition(&mut self, next: crate::mock_screen::Transition) {
+        if self.state.mocks.dirty() {
+            self.state.mocks.pending = Some(next);
+            self.state.dialog = Some(Dialog::MocksGuard);
+        } else {
+            match next {
+                crate::mock_screen::Transition::Reload => self.load_mocks(),
+                crate::mock_screen::Transition::Close => self.finish_close(),
+            }
+        }
+    }
+
+    fn mocks_cancel_transition(&mut self) {
+        if self.state.mocks.pending.take() == Some(crate::mock_screen::Transition::Close) {
+            self.state.close = CloseState::Open;
+        }
+    }
+
+    fn mocks_choice(&mut self, choice: GuardChoice) {
+        match choice {
+            GuardChoice::Save => self.save_mocks(),
+            GuardChoice::Cancel => self.mocks_cancel_transition(),
+            GuardChoice::Discard => {
+                let screen = &mut self.state.mocks;
+                if let Some(base) = &screen.baseline {
+                    screen.form = base.clone();
+                }
+                screen.error = None;
+                if let Some(next) = screen.pending.take() {
+                    self.mocks_transition(next);
+                }
+            }
         }
     }
 
@@ -2935,6 +3141,7 @@ impl PosterApp {
         if self.state.close != CloseState::Open {
             return;
         }
+        self.mock_action(crate::mock_screen::MockAction::Stop);
         self.state.close = CloseState::Draining;
         self.state.autosave_due = None;
         if let Some(execution) = &self.state.execution {
