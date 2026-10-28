@@ -43,6 +43,7 @@ tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring
 getrandom = "0.4.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 jsonschema = { version = "0.60.1", default-features = false }
+url = "2.5.8"
 jiff = "0.2.38"
 indexmap = { version = "2.14.2", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }

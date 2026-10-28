@@ -185,3 +185,5 @@ Use Docs to edit the request description; it saves and exports with the request.
 
 Right-click a request and choose **Duplicate** to create and open a saved sibling copy.
 An open request copies its current edits; navigation still resolves unsaved changes.
+
+Settings → **Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.

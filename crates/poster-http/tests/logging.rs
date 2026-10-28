@@ -76,6 +76,7 @@ async fn nothing_secret_reaches_the_logs() {
             ..TlsSettings::default()
         },
         capture_limit: None,
+        identity_routing: None,
     };
     let requests = [
         Prepared {

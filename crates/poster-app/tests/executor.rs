@@ -391,3 +391,94 @@ async fn copy_as_curl_resolves_what_send_would_send_without_sending() {
     let error = poster_app::executor::curl_command(&store.handle(), &broken).await;
     assert!(matches!(error, Err(ExecuteError::Invalid(_))));
 }
+
+#[tokio::test]
+async fn host_identity_uses_the_resolved_url_and_is_preserved_in_history_and_curl() {
+    use poster_core::settings::HostIdentity;
+    let (dir, store) = open();
+    let pki = poster_testkit::Pki::generate(dir.path());
+    let (url, server) =
+        poster_testkit::https_once(pki.server_config(true), poster_testkit::OK_RESPONSE).await;
+    let url = url.replace("localhost", "127.0.0.1");
+    let port = url.rsplit(':').next().unwrap().parse().unwrap();
+    let certificate = pki.client_cert_pem.display().to_string();
+    let key = pki.client_key_pem.display().to_string();
+    let request = setup(&store, &url).await;
+    let expected = certificate.clone();
+    store
+        .call(move |db| {
+            environments::set_globals(
+                db,
+                &vars(&[
+                    ("certificate", &certificate),
+                    ("key", &key),
+                    ("only_global", "g"),
+                    ("token", "token"),
+                ]),
+            )?;
+            kv::set_app_settings(
+                db,
+                &AppSettings {
+                    verify_ssl: false,
+                    certificate_path: "{{unused_global}}".into(),
+                    host_identities: vec![HostIdentity {
+                        host: "127.0.0.1".into(),
+                        port,
+                        certificate_path: "{{certificate}}".into(),
+                        key_file: "{{key}}".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+            )
+        })
+        .await
+        .unwrap();
+    let captured = inputs(&store.handle(), &request).await.unwrap();
+    let (_, effective) = poster_app::executor::resolve(&request, &captured).unwrap();
+    assert_eq!(effective.certificate_path, expected);
+    let (command, notice) =
+        poster_app::executor::curl_with_identity_notice(&store.handle(), &request)
+            .await
+            .unwrap();
+    assert!(notice);
+    assert_eq!(
+        poster_core::curl::parse(&command)
+            .unwrap()
+            .template
+            .options
+            .certificate_path,
+        Some(expected.clone())
+    );
+    let result = execute(&store.handle(), request.clone(), CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(result.response.status, 200);
+    server.await.unwrap().unwrap();
+    let id = result.record.unwrap();
+    let record = store
+        .call(move |db| executions::execution(db, id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.settings.certificate_path, expected);
+    assert_eq!(
+        poster_core::curl::parse(&poster_app::executor::recorded_curl(&record).unwrap())
+            .unwrap()
+            .template
+            .options
+            .certificate_path,
+        Some(expected.clone())
+    );
+    store
+        .call(|db| environments::set_globals(db, &Variables::new()))
+        .await
+        .unwrap();
+    assert_eq!(
+        poster_app::executor::resolve(&request, &captured)
+            .unwrap()
+            .1
+            .certificate_path,
+        expected
+    );
+}

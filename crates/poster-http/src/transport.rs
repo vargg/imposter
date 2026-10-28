@@ -28,8 +28,41 @@ pub struct Policy {
     /// Explicit proxy; environment and system proxies are never used.
     pub proxy: Option<String>,
     pub tls: TlsSettings,
+    pub identity_routing: Option<Box<IdentityRouting>>,
     /// Bytes of body to keep; `None` keeps everything.
     pub capture_limit: Option<u64>,
+}
+
+/// Captured before execution so redirects use the same settings and variable snapshot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IdentityRouting {
+    pub settings: AppSettings,
+    pub options: poster_core::model::Options,
+    pub variables: poster_core::model::Variables,
+}
+
+impl IdentityRouting {
+    fn apply(&self, url: &Url, tls: &mut TlsSettings) -> Result<(), SendError> {
+        let settings = self.settings.resolve_for_url(url.as_str(), &self.options);
+        let mut missing = std::collections::BTreeSet::new();
+        let mut resolve = |text: &str| {
+            poster_core::variables::substitute(
+                text,
+                |name| self.variables.get(name).map(String::as_str),
+                &mut missing,
+            )
+        };
+        tls.certificate = path_setting(&resolve(&settings.certificate_path));
+        tls.key = path_setting(&resolve(&settings.key_file));
+        tls.password = resolve(&settings.password);
+        if !missing.is_empty() {
+            return Err(SendError::new(
+                ErrorKind::Tls,
+                poster_core::variables::ResolveError::Unresolved(missing).to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 fn path_setting(value: &str) -> Option<std::path::PathBuf> {
@@ -39,6 +72,13 @@ fn path_setting(value: &str) -> Option<std::path::PathBuf> {
 impl Policy {
     pub fn from_settings(settings: &AppSettings) -> Self {
         Self {
+            identity_routing: (!settings.host_identities.is_empty()).then(|| {
+                Box::new(IdentityRouting {
+                    settings: settings.clone(),
+                    options: poster_core::model::Options::default(),
+                    variables: poster_core::model::Variables::new(),
+                })
+            }),
             timeout: Duration::from_secs_f64(settings.timeout),
             follow_redirects: settings.follow_redirects,
             proxy: (!settings.proxy_url.is_empty()).then(|| settings.proxy_url.clone()),
@@ -214,7 +254,7 @@ fn body(prepared: &PreparedBody, boundary: &str) -> Result<reqwest::Body, SendEr
 }
 
 struct Attempt<'a> {
-    client: &'a reqwest::Client,
+    client: reqwest::Client,
     method: Method,
     url: Url,
     headers: Vec<(String, String)>,
@@ -349,6 +389,18 @@ async fn capture(
     })
 }
 
+async fn client_for(policy: &Policy, url: &Url) -> Result<reqwest::Client, SendError> {
+    let mut settings = policy.tls.clone();
+    if let Some(routing) = &policy.identity_routing {
+        routing.apply(url, &mut settings)?;
+    }
+    let tls = tokio::task::spawn_blocking(move || tls::client_config(&settings))
+        .await
+        .map_err(|_| SendError::new(ErrorKind::Tls, "Loading certificates failed unexpectedly"))?
+        .map_err(|e| SendError::new(ErrorKind::Tls, e.to_string()))?;
+    client(policy, tls)
+}
+
 async fn exchange(prepared: &Prepared, policy: &Policy) -> Result<Response, SendError> {
     match &prepared.body {
         PreparedBody::Multipart(fields) => {
@@ -359,12 +411,6 @@ async fn exchange(prepared: &Prepared, policy: &Policy) -> Result<Response, Send
         }
         PreparedBody::Bytes(_) => {}
     }
-    let settings = policy.tls.clone();
-    let tls = tokio::task::spawn_blocking(move || tls::client_config(&settings))
-        .await
-        .map_err(|_| SendError::new(ErrorKind::Tls, "Loading certificates failed unexpectedly"))?
-        .map_err(|e| SendError::new(ErrorKind::Tls, e.to_string()))?;
-    let client = client(policy, tls)?;
 
     let boundary = upload::boundary();
     let mut headers = prepared.headers.clone();
@@ -384,7 +430,7 @@ async fn exchange(prepared: &Prepared, policy: &Policy) -> Result<Response, Send
     let url = Url::parse(&prepared.url)
         .map_err(|e| SendError::new(ErrorKind::InvalidUrl, format!("Invalid URL: {e}")))?;
     let mut attempt = Attempt {
-        client: &client,
+        client: client_for(policy, &url).await?,
         method,
         url,
         headers,
@@ -431,6 +477,7 @@ async fn exchange(prepared: &Prepared, policy: &Policy) -> Result<Response, Send
         }
         // As httpx does: explicit cookies are not carried to the next location.
         remove_header(&mut attempt.headers, "cookie");
+        attempt.client = client_for(policy, &next).await?;
         attempt.method = method;
         attempt.url = next;
     }

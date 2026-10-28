@@ -195,7 +195,7 @@ pub enum Message {
     PostmanReady(Result<Box<PostmanExport>, Failure>),
     PostmanExportPicked(Option<PathBuf>),
     Exported(Result<PathBuf, Failure>),
-    Curl(Result<String, Failure>),
+    Curl(Result<(String, bool), Failure>),
     SettingsLoaded(Result<AppSettings, Failure>),
     SettingsSaved {
         form: SettingsForm,
@@ -1102,9 +1102,13 @@ impl PosterApp {
                 self.error("Export failed", error);
             }
             Message::SettingsLoaded(result) => self.settings_loaded(result),
-            Message::Curl(Ok(command)) => {
+            Message::Curl(Ok((command, host_identities))) => {
                 self.state.clipboard = Some(command);
-                self.status("Copied as curl");
+                if host_identities {
+                    self.status(executor::CURL_IDENTITY_NOTICE);
+                } else {
+                    self.status("Copied as curl");
+                }
             }
             Message::Curl(Err(error)) => self.error("Copy as curl failed", error),
             Message::SettingsSaved { form, result } => self.settings_saved(form, result),
@@ -2256,7 +2260,7 @@ impl PosterApp {
         };
         let db = self.db.clone();
         self.bridge.spawn(move |_| async move {
-            let result = executor::curl_command(&db, &request).await;
+            let result = executor::curl_with_identity_notice(&db, &request).await;
             Message::Curl(result.map_err(failure))
         });
     }
@@ -2897,7 +2901,15 @@ impl PosterApp {
                     match executor::recorded_curl(record) {
                         Ok(command) => {
                             self.state.clipboard = Some(command);
-                            self.state.history.status = Some(("Copied as curl".into(), Tone::Ok));
+                            self.state.history.status = Some((
+                                if record.settings.host_identities.is_empty() {
+                                    "Copied as curl"
+                                } else {
+                                    executor::CURL_IDENTITY_NOTICE
+                                }
+                                .into(),
+                                Tone::Ok,
+                            ));
                         }
                         Err(error) => self.error("Copy as curl failed", error.to_string()),
                     }

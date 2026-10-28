@@ -2,7 +2,7 @@
 //! ranges follow the Python app.
 
 use egui::{Align, Grid, Layout, Ui};
-use poster_app::core::settings::AppSettings;
+use poster_app::core::settings::{AppSettings, HostIdentity};
 
 use crate::app::{Action, State};
 use crate::theme::{PALETTE, Tone};
@@ -25,6 +25,7 @@ pub struct SettingsForm {
     pub certificate_path: String,
     pub key_file: String,
     pub password: String,
+    pub host_identities: Vec<HostIdentity>,
     pub history_max_entries: u64,
     pub history_mib: u64,
 }
@@ -44,6 +45,7 @@ impl SettingsForm {
             certificate_path: settings.certificate_path.clone(),
             key_file: settings.key_file.clone(),
             password: settings.password.clone(),
+            host_identities: settings.host_identities.clone(),
             history_max_entries: settings.history_max_entries.clamp(1, 1_000_000),
             history_mib: (settings.history_max_bytes / MIB).clamp(1, 102_400),
         }
@@ -62,6 +64,7 @@ impl SettingsForm {
             certificate_path: self.certificate_path.clone(),
             key_file: self.key_file.clone(),
             password: self.password.clone(),
+            host_identities: self.host_identities.clone(),
             history_max_entries: self.history_max_entries,
             history_max_bytes: self.history_mib * MIB,
             ..base.clone()
@@ -128,6 +131,11 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 "Saved" => "The application settings are saved",
                 _ => "",
             };
+            let (text, detail) = if text.starts_with("Failed to save settings:") {
+                ("Save failed", text)
+            } else {
+                (text, detail)
+            };
             let status = SaveStatus {
                 text,
                 detail,
@@ -187,6 +195,51 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                         text(ui, &mut form.password, "", true)
                     });
                 });
+                ui.label("Host client certificates");
+                let mut remove = None;
+                for (index, identity) in form.host_identities.iter_mut().enumerate() {
+                    ui.push_id(index, |ui| {
+                        group(ui, &format!("Host certificate {}", index + 1), |ui| {
+                            let prefix = format!("Host certificate {}", index + 1);
+                            for (label, value, secret) in [
+                                ("Host", &mut identity.host, false),
+                                ("Certificate", &mut identity.certificate_path, false),
+                                ("Key", &mut identity.key_file, false),
+                                ("Password", &mut identity.password, true),
+                            ] {
+                                ui.label(label);
+                                let response = text(ui, value, "", secret);
+                                crate::widgets::name(&response, &format!("{prefix} {label}"));
+                                edited |= response.changed();
+                                ui.end_row();
+                            }
+                            ui.label("Port");
+                            let response =
+                                ui.add(egui::DragValue::new(&mut identity.port).range(1..=65535));
+                            crate::widgets::name(&response, &format!("{prefix} Port"));
+                            edited |= response.changed();
+                            ui.end_row();
+                            ui.label("");
+                            if crate::widgets::remove_button(
+                                ui,
+                                ui.scope_id().with("remove"),
+                                &prefix,
+                                24.0,
+                            ) {
+                                remove = Some(index);
+                            }
+                            ui.end_row();
+                        });
+                    });
+                }
+                if let Some(index) = remove {
+                    form.host_identities.remove(index);
+                    edited = true;
+                }
+                if ui.button("Add host certificate").clicked() {
+                    form.host_identities.push(HostIdentity::default());
+                    edited = true;
+                }
                 group(ui, "History", |ui| {
                     edited |= row(ui, "History entries", |ui| {
                         ui.add(

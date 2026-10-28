@@ -333,6 +333,8 @@ numbers, so both are excluded. Each logical change is its own commit.
 
 - **Duplicate creates a fresh saved sibling, including current editor content when open, through the navigation guard.** Name allocation and insertion are one transaction; history stays with the original. Why: copying must neither lose edits nor overwrite an existing request. Enforced by app operation tests and `poster-ui/tests/editing.rs`.
 
+- **Host client identities match an exact normalized HTTPS host and port.** A match replaces global client credentials, then explicit request fields override individually. Each redirect selects again from the execution snapshot; CA and verification settings remain unchanged. Why: one host must never inherit another host’s selected certificate. Curl copies the initial identity and reports that it cannot switch identities across redirects. Enforced by core settings, executor, and loopback TLS tests.
+
 ## Enforcement gaps
 
 Rules above that no tool checks yet. Close a gap together with the first code it applies to.

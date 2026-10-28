@@ -178,3 +178,48 @@ fn discarding_settings_on_close_keeps_the_stored_ones() {
     assert_eq!(app.harness.state().close_state(), CloseState::Ready);
     assert_eq!(stored(&app), AppSettings::default());
 }
+
+#[test]
+fn host_certificates_save_only_on_save_and_validate_duplicates() {
+    let mut app = start();
+    app.harness.set_size(egui::vec2(1200.0, 1500.0));
+    open_settings(&mut app);
+    click(&mut app.harness, "Add host certificate");
+    type_into(&mut app.harness, "Host certificate 1 Host", "Example.COM");
+    type_into(
+        &mut app.harness,
+        "Host certificate 1 Certificate",
+        "/client.pem",
+    );
+    type_into(&mut app.harness, "Host certificate 1 Password", "secret");
+    assert_eq!(stored(&app).host_identities, []);
+    let password = app
+        .harness
+        .get_by_role_and_label(Role::PasswordInput, "Host certificate 1 Password");
+    assert!(
+        !password
+            .accesskit_node()
+            .value()
+            .is_some_and(|value| value.contains("secret"))
+    );
+    click(&mut app.harness, "Save settings");
+    settle(&mut app.harness);
+    assert_eq!(stored(&app).host_identities[0].port, 443);
+    assert_eq!(stored(&app).host_identities[0].password, "secret");
+    click(&mut app.harness, "Add host certificate");
+    type_into(&mut app.harness, "Host certificate 2 Host", "example.com");
+    type_into(
+        &mut app.harness,
+        "Host certificate 2 Certificate",
+        "/other.pem",
+    );
+    click(&mut app.harness, "Save settings");
+    settle(&mut app.harness);
+    assert_eq!(stored(&app).host_identities.len(), 1);
+    app.harness.get_by_label("Save failed");
+    app.harness.state_mut().request_close();
+    settle(&mut app.harness);
+    app.harness.get_by_label("Unsaved application settings");
+    click(&mut app.harness, "Cancel");
+    assert_eq!(app.harness.state().close_state(), CloseState::Open);
+}

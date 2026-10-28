@@ -89,10 +89,18 @@ pub fn now() -> Timestamp {
 /// Resolve `request` against `inputs`: inherited settings become explicit options first, so
 /// variables inside inherited paths resolve against the same snapshot as the request.
 pub fn resolve(request: &Request, inputs: &Inputs) -> Result<(Request, AppSettings), ExecuteError> {
-    let settings = inputs.settings.resolve(&request.template.options);
+    let values = inputs.snapshot.values();
+    let mut missing = std::collections::BTreeSet::new();
+    let url = poster_core::variables::substitute(
+        &request.template.url,
+        |name| values.get(name).map(String::as_str),
+        &mut missing,
+    );
+    let settings = inputs
+        .settings
+        .resolve_for_url(&url, &request.template.options);
     let mut template = request.template.clone();
     template.options = settings.as_options();
-    let values = inputs.snapshot.values();
     let template =
         resolve_template(&template, &values).map_err(|e| ExecuteError::Invalid(e.to_string()))?;
     let settings = settings.resolve(&template.options);
@@ -107,11 +115,24 @@ pub fn resolve(request: &Request, inputs: &Inputs) -> Result<(Request, AppSettin
 /// `request` as a curl command with what Send would send now: variables resolved, auth
 /// headers built, settings applied. It contains secrets; only copy it on request.
 pub async fn curl_command(store: &StoreHandle, request: &Request) -> Result<String, ExecuteError> {
+    Ok(curl_with_identity_notice(store, request).await?.0)
+}
+
+pub const CURL_IDENTITY_NOTICE: &str = "Copied as curl using the initial client identity; curl cannot switch host certificates across redirects";
+
+/// The warning travels with the same settings snapshot that produced the command.
+pub async fn curl_with_identity_notice(
+    store: &StoreHandle,
+    request: &Request,
+) -> Result<(String, bool), ExecuteError> {
     let inputs = inputs(store, request).await?;
     let (resolved, settings) = resolve(request, &inputs)?;
     let prepared = prepare(&resolved.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
-    Ok(poster_core::curl::to_command(&prepared, &settings))
+    Ok((
+        poster_core::curl::to_command(&prepared, &settings),
+        !settings.host_identities.is_empty(),
+    ))
 }
 
 /// A recorded execution as the curl command of what it sent.
@@ -134,16 +155,21 @@ pub async fn execute(
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
 
     let started = Instant::now();
-    let mut response =
-        match poster_http::send(&prepared, &Policy::from_settings(&settings), &cancel).await {
-            Ok(response) => response,
-            Err(SendError::Cancelled) => {
-                Response::failure(Outcome::Cancelled, "Cancelled", "Request cancelled")
-            }
-            Err(SendError::Failed { kind, message }) => {
-                Response::failure(Outcome::TransportError, kind.as_str(), message)
-            }
-        };
+    let mut policy = Policy::from_settings(&settings);
+    policy.identity_routing = Some(Box::new(poster_http::transport::IdentityRouting {
+        settings: inputs.settings.clone(),
+        options: request.template.options.clone(),
+        variables: inputs.snapshot.values(),
+    }));
+    let mut response = match poster_http::send(&prepared, &policy, &cancel).await {
+        Ok(response) => response,
+        Err(SendError::Cancelled) => {
+            Response::failure(Outcome::Cancelled, "Cancelled", "Request cancelled")
+        }
+        Err(SendError::Failed { kind, message }) => {
+            Response::failure(Outcome::TransportError, kind.as_str(), message)
+        }
+    };
     response.elapsed = started.elapsed().as_secs_f64();
 
     let mut template = request.clone();
