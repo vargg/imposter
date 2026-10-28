@@ -762,10 +762,19 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         .id_salt(("editor", pane.tab as u8))
         .auto_shrink([false, false])
         .show(ui, |ui| match pane.tab {
+            EditorTab::Docs => {
+                let response = ui.add(
+                    egui::TextEdit::multiline(&mut pane.editor.description)
+                        .desired_width(f32::INFINITY)
+                        .desired_rows(12),
+                );
+                name(&response, "Request description");
+                edited = response.changed();
+            }
             EditorTab::Params => {
                 params = widgets::rows_table(
                     ui,
-                    "Params",
+                    "Query",
                     &mut pane.editor.queries,
                     &mut pane.confirm_clear[0],
                     &mut vars,

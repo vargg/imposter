@@ -416,6 +416,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
     app.harness.run_steps(2);
     click(&mut app.harness, "GET Health");
     settle(&mut app.harness);
+    click(&mut app.harness, "Query");
     let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
     for label in [
         "Request URL",
@@ -426,7 +427,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
         "Copy as curl",
         "Settings",
         "Request settings",
-        "Add param",
+        "Add query",
     ] {
         assert!(
             viewport.contains_rect(app.harness.get_by_label(label).rect()),

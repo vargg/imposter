@@ -286,6 +286,7 @@ pub fn default_hint(field: OptionField, defaults: &AppSettings) -> String {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Editor {
     request: Request,
+    pub description: String,
     pub method: String,
     pub url: String,
     pub queries: Vec<ParamItem>,
@@ -318,6 +319,7 @@ impl Editor {
         let text = || String::from_utf8(template.body.clone()).unwrap_or_default();
         Self {
             request: request.clone(),
+            description: template.description.clone(),
             method: template.method.clone(),
             url: template.url.clone(),
             queries: template.queries.clone(),
@@ -387,6 +389,7 @@ impl Editor {
     pub fn to_request(&self) -> Result<Request, InvalidOptions> {
         let mut request = self.request.clone();
         let template = &mut request.template;
+        template.description.clone_from(&self.description);
         template.method.clone_from(&self.method);
         template.url.clone_from(&self.url);
         template.queries = named(&self.queries, |r| &r.name);

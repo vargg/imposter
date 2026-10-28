@@ -461,23 +461,25 @@ pub enum CloseState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EditorTab {
-    #[default]
     Params,
     Headers,
+    #[default]
     Body,
     Auth,
     Cookies,
     Settings,
+    Docs,
 }
 
 impl EditorTab {
-    pub const ALL: [(Self, &'static str); 6] = [
-        (Self::Params, "Params"),
-        (Self::Headers, "Headers"),
+    pub const ALL: [(Self, &'static str); 7] = [
         (Self::Body, "Body"),
         (Self::Auth, "Auth"),
+        (Self::Params, "Query"),
+        (Self::Headers, "Headers"),
         (Self::Cookies, "Cookies"),
         (Self::Settings, "Settings"),
+        (Self::Docs, "Docs"),
     ];
 }
 

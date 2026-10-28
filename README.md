@@ -179,3 +179,6 @@ Further reading:
 
 `cargo run -p poster-ui --example screenshot -- <dir>` renders the app with sample data to
 PNG files, without a display.
+
+Request tabs open on **Body**, followed by Auth, Query, Headers, Cookies, Settings and Docs.
+Use Docs to edit the request description; it saves and exports with the request.

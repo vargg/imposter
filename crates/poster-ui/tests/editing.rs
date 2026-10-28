@@ -515,3 +515,60 @@ fn a_long_url_stays_on_one_line_in_a_narrow_pane() {
         field.height()
     );
 }
+
+#[test]
+fn body_is_default_and_docs_save_with_the_request() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Documented", "http://x");
+    });
+    open(&mut app, "GET Documented");
+    assert_eq!(
+        app.harness.state().state.editor.as_ref().unwrap().tab,
+        EditorTab::Body
+    );
+    let labels: Vec<_> = EditorTab::ALL.iter().map(|(_, label)| *label).collect();
+    assert_eq!(
+        labels,
+        [
+            "Body", "Auth", "Query", "Headers", "Cookies", "Settings", "Docs"
+        ]
+    );
+    let positions: Vec<_> = labels
+        .iter()
+        .filter(|label| **label != "Settings")
+        .map(|label| app.harness.get_by_label(label).rect().left())
+        .collect();
+    assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+    click(&mut app.harness, "Docs");
+    type_into(
+        &mut app.harness,
+        "Request description",
+        "First line\nSecond line",
+    );
+    click(&mut app.harness, "Save request");
+    settle(&mut app.harness);
+    let id = app
+        .harness
+        .state()
+        .state
+        .editor
+        .as_ref()
+        .unwrap()
+        .editor
+        .id()
+        .unwrap();
+    let saved = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(move |db| collections::request(db, id))
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.template.description, "First line\nSecond line");
+    let editor = poster_ui::editor::Editor::load(&saved);
+    assert_eq!(
+        editor.to_request().unwrap().template.description,
+        saved.template.description
+    );
+}

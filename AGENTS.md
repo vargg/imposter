@@ -327,6 +327,8 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Toolchain pinned in `rust-toolchain.toml`, `Cargo.lock` committed, CI uses `--locked`.**
   Why: every machine and CI run builds the same thing.
 
+- **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs.** Docs edits the existing plain-text description through the normal save guard and exports. Why: body editing is the primary workflow; descriptions belong with the request rather than in a separate document. Enforced by `poster-ui/tests/editing.rs`.
+
 ## Enforcement gaps
 
 Rules above that no tool checks yet. Close a gap together with the first code it applies to.

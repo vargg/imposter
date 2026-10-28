@@ -137,9 +137,9 @@ fn header_rows_can_be_added_edited_disabled_and_cleared() {
 fn query_rows_rewrite_the_url() {
     let mut app = opened();
     tab(&mut app, EditorTab::Params);
-    click(&mut app.harness, "Add param");
-    type_into(&mut app.harness, "Params row 1 name", "q");
-    type_into(&mut app.harness, "Params row 1 value", "a b");
+    click(&mut app.harness, "Add query");
+    type_into(&mut app.harness, "Query row 1 name", "q");
+    type_into(&mut app.harness, "Query row 1 value", "a b");
 
     assert_eq!(
         app.harness
