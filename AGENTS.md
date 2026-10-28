@@ -279,7 +279,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   driven by `scripts/smoke.py`): window, migrations, HTTP, history and the close sequence, with
   a throwaway `IMPOSTER_DATA_DIR`. It is the binary's only argument. Why: packaging breaks
   things unit tests cannot see (missing GL, TLS provider, bundled SQLite, paths). The app-side
-  flow is covered by `imposter-ui/tests/smoke.rs`, CI runs the script on Linux on every push.
+  flow is covered by `imposter-ui/tests/smoke.rs`, CI runs the script on Linux on every push. The script
+  checks the User-Agent against the workspace version, so release bumps remain verified
+  without maintaining a second version string.
 - **The app icon is drawn in code** (`icons::app_icon`): the window icon at runtime and the
   packaging PNGs, which a test compares with the drawing. Why: no design files to lose, and
   the icon cannot drift from the theme.

@@ -9,6 +9,7 @@ Opens the real window for a moment, so it needs a display (Xvfb on Linux CI).
 
 import http.server
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -39,6 +40,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 def main() -> int:
     binary = Path(sys.argv[1]).resolve()
+    manifest = (Path(__file__).resolve().parent.parent / "Cargo.toml").read_text(encoding="utf-8")
+    version = re.search(r'^version = "([^"]+)"$', manifest, re.MULTILINE)
+    if version is None:
+        raise ValueError("workspace version is missing from Cargo.toml")
+    expected_agent = f"Imposter/{version.group(1)}"
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_port}/smoke"
@@ -72,7 +78,7 @@ def main() -> int:
             failures.append("the removed POSTER_DATA_DIR variable was used")
         if "TRACE" in result.stderr or " INFO " in result.stderr:
             failures.append("IMPOSTER_LOG=off did not suppress app logs")
-        if Handler.agents != ["Imposter/0.1.2"]:
+        if Handler.agents != [expected_agent]:
             failures.append(f"unexpected User-Agent: {Handler.agents}")
         if Handler.seen != ["/smoke"]:
             failures.append(f"server saw {Handler.seen}, expected one GET /smoke")

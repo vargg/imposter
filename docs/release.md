@@ -70,7 +70,7 @@ runner's certificate store and `certificate-thumbprint` plus `timestamp-url` und
 **Before the first signed release**, confirm the bundle identifier (`dev.imposter.app`): macOS
 identifies the app by it (Gatekeeper approvals, notarization), so it should not change later.
 
-The I’mposter rebrand retains version 0.1.2 and does not itself create a tag or release.
+The I’mposter rebrand was implemented at version 0.1.2 without creating a tag or release.
 The product name is `Imposter`, bundle identifier `dev.imposter.app`, and binary `imposter`.
 Existing Poster release tags belong to the earlier project history; do not push them when
 moving the main branch to `https://github.com/vargg/imposter.git` (`git push --no-follow-tags`).

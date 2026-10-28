@@ -2187,7 +2187,7 @@ dependencies = [
 
 [[package]]
 name = "imposter"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "eframe",
@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-app"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "imposter-core",
  "imposter-http",
@@ -2217,7 +2217,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64",
  "indexmap",
@@ -2229,7 +2229,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-http"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64",
  "bytes",
@@ -2262,7 +2262,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-store"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "imposter-core",
  "rusqlite",
@@ -2276,7 +2276,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-testkit"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "pkcs8",
  "rcgen",
@@ -2288,7 +2288,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-transfer"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "imposter-core",
  "indexmap",
@@ -2302,7 +2302,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-ui"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "eframe",
  "egui",
