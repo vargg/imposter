@@ -2186,6 +2186,142 @@ dependencies = [
 ]
 
 [[package]]
+name = "imposter"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "eframe",
+ "egui",
+ "imposter-app",
+ "imposter-ui",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "imposter-app"
+version = "0.1.2"
+dependencies = [
+ "imposter-core",
+ "imposter-http",
+ "imposter-store",
+ "imposter-testkit",
+ "imposter-transfer",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "imposter-core"
+version = "0.1.2"
+dependencies = [
+ "base64",
+ "indexmap",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "url",
+]
+
+[[package]]
+name = "imposter-http"
+version = "0.1.2"
+dependencies = [
+ "base64",
+ "bytes",
+ "futures-util",
+ "getrandom 0.4.3",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "imposter-core",
+ "imposter-testkit",
+ "md-5",
+ "mime_guess",
+ "pkcs5",
+ "pkcs8",
+ "reqwest",
+ "rustls",
+ "rustls-pki-types",
+ "rustls-platform-verifier",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "imposter-store"
+version = "0.1.2"
+dependencies = [
+ "imposter-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "imposter-testkit"
+version = "0.1.2"
+dependencies = [
+ "pkcs8",
+ "rcgen",
+ "rustls",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
+]
+
+[[package]]
+name = "imposter-transfer"
+version = "0.1.2"
+dependencies = [
+ "imposter-core",
+ "indexmap",
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "imposter-ui"
+version = "0.1.2"
+dependencies = [
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "image",
+ "imposter-app",
+ "imposter-testkit",
+ "jiff",
+ "rfd",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3561,142 +3697,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10ab3eb7f3becc3a1cbc4f2c6f20267996cfc1a6467a873763411b136a122715"
 dependencies = [
  "portable-atomic",
-]
-
-[[package]]
-name = "poster"
-version = "0.1.2"
-dependencies = [
- "anyhow",
- "eframe",
- "egui",
- "poster-app",
- "poster-ui",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "poster-app"
-version = "0.1.2"
-dependencies = [
- "poster-core",
- "poster-http",
- "poster-store",
- "poster-testkit",
- "poster-transfer",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "poster-core"
-version = "0.1.2"
-dependencies = [
- "base64",
- "indexmap",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "url",
-]
-
-[[package]]
-name = "poster-http"
-version = "0.1.2"
-dependencies = [
- "base64",
- "bytes",
- "futures-util",
- "getrandom 0.4.3",
- "http-body-util",
- "hyper",
- "hyper-util",
- "md-5",
- "mime_guess",
- "pkcs5",
- "pkcs8",
- "poster-core",
- "poster-testkit",
- "reqwest",
- "rustls",
- "rustls-pki-types",
- "rustls-platform-verifier",
- "serde_json",
- "sha1",
- "sha2",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "poster-store"
-version = "0.1.2"
-dependencies = [
- "poster-core",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "poster-testkit"
-version = "0.1.2"
-dependencies = [
- "pkcs8",
- "rcgen",
- "rustls",
- "rustls-pki-types",
- "tokio",
- "tokio-rustls",
-]
-
-[[package]]
-name = "poster-transfer"
-version = "0.1.2"
-dependencies = [
- "indexmap",
- "jsonschema",
- "poster-core",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "poster-ui"
-version = "0.1.2"
-dependencies = [
- "eframe",
- "egui",
- "egui_kittest",
- "image",
- "jiff",
- "poster-app",
- "poster-testkit",
- "rfd",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]

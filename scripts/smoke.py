@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Smoke-test a packaged Poster binary: it must start, send one request to a loopback
+"""Smoke-test a packaged Imposter binary: it must start, send one request to a loopback
 server, record it in history and exit cleanly, using a throwaway data directory.
 
-Usage: scripts/smoke.py <path to the poster executable>
+Usage: scripts/smoke.py <path to the imposter executable>
 
 Opens the real window for a moment, so it needs a display (Xvfb on Linux CI).
 """
@@ -21,9 +21,11 @@ TIMEOUT = 120
 
 class Handler(http.server.BaseHTTPRequestHandler):
     seen: list[str] = []
+    agents: list[str] = []
 
     def do_GET(self) -> None:  # noqa: N802 - http.server's naming
         Handler.seen.append(self.path)
+        Handler.agents.append(self.headers.get("User-Agent", ""))
         body = b"smoke ok"
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
@@ -40,9 +42,16 @@ def main() -> int:
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_port}/smoke"
-    with tempfile.TemporaryDirectory(prefix="poster-smoke-") as work:
+    with tempfile.TemporaryDirectory(prefix="imposter-smoke-") as work:
         data = Path(work) / "data"
-        env = {**os.environ, "POSTER_DATA_DIR": str(data)}
+        legacy = Path(work) / "ignored-legacy-override"
+        env = {
+            **os.environ,
+            "IMPOSTER_DATA_DIR": str(data),
+            "POSTER_DATA_DIR": str(legacy),
+            "IMPOSTER_LOG": "off",
+            "POSTER_LOG": "trace",
+        }
         result = subprocess.run(  # noqa: S603 - the binary under test
             [str(binary), "--smoke-test", url],
             cwd=work,
@@ -59,11 +68,17 @@ def main() -> int:
             print(f"FAIL: exit code {result.returncode}", file=sys.stderr)
             return 1
         failures = []
+        if legacy.exists():
+            failures.append("the removed POSTER_DATA_DIR variable was used")
+        if "TRACE" in result.stderr or " INFO " in result.stderr:
+            failures.append("IMPOSTER_LOG=off did not suppress app logs")
+        if Handler.agents != ["Imposter/0.1.2"]:
+            failures.append(f"unexpected User-Agent: {Handler.agents}")
         if Handler.seen != ["/smoke"]:
             failures.append(f"server saw {Handler.seen}, expected one GET /smoke")
         if "smoke test: HTTP 200" not in result.stdout:
             failures.append("no 'smoke test: HTTP 200' line")
-        database = data / "poster.db"
+        database = data / "imposter.db"
         if not database.exists():
             failures.append(f"no database at {database}")
         else:

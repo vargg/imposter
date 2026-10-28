@@ -68,7 +68,7 @@ jobs:
         run: |
           python3 - <<'EOF'
           import os, pathlib
-          path = pathlib.Path("crates/poster/Cargo.toml")
+          path = pathlib.Path("crates/imposter/Cargo.toml")
           adhoc = 'signing-identity = "-"\n'
           identity = os.environ["SECRET_APPLE_SIGNING_IDENTITY"].replace('"', '\\"')
           text = path.read_text()
@@ -76,16 +76,16 @@ jobs:
           path.write_text(text.replace(adhoc, f'signing-identity = "{identity}"\n'))
           EOF
 
-      - run: cargo packager -p poster --release --formats ${{ matrix.formats }}
+      - run: cargo packager -p imposter --release --formats ${{ matrix.formats }}
 
       # An unsealed bundle opens locally but is "damaged" once downloaded.
       - name: Verify the macOS signature
         if: runner.os == 'macOS'
-        run: codesign --verify --deep --strict --verbose=2 target/packages/Poster.app
+        run: codesign --verify --deep --strict --verbose=2 target/packages/Imposter.app
 
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'
-        run: python3 scripts/smoke.py target/packages/Poster.app/Contents/MacOS/poster
+        run: python3 scripts/smoke.py target/packages/Imposter.app/Contents/MacOS/imposter
 
       - name: Smoke test (Linux)
         if: runner.os == 'Linux'
@@ -94,7 +94,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libgl1-mesa-dri libegl1 libxkbcommon-x11-0
           sudo apt-get install -y ./target/packages/*.deb
-          xvfb-run -a python3 scripts/smoke.py /usr/bin/poster
+          xvfb-run -a python3 scripts/smoke.py /usr/bin/imposter
           chmod +x target/packages/*.AppImage
           # No FUSE on runners: the AppImage runtime extracts itself instead.
           APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a python3 scripts/smoke.py target/packages/*.AppImage
@@ -103,7 +103,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $dir = Join-Path $env:RUNNER_TEMP "PosterInstall"
+          $dir = Join-Path $env:RUNNER_TEMP "ImposterInstall"
           $installer = Get-ChildItem target/packages/*-setup.exe | Select-Object -First 1
           Start-Process -Wait -FilePath $installer.FullName -ArgumentList "/S", "/D=$dir"
           # Runners have no GPU OpenGL; Mesa's software driver next to the binary provides
@@ -112,11 +112,11 @@ jobs:
           Invoke-WebRequest $mesa -OutFile "$env:RUNNER_TEMP\mesa.7z"
           7z x "$env:RUNNER_TEMP\mesa.7z" "-o$env:RUNNER_TEMP\mesa" | Out-Null
           Copy-Item "$env:RUNNER_TEMP\mesa\x64\*.dll" $dir
-          python scripts/smoke.py (Join-Path $dir "poster.exe")
+          python scripts/smoke.py (Join-Path $dir "imposter.exe")
 
       - uses: actions/upload-artifact@v4
         with:
-          name: poster-${{ matrix.name }}
+          name: imposter-${{ matrix.name }}
           path: |
             target/packages/*.dmg
             target/packages/*.deb

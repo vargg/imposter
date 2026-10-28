@@ -1,15 +1,15 @@
-# Releasing Poster
+# Releasing Imposter
 
 Packages are built by `cargo-packager` from the `[package.metadata.packager]` section of
-`crates/poster/Cargo.toml`. The release workflow (`.github/workflows/release.yml`) builds them
+`crates/imposter/Cargo.toml`. The release workflow (`.github/workflows/release.yml`) builds them
 on each OS, smoke-tests every packaged binary, and attaches them to a **draft** GitHub release.
 Nothing is published until someone reviews the draft and publishes it.
 
 | OS | Packages | Smoke-tested binary |
 |---|---|---|
-| macOS (arm64) | `.app` inside a `.dmg` | `Poster.app/Contents/MacOS/poster` |
+| macOS (arm64) | `.app` inside a `.dmg` | `Imposter.app/Contents/MacOS/imposter` |
 | Linux (x86_64, glibc of Ubuntu 22.04 or newer) | `.deb`, `.AppImage` | the installed `.deb` and the AppImage, under Xvfb |
-| Windows (x86_64) | NSIS installer (per user, no admin) | the silently installed `poster.exe` |
+| Windows (x86_64) | NSIS installer (per user, no admin) | the silently installed `imposter.exe` |
 
 ## Cutting a release
 
@@ -24,10 +24,10 @@ Nothing is published until someone reviews the draft and publishes it.
 
 ```sh
 cargo install cargo-packager --locked --version 0.11.8
-CI=true cargo packager -p poster --release --formats app,dmg   # macOS
-cargo packager -p poster --release --formats deb,appimage      # Linux
-cargo packager -p poster --release --formats nsis              # Windows
-python3 scripts/smoke.py target/packages/Poster.app/Contents/MacOS/poster
+CI=true cargo packager -p imposter --release --formats app,dmg   # macOS
+cargo packager -p imposter --release --formats deb,appimage      # Linux
+cargo packager -p imposter --release --formats nsis              # Windows
+python3 scripts/smoke.py target/packages/Imposter.app/Contents/MacOS/imposter
 ```
 
 `CI=true` skips the Finder styling of the DMG window, which needs automation permission.
@@ -35,10 +35,10 @@ Packages land in `target/packages/`.
 
 ## The smoke test
 
-`poster --smoke-test <url>` starts the real app (window, database, migrations, HTTP, history),
+`imposter --smoke-test <url>` starts the real app (window, database, migrations, HTTP, history),
 sends `GET <url>` as an unsaved draft, closes through the normal close sequence, and exits 0
 only if a response arrived. `scripts/smoke.py` runs it against a loopback server with a
-throwaway `POSTER_DATA_DIR` and also checks that the server saw the request and that history
+throwaway `IMPOSTER_DATA_DIR` and also checks that the server saw the request and that history
 recorded it. CI runs it on every push (Linux, debug build); the release workflow runs it on
 every package.
 
@@ -67,5 +67,12 @@ cargo-packager also accepts an App Store Connect API key for notarization (`APPL
 runner's certificate store and `certificate-thumbprint` plus `timestamp-url` under
 `[package.metadata.packager.windows]`.
 
-**Before the first signed release**, confirm the bundle identifier (`dev.poster.app`): macOS
+**Before the first signed release**, confirm the bundle identifier (`dev.imposter.app`): macOS
 identifies the app by it (Gatekeeper approvals, notarization), so it should not change later.
+
+The I’mposter rebrand retains version 0.1.2 and does not itself create a tag or release.
+The product name is `Imposter`, bundle identifier `dev.imposter.app`, and binary `imposter`.
+Existing Poster release tags belong to the earlier project history; do not push them when
+moving the main branch to `https://github.com/vargg/imposter.git` (`git push --no-follow-tags`).
+Local smoke tests and release automation must set `IMPOSTER_DATA_DIR`; the former
+`POSTER_DATA_DIR` and `POSTER_LOG` names are intentionally unsupported.

@@ -6,8 +6,8 @@ Run it on macOS, Windows and Linux before each release, with the packaged build.
 
 ## Setup
 
-- Use a throwaway data directory: `POSTER_DATA_DIR=$(mktemp -d) <packaged poster>`. Never use
-  your own `~/.poster`, and never the Python app's databases.
+- Use a throwaway data directory: `IMPOSTER_DATA_DIR=$(mktemp -d) <packaged imposter>`. Never use
+  your own `~/.imposter`, and never the Python app's databases.
 - Start a loopback server, for example `python3 -m http.server 8765`.
 - Have a `.poster.json` exported from the Python app at hand.
 
@@ -41,7 +41,7 @@ Run it on macOS, Windows and Linux before each release, with the packaged build.
 **Import and export**
 - [ ] Import the Python app's `.poster.json` from the + menu: the review shows the new name and
       environments; after Import the collection opens.
-- [ ] Export it again as Poster and as Postman (with an environment: a new folder with
+- [ ] Export it again as Imposter and as Postman (with an environment: a new folder with
       companion files appears). The native save dialog opens and names the file sensibly.
 - [ ] Import a Postman collection with scripts: Import stays disabled until the removal
       consent is checked.

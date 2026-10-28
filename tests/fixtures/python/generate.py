@@ -2,7 +2,7 @@
 
 Run from the Python checkout so its environment is used:
 
-    cd ~/dev/pystman && uv run --frozen python ~/dev/poster/tests/fixtures/python/generate.py
+    cd ~/dev/pystman && uv run --frozen python ~/dev/imposter/tests/fixtures/python/generate.py
 
 Outputs (relative to tests/fixtures/):
 - native/*.poster.json: documents encoded by the Python native codec.

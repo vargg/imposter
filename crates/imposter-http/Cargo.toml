@@ -1,0 +1,42 @@
+[package]
+name = "imposter-http"
+description = "HTTP transport: request preparation, client, TLS, auth, replayable uploads, capped streaming, cancellation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+imposter-core.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+rustls-pki-types.workspace = true
+rustls-platform-verifier.workspace = true
+pkcs5.workspace = true
+pkcs8.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+tracing.workspace = true
+getrandom.workspace = true
+md-5.workspace = true
+mime_guess.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+tokio-util.workspace = true
+
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+
+[dev-dependencies]
+imposter-testkit.workspace = true
+base64.workspace = true
+serde_json.workspace = true
+tracing-subscriber.workspace = true
+tempfile.workspace = true
+tokio-rustls.workspace = true

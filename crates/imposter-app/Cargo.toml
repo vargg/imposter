@@ -1,0 +1,26 @@
+[package]
+name = "imposter-app"
+description = "Services and runtime glue: executor, saver, history retention, task registry."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+imposter-core.workspace = true
+imposter-http.workspace = true
+imposter-store.workspace = true
+imposter-transfer.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+imposter-core.workspace = true
+imposter-testkit.workspace = true
+tempfile.workspace = true

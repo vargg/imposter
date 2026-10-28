@@ -9,13 +9,13 @@ rust-version = "1.99"
 publish = false
 
 [workspace.dependencies]
-poster-core = { path = "crates/poster-core" }
-poster-http = { path = "crates/poster-http" }
-poster-store = { path = "crates/poster-store" }
-poster-transfer = { path = "crates/poster-transfer" }
-poster-app = { path = "crates/poster-app" }
-poster-ui = { path = "crates/poster-ui" }
-poster-testkit = { path = "crates/poster-testkit" }
+imposter-core = { path = "crates/imposter-core" }
+imposter-http = { path = "crates/imposter-http" }
+imposter-store = { path = "crates/imposter-store" }
+imposter-transfer = { path = "crates/imposter-transfer" }
+imposter-app = { path = "crates/imposter-app" }
+imposter-ui = { path = "crates/imposter-ui" }
+imposter-testkit = { path = "crates/imposter-testkit" }
 
 # Third-party. Versions live only here (see AGENTS.md).
 anyhow = "1.0.104"

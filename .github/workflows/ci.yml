@@ -38,9 +38,9 @@ jobs:
       - run: >-
           cargo llvm-cov --workspace --locked
           --fail-under-lines 85 --fail-under-regions 70
-          --ignore-filename-regex '(crates/poster/src/main\.rs|crates/poster-testkit/)'
+          --ignore-filename-regex '(crates/imposter/src/main\.rs|crates/imposter-testkit/)'
 
-  # The real window, store, HTTP and close sequence through `poster --smoke-test`
+  # The real window, store, HTTP and close sequence through `imposter --smoke-test`
   # (scripts/smoke.py); the release workflow repeats it on every packaged binary.
   smoke:
     name: smoke
@@ -50,5 +50,5 @@ jobs:
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libegl1 libxkbcommon-x11-0
-      - run: cargo build --locked -p poster
-      - run: xvfb-run -a python3 scripts/smoke.py target/debug/poster
+      - run: cargo build --locked -p imposter
+      - run: xvfb-run -a python3 scripts/smoke.py target/debug/imposter

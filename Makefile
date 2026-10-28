@@ -24,19 +24,19 @@ endif
 
 help: ## Show targets and common overrides
 	@awk 'BEGIN { FS = ":.*## "; printf "Usage: make <target> [VARIABLE=value]\n\n" } /^[a-zA-Z_-]+:.*## / { printf "  %-16s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-	@printf '\nExamples:\n  make test CRATE=poster-http TEST=redirect\n  make test TEST_ARGS="--nocapture"\n  make screenshots OUT=/tmp/poster-screenshots\n  make smoke BINARY="target/packages/Poster.app/Contents/MacOS/poster"\n  make package FORMATS=app\n'
+	@printf '\nExamples:\n  make test CRATE=imposter-http TEST=redirect\n  make test TEST_ARGS="--nocapture"\n  make screenshots OUT=/tmp/imposter-screenshots\n  make smoke BINARY="target/packages/Imposter.app/Contents/MacOS/imposter"\n  make package FORMATS=app\n'
 
 build: ## Build the debug application
-	cargo build --locked -p poster
+	cargo build --locked -p imposter
 
 release: ## Build the optimized application
-	cargo build --locked --release -p poster
+	cargo build --locked --release -p imposter
 
 run: ## Run the debug application
-	cargo run --locked -p poster
+	cargo run --locked -p imposter
 
 run-release: ## Run the optimized application
-	cargo run --locked --release -p poster
+	cargo run --locked --release -p imposter
 
 test: ## Run tests; optionally set CRATE, TEST (name filter), and TEST_ARGS
 	cargo test --locked $(if $(CRATE),-p $(CRATE),--workspace) $(TEST) $(if $(TEST_ARGS),-- $(TEST_ARGS))
@@ -56,19 +56,19 @@ check: ## Run the full gate: formatting, Clippy, tests, and coverage floors
 coverage: check ## Run the full gate including its coverage report
 
 screenshots: ## Render the real UI offscreen to OUT (default: target/screenshots)
-	cargo run --locked -p poster-ui --example screenshot -- "$(OUT)"
+	cargo run --locked -p imposter-ui --example screenshot -- "$(OUT)"
 
 smoke: ## Smoke-test the debug app, or an existing executable supplied as BINARY
 ifdef BINARY
 	$(PYTHON) scripts/smoke.py "$(BINARY)"
 else
 smoke: build
-	$(PYTHON) scripts/smoke.py "$(TARGET_DIR)/debug/poster$(EXE)"
+	$(PYTHON) scripts/smoke.py "$(TARGET_DIR)/debug/imposter$(EXE)"
 endif
 
 package: ## Build local packages; FORMATS defaults to the host OS formats
 	@test -n "$(FORMATS)" || { printf '%s\n' 'Set FORMATS to the cargo-packager formats for your platform.'; exit 1; }
-	CI=true cargo packager -p poster --release --formats "$(FORMATS)"
+	CI=true cargo packager -p imposter --release --formats "$(FORMATS)"
 
 clean: ## Remove Cargo build artifacts (keeps application data)
 	cargo clean
