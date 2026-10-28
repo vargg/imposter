@@ -146,15 +146,40 @@ logs credentials, tokens, or request and response bodies.
 
 ## Development
 
+The root Makefile wraps the existing Cargo commands and scripts. It requires GNU Make
+and a POSIX shell (on Windows, use Git Bash with GNU Make). `make` lists all targets.
+
 ```sh
-scripts/check.sh            # everything CI checks: format, clippy, tests, coverage floors
-cargo test -p poster-http   # one crate
-cargo run -p poster         # debug build
+make run                                  # debug application
+make release                              # optimized binary
+make test                                 # all workspace tests
+make test CRATE=poster-http TEST=redirect  # one crate, optional test-name filter
+make fmt                                  # format Rust code
+make lint                                 # Clippy, warnings are errors
+make check                                # full verification gate, including coverage
+make screenshots OUT=/tmp/poster-shots     # render the UI offscreen
+make smoke                                # build and smoke-test the debug application
+make package                              # local packages for the host OS
+make clean                                # remove build artifacts, keep application data
 ```
 
-`scripts/check.sh` needs `cargo-llvm-cov` and LLVM's coverage tools:
-`cargo install cargo-llvm-cov` and `rustup component add llvm-tools`. CI runs the same checks
-on macOS, Linux and Windows.
+`make check` and `make coverage` both run `scripts/check.sh`; coverage thresholds and
+exclusions remain defined there. Install its prerequisites with
+`cargo install cargo-llvm-cov` and `rustup component add llvm-tools`. CI also checks macOS,
+Linux and Windows. Cargo and rustup must be on `PATH`; the repository pins the toolchain.
+
+Use `TEST_ARGS="--nocapture"` to pass arguments to the test harness, and `PYTHON=python`
+if that is your Python 3 executable. `make smoke BINARY="path/to/poster"` tests an existing
+executable without rebuilding; smoke tests open a real window and need a display (Xvfb
+on headless Linux). Their database is temporary.
+
+`make package` requires `cargo-packager` 0.11.8; install it with
+`cargo install cargo-packager --locked --version 0.11.8`. It defaults to `app,dmg` on macOS,
+`deb,appimage` on Linux, and `nsis` on Windows; override with, for example,
+`make package FORMATS=app`. It uses the existing packaging configuration and
+`target/packages/` output, with `CI=true` to skip interactive DMG styling. Packaging uses
+the repository's default Cargo target directory. See [release.md](docs/release.md) for
+signing and release instructions; the Makefile does not tag, push, or publish releases.
 
 The workspace is split by responsibility; each layer only depends on the ones before it,
 which an architecture test enforces:
