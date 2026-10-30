@@ -173,6 +173,80 @@ pub fn tree(db: &Connection, id: CollectionId) -> Result<Option<Tree>, StoreErro
     }))
 }
 
+/// A request as the command palette lists it: where it lives and what it is called.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexedRequest {
+    pub id: RequestId,
+    pub collection_id: CollectionId,
+    pub collection: String,
+    /// Folder names from the collection root down.
+    pub folders: Vec<String>,
+    pub name: String,
+    pub method: String,
+}
+
+/// Every request of every collection with its folder path, read without decoding bodies:
+/// by collection name, then folder path (root requests first), then position.
+pub fn request_index(db: &Connection) -> Result<Vec<IndexedRequest>, StoreError> {
+    let mut statement = db.prepare(&format!("SELECT {FOLDER_COLUMNS} FROM folders"))?;
+    let folders: std::collections::HashMap<FolderId, Folder> = statement
+        .query_map([], folder_row)?
+        .map(|row| row.map(|f| (f.id, f)))
+        .collect::<Result<_, _>>()?;
+    let path = |mut parent: Option<FolderId>| {
+        let mut names = Vec::new();
+        // Parents form a tree (moves refuse cycles); the bound only guards a corrupt file.
+        while let Some(folder) = parent.and_then(|id| folders.get(&id)) {
+            if names.len() > folders.len() {
+                break;
+            }
+            names.push(folder.name.clone());
+            parent = folder.parent_id;
+        }
+        names.reverse();
+        names
+    };
+    let mut statement = db.prepare(
+        "SELECT r.id, r.collection_id, c.name, r.folder_id, r.name, r.method
+         FROM requests r JOIN collections c ON c.id = r.collection_id
+         ORDER BY c.name, c.id, r.position, r.id",
+    )?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                RequestId(row.get(0)?),
+                CollectionId(row.get(1)?),
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<i64>>(3)?.map(FolderId),
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut index: Vec<IndexedRequest> = rows
+        .into_iter()
+        .map(
+            |(id, collection_id, collection, folder, name, method)| IndexedRequest {
+                id,
+                collection_id,
+                collection,
+                folders: path(folder),
+                name,
+                method,
+            },
+        )
+        .collect();
+    // Stable: requests of one folder keep the position order the query gave them.
+    index.sort_by(|a, b| {
+        (&a.collection, a.collection_id, &a.folders).cmp(&(
+            &b.collection,
+            b.collection_id,
+            &b.folders,
+        ))
+    });
+    Ok(index)
+}
+
 fn folder_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Folder> {
     Ok(Folder {
         id: FolderId(row.get(0)?),

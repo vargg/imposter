@@ -123,6 +123,7 @@ Cmd on macOS, Ctrl elsewhere. Shortcuts do nothing while a dialog is open.
 
 | Shortcut | Action |
 |---|---|
+| Cmd/Ctrl+K | Command palette: actions, requests and environments |
 | Cmd/Ctrl+Enter, Cmd/Ctrl+R | Send (or cancel the running request) |
 | Cmd/Ctrl+S | Save the current screen: request, variables or settings |
 | Cmd/Ctrl+N | New request (a new collection when there is none) |

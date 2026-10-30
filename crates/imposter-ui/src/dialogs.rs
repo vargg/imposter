@@ -89,6 +89,8 @@ pub enum Dialog {
     },
     /// Every keyboard shortcut, from `shortcuts::ALL`.
     Shortcuts,
+    /// Fuzzy search over actions, requests and environments.
+    Palette(Box<crate::palette::Palette>),
     /// What an export includes. Environments and globals are opt-in.
     Export {
         environments: Vec<(EnvironmentId, String, bool)>,
@@ -115,6 +117,8 @@ pub enum Outcome {
     Export,
     /// Open the pasted command as a draft; the dialog still holds it and it parses.
     Curl,
+    /// Run the palette's choice; the dialog still holds it.
+    Palette,
     /// Cancelled, closed or acknowledged.
     Closed,
 }
@@ -149,7 +153,13 @@ impl Dialog {
         let mut outcome = Outcome::Open;
         // One id per kind: a dialog replacing another must not inherit its size and position.
         let id = Id::unique(("dialog", std::mem::discriminant(self)));
-        let modal = egui::Modal::new(id).show(ctx, |ui| {
+        let mut modal = egui::Modal::new(id);
+        if matches!(self, Self::Palette(_)) {
+            // Pinned to the top: centred, it would move as the list shrinks while typing.
+            modal = modal
+                .area(egui::Modal::default_area(id).anchor(egui::Align2::CENTER_TOP, [0.0, 72.0]));
+        }
+        let modal = modal.show(ctx, |ui| {
             ui.set_min_width(360.0);
             match self {
                 Self::Name {
@@ -296,6 +306,7 @@ impl Dialog {
                         outcome = Outcome::Closed;
                     }
                 }
+                Self::Palette(palette) => palette.show(ui, &mut outcome),
                 Self::Shortcuts => {
                     ui.heading("Keyboard shortcuts");
                     ui.add_space(4.0);

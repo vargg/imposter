@@ -7,6 +7,7 @@ use egui::{Key, KeyboardShortcut, Modifiers};
 
 use crate::app::{Action, Screen, State};
 use crate::dialogs::{Dialog, NamePurpose};
+use crate::palette::{Mode, Palette};
 use crate::tree::NodeId;
 
 const fn key(modifiers: Modifiers, key: Key) -> KeyboardShortcut {
@@ -32,6 +33,7 @@ pub const RENAME_ALT: KeyboardShortcut = key(CTRL_SHIFT, Key::R);
 pub const SETTINGS: KeyboardShortcut = key(Modifiers::COMMAND, Key::Comma);
 pub const SIDEBAR: KeyboardShortcut = key(Modifiers::COMMAND, Key::B);
 pub const SHORTCUTS: KeyboardShortcut = key(COMMAND_SHIFT, Key::Slash);
+pub const PALETTE: KeyboardShortcut = key(Modifiers::COMMAND, Key::K);
 
 /// What a shortcut does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +47,7 @@ pub enum Command {
     Settings,
     ToggleSidebar,
     Shortcuts,
+    Palette,
     /// Handled by the viewer under the pointer.
     Find,
     /// Handled by the focused variable field.
@@ -68,6 +71,11 @@ pub struct Shortcut {
 }
 
 pub const ALL: &[Shortcut] = &[
+    Shortcut {
+        keys: &[PALETTE],
+        command: Command::Palette,
+        description: "Command palette: actions, requests and environments",
+    },
     Shortcut {
         keys: &[SEND, SEND_ALT],
         command: Command::Send,
@@ -170,11 +178,11 @@ pub fn handle(state: &mut State, ctx: &egui::Context) {
         return;
     }
     for command in pressed(ctx) {
-        run(state, command);
+        run(state, command, ctx);
     }
 }
 
-fn run(state: &mut State, command: Command) {
+fn run(state: &mut State, command: Command, ctx: &egui::Context) {
     let requests = state.screen == Screen::Requests;
     let open = state.editor.as_ref().and_then(|p| p.editor.id());
     match command {
@@ -206,11 +214,17 @@ fn run(state: &mut State, command: Command) {
         }
         Command::Settings => state.actions.push(Action::Screen(Screen::Settings)),
         Command::Shortcuts => state.actions.push(Action::Prompt(Dialog::Shortcuts)),
+        Command::Palette => {
+            let palette = Palette::open(state, Mode::All, ctx);
+            state
+                .actions
+                .push(Action::Prompt(Dialog::Palette(Box::new(palette))));
+        }
         _ => {}
     }
 }
 
-fn new_dialog(state: &State) -> Dialog {
+pub fn new_dialog(state: &State) -> Dialog {
     if state.collection.is_some() {
         Dialog::name(
             "New Request",

@@ -200,5 +200,16 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-history.png")))
             .unwrap();
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+        settle(&mut harness);
+        harness
+            .get_by_label("Command palette search")
+            .type_text("user");
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-palette.png")))
+            .unwrap();
     }
 }

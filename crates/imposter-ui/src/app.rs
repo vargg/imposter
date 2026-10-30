@@ -20,7 +20,7 @@ use imposter_app::executor::{self, ExecuteError, Executed};
 use imposter_app::formats::native::NativeDocument;
 use imposter_app::runtime::{Bridge, TaskId};
 use imposter_app::saver::{Saver, State as SaveState};
-use imposter_app::store::collections::{self, Collection, Tree};
+use imposter_app::store::collections::{self, Collection, IndexedRequest, Tree};
 use imposter_app::store::environments::{self, Environment};
 use imposter_app::store::executions::{self, ExecutionSummary};
 use imposter_app::store::kv::{self, Table};
@@ -218,6 +218,7 @@ pub enum Message {
     PostmanExportPicked(Option<PathBuf>),
     Exported(Result<PathBuf, Failure>),
     Curl(Result<(String, bool), Failure>),
+    RequestIndex(Result<Vec<IndexedRequest>, Failure>),
     SettingsLoaded(Result<AppSettings, Failure>),
     SettingsSaved {
         form: SettingsForm,
@@ -269,6 +270,14 @@ pub enum Action {
     PickFile(FileRequest),
     ShowRun(ExecutionId),
     Screen(Screen),
+    /// Open a request from any collection, switching to that collection first.
+    OpenIn {
+        collection: CollectionId,
+        request: RequestId,
+    },
+    ToggleSidebar,
+    /// Switch between side by side and stacked.
+    ToggleLayout,
     /// Switch the active execution environment (`None`: globals only).
     SetEnvironment(Option<EnvironmentId>),
     /// The inspector's "Open definition": edit `name` in `scope`.
@@ -448,6 +457,10 @@ impl VariablesScreen {
 #[derive(Debug, Clone, PartialEq)]
 enum Navigation {
     Open(RequestId),
+    OpenIn {
+        collection: CollectionId,
+        request: RequestId,
+    },
     Duplicate {
         id: RequestId,
         edited: Option<Box<imposter_app::core::model::RequestTemplate>>,
@@ -643,6 +656,8 @@ pub struct State {
     pub focus_url: bool,
     /// The header logo, uploaded on first use.
     pub logo: Option<egui::TextureHandle>,
+    /// Requests opened recently, newest first (the palette lists them first).
+    pub recent: Vec<RequestId>,
     pub actions: Vec<Action>,
 }
 
@@ -703,6 +718,7 @@ impl ImposterApp {
                 clipboard: None,
                 focus_url: false,
                 logo: None,
+                recent: Vec::new(),
                 actions: Vec::new(),
             },
             window: None,
@@ -1178,6 +1194,14 @@ impl ImposterApp {
                 }
             }
             Message::Curl(Err(error)) => self.error("Copy as curl failed", error),
+            Message::RequestIndex(result) => {
+                if let Some(Dialog::Palette(palette)) = &mut self.state.dialog {
+                    match result {
+                        Ok(index) => palette.index = Some(index),
+                        Err(error) => tracing::warn!(%error, "loading the request index failed"),
+                    }
+                }
+            }
             Message::SettingsSaved { form, result } => self.settings_saved(form, result),
             Message::Exported(Ok(path)) => {
                 self.state.dialog = Some(Dialog::info(
@@ -1381,6 +1405,19 @@ impl ImposterApp {
     fn perform(&mut self, next: Navigation) {
         match next {
             Navigation::Open(id) => self.open(id),
+            Navigation::OpenIn {
+                collection,
+                request,
+            } => {
+                if self.state.collection == Some(collection) {
+                    self.open(request);
+                } else {
+                    // The tree of the other collection opens it once loaded (`restore`).
+                    self.clear_editor();
+                    self.state.restore = Some(request);
+                    self.switch_collection(collection);
+                }
+            }
             Navigation::Duplicate { id, edited } => {
                 let db = self.db.clone();
                 let generation = self.state.generation;
@@ -2162,7 +2199,30 @@ impl ImposterApp {
                 };
                 self.navigate(Navigation::Duplicate { id, edited });
             }
-            Action::Prompt(dialog) => self.state.dialog = Some(dialog),
+            Action::Prompt(dialog) => {
+                if matches!(dialog, Dialog::Palette(_)) {
+                    self.load_request_index();
+                }
+                self.state.dialog = Some(dialog);
+            }
+            Action::OpenIn {
+                collection,
+                request,
+            } => {
+                self.state.screen = Screen::Requests;
+                if self.state.editor.as_ref().and_then(|p| p.editor.id()) != Some(request) {
+                    self.navigate(Navigation::OpenIn {
+                        collection,
+                        request,
+                    });
+                }
+            }
+            Action::ToggleSidebar => {
+                self.state.layout.sidebar_visible = !self.state.layout.sidebar_visible;
+            }
+            Action::ToggleLayout => {
+                self.state.layout.orientation = self.state.layout.orientation.switched();
+            }
             Action::Move { node, target } => self.move_node(node, target),
             Action::Save => match self.state.screen {
                 Screen::Variables => self.save_variables(),
@@ -2290,6 +2350,13 @@ impl ImposterApp {
                     });
                 }
             }
+            Outcome::Palette => {
+                if let Some(Dialog::Palette(palette)) = self.state.dialog.take()
+                    && let Some(action) = palette.chosen
+                {
+                    self.state.actions.push(action);
+                }
+            }
             Outcome::Curl => {
                 if let Some(Dialog::Curl { text }) = self.state.dialog.take()
                     && let Ok(parsed) = imposter_app::core::curl::parse(&text)
@@ -2340,6 +2407,13 @@ impl ImposterApp {
             let result = executor::curl_with_identity_notice(&db, &request).await;
             Message::Curl(result.map_err(failure))
         });
+    }
+
+    fn load_request_index(&mut self) {
+        self.task(
+            |db| collections::request_index(db),
+            |result| Message::RequestIndex(result.map_err(failure)),
+        );
     }
 
     fn read_import(&mut self, path: PathBuf, companions: Vec<PathBuf>) {

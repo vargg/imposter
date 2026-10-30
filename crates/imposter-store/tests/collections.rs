@@ -367,3 +367,40 @@ fn new_items_go_last_among_siblings() {
         .unwrap();
     assert_eq!(positions, (0, 5));
 }
+
+#[test]
+fn the_request_index_lists_every_collection_with_folder_paths() {
+    let (_dir, store) = store();
+    let index = store
+        .call_blocking(|db| {
+            let api = create_collection(db, "API", "", &vars(&[]))?;
+            let admin = create_collection(db, "Admin", "", &vars(&[]))?;
+            let users = create_folder(db, api.id, None, "Users", "", 0)?;
+            let roles = create_folder(db, api.id, Some(users.id), "Roles", "", 0)?;
+            create_request(db, api.id, Some(roles.id), &template("List roles"))?;
+            create_request(db, api.id, None, &template("Health"))?;
+            create_request(db, api.id, Some(users.id), &template("List users"))?;
+            create_request(db, admin.id, None, &template("Stats"))?;
+            request_index(db)
+        })
+        .unwrap();
+    let rows: Vec<(String, Vec<String>, String)> = index
+        .iter()
+        .map(|r| (r.collection.clone(), r.folders.clone(), r.name.clone()))
+        .collect();
+    let path = |names: &[&str]| names.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
+    assert_eq!(
+        rows,
+        [
+            ("API".to_owned(), path(&[]), "Health".to_owned()),
+            ("API".to_owned(), path(&["Users"]), "List users".to_owned()),
+            (
+                "API".to_owned(),
+                path(&["Users", "Roles"]),
+                "List roles".to_owned()
+            ),
+            ("Admin".to_owned(), path(&[]), "Stats".to_owned()),
+        ]
+    );
+    assert!(index.iter().all(|r| r.method == "GET"));
+}

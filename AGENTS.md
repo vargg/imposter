@@ -284,6 +284,16 @@ numbers, so both are excluded. Each logical change is its own commit.
   but stay with the widget they act on (Find with the viewer under the pointer). Why: one
   handler means a body editor cannot swallow Send and a dialog cannot be bypassed; one table
   means the help and the README cannot drift from the keys.
+- **The command palette (Cmd/Ctrl+K) searches actions, the requests of every collection and
+  environments** (`palette.rs`, from Yaak). Requests come from `collections::request_index`,
+  read when the palette opens through the generated columns (no template is decoded); actions
+  and environments are captured at open. Matching is an in-order fuzzy subsequence that
+  rewards word starts and runs; while typing, the group with the best match comes first so a
+  strong request match is not buried under a weak action match. Choosing returns an ordinary
+  `Action`, so the unsaved-changes guard applies; a request in another collection opens
+  through `Navigation::OpenIn` (switch collection, then `restore`). The palette is pinned to
+  the top: centred, it moved as its list shrank while typing, and clicks landed on the
+  backdrop.
 - **Packaging: cargo-packager** (`.app`/`.dmg`, `.deb`/`.AppImage`, NSIS per-user installer),
   configured in `crates/imposter/Cargo.toml`. Releases are drafts built from `v*` tags. The macOS
   bundle is always signed, ad-hoc unless the Developer ID secrets exist (`docs/release.md`);

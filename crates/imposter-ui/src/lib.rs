@@ -7,6 +7,7 @@ pub mod highlight;
 pub mod history_screen;
 pub mod icons;
 pub mod layout;
+pub mod palette;
 pub mod settings_screen;
 pub mod shortcuts;
 
