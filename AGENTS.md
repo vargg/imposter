@@ -311,6 +311,14 @@ numbers, so both are excluded. Each logical change is its own commit.
   folders the user closed. The tree reads `url` through a virtual generated column
   (migration V3), like `name` and `method`. Cmd/Ctrl+F over the sidebar focuses the filter,
   as Find elsewhere applies to what is under the pointer.
+- **A curl command pasted over the whole URL field replaces the open request** (after Yaak):
+  method, URL, headers, cookies, auth, body and options come from the command; identity,
+  name, description and place stay; the result is an ordinary unsaved edit (autosave or Save
+  applies) and ignored options are listed afterwards. Only a paste that would replace the
+  whole field (empty, or all of it selected, as after Cmd/Ctrl+L) and that parses as curl
+  is taken (`widgets::take_whole_paste`, before the field draws); any other paste is text.
+  Why: updating a request from a browser's "Copy as cURL" is one paste, while pasting into
+  part of a URL can never replace a request by surprise. + → Paste curl still opens a draft.
 - **Packaging: cargo-packager** (`.app`/`.dmg`, `.deb`/`.AppImage`, NSIS per-user installer),
   configured in `crates/imposter/Cargo.toml`. Releases are drafts built from `v*` tags. The macOS
   bundle is always signed, ad-hoc unless the Developer ID secrets exist (`docs/release.md`);

@@ -421,3 +421,95 @@ fn a_typed_filter_does_not_widen_the_sidebar() {
     app.harness.run_steps(20);
     assert_eq!(app.harness.state().state.layout.sidebar_width, before);
 }
+
+/// Request "Old" open, with autosave off so the paste stays unsaved.
+fn old_request() -> support::App {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                kv::set_app_settings(
+                    db,
+                    &AppSettings {
+                        autosave: false,
+                        ..AppSettings::default()
+                    },
+                )
+            })
+            .unwrap();
+        let api = collection(store, "API");
+        request(store, api.id, "Old", "http://h/old");
+    });
+    app.harness.state_mut().state.settings.autosave = false;
+    click(&mut app.harness, "GET Old");
+    settle(&mut app.harness);
+    app
+}
+
+fn paste(app: &mut support::App, text: &str) {
+    app.harness.event(egui::Event::Paste(text.into()));
+    settle(&mut app.harness);
+}
+
+fn editor(app: &support::App) -> &imposter_ui::editor::Editor {
+    &app.harness.state().state.editor.as_ref().unwrap().editor
+}
+
+const CURL: &str = r#"curl -X POST 'https://api.test/users?page=2' -H 'X-Trace: 1' -d '{"a":1}'"#;
+
+#[test]
+fn a_curl_command_pasted_over_the_whole_url_replaces_the_request() {
+    let mut app = old_request();
+    app.harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
+    app.harness.run_steps(2);
+    paste(&mut app, CURL);
+
+    let edited = editor(&app);
+    assert_eq!(edited.name(), "Old", "the request keeps its name");
+    assert_eq!(edited.method, "POST");
+    assert_eq!(edited.url, "https://api.test/users?page=2");
+    assert!(edited.headers.iter().any(|h| h.name == "X-Trace"));
+    assert_eq!(edited.body_text, r#"{"a":1}"#);
+    app.harness.get_by_label("Unsaved");
+    app.harness
+        .get_by_label("Replaced from curl — not saved yet");
+}
+
+#[test]
+fn other_pastes_into_the_url_are_ordinary_text() {
+    let mut app = old_request();
+    app.harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
+    app.harness.run_steps(2);
+    app.harness.key_press(Key::End);
+    app.harness.run_steps(1);
+    paste(&mut app, "/more");
+    assert_eq!(editor(&app).url, "http://h/old/more");
+
+    app.harness.key_press(Key::End);
+    app.harness.run_steps(1);
+    paste(&mut app, " curl x");
+    assert_eq!(
+        editor(&app).url,
+        "http://h/old/more curl x",
+        "a command pasted into part of the URL is inserted as text"
+    );
+    assert_eq!(editor(&app).method, "GET");
+
+    app.harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
+    app.harness.run_steps(2);
+    paste(&mut app, "http://h/replaced");
+    assert_eq!(editor(&app).url, "http://h/replaced");
+}
+
+#[test]
+fn ignored_curl_options_are_listed_after_the_replacement() {
+    let mut app = old_request();
+    app.harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
+    app.harness.run_steps(2);
+    paste(&mut app, "curl --limit-rate 1k https://api.test/slow");
+
+    assert_eq!(editor(&app).url, "https://api.test/slow");
+    app.harness
+        .get_by_label("Some curl options were not imported");
+    app.harness
+        .get_by_label_contains("is not supported and was ignored");
+}

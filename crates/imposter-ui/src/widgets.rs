@@ -135,6 +135,46 @@ pub fn var_edit(
     var_edit_with(ui, text, label, width, password, vars, None)
 }
 
+/// The id of the variable field named `label` drawn next in `ui`.
+pub fn var_edit_id(ui: &Ui, label: &str) -> egui::Id {
+    ui.make_persistent_id(("variable field", label))
+}
+
+/// A paste into the focused field `id` that would replace all of `current` (empty, or all
+/// of it selected) and that `accept` wants, taken out of this frame's input so the field
+/// does not insert it.
+pub fn take_whole_paste(
+    ui: &Ui,
+    id: egui::Id,
+    current: &str,
+    accept: impl Fn(&str) -> bool,
+) -> Option<String> {
+    let ctx = ui.ctx();
+    if !ctx.memory(|m| m.has_focus(id)) {
+        return None;
+    }
+    let all_selected = egui::TextEdit::load_state(ctx, id)
+        .and_then(|state| state.cursor.char_range())
+        .is_some_and(|range| {
+            let [start, end] = range.sorted_cursors();
+            let at = |chars: usize| egui::text::CCursor::new(chars).index;
+            start.index == at(0) && end.index == at(current.chars().count())
+        });
+    if !current.is_empty() && !all_selected {
+        return None;
+    }
+    ui.input_mut(|i| {
+        let at = i
+            .events
+            .iter()
+            .position(|e| matches!(e, egui::Event::Paste(text) if accept(text)))?;
+        match i.events.remove(at) {
+            egui::Event::Paste(text) => Some(text),
+            _ => None,
+        }
+    })
+}
+
 fn var_edit_with(
     ui: &mut Ui,
     text: &mut String,
@@ -144,7 +184,7 @@ fn var_edit_with(
     vars: &mut VarUi,
     multiline: Option<(bool, &str)>,
 ) -> egui::Response {
-    let id = ui.make_persistent_id(("variable field", label));
+    let id = var_edit_id(ui, label);
     let ctx = ui.ctx().clone();
     let completion: Option<Completion> = ctx.data(|d| d.get_temp(id));
     // Not `rect_contains_pointer`: that is false whenever another layer (the popup) is on top.

@@ -60,7 +60,8 @@ Python/PyQt6 version, and preserves its native collection format. New exports us
   with empty secret variables to fill in. Each import creates a new collection.
 - Imports never overwrite: names that already exist get a suffix, existing globals win.
 - curl: paste a command (including the "Copy as cURL" output of Chrome and Firefox, for bash
-  or cmd) to open it as a draft, or copy any request as a ready-to-run curl command.
+  or cmd) to open it as a draft, or paste it over the whole URL field (Cmd/Ctrl+L, then
+  paste) to replace the open request; copy any request as a ready-to-run curl command.
 
 **Interface**
 - Command palette (Cmd/Ctrl+K) over actions, the requests of every collection and

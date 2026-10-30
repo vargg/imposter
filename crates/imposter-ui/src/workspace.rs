@@ -681,6 +681,14 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 let send_width = 96.0;
                 let width =
                     (ui.available_width() - send_width - ui.spacing().item_spacing.x).max(80.0);
+                let url_id = widgets::var_edit_id(ui, "Request URL");
+                if let Some(command) =
+                    widgets::take_whole_paste(ui, url_id, &pane.editor.url, |text| {
+                        imposter_app::core::curl::parse(text).is_ok()
+                    })
+                {
+                    actions.push(Action::PasteCurl(command));
+                }
                 let url = widgets::var_edit(
                     ui,
                     &mut pane.editor.url,

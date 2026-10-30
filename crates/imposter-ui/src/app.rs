@@ -280,6 +280,8 @@ pub enum Action {
     ToggleSidebar,
     /// Switch between side by side and stacked.
     ToggleLayout,
+    /// A curl command pasted over the whole URL: it replaces the open request's contents.
+    PasteCurl(String),
     /// Switch the active execution environment (`None`: globals only).
     SetEnvironment(Option<EnvironmentId>),
     /// The inspector's "Open definition": edit `name` in `scope`.
@@ -1826,6 +1828,37 @@ impl ImposterApp {
 
     // ---- editing ----------------------------------------------------------------------------
 
+    /// Replace what the open request sends with a pasted curl command, keeping its identity,
+    /// name, description and place: an ordinary unsaved edit (the URL field it is pasted into
+    /// exists only while a request is open).
+    fn paste_curl(&mut self, command: &str, now: f64) {
+        let Ok(parsed) = imposter_app::core::curl::parse(command) else {
+            return;
+        };
+        let Some(pane) = &mut self.state.editor else {
+            return;
+        };
+        let mut request = pane.editor.identity().clone();
+        let kept = &request.template;
+        request.template = imposter_app::core::model::RequestTemplate {
+            name: kept.name.clone(),
+            description: pane.editor.description.clone(),
+            position: kept.position,
+            ..parsed.template
+        };
+        pane.editor = Editor::load(&request);
+        pane.custom_method = None;
+        self.edited(false, false, now);
+        self.load_snapshot();
+        self.status("Replaced from curl — not saved yet");
+        if !parsed.warnings.is_empty() {
+            self.state.dialog = Some(Dialog::info(
+                "Some curl options were not imported",
+                parsed.warnings.join("\n"),
+            ));
+        }
+    }
+
     fn edited(&mut self, url: bool, params: bool, now: f64) {
         let Some(pane) = &mut self.state.editor else {
             return;
@@ -2246,6 +2279,7 @@ impl ImposterApp {
                     });
                 }
             }
+            Action::PasteCurl(command) => self.paste_curl(&command, now),
             Action::ToggleSidebar => {
                 self.state.layout.sidebar_visible = !self.state.layout.sidebar_visible;
             }
