@@ -7,6 +7,7 @@ pub mod executions;
 pub mod kv;
 pub mod profile;
 pub mod schema;
+pub mod scopes;
 mod store;
 
 pub use error::{Conflict, StoreError};

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::StoreError;
 
 /// Every migration in order; the database's `user_version` counts how many have run.
-pub const MIGRATIONS: &[&str] = &[V1];
+pub const MIGRATIONS: &[&str] = &[V1, V2];
 
 const V1: &str = r"
 CREATE TABLE collections (
@@ -80,6 +80,13 @@ CREATE TABLE executions (
     payload_size INTEGER NOT NULL
 );
 CREATE INDEX executions_by_request ON executions(request_id);
+";
+
+/// Saved values: per scope, beside its variables (see `scopes`).
+const V2: &str = r"
+ALTER TABLE globals ADD COLUMN saved_values TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE environments ADD COLUMN saved_values TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE collections ADD COLUMN saved_values TEXT NOT NULL DEFAULT '{}';
 ";
 
 /// Open a connection with the pragmas every connection needs.

@@ -521,3 +521,52 @@ async fn imported_openapi_requests_send_once_their_variables_are_set() {
         "a path parameter without an example stops the send"
     );
 }
+
+#[tokio::test]
+async fn exports_carry_current_values_and_never_saved_ones() {
+    use imposter_core::model::SavedValues;
+    use imposter_core::variables::Scope;
+    use imposter_store::scopes;
+
+    let (dir, store) = open();
+    let (api, dev) = store
+        .call(|db| {
+            let mut saved = SavedValues::default();
+            saved.set("user", ["42".to_owned(), "77".to_owned()]);
+            let api = collections::create_collection(db, "API", "", &vars(&[("user", "42")]))?;
+            scopes::write(
+                db,
+                Scope::Collection(api.id),
+                &vars(&[("user", "77")]),
+                &saved,
+            )?;
+            let dev = environments::create_environment(db, "Dev", &vars(&[]))?;
+            scopes::write(
+                db,
+                Scope::Environment(dev.id),
+                &vars(&[("user", "42")]),
+                &saved,
+            )?;
+            scopes::write(db, Scope::Global, &vars(&[("user", "1")]), &saved)?;
+            Ok((api.id, dev.id))
+        })
+        .await
+        .unwrap();
+    let out = dir.path().join("api.imposter.json");
+    let scope = ExportScope {
+        collection: Some(api),
+        environments: vec![dev],
+        globals: true,
+        draft: None,
+    };
+    export_native(&store.handle(), scope, out.clone())
+        .await
+        .unwrap();
+
+    let raw = std::fs::read_to_string(&out).unwrap();
+    assert!(!raw.contains("saved"), "{raw}");
+    let document = native::decode(raw.as_bytes()).unwrap();
+    assert_eq!(document.collection.variables, vars(&[("user", "77")]));
+    assert_eq!(document.environments[0].variables, vars(&[("user", "42")]));
+    assert_eq!(document.globals, vars(&[("user", "1")]));
+}

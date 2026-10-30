@@ -5,12 +5,14 @@ use std::time::Instant;
 
 use imposter_core::execution::{ExecutionRecord, Outcome, Response, Timestamp};
 use imposter_core::ids::ExecutionId;
-use imposter_core::model::Request;
+use imposter_core::model::{Request, SavedValues};
 use imposter_core::prepare::prepare;
 use imposter_core::settings::AppSettings;
-use imposter_core::variables::{CollectionScope, Snapshot, VariableContext, resolve_template};
+use imposter_core::variables::{
+    CollectionScope, Scope, Snapshot, VariableContext, resolve_template,
+};
 use imposter_http::{Policy, SendError};
-use imposter_store::{StoreError, StoreHandle, collections, environments, executions, kv};
+use imposter_store::{StoreError, StoreHandle, collections, environments, executions, kv, scopes};
 use tokio_util::sync::CancellationToken;
 
 /// Everything an execution depends on, read in one database command. The database thread runs
@@ -36,11 +38,16 @@ pub async fn inputs(store: &StoreHandle, request: &Request) -> Result<Inputs, St
                 Some(id) => collections::collection(db, id)?,
                 None => None,
             };
+            let saved = match &collection {
+                Some(collection) => scopes::saved_values(db, Scope::Collection(collection.id))?,
+                None => SavedValues::default(),
+            };
             let scope = match &collection {
                 Some(collection) => Some(CollectionScope::Live {
                     id: collection.id,
                     name: &collection.name,
                     values: &collection.variables,
+                    saved: &saved,
                 }),
                 None if !captured.is_empty() || collection_id.is_some() => {
                     Some(CollectionScope::Deleted {

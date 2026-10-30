@@ -2,13 +2,90 @@
 //! format, field for field: every field has a default, unknown fields are rejected, and `null`
 //! is written for unset options exactly as the Python app does.
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::ids::{CollectionId, FolderId, RequestId};
 
 /// An ordered list of variables. Order is kept for display and export.
 pub type Variables = IndexMap<String, String>;
+
+/// Values kept per variable name for quick swapping. The variable's own value is the current
+/// one and is what requests use; these are the alternatives a user can choose from. Names are
+/// nonempty, a name's values are distinct and in the order saved, and a name without values
+/// has no entry.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(try_from = "IndexMap<String, Vec<String>>")]
+pub struct SavedValues(IndexMap<String, IndexSet<String>>);
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("Saved values need a variable name")]
+pub struct UnnamedSavedValues;
+
+impl TryFrom<IndexMap<String, Vec<String>>> for SavedValues {
+    type Error = UnnamedSavedValues;
+
+    fn try_from(map: IndexMap<String, Vec<String>>) -> Result<Self, Self::Error> {
+        let mut saved = Self::default();
+        for (name, values) in map {
+            if name.is_empty() {
+                return Err(UnnamedSavedValues);
+            }
+            saved.set(&name, values);
+        }
+        Ok(saved)
+    }
+}
+
+impl SavedValues {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The values saved for `name`, in the order saved.
+    pub fn values(&self, name: &str) -> Vec<String> {
+        self.0
+            .get(name)
+            .map(|values| values.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Save `value` for `name`; a value already saved keeps its place. Returns whether it was
+    /// added. Unnamed variables cannot save values.
+    pub fn insert(&mut self, name: &str, value: &str) -> bool {
+        if name.is_empty() {
+            return false;
+        }
+        self.0
+            .entry(name.to_owned())
+            .or_default()
+            .insert(value.to_owned())
+    }
+
+    pub fn remove(&mut self, name: &str, value: &str) {
+        if let Some(values) = self.0.get_mut(name) {
+            values.shift_remove(value);
+            if values.is_empty() {
+                self.0.shift_remove(name);
+            }
+        }
+    }
+
+    /// Replace the values of `name`; duplicates keep their first place, none removes it.
+    pub fn set(&mut self, name: &str, values: impl IntoIterator<Item = String>) {
+        let values: IndexSet<String> = values.into_iter().collect();
+        if name.is_empty() || values.is_empty() {
+            self.0.shift_remove(name);
+        } else {
+            self.0.insert(name.to_owned(), values);
+        }
+    }
+
+    /// Keep only the names `variables` defines: a list belongs to a variable.
+    pub fn retain_defined(&mut self, variables: &Variables) {
+        self.0.retain(|name, _| variables.contains_key(name));
+    }
+}
 
 fn yes() -> bool {
     true
@@ -385,6 +462,41 @@ pub fn is_method_token(method: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_values_are_named_distinct_and_ordered() {
+        let mut saved = SavedValues::default();
+        assert!(saved.insert("id", "42"));
+        assert!(saved.insert("id", "7"));
+        assert!(!saved.insert("id", "42"), "a value is saved once");
+        assert!(!saved.insert("", "x"), "unnamed variables save nothing");
+        assert_eq!(saved.values("id"), ["42", "7"]);
+        assert_eq!(saved.values("other"), Vec::<String>::new());
+
+        saved.remove("id", "42");
+        saved.remove("id", "7");
+        assert!(saved.is_empty(), "a name without values has no entry");
+
+        saved.set("a", ["1".into(), "2".into(), "1".into()]);
+        saved.set("b", ["x".into()]);
+        saved.set("", ["x".into()]);
+        assert_eq!(saved.values("a"), ["1", "2"]);
+        saved.retain_defined(&[("b".to_owned(), String::new())].into_iter().collect());
+        assert_eq!(saved.values("a"), Vec::<String>::new());
+        assert_eq!(saved.values("b"), ["x"]);
+    }
+
+    #[test]
+    fn saved_values_round_trip_and_reject_unnamed_lists() {
+        let saved: SavedValues =
+            serde_json::from_str(r#"{"id": ["2", "1", "2"], "empty": []}"#).unwrap();
+        assert_eq!(saved.values("id"), ["2", "1"]);
+        assert_eq!(
+            serde_json::to_string(&saved).unwrap(),
+            r#"{"id":["2","1"]}"#
+        );
+        assert!(serde_json::from_str::<SavedValues>(r#"{"": ["x"]}"#).is_err());
+    }
 
     #[test]
     fn method_tokens() {

@@ -13,7 +13,7 @@ use std::time::Duration;
 use egui::ViewportCommand;
 use imposter_app::core::execution::{ExecutionRecord, Outcome as ExchangeOutcome, Response};
 use imposter_app::core::ids::{CollectionId, EnvironmentId, ExecutionId, FolderId, RequestId};
-use imposter_app::core::model::{FormItem, Request, Variables};
+use imposter_app::core::model::{FormItem, Request, SavedValues, Variables};
 use imposter_app::core::settings::AppSettings;
 use imposter_app::core::variables::Snapshot;
 use imposter_app::executor::{self, ExecuteError, Executed};
@@ -24,7 +24,7 @@ use imposter_app::store::collections::{self, Collection, Tree};
 use imposter_app::store::environments::{self, Environment};
 use imposter_app::store::executions::{self, ExecutionSummary};
 use imposter_app::store::kv::{self, Table};
-use imposter_app::store::{Store, StoreError, StoreHandle};
+use imposter_app::store::{Store, StoreError, StoreHandle, scopes};
 use imposter_app::transfer::{self, ExportScope, ImportKind, ImportPreview};
 use imposter_app::{ops, store};
 use serde_json::Value;
@@ -173,7 +173,12 @@ pub enum Message {
     },
     VariablesLoaded {
         scope: Scope,
-        result: Result<Variables, Failure>,
+        result: Result<(Variables, SavedValues), Failure>,
+    },
+    ValueChosen {
+        scope: Scope,
+        name: String,
+        result: Result<(), Failure>,
     },
     VariablesSaved {
         scope: Scope,
@@ -268,6 +273,12 @@ pub enum Action {
     SetEnvironment(Option<EnvironmentId>),
     /// The inspector's "Open definition": edit `name` in `scope`.
     OpenDefinition(Scope, String),
+    /// The inspector's saved values: make `value` the current value of `name` in `scope`.
+    ChooseValue {
+        scope: Scope,
+        name: String,
+        value: String,
+    },
     Variables(VariablesAction),
     History(HistoryAction),
     /// Pick a collection file and review its import.
@@ -417,7 +428,7 @@ enum VarTransition {
 pub struct VariablesScreen {
     pub scope: Scope,
     pub rows: Vec<vars::Row>,
-    baseline: Vec<(String, String)>,
+    baseline: Vec<vars::Entry>,
     pub status: Option<(String, Tone)>,
     pub loaded: bool,
     pub confirm_clear: bool,
@@ -1049,6 +1060,11 @@ impl ImposterApp {
             },
             Message::VariablesLoaded { scope, result } => self.variables_loaded(scope, result),
             Message::VariablesSaved { scope, result } => self.variables_saved(scope, result),
+            Message::ValueChosen {
+                scope,
+                name,
+                result,
+            } => self.value_chosen(scope, &name, result),
             Message::HistoryPage { generation, result } => self.history_page(generation, result),
             Message::HistoryRecord { id, result } => {
                 if self.state.history.selected == Some(id) {
@@ -2196,6 +2212,7 @@ impl ImposterApp {
             Action::OpenDefinition(scope, name) => {
                 self.variables_navigate(VarTransition::OpenDefinition(scope, name));
             }
+            Action::ChooseValue { scope, name, value } => self.choose_value(scope, name, value),
             Action::Variables(action) => self.variables_action(action),
             Action::History(action) => self.history_action(action),
         }
@@ -2496,15 +2513,7 @@ impl ImposterApp {
         self.state.variables.scope = scope;
         self.state.variables.loaded = false;
         self.task(
-            move |db| match scope {
-                Scope::Global => environments::globals(db),
-                Scope::Environment(id) => environments::environment(db, id)?
-                    .map(|e| e.variables)
-                    .ok_or(StoreError::NotFound("environment")),
-                Scope::Collection(id) => collections::collection(db, id)?
-                    .map(|c| c.variables)
-                    .ok_or(StoreError::NotFound("collection")),
-            },
+            move |db| scopes::read(db, scope),
             move |result| Message::VariablesLoaded {
                 scope,
                 result: result.map_err(failure),
@@ -2512,14 +2521,18 @@ impl ImposterApp {
         );
     }
 
-    fn variables_loaded(&mut self, scope: Scope, result: Result<Variables, Failure>) {
+    fn variables_loaded(
+        &mut self,
+        scope: Scope,
+        result: Result<(Variables, SavedValues), Failure>,
+    ) {
         let screen = &mut self.state.variables;
         if scope != screen.scope {
             return;
         }
         match result {
-            Ok(variables) => {
-                screen.rows = vars::rows(&variables);
+            Ok((variables, saved)) => {
+                screen.rows = vars::rows(&variables, &saved);
                 screen.baseline = vars::entries(&screen.rows);
                 screen.loaded = true;
                 screen.status = None;
@@ -2615,9 +2628,45 @@ impl ImposterApp {
         screen.rows = screen
             .baseline
             .iter()
-            .map(|(name, value)| vars::Row::new(name.clone(), value.clone()))
+            .map(|(name, value, saved)| {
+                vars::Row::with_saved(name.clone(), value.clone(), saved.clone())
+            })
             .collect();
         screen.status = None;
+    }
+
+    /// Swap a variable's current value from the inspector. The Variables screen shows the new
+    /// value at once when it is on that scope; with unsaved edits there the inspector does not
+    /// offer the swap, so a later Save cannot quietly undo it.
+    fn choose_value(&mut self, scope: Scope, name: String, value: String) {
+        let screen = &self.state.variables;
+        if screen.dirty() && screen.scope == scope {
+            return;
+        }
+        let chosen = name.clone();
+        self.task(
+            move |db| scopes::choose_value(db, scope, &chosen, &value),
+            move |result| Message::ValueChosen {
+                scope,
+                name,
+                result: result.map_err(failure),
+            },
+        );
+    }
+
+    fn value_chosen(&mut self, scope: Scope, name: &str, result: Result<(), Failure>) {
+        match result {
+            // Values appear only in the inspector, so the status names the variable alone.
+            Ok(()) => {
+                self.status(&format!("{name}: saved value chosen"));
+                let screen = &self.state.variables;
+                if screen.loaded && screen.scope == scope && !screen.dirty() {
+                    self.load_variables(scope);
+                }
+                self.load_snapshot();
+            }
+            Err(error) => self.error("Value not changed", error),
+        }
     }
 
     fn save_variables(&mut self) {
@@ -2625,8 +2674,8 @@ impl ImposterApp {
         if !screen.loaded || screen.saving {
             return;
         }
-        let variables = match vars::to_variables(&screen.rows) {
-            Ok(variables) => variables,
+        let (variables, saved) = match vars::to_scope(&screen.rows) {
+            Ok(scope) => scope,
             Err(error) => {
                 screen.status = Some((error.to_string(), Tone::Error));
                 if screen.pending.take() == Some(VarTransition::Close) {
@@ -2638,13 +2687,7 @@ impl ImposterApp {
         screen.saving = true;
         let scope = screen.scope;
         self.task(
-            move |db| match scope {
-                Scope::Global => environments::set_globals(db, &variables),
-                Scope::Environment(id) => {
-                    environments::set_environment_variables(db, id, &variables)
-                }
-                Scope::Collection(id) => collections::set_collection_variables(db, id, &variables),
-            },
+            move |db| scopes::write(db, scope, &variables, &saved),
             move |result| Message::VariablesSaved {
                 scope,
                 result: result.map_err(failure),

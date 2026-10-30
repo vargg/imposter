@@ -482,3 +482,70 @@ async fn host_identity_uses_the_resolved_url_and_is_preserved_in_history_and_cur
         expected
     );
 }
+
+#[tokio::test]
+async fn a_chosen_saved_value_is_what_the_next_send_uses_in_its_own_environment() {
+    use imposter_core::model::SavedValues;
+    use imposter_core::variables::Scope;
+    use imposter_store::scopes;
+
+    let server = Server::start(|_, _| response("200 OK", &[], b"")).await;
+    let (_dir, store) = open();
+    let base = server.url.clone();
+    let (dev, prod, request) = store
+        .call(move |db| {
+            environments::set_globals(db, &vars(&[("base", &base)]))?;
+            let dev = environments::create_environment(db, "Dev", &vars(&[("user", "42")]))?.id;
+            let prod = environments::create_environment(db, "Prod", &vars(&[("user", "1")]))?.id;
+            let mut saved = SavedValues::default();
+            saved.set("user", ["42".to_owned(), "77".to_owned()]);
+            scopes::write(
+                db,
+                Scope::Environment(dev),
+                &vars(&[("user", "42")]),
+                &saved,
+            )?;
+            environments::set_active_environment(db, Some(dev))?;
+            let api = collections::create_collection(db, "API", "", &Variables::new())?;
+            let template = RequestTemplate {
+                name: "User".into(),
+                url: "{{base}}/users/{{user}}".into(),
+                body_type: BodyType::None,
+                ..RequestTemplate::default()
+            };
+            let request = collections::create_request(db, api.id, None, &template)?;
+            Ok((dev, prod, request))
+        })
+        .await
+        .unwrap();
+
+    let effective = inputs(&store.handle(), &request).await.unwrap().snapshot;
+    assert_eq!(effective.effective("user").unwrap().saved, ["42", "77"]);
+    store
+        .call(move |db| scopes::choose_value(db, Scope::Environment(dev), "user", "77"))
+        .await
+        .unwrap();
+    execute(&store.handle(), request.clone(), CancellationToken::new())
+        .await
+        .unwrap();
+    store
+        .call(move |db| environments::set_active_environment(db, Some(prod)))
+        .await
+        .unwrap();
+    let in_prod = inputs(&store.handle(), &request).await.unwrap().snapshot;
+    assert_eq!(
+        in_prod.effective("user").unwrap().saved,
+        Vec::<String>::new(),
+        "Dev's values are not offered in Prod"
+    );
+    execute(&store.handle(), request, CancellationToken::new())
+        .await
+        .unwrap();
+
+    let targets: Vec<String> = server
+        .requests()
+        .iter()
+        .map(|r| r.target().to_owned())
+        .collect();
+    assert_eq!(targets, ["/users/77", "/users/1"]);
+}

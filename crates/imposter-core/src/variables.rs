@@ -11,7 +11,9 @@ use std::ops::Range;
 use indexmap::IndexMap;
 
 use crate::ids::{CollectionId, EnvironmentId};
-use crate::model::{FormBodyError, Options, ParamItem, RequestAuth, RequestTemplate, Variables};
+use crate::model::{
+    FormBodyError, Options, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Placeholder<'a> {
@@ -196,6 +198,7 @@ pub struct ActiveEnvironment {
     pub id: EnvironmentId,
     pub name: String,
     pub values: Variables,
+    pub saved: SavedValues,
 }
 
 /// Global and environment values captured before an execution's first await, so a later
@@ -203,6 +206,7 @@ pub struct ActiveEnvironment {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct VariableContext {
     pub globals: Variables,
+    pub global_saved: SavedValues,
     /// `None` when no environment is active (only globals apply).
     pub environment: Option<ActiveEnvironment>,
 }
@@ -228,6 +232,7 @@ pub enum CollectionScope<'a> {
         id: CollectionId,
         name: &'a str,
         values: &'a Variables,
+        saved: &'a SavedValues,
     },
     Deleted {
         captured: &'a Variables,
@@ -256,10 +261,33 @@ impl Source {
     }
 }
 
+/// A place variables are defined and edited: the globals, an environment or a collection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Scope {
+    #[default]
+    Global,
+    Environment(EnvironmentId),
+    Collection(CollectionId),
+}
+
+impl Scope {
+    /// Where a definition lives; a deleted collection's captured values live nowhere.
+    pub fn of(source: &Source) -> Option<Self> {
+        match source {
+            Source::Global => Some(Self::Global),
+            Source::Environment { id, .. } => Some(Self::Environment(*id)),
+            Source::Collection { id: Some(id), .. } => Some(Self::Collection(*id)),
+            Source::Collection { id: None, .. } => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Definition {
     pub value: String,
     pub source: Source,
+    /// Values saved for this name in the same scope, to swap the current one with.
+    pub saved: Vec<String>,
 }
 
 /// Every definition of every name, highest precedence first; what execution uses and what
@@ -275,13 +303,20 @@ impl Snapshot {
     /// Precedence: global, then collection, then the active environment.
     pub fn build(context: &VariableContext, collection: Option<CollectionScope<'_>>) -> Self {
         let mut snapshot = Self::default();
-        let (collection_source, collection_values) = match collection {
-            Some(CollectionScope::Live { id, name, values }) => (
+        let no_saved = SavedValues::default();
+        let (collection_source, collection_values, collection_saved) = match collection {
+            Some(CollectionScope::Live {
+                id,
+                name,
+                values,
+                saved,
+            }) => (
                 Source::Collection {
                     id: Some(id),
                     name: name.to_owned(),
                 },
                 values.clone(),
+                saved,
             ),
             Some(CollectionScope::Deleted { captured }) => (
                 Source::Collection {
@@ -289,6 +324,7 @@ impl Snapshot {
                     name: "Captured collection (deleted)".to_owned(),
                 },
                 captured.clone(),
+                &no_saved,
             ),
             None => (
                 Source::Collection {
@@ -296,13 +332,15 @@ impl Snapshot {
                     name: String::new(),
                 },
                 Variables::new(),
+                &no_saved,
             ),
         };
-        snapshot.add(&context.globals, &Source::Global);
-        snapshot.add(&collection_values, &collection_source);
+        snapshot.add(&context.globals, &context.global_saved, &Source::Global);
+        snapshot.add(&collection_values, collection_saved, &collection_source);
         if let Some(env) = &context.environment {
             snapshot.add(
                 &env.values,
+                &env.saved,
                 &Source::Environment {
                     id: env.id,
                     name: env.name.clone(),
@@ -313,7 +351,7 @@ impl Snapshot {
         snapshot
     }
 
-    fn add(&mut self, values: &Variables, source: &Source) {
+    fn add(&mut self, values: &Variables, saved: &SavedValues, source: &Source) {
         for (name, value) in values {
             let definitions = self.definitions.entry(name.clone()).or_default();
             definitions.insert(
@@ -321,6 +359,7 @@ impl Snapshot {
                 Definition {
                     value: value.clone(),
                     source: source.clone(),
+                    saved: saved.values(name),
                 },
             );
         }
@@ -393,6 +432,64 @@ mod tests {
     }
 
     #[test]
+    fn definitions_carry_the_values_saved_in_their_own_scope() {
+        let saved = |name: &str, values: &[&str]| {
+            let mut saved = SavedValues::default();
+            saved.set(name, values.iter().map(|v| (*v).to_owned()));
+            saved
+        };
+        let context = VariableContext {
+            globals: vars(&[("id", "1")]),
+            global_saved: saved("id", &["1", "2"]),
+            environment: Some(ActiveEnvironment {
+                id: EnvironmentId(1),
+                name: "Dev".into(),
+                values: vars(&[("id", "42")]),
+                saved: saved("id", &["42", "77"]),
+            }),
+        };
+        let collection = vars(&[("id", "c"), ("other", "o")]);
+        let snapshot = Snapshot::build(
+            &context,
+            Some(CollectionScope::Live {
+                id: CollectionId(3),
+                name: "API",
+                values: &collection,
+                saved: &saved("id", &["c", "d"]),
+            }),
+        );
+        let lists: Vec<_> = snapshot.definitions["id"]
+            .iter()
+            .map(|d| (d.source.label().to_owned(), d.saved.clone()))
+            .collect();
+        assert_eq!(
+            lists,
+            [
+                ("Dev".to_owned(), vec!["42".to_owned(), "77".to_owned()]),
+                ("API".to_owned(), vec!["c".to_owned(), "d".to_owned()]),
+                ("Global".to_owned(), vec!["1".to_owned(), "2".to_owned()]),
+            ]
+        );
+        assert_eq!(
+            snapshot.effective("other").unwrap().saved,
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            Scope::of(&snapshot.effective("id").unwrap().source),
+            Some(Scope::Environment(EnvironmentId(1)))
+        );
+        assert_eq!(Scope::of(&Source::Global), Some(Scope::Global));
+        assert_eq!(
+            Scope::of(&Source::Collection {
+                id: None,
+                name: String::new()
+            }),
+            None,
+            "captured values of a deleted collection cannot be edited"
+        );
+    }
+
+    #[test]
     fn snapshot_precedence_and_provenance() {
         let context = VariableContext {
             globals: vars(&[("a", "global"), ("g", "only global"), ("e", "")]),
@@ -400,7 +497,9 @@ mod tests {
                 id: EnvironmentId(7),
                 name: "Dev".into(),
                 values: vars(&[("a", "env"), ("e", "")]),
+                saved: SavedValues::default(),
             }),
+            ..VariableContext::default()
         };
         let collection = vars(&[("a", "collection"), ("c", "only collection")]);
         let snapshot = Snapshot::build(
@@ -409,6 +508,7 @@ mod tests {
                 id: CollectionId(3),
                 name: "API",
                 values: &collection,
+                saved: &SavedValues::default(),
             }),
         );
 

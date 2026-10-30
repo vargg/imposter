@@ -15,7 +15,7 @@ fn fingerprint(sql: &str) -> u64 {
 
 /// Released migrations never change: users' databases already ran them. To change the
 /// schema, append a migration and add its fingerprint here.
-const RELEASED: &[u64] = &[0xefda_02ad_5e13_5c6f];
+const RELEASED: &[u64] = &[0xefda_02ad_5e13_5c6f, 0x63e6_5cee_a45a_1e0a];
 
 #[test]
 fn released_migrations_are_frozen() {

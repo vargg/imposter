@@ -3,8 +3,8 @@
 
 use std::ops::Range;
 
-use imposter_app::core::ids::{CollectionId, EnvironmentId};
-use imposter_app::core::model::Variables;
+use imposter_app::core::model::{SavedValues, Variables};
+pub use imposter_app::core::variables::Scope;
 use imposter_app::core::variables::{Definition, Snapshot, Source};
 
 /// A `{{name}}` token as the editors mark it: no braces or newline inside, not empty (the
@@ -122,27 +122,6 @@ pub fn describe(definitions: &[Definition], masked: bool) -> Vec<(String, String
         .collect()
 }
 
-/// The scope the Variables screen edits. Independent of the active execution environment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum Scope {
-    #[default]
-    Global,
-    Environment(EnvironmentId),
-    Collection(CollectionId),
-}
-
-impl Scope {
-    /// Where an inspected definition lives.
-    pub fn of(source: &Source) -> Option<Self> {
-        match source {
-            Source::Global => Some(Self::Global),
-            Source::Environment { id, .. } => Some(Self::Environment(*id)),
-            Source::Collection { id: Some(id), .. } => Some(Self::Collection(*id)),
-            Source::Collection { id: None, .. } => None,
-        }
-    }
-}
-
 /// One editable variable. `key` identifies the row's widgets while rows above it are added,
 /// removed or the layout shifts, so typing keeps its focus.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +129,8 @@ pub struct Row {
     pub key: u64,
     pub name: String,
     pub value: String,
+    /// Values saved to swap the current one with, in the order saved.
+    pub saved: Vec<String>,
 }
 
 impl Row {
@@ -159,22 +140,44 @@ impl Row {
             key: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             name: name.into(),
             value: value.into(),
+            saved: Vec::new(),
+        }
+    }
+
+    pub fn with_saved(
+        name: impl Into<String>,
+        value: impl Into<String>,
+        saved: Vec<String>,
+    ) -> Self {
+        Self {
+            saved,
+            ..Self::new(name, value)
+        }
+    }
+
+    /// Keep the current value for swapping back to later; a value is saved once.
+    pub fn save_current(&mut self) {
+        if !self.saved.contains(&self.value) {
+            self.saved.push(self.value.clone());
         }
     }
 }
 
+/// A named row as the scope stores it: name, current value and saved values.
+pub type Entry = (String, String, Vec<String>);
+
 /// Rows with a name, in order: what the scope holds.
-pub fn entries(rows: &[Row]) -> Vec<(String, String)> {
+pub fn entries(rows: &[Row]) -> Vec<Entry> {
     rows.iter()
         .filter(|r| !r.name.is_empty())
-        .map(|r| (r.name.clone(), r.value.clone()))
+        .map(|r| (r.name.clone(), r.value.clone(), r.saved.clone()))
         .collect()
 }
 
-pub fn rows(variables: &Variables) -> Vec<Row> {
+pub fn rows(variables: &Variables, saved: &SavedValues) -> Vec<Row> {
     variables
         .iter()
-        .map(|(name, value)| Row::new(name.clone(), value.clone()))
+        .map(|(name, value)| Row::with_saved(name.clone(), value.clone(), saved.values(name)))
         .collect()
 }
 
@@ -182,20 +185,23 @@ pub fn rows(variables: &Variables) -> Vec<Row> {
 #[error("Variable names must be unique within a scope (\"{0}\" repeats)")]
 pub struct DuplicateName(pub String);
 
-/// The rows as stored variables; names must be unique.
-pub fn to_variables(rows: &[Row]) -> Result<Variables, DuplicateName> {
+/// The rows as the scope stores them; names must be unique.
+pub fn to_scope(rows: &[Row]) -> Result<(Variables, SavedValues), DuplicateName> {
     let mut variables = Variables::new();
-    for (name, value) in entries(rows) {
+    let mut saved = SavedValues::default();
+    for (name, value, values) in entries(rows) {
         if variables.contains_key(&name) {
             return Err(DuplicateName(name));
         }
+        saved.set(&name, values);
         variables.insert(name, value);
     }
-    Ok(variables)
+    Ok((variables, saved))
 }
 
 #[cfg(test)]
 mod tests {
+    use imposter_app::core::ids::{CollectionId, EnvironmentId};
     use imposter_app::core::variables::{ActiveEnvironment, CollectionScope, VariableContext};
 
     use super::*;
@@ -216,12 +222,15 @@ mod tests {
                     id: EnvironmentId(4),
                     name: "Dev".into(),
                     values: env,
+                    saved: SavedValues::default(),
                 }),
+                ..VariableContext::default()
             },
             Some(CollectionScope::Live {
                 id: CollectionId(2),
                 name: "API",
                 values: &collection,
+                saved: &SavedValues::default(),
             }),
         )
     }
@@ -289,6 +298,7 @@ mod tests {
         let long = Definition {
             value: "x".repeat(5000),
             source: Source::Global,
+            saved: Vec::new(),
         };
         assert!(
             describe(&[long], false)[0]
@@ -316,10 +326,23 @@ mod tests {
         let variables: Variables = [("a".into(), "1".into()), ("b".into(), String::new())]
             .into_iter()
             .collect();
-        let mut edited = rows(&variables);
+        let mut saved = SavedValues::default();
+        saved.set("a", ["1".to_owned(), "9".to_owned()]);
+        let mut edited = rows(&variables, &saved);
+        assert_eq!(edited[0].saved, ["1", "9"]);
         edited.push(Row::new("", ""));
-        assert_eq!(to_variables(&edited).unwrap(), variables);
+        assert_eq!(to_scope(&edited).unwrap(), (variables, saved));
         edited.push(Row::new("a", "2"));
-        assert_eq!(to_variables(&edited), Err(DuplicateName("a".into())));
+        assert_eq!(to_scope(&edited), Err(DuplicateName("a".into())));
+    }
+
+    #[test]
+    fn saving_the_current_value_keeps_each_value_once() {
+        let mut row = Row::new("id", "42");
+        row.save_current();
+        row.value = "77".into();
+        row.save_current();
+        row.save_current();
+        assert_eq!(row.saved, ["42", "77"]);
     }
 }

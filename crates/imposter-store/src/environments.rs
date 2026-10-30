@@ -2,10 +2,11 @@
 
 use imposter_core::ids::EnvironmentId;
 use imposter_core::model::Variables;
-use imposter_core::variables::VariableContext;
+use imposter_core::variables::{Scope, VariableContext};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::kv::{self, Table};
+use crate::scopes;
 use crate::{Conflict, StoreError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,15 +176,20 @@ pub fn set_active_environment(
 /// Globals and the active environment, read together so execution sees one consistent state.
 pub fn variable_context(db: &Connection) -> Result<VariableContext, StoreError> {
     let environment = match active_environment(db)? {
-        Some(id) => environment(db, id)?.map(|env| imposter_core::variables::ActiveEnvironment {
-            id: env.id,
-            name: env.name,
-            values: env.variables,
-        }),
+        Some(id) => match environment(db, id)? {
+            Some(env) => Some(imposter_core::variables::ActiveEnvironment {
+                saved: scopes::saved_values(db, Scope::Environment(env.id))?,
+                id: env.id,
+                name: env.name,
+                values: env.variables,
+            }),
+            None => None,
+        },
         None => None,
     };
     Ok(VariableContext {
         globals: globals(db)?,
+        global_saved: scopes::saved_values(db, Scope::Global)?,
         environment,
     })
 }

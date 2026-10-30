@@ -59,6 +59,19 @@ fn main() {
                     };
                     collections::create_request(db, api.id, None, &template)?;
                 }
+                let mut saved = imposter_app::core::model::SavedValues::default();
+                saved.set("user_id", ["42".into(), "77".into(), "91".into()]);
+                imposter_app::store::scopes::write(
+                    db,
+                    imposter_app::core::variables::Scope::Global,
+                    &[
+                        ("user_id".to_owned(), "42".to_owned()),
+                        ("token".to_owned(), String::new()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                    &saved,
+                )?;
                 imposter_app::store::kv::set(
                     db,
                     imposter_app::store::kv::Table::Settings,
@@ -166,6 +179,13 @@ fn main() {
             .render()
             .unwrap()
             .save(out.join(format!("{label}-variables.png")))
+            .unwrap();
+        harness.get_by_label("Variable 1 saved values").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-saved-values.png")))
             .unwrap();
         harness.get_by_label("History").click();
         settle(&mut harness);

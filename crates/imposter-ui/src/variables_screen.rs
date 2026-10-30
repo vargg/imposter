@@ -115,7 +115,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     let height = ui.spacing().interact_size.y;
-                    let available = ui.available_width() - 40.0;
+                    // Room for the saved values and remove buttons after the fields.
+                    let available = ui.available_width() - 76.0;
                     let name_width = (available * 0.35).clamp(140.0, 320.0);
                     let value_width = (available - name_width).max(160.0);
                     ui.horizontal(|ui| {
@@ -144,6 +145,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                             );
                             name(&value, &format!("Variable {} value", index + 1));
                             edited |= field.changed() || value.changed();
+                            edited |= saved_values(ui, row, index, height);
                             let what = format!("variable {}", index + 1);
                             let id = egui::Id::unique(("remove variable", row.key));
                             if crate::widgets::remove_button(ui, id, &what, height) {
@@ -182,4 +184,57 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     }
 
     state.actions.extend(actions);
+}
+
+/// The row's saved values: pick one as the current value, save the current one, or remove
+/// one. Returns whether the row changed. The menu stays open while it is used, since
+/// removing takes two clicks.
+fn saved_values(ui: &mut Ui, row: &mut vars::Row, index: usize, height: f32) -> bool {
+    let label = format!("Variable {} saved values", index + 1);
+    let hint = match row.saved.len() {
+        0 => "Saved values: none yet".to_owned(),
+        count => format!("Saved values: {count}"),
+    };
+    let button = icons::button_with_hint(ui, Icon::More, &label, &hint, !row.saved.is_empty());
+    let mut changed = false;
+    egui::Popup::menu(&button)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.set_min_width(240.0);
+            if row.saved.is_empty() {
+                ui.label(tone_text("No saved values", Tone::Muted));
+            }
+            let mut remove = None;
+            for (position, value) in row.saved.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    let text = crate::widgets::saved_label(value, false);
+                    let choice =
+                        ui.selectable_label(*value == row.value, RichText::new(&text).monospace());
+                    name(
+                        &choice,
+                        &format!("Use saved value {}: {text}", position + 1),
+                    );
+                    if choice.clicked() && *value != row.value {
+                        row.value.clone_from(value);
+                        changed = true;
+                    }
+                    let id = egui::Id::unique(("remove saved value", row.key, position));
+                    let what = format!("saved value {}", position + 1);
+                    if crate::widgets::remove_button(ui, id, &what, height) {
+                        remove = Some(position);
+                    }
+                });
+            }
+            if let Some(position) = remove {
+                row.saved.remove(position);
+                changed = true;
+            }
+            let can_save = !row.saved.contains(&row.value);
+            let save = ui.add_enabled(can_save, egui::Button::new("Save current value"));
+            if save.clicked() {
+                row.save_current();
+                changed = true;
+            }
+        });
+    changed
 }

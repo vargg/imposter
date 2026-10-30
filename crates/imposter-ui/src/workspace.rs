@@ -155,14 +155,21 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
             split(state, ui);
         });
     let name = state.inspect.as_ref().map(|i| i.name.clone());
-    if let Some(scope) = widgets::inspector(
+    let blocked = state.variables.dirty().then_some(state.variables.scope);
+    if let Some(action) = widgets::inspector(
         ui.ctx(),
         &mut state.inspect,
         state.snapshot.as_ref(),
         state.snapshot_error.as_deref(),
+        blocked,
     ) && let Some(name) = name
     {
-        state.actions.push(Action::OpenDefinition(scope, name));
+        state.actions.push(match action {
+            widgets::InspectorAction::Open(scope) => Action::OpenDefinition(scope, name),
+            widgets::InspectorAction::Choose { scope, value } => {
+                Action::ChooseValue { scope, name, value }
+            }
+        });
     }
 }
 

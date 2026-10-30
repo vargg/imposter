@@ -30,6 +30,9 @@ Python/PyQt6 version, and preserves its native collection format. New exports us
 - Placeholders are highlighted: defined names in orange, unknown ones in red. Typing `{{`
   suggests names. Clicking a placeholder, or pressing Alt+Enter, shows where its value comes
   from. Values from password fields stay masked until revealed.
+- Saved values: keep several values of one variable (user IDs, names) in its scope, then swap
+  the current one from the placeholder's inspector in one click. Each environment keeps its
+  own list. Saved values are not exported; exports carry the current value.
 
 **Responses**
 - Status, time, size and content type at a glance.

@@ -233,6 +233,17 @@ numbers, so both are excluded. Each logical change is its own commit.
   independently of the active execution environment, with its own unsaved-changes guard for
   scope changes, reloads, environment management, "Open definition" and closing. Closing
   resolves the request guard first, then the variables guard, then writes UI state.
+- **Saved values: a list per variable, kept in the variable's scope beside its current value**
+  (`model::SavedValues`, the `saved_values` column of migration V2, `store::scopes`). The
+  current value stays the single source for execution, precedence, curl, history and exports;
+  swapping (`scopes::choose_value`, from the inspector) is a stored write, not a mode. Lists
+  live in the defining scope, so each environment has its own. The inspector does not offer a
+  swap while the Variables screen has unsaved edits to that scope, so a later Save cannot
+  undo it unseen, and a clean screen on that scope reloads. Saved values are not exported:
+  native v1 is the contract shared with the Python app and rejects unknown fields; Postman has
+  no equivalent. Rejected: linked rows switched together (Paw's environment domains; the
+  user swaps values independently), a send-time prompt (Insomnia; keeps nothing), and one
+  environment per value (Postman; multiplies environments).
 - **History shows times in the system time zone** (via `jiff`, display only); records store UTC
   milliseconds. The request of an execution is shown as sent (`viewer::sent_request`, built
   with the executor's own `prepare`): `METHOD URL`, then Body and Headers tabs like the

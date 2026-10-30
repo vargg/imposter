@@ -317,13 +317,42 @@ fn var_edit_with(
     response
 }
 
-/// The inspector popover for an open [`Inspection`]. Returns where the user wants to go.
+/// What the user chose in the inspector.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InspectorAction {
+    /// Edit the definition in effect on the Variables screen.
+    Open(vars::Scope),
+    /// Make a saved value the current one.
+    Choose { scope: vars::Scope, value: String },
+}
+
+/// One line of a saved value, shortened: the list is for recognizing values, not reading them.
+pub fn saved_label(value: &str, masked: bool) -> String {
+    const PREVIEW: usize = 60;
+    if masked {
+        "••••••••".to_owned()
+    } else if value.is_empty() {
+        "Empty value".to_owned()
+    } else {
+        let line = value.lines().next().unwrap_or_default();
+        if line.chars().count() > PREVIEW || line.len() < value.len() {
+            let cut: String = line.chars().take(PREVIEW).collect();
+            format!("{cut}…")
+        } else {
+            line.to_owned()
+        }
+    }
+}
+
+/// The inspector popover for an open [`Inspection`]. `blocked` is a scope whose saved values
+/// cannot be chosen now (the Variables screen has unsaved edits to it).
 pub fn inspector(
     ctx: &egui::Context,
     inspection: &mut Option<Inspection>,
     snapshot: Option<&Snapshot>,
     error: Option<&str>,
-) -> Option<vars::Scope> {
+    blocked: Option<vars::Scope>,
+) -> Option<InspectorAction> {
     let current = inspection.as_mut()?;
     let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let mut open = None;
@@ -355,6 +384,34 @@ pub fn inspector(
                         ui.label(tone_text("Not defined", Tone::Error));
                     }
                 }
+                let effective = definitions.and_then(|d| d.first()).filter(|_| error.is_none());
+                if let Some(effective) = effective.filter(|d| !d.saved.is_empty())
+                    && let Some(scope) = vars::Scope::of(&effective.source)
+                {
+                    ui.separator();
+                    ui.label(tone_text("Saved values", Tone::Muted).small());
+                    let enabled = blocked != Some(scope);
+                    let masked = current.masked && !revealed;
+                    let list = ui.add_enabled_ui(enabled, |ui| {
+                        egui::ScrollArea::vertical().id_salt("saved values").max_height(160.0).show(ui, |ui| {
+                            for (index, value) in effective.saved.iter().enumerate() {
+                                let chosen = *value == effective.value;
+                                let text = saved_label(value, masked);
+                                let row = ui.selectable_label(chosen, RichText::new(&text).monospace());
+                                name(&row, &format!("Use saved value {}: {text}", index + 1));
+                                if row.clicked() && !chosen {
+                                    open = Some(InspectorAction::Choose { scope, value: value.clone() });
+                                    close = true;
+                                }
+                            }
+                        });
+                    });
+                    if !enabled {
+                        list.response.on_disabled_hover_text(
+                            "The Variables screen has unsaved changes to this scope; save or revert them first.",
+                        );
+                    }
+                }
                 ui.horizontal(|ui| {
                     if current.masked && definitions.is_some() && ui.button(if revealed { "Hide value" } else { "Reveal" }).clicked() {
                         revealed = !revealed;
@@ -367,7 +424,7 @@ pub fn inspector(
                         button
                     };
                     if button.clicked() {
-                        open = target;
+                        open = target.map(InspectorAction::Open);
                         close = true;
                     }
                     if ui.button("Close").clicked() {
@@ -1128,6 +1185,17 @@ fn restyle(job: &mut LayoutJob, range: std::ops::Range<usize>, change: impl Fn(&
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_values_are_labelled_by_their_first_line_shortened() {
+        assert_eq!(saved_label("42", false), "42");
+        assert_eq!(saved_label("", false), "Empty value");
+        assert_eq!(saved_label("secret", true), "••••••••");
+        assert_eq!(saved_label("line one\nline two", false), "line one…");
+        let long = "x".repeat(61);
+        assert_eq!(saved_label(&long, false), format!("{}…", "x".repeat(60)));
+        assert_eq!(saved_label(&"x".repeat(60), false), "x".repeat(60));
+    }
 
     #[test]
     fn marking_splits_sections_and_keeps_the_text() {
