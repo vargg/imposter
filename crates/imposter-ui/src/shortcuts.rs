@@ -7,7 +7,7 @@ use egui::{Key, KeyboardShortcut, Modifiers};
 
 use crate::app::{Action, Screen, State};
 use crate::dialogs::{Dialog, NamePurpose};
-use crate::palette::{Mode, Palette};
+use crate::palette::{Mode, Palette, Step};
 use crate::tree::NodeId;
 
 const fn key(modifiers: Modifiers, key: Key) -> KeyboardShortcut {
@@ -34,6 +34,10 @@ pub const SETTINGS: KeyboardShortcut = key(Modifiers::COMMAND, Key::Comma);
 pub const SIDEBAR: KeyboardShortcut = key(Modifiers::COMMAND, Key::B);
 pub const SHORTCUTS: KeyboardShortcut = key(COMMAND_SHIFT, Key::Slash);
 pub const PALETTE: KeyboardShortcut = key(Modifiers::COMMAND, Key::K);
+pub const RECENT: KeyboardShortcut = key(Modifiers::COMMAND, Key::P);
+/// The real Ctrl key on every platform, as in editors and browsers.
+pub const SWITCH_BACK: KeyboardShortcut = key(Modifiers::CTRL, Key::Tab);
+pub const SWITCH_FORWARD: KeyboardShortcut = key(CTRL_SHIFT, Key::Tab);
 
 /// What a shortcut does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +52,9 @@ pub enum Command {
     ToggleSidebar,
     Shortcuts,
     Palette,
+    Recent,
+    SwitchBack,
+    SwitchForward,
     /// Handled by the viewer under the pointer.
     Find,
     /// Handled by the focused variable field.
@@ -75,6 +82,21 @@ pub const ALL: &[Shortcut] = &[
         keys: &[PALETTE],
         command: Command::Palette,
         description: "Command palette: actions, requests and environments",
+    },
+    Shortcut {
+        keys: &[RECENT],
+        command: Command::Recent,
+        description: "Find a request, recent ones first",
+    },
+    Shortcut {
+        keys: &[SWITCH_BACK],
+        command: Command::SwitchBack,
+        description: "Back to the previous request; hold Ctrl and press Tab to go further",
+    },
+    Shortcut {
+        keys: &[SWITCH_FORWARD],
+        command: Command::SwitchForward,
+        description: "Step through recent requests from the oldest",
     },
     Shortcut {
         keys: &[SEND, SEND_ALT],
@@ -214,8 +236,13 @@ fn run(state: &mut State, command: Command, ctx: &egui::Context) {
         }
         Command::Settings => state.actions.push(Action::Screen(Screen::Settings)),
         Command::Shortcuts => state.actions.push(Action::Prompt(Dialog::Shortcuts)),
-        Command::Palette => {
-            let palette = Palette::open(state, Mode::All, ctx);
+        Command::Palette | Command::Recent | Command::SwitchBack | Command::SwitchForward => {
+            let palette = match command {
+                Command::Palette => Palette::open(state, Mode::All, ctx),
+                Command::Recent => Palette::open(state, Mode::Requests, ctx),
+                Command::SwitchBack => Palette::switcher(state, Step::Back, ctx),
+                _ => Palette::switcher(state, Step::Forward, ctx),
+            };
             state
                 .actions
                 .push(Action::Prompt(Dialog::Palette(Box::new(palette))));

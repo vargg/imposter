@@ -294,6 +294,14 @@ numbers, so both are excluded. Each logical change is its own commit.
   through `Navigation::OpenIn` (switch collection, then `restore`). The palette is pinned to
   the top: centred, it moved as its list shrank while typing, and clicks landed on the
   backdrop.
+- **Recent requests: the last 20 opened saved requests, newest first, in `ui_state`
+  (`recent_requests`)**, pruned when the request index shows one was deleted; an unreadable
+  list starts empty instead of failing startup. Cmd/Ctrl+P is the palette with requests only,
+  recent first. Ctrl+Tab (the real Ctrl key on every platform) is hold-and-release, as in
+  editors: Tab steps while Ctrl is held, releasing Ctrl opens the selection, so a quick
+  Ctrl+Tab goes back to the previous request; Shift starts from the oldest; Esc cancels. A
+  release that comes before the index loads opens as soon as it arrives. Why: the
+  back-and-forth between two requests is the most common jump.
 - **Packaging: cargo-packager** (`.app`/`.dmg`, `.deb`/`.AppImage`, NSIS per-user installer),
   configured in `crates/imposter/Cargo.toml`. Releases are drafts built from `v*` tags. The macOS
   bundle is always signed, ad-hoc unless the Developer ID secrets exist (`docs/release.md`);

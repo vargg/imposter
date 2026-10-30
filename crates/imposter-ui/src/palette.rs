@@ -15,6 +15,22 @@ use crate::widgets::{name, tone_text};
 
 /// How many matches are drawn; the rest are reached by typing more.
 const SHOWN: usize = 200;
+/// How many recently opened requests are remembered.
+pub const RECENT_LIMIT: usize = 20;
+
+/// Put `id` first in the recent list, once, keeping at most [`RECENT_LIMIT`].
+pub fn remember(recent: &mut Vec<RequestId>, id: RequestId) {
+    recent.retain(|r| *r != id);
+    recent.insert(0, id);
+    recent.truncate(RECENT_LIMIT);
+}
+
+/// Where Ctrl+Tab starts: the previous request, or (with Shift) the oldest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    Back,
+    Forward,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -65,6 +81,12 @@ pub struct Palette {
     pub index: Option<Vec<IndexedRequest>>,
     /// What the user chose, taken by the app with [`Outcome::Palette`].
     pub chosen: Option<Action>,
+    /// Opened by Ctrl+Tab: Tab steps while Ctrl is held, releasing Ctrl opens the selection.
+    pub switcher: bool,
+    /// The first selection, made once the requests are known.
+    pub start: Option<Step>,
+    /// Ctrl was released before the requests arrived; open as soon as they do.
+    pub release_pending: bool,
 }
 
 impl Palette {
@@ -77,7 +99,51 @@ impl Palette {
             recent: state.recent.clone(),
             index: None,
             chosen: None,
+            switcher: false,
+            start: None,
+            release_pending: false,
         }
+    }
+
+    /// The Ctrl+Tab switcher: requests only, recent first, the previous one (or with Shift
+    /// the oldest) selected.
+    pub fn switcher(state: &State, step: Step, ctx: &egui::Context) -> Self {
+        Self {
+            switcher: true,
+            start: Some(step),
+            ..Self::open(state, Mode::Requests, ctx)
+        }
+    }
+
+    /// Ctrl+Tab and Ctrl+Shift+Tab move the selection; releasing Ctrl chooses it.
+    fn switch(&mut self, ui: &Ui, count: usize) -> bool {
+        let (back, forward, held) = ui.input_mut(|i| {
+            let ctrl_shift = egui::Modifiers::CTRL.plus(egui::Modifiers::SHIFT);
+            let forward = i.consume_key(ctrl_shift, Key::Tab);
+            (
+                i.consume_key(egui::Modifiers::CTRL, Key::Tab),
+                forward,
+                i.modifiers.ctrl,
+            )
+        });
+        if count > 0 {
+            if let Some(step) = self.start.take() {
+                self.selected = match step {
+                    Step::Back => 1.min(count - 1),
+                    Step::Forward => count - 1,
+                };
+            }
+            if back {
+                self.selected = (self.selected + 1) % count;
+            }
+            if forward {
+                self.selected = (self.selected + count - 1) % count;
+            }
+        }
+        if !held {
+            self.release_pending = true;
+        }
+        self.release_pending && count > 0
     }
 
     /// The rows matching the query, grouped in order and best match first within a group.
@@ -169,6 +235,7 @@ impl Palette {
             )
         });
         let count = items.len();
+        let released = self.switcher && self.switch(ui, count);
         if count > 0 {
             if down {
                 self.selected = (self.selected + 1) % count;
@@ -223,7 +290,7 @@ impl Palette {
                     ui.label(tone_text(text, Tone::Muted));
                 }
             });
-        if let Some(position) = clicked.or_else(|| enter.then_some(self.selected))
+        if let Some(position) = clicked.or_else(|| (enter || released).then_some(self.selected))
             && let Some(item) = items.get(position)
         {
             self.chosen = Some(item.action.clone());
@@ -497,6 +564,9 @@ mod tests {
                 action: Action::Screen(Screen::History),
             }],
             recent: vec![RequestId(3)],
+            switcher: false,
+            start: None,
+            release_pending: false,
             index: Some(vec![
                 indexed(1, "API", &[], "Health"),
                 indexed(2, "API", &["Users"], "List users"),
@@ -524,6 +594,19 @@ mod tests {
         );
         assert_eq!(labels(&palette(Mode::Requests))[0], "Admin › Stats");
         assert!(!labels(&palette(Mode::Requests)).contains(&"Go to History".to_owned()));
+    }
+
+    #[test]
+    fn recent_requests_are_unique_newest_first_and_capped() {
+        let mut recent = Vec::new();
+        for id in 1..=25 {
+            remember(&mut recent, RequestId(id));
+        }
+        assert_eq!(recent.len(), RECENT_LIMIT);
+        assert_eq!(recent[0], RequestId(25));
+        remember(&mut recent, RequestId(20));
+        assert_eq!(recent[..3], [RequestId(20), RequestId(25), RequestId(24)]);
+        assert_eq!(recent.iter().filter(|r| **r == RequestId(20)).count(), 1);
     }
 
     #[test]

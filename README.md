@@ -124,6 +124,9 @@ Cmd on macOS, Ctrl elsewhere. Shortcuts do nothing while a dialog is open.
 | Shortcut | Action |
 |---|---|
 | Cmd/Ctrl+K | Command palette: actions, requests and environments |
+| Cmd/Ctrl+P | Find a request, recent ones first |
+| Ctrl+Tab | Back to the previous request; hold Ctrl and press Tab to go further |
+| Ctrl+Shift+Tab | Step through recent requests from the oldest |
 | Cmd/Ctrl+Enter, Cmd/Ctrl+R | Send (or cancel the running request) |
 | Cmd/Ctrl+S | Save the current screen: request, variables or settings |
 | Cmd/Ctrl+N | New request (a new collection when there is none) |

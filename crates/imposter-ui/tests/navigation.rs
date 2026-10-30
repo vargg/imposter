@@ -147,3 +147,153 @@ fn arrows_choose_and_escape_closes_without_acting() {
         "Enter with no match keeps the palette open"
     );
 }
+
+/// One collection with requests A, B and C, opened in that order (C is open).
+fn opened_abc() -> support::App {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        for name in ["A", "B", "C"] {
+            request(store, api.id, name, &format!("http://h/{name}"));
+        }
+    });
+    for name in ["A", "B", "C"] {
+        click(&mut app.harness, &format!("GET {name}"));
+        settle(&mut app.harness);
+    }
+    app
+}
+
+fn hold_ctrl(app: &mut support::App) {
+    app.harness
+        .event(egui::Event::ModifiersChanged(Modifiers::CTRL));
+}
+
+fn tab_while_holding(app: &mut support::App) {
+    app.harness.event(egui::Event::Key {
+        key: Key::Tab,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::CTRL,
+    });
+    settle(&mut app.harness);
+}
+
+fn release_ctrl(app: &mut support::App) {
+    app.harness
+        .event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    settle(&mut app.harness);
+}
+
+fn recent_names(app: &support::App) -> Vec<String> {
+    let Some(imposter_ui::dialogs::Dialog::Palette(palette)) = &app.harness.state().state.dialog
+    else {
+        panic!("the palette is not open");
+    };
+    palette.items().into_iter().map(|i| i.label).collect()
+}
+
+#[test]
+fn recent_requests_come_first_and_survive_a_restart() {
+    let mut app = opened_abc();
+    app.harness.key_press_modifiers(Modifiers::COMMAND, Key::P);
+    settle(&mut app.harness);
+    assert_eq!(recent_names(&app), ["API › C", "API › B", "API › A"]);
+    app.harness.key_press(Key::Escape);
+    settle(&mut app.harness);
+
+    app.harness.state_mut().request_close();
+    settle(&mut app.harness);
+    let dir = app.dir;
+    drop(app.harness);
+    let mut reopened = support::harness_at(dir.path(), egui::vec2(1400.0, 900.0));
+    reopened.key_press_modifiers(Modifiers::COMMAND, Key::P);
+    settle(&mut reopened);
+    let mut app = support::App {
+        dir,
+        harness: reopened,
+    };
+    assert_eq!(recent_names(&app), ["API › C", "API › B", "API › A"]);
+    app.harness.key_press(Key::Escape);
+    settle(&mut app.harness);
+}
+
+#[test]
+fn a_quick_ctrl_tab_goes_back_and_forth() {
+    let mut app = opened_abc();
+    app.harness.key_press_modifiers(Modifiers::CTRL, Key::Tab);
+    settle(&mut app.harness);
+    assert!(app.harness.state().state.dialog.is_none());
+    assert_eq!(open_name(&app).as_deref(), Some("B"));
+
+    app.harness.key_press_modifiers(Modifiers::CTRL, Key::Tab);
+    settle(&mut app.harness);
+    assert_eq!(open_name(&app).as_deref(), Some("C"));
+}
+
+#[test]
+fn holding_ctrl_steps_through_recent_requests_until_it_is_released() {
+    let mut app = opened_abc();
+    hold_ctrl(&mut app);
+    tab_while_holding(&mut app);
+    assert!(
+        app.harness.state().state.dialog.is_some(),
+        "open while held"
+    );
+    tab_while_holding(&mut app);
+    release_ctrl(&mut app);
+    assert!(app.harness.state().state.dialog.is_none());
+    assert_eq!(open_name(&app).as_deref(), Some("A"));
+
+    app.harness
+        .key_press_modifiers(Modifiers::CTRL.plus(Modifiers::SHIFT), Key::Tab);
+    settle(&mut app.harness);
+    assert_eq!(
+        open_name(&app).as_deref(),
+        Some("B"),
+        "Shift starts from the oldest"
+    );
+
+    hold_ctrl(&mut app);
+    tab_while_holding(&mut app);
+    app.harness.key_press(Key::Escape);
+    settle(&mut app.harness);
+    release_ctrl(&mut app);
+    assert!(app.harness.state().state.dialog.is_none());
+    assert_eq!(open_name(&app).as_deref(), Some("B"), "Esc cancels");
+}
+
+#[test]
+fn deleted_requests_leave_the_recent_list() {
+    let mut app = opened_abc();
+    let b = app
+        .harness
+        .state()
+        .state
+        .tree
+        .as_ref()
+        .unwrap()
+        .source
+        .requests
+        .iter()
+        .find(|r| r.name == "B")
+        .unwrap()
+        .id;
+    app.harness
+        .state()
+        .store()
+        .call_blocking(move |db| imposter_app::store::collections::delete_request(db, b))
+        .unwrap();
+
+    app.harness.key_press_modifiers(Modifiers::COMMAND, Key::P);
+    settle(&mut app.harness);
+    assert_eq!(recent_names(&app), ["API › C", "API › A"]);
+    let stored: Vec<imposter_app::core::ids::RequestId> = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| kv::get(db, kv::Table::UiState, "recent_requests"))
+        .unwrap()
+        .unwrap();
+    assert!(!stored.contains(&b), "the stored list is pruned too");
+}

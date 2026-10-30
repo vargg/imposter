@@ -44,6 +44,7 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 pub const AUTOSAVE_DELAY: f64 = 0.5;
 
 const LAST_KEY: &str = "last";
+const RECENT_KEY: &str = "recent_requests";
 const LAYOUT_KEY: &str = "workspace_layout";
 const DRAFT_KEY: &str = "draft";
 const WINDOW_KEY: &str = "window";
@@ -62,6 +63,7 @@ pub struct Startup {
     environments: Vec<Environment>,
     active_environment: Option<EnvironmentId>,
     last: Last,
+    recent: Vec<RequestId>,
     layout: Value,
     draft: Option<Request>,
 }
@@ -735,6 +737,11 @@ impl ImposterApp {
                     environments: environments::environments(db)?,
                     active_environment: environments::active_environment(db)?,
                     last: kv::get(db, Table::UiState, LAST_KEY)?.unwrap_or_default(),
+                    // A convenience list: an unreadable one starts empty rather than failing.
+                    recent: kv::get(db, Table::UiState, RECENT_KEY)
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default(),
                     layout: kv::get(db, Table::UiState, LAYOUT_KEY)?.unwrap_or(Value::Null),
                     draft: kv::get(db, Table::UiState, DRAFT_KEY)?.flatten(),
                 })
@@ -1194,13 +1201,22 @@ impl ImposterApp {
                 }
             }
             Message::Curl(Err(error)) => self.error("Copy as curl failed", error),
-            Message::RequestIndex(result) => {
-                if let Some(Dialog::Palette(palette)) = &mut self.state.dialog {
-                    match result {
-                        Ok(index) => palette.index = Some(index),
-                        Err(error) => tracing::warn!(%error, "loading the request index failed"),
-                    }
+            Message::RequestIndex(Ok(index)) => {
+                // Requests deleted since they were opened leave the recent list.
+                let before = self.state.recent.len();
+                self.state
+                    .recent
+                    .retain(|id| index.iter().any(|r| r.id == *id));
+                if self.state.recent.len() != before {
+                    self.write_recent();
                 }
+                if let Some(Dialog::Palette(palette)) = &mut self.state.dialog {
+                    palette.recent.clone_from(&self.state.recent);
+                    palette.index = Some(index);
+                }
+            }
+            Message::RequestIndex(Err(error)) => {
+                tracing::warn!(%error, "loading the request index failed");
             }
             Message::SettingsSaved { form, result } => self.settings_saved(form, result),
             Message::Exported(Ok(path)) => {
@@ -1236,6 +1252,7 @@ impl ImposterApp {
         state.status = "Ready".into();
         state.environments = startup.environments;
         state.active_environment = startup.active_environment;
+        state.recent = startup.recent;
         if let Some(draft) = startup.draft {
             self.load_editor(&draft);
             self.status(
@@ -1324,7 +1341,16 @@ impl ImposterApp {
         if let Some(id) = id {
             self.load_runs(id);
             self.remember_selection();
+            if self.state.recent.first() != Some(&id) {
+                crate::palette::remember(&mut self.state.recent, id);
+                self.write_recent();
+            }
         }
+    }
+
+    fn write_recent(&self) {
+        let recent = serde_json::to_value(&self.state.recent).unwrap_or(Value::Null);
+        self.write_ui_state(RECENT_KEY, recent);
     }
 
     fn clear_editor(&mut self) {
