@@ -12,6 +12,7 @@ use imposter_transfer::native::{
     self, Name, NativeDocument, NativeError, TransferCollection, TransferEnvironment,
     TransferFolder, unique_name,
 };
+use imposter_transfer::openapi::{self, OpenApiError};
 use imposter_transfer::postman::{self, Decoder, PostmanError};
 use serde_json::Value;
 
@@ -22,6 +23,8 @@ pub enum TransferError {
     #[error(transparent)]
     Postman(#[from] PostmanError),
     #[error(transparent)]
+    OpenApi(#[from] OpenApiError),
+    #[error(transparent)]
     Store(#[from] StoreError),
     #[error("Cannot read the file: {0}")]
     Json(#[from] serde_json::Error),
@@ -29,6 +32,8 @@ pub enum TransferError {
     NotAnObject,
     #[error("Native files embed optional environments and globals")]
     NativeCompanions,
+    #[error("OpenAPI files have no companion files")]
+    OpenApiCompanions,
     #[error("Explicitly remove unsupported execution features or cancel the import")]
     ConsentRequired,
     #[error("Cannot write the export: {0}")]
@@ -306,28 +311,84 @@ pub fn commit(db: &Tx<'_>, preview: &ImportPreview) -> Result<CollectionId, Stor
     Ok(collection.id)
 }
 
-/// Read a native or Postman file (with optional Postman companions) into a document, the
+/// What an import file holds, judged by its content rather than its name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportKind {
+    Native,
+    Postman,
+    OpenApi,
+}
+
+impl ImportKind {
+    /// Only Postman collections keep environments and globals in separate files.
+    pub fn takes_companions(self) -> bool {
+        self == Self::Postman
+    }
+}
+
+/// Parse an import file: JSON, or YAML when it is an OpenAPI document (YAML is how most are
+/// published). Other YAML is refused with the JSON error, which names the real problem.
+fn load(path: &Path) -> Result<(ImportKind, Value), TransferError> {
+    let bytes = native::read_document(path)?;
+    let data: Value = match serde_json::from_slice(&bytes) {
+        Ok(data) => data,
+        Err(json) => match openapi::parse_yaml(&bytes) {
+            Ok(data) if openapi::is_openapi(&data) => data,
+            _ => return Err(json.into()),
+        },
+    };
+    let object = data.as_object().ok_or(TransferError::NotAnObject)?;
+    let kind = if object.get("format").and_then(Value::as_str) == Some("poster") {
+        ImportKind::Native
+    } else if openapi::is_openapi(&data) {
+        ImportKind::OpenApi
+    } else {
+        ImportKind::Postman
+    };
+    Ok((kind, data))
+}
+
+/// What a file is, so the UI asks for companions only where they exist. File reading runs
+/// off the async threads.
+pub async fn detect(path: PathBuf) -> Result<ImportKind, TransferError> {
+    tokio::task::spawn_blocking(move || load(&path).map(|(kind, _)| kind))
+        .await
+        .map_err(|_| TransferError::Task)?
+}
+
+/// Read a native, Postman (with optional companions) or OpenAPI file into a document, the
 /// conversion warnings and whether losses need consent.
 pub fn read(
     path: &Path,
     companions: &[PathBuf],
 ) -> Result<(NativeDocument, Vec<String>, bool), TransferError> {
-    let data: Value = serde_json::from_slice(&native::read_document(path)?)?;
-    let object = data.as_object().ok_or(TransferError::NotAnObject)?;
-    if object.get("format").and_then(Value::as_str) == Some("poster") {
-        if !companions.is_empty() {
-            return Err(TransferError::NativeCompanions);
+    let (kind, data) = load(path)?;
+    match kind {
+        ImportKind::Native => {
+            if !companions.is_empty() {
+                return Err(TransferError::NativeCompanions);
+            }
+            let document: NativeDocument =
+                serde_json::from_value(data).map_err(NativeError::Json)?;
+            Ok((document, Vec::new(), false))
         }
-        let document: NativeDocument = serde_json::from_value(data).map_err(NativeError::Json)?;
-        return Ok((document, Vec::new(), false));
+        ImportKind::OpenApi => {
+            if !companions.is_empty() {
+                return Err(TransferError::OpenApiCompanions);
+            }
+            let (document, warnings) = openapi::decode(&data)?;
+            Ok((document, warnings, false))
+        }
+        ImportKind::Postman => {
+            let mut decoder = Decoder::default();
+            let mut document = decoder.decode(&data)?;
+            for companion in companions {
+                let companion: Value = serde_json::from_slice(&native::read_document(companion)?)?;
+                decoder.companion(&companion, &mut document)?;
+            }
+            Ok((document, decoder.warnings, decoder.requires_removal))
+        }
     }
-    let mut decoder = Decoder::default();
-    let mut document = decoder.decode(&data)?;
-    for companion in companions {
-        let companion: Value = serde_json::from_slice(&native::read_document(companion)?)?;
-        decoder.companion(&companion, &mut document)?;
-    }
-    Ok((document, decoder.warnings, decoder.requires_removal))
 }
 
 /// Read a file and preview its import. File reading runs off the async threads.

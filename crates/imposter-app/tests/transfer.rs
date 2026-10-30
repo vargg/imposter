@@ -4,9 +4,12 @@
 use std::path::{Path, PathBuf};
 
 use imposter_app::transfer::{
-    ExportScope, TransferError, export_native, import, postman_export, read_preview, write_postman,
+    ExportScope, ImportKind, TransferError, detect, export_native, import, postman_export,
+    read_preview, write_postman,
 };
 use imposter_core::model::{BodyType, Request, RequestTemplate, Variables};
+use imposter_core::prepare::{PreparedBody, prepare};
+use imposter_core::variables::{ResolveError, resolve_template};
 use imposter_store::{Store, collections, environments};
 use imposter_transfer::native;
 use serde_json::Value;
@@ -386,4 +389,135 @@ async fn postman_exports_write_a_file_or_a_new_directory_with_companions() {
         })
         .count();
     assert_eq!(leftovers, 0);
+}
+
+#[tokio::test]
+async fn files_are_recognised_by_content_not_name() {
+    let (dir, _store) = open();
+    let openapi_json = dir.path().join("collection.json");
+    std::fs::write(&openapi_json, r#"{"openapi": "3.1.0", "paths": {}}"#).unwrap();
+    let plain_yaml = dir.path().join("config.yaml");
+    std::fs::write(&plain_yaml, "name: not an api\n").unwrap();
+    for (path, kind) in [
+        (
+            fixtures().join("native/full.poster.json"),
+            ImportKind::Native,
+        ),
+        (fixtures().join("postman-v2.1.json"), ImportKind::Postman),
+        (
+            fixtures().join("openapi/petstore.yaml"),
+            ImportKind::OpenApi,
+        ),
+        (openapi_json, ImportKind::OpenApi),
+    ] {
+        assert_eq!(detect(path.clone()).await.unwrap(), kind, "{path:?}");
+    }
+    assert!(ImportKind::Postman.takes_companions());
+    assert!(!ImportKind::OpenApi.takes_companions());
+    assert!(!ImportKind::Native.takes_companions());
+    assert!(
+        matches!(detect(plain_yaml).await, Err(TransferError::Json(_))),
+        "YAML that is not OpenAPI reports why it is not JSON"
+    );
+}
+
+#[tokio::test]
+async fn openapi_files_import_as_one_new_collection_without_consent() {
+    let (dir, store) = open();
+    let path = fixtures().join("openapi/petstore.yaml");
+    let preview = read_preview(&store.handle(), path.clone(), Vec::new())
+        .await
+        .unwrap();
+    assert_eq!(preview.collection_name, "Pet Store");
+    assert_eq!(preview.environment_names, Vec::<String>::new());
+    assert!(!preview.requires_removal, "generating loses nothing");
+    assert_eq!(preview.warnings.len(), 3, "{:?}", preview.warnings);
+    let first = import(&store.handle(), preview, false).await.unwrap();
+
+    let again = read_preview(&store.handle(), path.clone(), Vec::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        again.collection_name, "Pet Store (2)",
+        "re-imports never merge"
+    );
+    import(&store.handle(), again, false).await.unwrap();
+
+    let tree = store
+        .call(move |db| collections::tree(db, first))
+        .await
+        .unwrap()
+        .unwrap();
+    let folders: Vec<_> = tree.folders.iter().map(|f| f.name.clone()).collect();
+    assert_eq!(folders, ["store", "pets"]);
+    assert_eq!(tree.requests.len(), 8);
+    assert_eq!(
+        tree.collection.variables.get("baseUrl").map(String::as_str),
+        Some("https://eu.pets.example/v1")
+    );
+
+    let companion = dir.path().join("env.json");
+    std::fs::write(&companion, r#"{"values": []}"#).unwrap();
+    assert!(matches!(
+        read_preview(&store.handle(), path, vec![companion]).await,
+        Err(TransferError::OpenApiCompanions)
+    ));
+}
+
+#[tokio::test]
+async fn imported_openapi_requests_send_once_their_variables_are_set() {
+    let (_dir, store) = open();
+    let preview = read_preview(
+        &store.handle(),
+        fixtures().join("openapi/petstore.yaml"),
+        Vec::new(),
+    )
+    .await
+    .unwrap();
+    let mut values = preview.document.collection.variables.clone();
+    values.insert("api_key".into(), "k".into());
+    values.insert("token".into(), "t".into());
+    let by_name = |name: &str| {
+        preview
+            .document
+            .requests()
+            .into_iter()
+            .find(|r| r.name == name)
+            .unwrap()
+            .clone()
+    };
+    let sent =
+        |name: &str| prepare(&resolve_template(&by_name(name), &values).unwrap(), true).unwrap();
+
+    let list = sent("List pets");
+    assert_eq!(list.method, "GET");
+    assert_eq!(list.url, "https://eu.pets.example/v1/pets?limit=20");
+    assert_eq!(list.headers, [("X-API-Key".to_owned(), "k".to_owned())]);
+
+    let delete = sent("Delete a pet");
+    assert_eq!(delete.url, "https://eu.pets.example/v1/pets/42");
+    assert_eq!(
+        delete.headers,
+        [("Authorization".to_owned(), "Bearer t".to_owned())]
+    );
+
+    let create = sent("Create a pet");
+    let PreparedBody::Bytes(body) = create.body else {
+        panic!("a JSON body");
+    };
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["name"], "Rex");
+    assert!(
+        create
+            .headers
+            .contains(&("Content-Type".to_owned(), "application/json".to_owned()))
+    );
+
+    assert!(
+        matches!(
+            resolve_template(&by_name("Upload owner documents"), &values),
+            Err(ResolveError::Unresolved(names)) if names.iter().eq(["ownerId"])
+        ),
+        "a path parameter without an example stops the send"
+    );
 }

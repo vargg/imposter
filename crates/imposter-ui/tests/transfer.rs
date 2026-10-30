@@ -137,6 +137,54 @@ fn postman_imports_offer_companions_and_require_consent_for_losses() {
 }
 
 #[test]
+fn an_openapi_yaml_file_skips_companions_and_opens_as_requests() {
+    let mut app = start();
+    import(
+        &mut app,
+        vec![Some(fixtures().join("openapi/petstore.yaml"))],
+    );
+
+    assert!(
+        app.harness.query_by_label("Companion files").is_none(),
+        "only Postman files have companions"
+    );
+    app.harness.get_by_label("Review collection import");
+    app.harness.get_by_label("New collection: Pet Store");
+    app.harness.get_by_label(
+        "Path parameters without an example need collection variables before sending: ownerId",
+    );
+    assert!(import_button_enabled(&app), "generating needs no consent");
+    click_button(&mut app.harness, "Import");
+    settle(&mut app.harness);
+
+    assert_eq!(collection_names(&app), ["Pet Store"]);
+    click(&mut app.harness, "POST Upload owner documents");
+    settle(&mut app.harness);
+    let pane = app.harness.state().state.editor.as_ref().unwrap();
+    assert_eq!(pane.editor.url, "{{baseUrl}}/owners/{{ownerId}}/documents");
+    assert_eq!(
+        pane.editor.cookies,
+        [ParamItem {
+            is_enabled: false,
+            ..ParamItem::new("session", "abc")
+        }]
+    );
+}
+
+#[test]
+fn yaml_that_is_not_openapi_is_refused() {
+    let mut app = start();
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("config.yml");
+    std::fs::write(&file, "name: not an api\n").unwrap();
+    import(&mut app, vec![Some(file)]);
+
+    app.harness.get_by_label("Import failed");
+    assert!(app.harness.query_by_label("Companion files").is_none());
+    assert_eq!(collection_names(&app), Vec::<String>::new());
+}
+
+#[test]
 fn a_cancelled_review_or_picker_writes_nothing() {
     let mut app = start();
     import(&mut app, vec![None]);

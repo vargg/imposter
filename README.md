@@ -51,6 +51,10 @@ Python/PyQt6 version, and preserves its native collection format. New exports us
 - Postman Collection v2.1 import and export, validated against the official schema, with
   environment and globals files. Anything Postman features Imposter cannot represent is listed
   before import; changes to how a request runs need explicit consent.
+- OpenAPI 3.0, 3.1 and 3.2 import (JSON or YAML): one request per operation, grouped by tag,
+  with the server URL in a `baseUrl` collection variable, path parameters as variables,
+  example bodies from the document's examples or schemas, and its security schemes as auth
+  with empty secret variables to fill in. Each import creates a new collection.
 - Imports never overwrite: names that already exist get a suffix, existing globals win.
 - curl: paste a command (including the "Copy as cURL" output of Chrome and Firefox, for bash
   or cmd) to open it as a draft, or copy any request as a ready-to-run curl command.
@@ -205,7 +209,7 @@ which an architecture test enforces:
 | `imposter-core` | Domain types and rules: variables, settings, URLs, request preparation, curl. No IO. |
 | `imposter-http` | HTTP transport: TLS (rustls), redirects, Digest auth, streamed uploads, cancellation. |
 | `imposter-store` | SQLite persistence on its own thread, with migrations and backups. |
-| `imposter-transfer` | `.poster.json` and Postman v2.1 conversion and validation. |
+| `imposter-transfer` | `.poster.json`, Postman v2.1 and OpenAPI 3 conversion and validation. |
 | `imposter-app` | Services the UI calls: execution, saving, history, import and export. |
 | `imposter-ui` | The egui interface. |
 | `imposter` | The binary. |

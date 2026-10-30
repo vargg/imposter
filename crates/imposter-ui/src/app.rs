@@ -25,7 +25,7 @@ use imposter_app::store::environments::{self, Environment};
 use imposter_app::store::executions::{self, ExecutionSummary};
 use imposter_app::store::kv::{self, Table};
 use imposter_app::store::{Store, StoreError, StoreHandle};
-use imposter_app::transfer::{self, ExportScope, ImportPreview};
+use imposter_app::transfer::{self, ExportScope, ImportKind, ImportPreview};
 use imposter_app::{ops, store};
 use serde_json::Value;
 
@@ -195,6 +195,10 @@ pub enum Message {
         path: Option<PathBuf>,
     },
     ImportPicked(Option<PathBuf>),
+    ImportDetected {
+        path: PathBuf,
+        result: Result<ImportKind, Failure>,
+    },
     CompanionsPicked {
         path: PathBuf,
         companions: Vec<PathBuf>,
@@ -230,7 +234,7 @@ pub struct PostmanExport {
 enum FileDialog {
     Open {
         title: &'static str,
-        filter: Option<(&'static str, &'static str)>,
+        filter: Option<(&'static str, &'static [&'static str])>,
     },
     OpenMany {
         title: &'static str,
@@ -796,8 +800,8 @@ impl ImposterApp {
             let paths = match dialog {
                 FileDialog::Open { title, filter } => {
                     let mut builder = rfd::AsyncFileDialog::new().set_title(title);
-                    if let Some((label, extension)) = filter {
-                        builder = builder.add_filter(label, &[extension]);
+                    if let Some((label, extensions)) = filter {
+                        builder = builder.add_filter(label, extensions);
                     }
                     builder
                         .pick_file()
@@ -1085,15 +1089,19 @@ impl ImposterApp {
             }
             Message::ImportPicked(path) => {
                 if let Some(path) = path {
-                    if path.to_string_lossy().ends_with(".poster.json")
-                        || path.to_string_lossy().ends_with(".imposter.json")
-                    {
-                        self.read_import(path, Vec::new());
-                    } else {
-                        self.state.dialog = Some(Dialog::Companions { path });
-                    }
+                    self.bridge.spawn(move |_| async move {
+                        let result = transfer::detect(path.clone()).await.map_err(failure);
+                        Message::ImportDetected { path, result }
+                    });
                 }
             }
+            Message::ImportDetected { path, result } => match result {
+                Ok(kind) if kind.takes_companions() => {
+                    self.state.dialog = Some(Dialog::Companions { path });
+                }
+                Ok(_) => self.read_import(path, Vec::new()),
+                Err(error) => self.error("Import failed", error),
+            },
             Message::CompanionsPicked { path, companions } => self.read_import(path, companions),
             Message::ImportPreviewed(Ok(preview)) => {
                 self.state.dialog = Some(Dialog::Import {
@@ -2161,7 +2169,7 @@ impl ImposterApp {
             Action::Import => self.pick(
                 FileDialog::Open {
                     title: "Import collection",
-                    filter: Some(("Collections", "json")),
+                    filter: Some(("Collections and OpenAPI", &["json", "yaml", "yml"])),
                 },
                 |paths| Message::ImportPicked(paths.into_iter().next()),
             ),

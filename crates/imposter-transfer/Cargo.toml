@@ -1,6 +1,6 @@
 [package]
 name = "imposter-transfer"
-description = "Native .imposter.json/.poster.json v1 and Postman v2.1 conversion, validation and import preview."
+description = "Native .imposter.json/.poster.json v1, Postman v2.1 and OpenAPI 3 conversion, validation and import preview."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,7 @@ workspace = true
 imposter-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde-saphyr.workspace = true
 thiserror.workspace = true
 tempfile.workspace = true
 jsonschema.workspace = true

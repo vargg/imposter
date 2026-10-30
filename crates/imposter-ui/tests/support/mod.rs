@@ -53,9 +53,13 @@ pub fn settle(harness: &mut Harness<'_, ImposterApp>) {
         harness.run_steps(2);
         if harness.state().bridge().running() == 0 {
             // Two more frames: a result applied in the last one may open a dialog, which
-            // spends its first frame on an invisible sizing pass.
+            // spends its first frame on an invisible sizing pass. A result may also start the
+            // next task, which can finish within those frames: settled means none started.
+            let spawned = harness.state().bridge().spawned();
             harness.run_steps(2);
-            if harness.state().bridge().running() == 0 {
+            if harness.state().bridge().running() == 0
+                && harness.state().bridge().spawned() == spawned
+            {
                 return;
             }
         }

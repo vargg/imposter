@@ -165,6 +165,12 @@ impl<M: Send + 'static> Bridge<M> {
         self.registry.lock().tasks.len()
     }
 
+    /// How many tasks were ever started. Tests compare it across frames: a result can start
+    /// the next task and finish it between two `running` checks.
+    pub fn spawned(&self) -> u64 {
+        self.registry.lock().next_id
+    }
+
     /// Results that arrived since the last call, in completion order.
     pub fn drain(&self) -> Vec<M> {
         self.receiver.try_iter().collect()
@@ -257,9 +263,11 @@ mod tests {
     fn results_arrive_on_drain_and_wake_the_ui() {
         let (bridge, wakes) = bridge();
 
+        assert_eq!(bridge.spawned(), 0);
         let id = bridge.spawn(|_| async { "done" });
 
         assert!(bridge.wait_idle(WAIT));
+        assert_eq!(bridge.spawned(), 1);
         assert_eq!(bridge.drain(), ["done"]);
         assert_eq!(wakes.load(Ordering::SeqCst), 1);
         assert!(!bridge.is_running(id));

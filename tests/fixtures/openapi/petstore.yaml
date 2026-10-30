@@ -1,0 +1,149 @@
+# A small OpenAPI 3.0 document exercising what the importer maps: servers with variables,
+# declared tag order, shared and referenced parameters, security overrides, recursive and
+# composed schemas, and each body kind. Written for Imposter's tests.
+openapi: 3.0.3
+info:
+  title: Pet Store
+  description: Pets and their owners.
+  version: 1.0.0
+servers:
+  - url: https://{region}.pets.example/v1/
+    variables:
+      region:
+        default: eu
+        enum: [eu, us]
+  - url: http://localhost:8080/v1
+tags:
+  - name: store
+    description: Orders
+  - name: pets
+    description: Everything about pets
+security:
+  - api_key: []
+paths:
+  /pets:
+    parameters:
+      - $ref: '#/components/parameters/Trace'
+    get:
+      tags: [pets]
+      summary: List pets
+      operationId: listPets
+      parameters:
+        - name: limit
+          in: query
+          required: true
+          schema: {type: integer, default: 20}
+        - name: tags
+          in: query
+          schema: {type: array, items: {type: string}}
+          example: [cat, dog]
+        - name: Accept
+          in: header
+          schema: {type: string}
+    post:
+      tags: [pets]
+      summary: |-
+        Create a pet
+        with every detail
+      requestBody:
+        $ref: '#/components/requestBodies/NewPet'
+  /pets/{petId}:
+    get:
+      tags: [pets]
+      operationId: showPetById
+      description: One pet.
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema: {type: string}
+          example: "42"
+    delete:
+      tags: [pets]
+      deprecated: true
+      summary: Delete a pet
+      security:
+        - bearer: []
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema: {type: string}
+  /pets/{petId}/photo:
+    put:
+      tags: [pets]
+      summary: Upload a photo
+      requestBody:
+        content:
+          image/png:
+            schema: {type: string, format: binary}
+  /store/orders:
+    post:
+      tags: [store]
+      summary: Place an order
+      security: []
+      requestBody:
+        content:
+          application/xml:
+            example: <order pet="7"/>
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                petId: {type: integer, example: 7}
+                quantity: {type: integer, minimum: 1}
+  /owners/{ownerId}/documents:
+    post:
+      summary: Upload owner documents
+      parameters:
+        - name: ownerId
+          in: path
+          required: true
+          schema: {type: integer}
+        - name: session
+          in: cookie
+          schema: {type: string}
+          example: abc
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                note: {type: string}
+                file: {type: string, format: binary}
+  /health:
+    get:
+      summary: Health
+      security: []
+components:
+  parameters:
+    Trace:
+      name: X-Trace
+      in: header
+      schema: {type: string}
+  requestBodies:
+    NewPet:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Pet'
+  schemas:
+    Pet:
+      allOf:
+        - $ref: '#/components/schemas/Named'
+        - type: object
+          properties:
+            id: {type: integer, readOnly: true}
+            kind: {type: string, enum: [cat, dog]}
+            born: {type: string, format: date}
+            parent:
+              $ref: '#/components/schemas/Pet'
+    Named:
+      type: object
+      properties:
+        name: {type: string, example: Rex}
+  securitySchemes:
+    api_key: {type: apiKey, in: header, name: X-API-Key}
+    bearer: {type: http, scheme: bearer}

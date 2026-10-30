@@ -313,6 +313,23 @@ numbers, so both are excluded. Each logical change is its own commit.
   explicit request; History copies what was recorded. Why: commands must run as pasted, and
   a generated command must parse back to the same prepared request
   (`imposter-core/tests/curl.rs`).
+- **OpenAPI import (3.0, 3.1, 3.2; JSON or YAML) generates a new collection once; there is no
+  sync.** Re-importing creates `Name (2)`, because merging into an edited collection would break
+  "imports never change existing data". Decoding is lenient, not schema-validated: real specs
+  are often slightly invalid, so unknown or unsupported parts become warnings and nothing needs
+  consent (generating removes nothing a request did). One request per operation; the first
+  tag is its folder, in declared tag order; the first server goes into a `baseUrl` collection
+  variable (other servers are listed in a warning). Path parameters become variables, defined
+  only when the document gives a value: an empty one would send `DELETE /pets/` instead of
+  stopping on the unresolved variable. Optional parameters are imported disabled. Secrets are
+  empty collection variables (`token`, `username`/`password`, the API key scheme's name);
+  OAuth sends `{{token}}` as a bearer token. Only `$ref`s inside the document are followed;
+  example bodies come from the document's examples, else from the schema with recursion
+  included once and size capped. Swagger 2.0 is refused rather than half-supported. Files are
+  recognised by content, not extension (`transfer::detect`), so only Postman files are asked
+  for companions. YAML goes through `serde-saphyr` with a node budget scaled to the file
+  size, which refuses alias bombs. There is no Python implementation to check parity against;
+  the expectations are in `imposter-transfer/tests/openapi.rs`.
 - **File dialogs go through one seam** (`ImposterApp::pick`); tests answer them with
   `script_file_dialogs`, since native dialogs cannot be driven headless.
 - **Each dialog kind has its own modal id.** Why: a dialog replacing another (the import review
