@@ -639,6 +639,8 @@ pub struct State {
     postman: Option<PostmanExport>,
     /// Text to put on the clipboard at the end of this frame.
     pub clipboard: Option<String>,
+    /// Focus and select the request URL on the next frame (Cmd/Ctrl+L).
+    pub focus_url: bool,
     /// The header logo, uploaded on first use.
     pub logo: Option<egui::TextureHandle>,
     pub actions: Vec<Action>,
@@ -699,6 +701,7 @@ impl ImposterApp {
                 started: false,
                 postman: None,
                 clipboard: None,
+                focus_url: false,
                 logo: None,
                 actions: Vec::new(),
             },

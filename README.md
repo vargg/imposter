@@ -126,6 +126,12 @@ Cmd on macOS, Ctrl elsewhere. Shortcuts do nothing while a dialog is open.
 | Cmd/Ctrl+Enter, Cmd/Ctrl+R | Send (or cancel the running request) |
 | Cmd/Ctrl+S | Save the current screen: request, variables or settings |
 | Cmd/Ctrl+N | New request (a new collection when there is none) |
+| Cmd/Ctrl+D | Duplicate the open request |
+| F2, Ctrl+Shift+R | Rename the open request |
+| Cmd/Ctrl+L | Select the request URL |
+| Cmd/Ctrl+B | Show or hide the collections sidebar |
+| Cmd/Ctrl+, | Open Settings |
+| Cmd/Ctrl+Shift+/ | Show keyboard shortcuts |
 | Cmd/Ctrl+F | Find in the viewer under the pointer |
 | Alt+Enter | Inspect the variable at the cursor |
 | Esc | Close the inspector, find bar or suggestions |

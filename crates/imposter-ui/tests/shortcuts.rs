@@ -183,3 +183,92 @@ fn the_save_icon_saves_and_the_status_is_one_word() {
         .unwrap();
     assert_eq!(saved[0].template.url, "http://h/x");
 }
+
+fn with_open_request() -> support::App {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Get", "http://h/old");
+    });
+    click(&mut app.harness, "GET Get");
+    settle(&mut app.harness);
+    app
+}
+
+#[test]
+fn select_url_shortcut_lets_typing_replace_the_url() {
+    let mut app = with_open_request();
+    press(&mut app, Key::L);
+    app.harness.run_steps(2);
+    app.harness.key_press(Key::Backspace);
+    app.harness.run_steps(1);
+    support::text_input(&app.harness, "Request URL").type_text("http://h/new");
+    app.harness.run_steps(2);
+
+    let pane = app.harness.state().state.editor.as_ref().unwrap();
+    assert_eq!(pane.editor.url, "http://h/new");
+}
+
+#[test]
+fn duplicate_and_rename_shortcuts_act_on_the_open_request() {
+    let mut app = with_open_request();
+    press(&mut app, Key::D);
+    settle(&mut app.harness);
+    let names: Vec<String> = app
+        .harness
+        .state()
+        .state
+        .tree
+        .as_ref()
+        .unwrap()
+        .source
+        .requests
+        .iter()
+        .map(|r| r.name.clone())
+        .collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+
+    app.harness.key_press(Key::F2);
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Rename");
+    click(&mut app.harness, "Cancel");
+    app.harness
+        .key_press_modifiers(Modifiers::CTRL.plus(Modifiers::SHIFT), Key::R);
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Rename");
+    click(&mut app.harness, "Cancel");
+    settle(&mut app.harness);
+    let sent = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| imposter_app::store::executions::count(db))
+        .unwrap();
+    assert_eq!(sent, 0, "Ctrl+Shift+R renames; it does not send");
+}
+
+#[test]
+fn sidebar_settings_and_the_shortcut_sheet() {
+    let mut app = with_open_request();
+    assert!(app.harness.state().state.layout.sidebar_visible);
+    press(&mut app, Key::B);
+    assert!(!app.harness.state().state.layout.sidebar_visible);
+    press(&mut app, Key::B);
+    assert!(app.harness.state().state.layout.sidebar_visible);
+
+    app.harness
+        .key_press_modifiers(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Slash);
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Keyboard shortcuts");
+    app.harness
+        .get_by_label("Show or hide the collections sidebar");
+    press(&mut app, Key::B);
+    assert!(
+        app.harness.state().state.layout.sidebar_visible,
+        "shortcuts are inert while the sheet is open"
+    );
+    click(&mut app.harness, "Close");
+
+    press(&mut app, Key::Comma);
+    settle(&mut app.harness);
+    assert_eq!(app.harness.state().state.screen, Screen::Settings);
+}

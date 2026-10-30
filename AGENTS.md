@@ -275,11 +275,15 @@ numbers, so both are excluded. Each logical change is its own commit.
   show are kept. Closing asks about unsaved settings after the request and variables guards.
   Saving applies history retention at once (the Python app waited for the next send), so the
   limits the History screen shows are already true.
-- **Shortcuts are handled in one place before widgets draw** (`shortcuts::handle`) and do
-  nothing while a dialog is open: Cmd/Ctrl+Enter and Cmd/Ctrl+R send (R is the Python app's
-  Run), Cmd/Ctrl+S saves the current screen, Cmd/Ctrl+N opens New Request (New Collection when
-  there is none). Find stays with each viewer and applies to the one under the pointer. Why:
-  one handler means a body editor cannot swallow Send and a dialog cannot be bypassed.
+- **Shortcuts are one table, `shortcuts::ALL`, handled in one place before widgets draw**
+  (`shortcuts::handle`) and doing nothing while a dialog is open. The same table drives the
+  shortcut sheet (Cmd/Ctrl+Shift+/), and a test checks that the README table equals it.
+  Cmd/Ctrl+R sends (the Python app's Run); F2 renames, with Ctrl+Shift+R because F2 needs Fn
+  on Mac keyboards (Yaak's choice). egui ignores extra Shift/Alt when matching, so the
+  handler consumes the most specific combinations first. Find, Alt+Enter and Esc are listed
+  but stay with the widget they act on (Find with the viewer under the pointer). Why: one
+  handler means a body editor cannot swallow Send and a dialog cannot be bypassed; one table
+  means the help and the README cannot drift from the keys.
 - **Packaging: cargo-packager** (`.app`/`.dmg`, `.deb`/`.AppImage`, NSIS per-user installer),
   configured in `crates/imposter/Cargo.toml`. Releases are drafts built from `v*` tags. The macOS
   bundle is always signed, ad-hoc unless the Developer ID secrets exist (`docs/release.md`);

@@ -87,6 +87,8 @@ pub enum Dialog {
     Curl {
         text: String,
     },
+    /// Every keyboard shortcut, from `shortcuts::ALL`.
+    Shortcuts,
     /// What an export includes. Environments and globals are opt-in.
     Export {
         environments: Vec<(EnvironmentId, String, bool)>,
@@ -291,6 +293,29 @@ impl Dialog {
                     name(&text, message);
                     ui.add_space(8.0);
                     if ui.button("OK").clicked() {
+                        outcome = Outcome::Closed;
+                    }
+                }
+                Self::Shortcuts => {
+                    ui.heading("Keyboard shortcuts");
+                    ui.add_space(4.0);
+                    egui::Grid::new("shortcuts")
+                        .num_columns(2)
+                        .spacing([24.0, 6.0])
+                        .show(ui, |ui| {
+                            for shortcut in crate::shortcuts::ALL {
+                                let keys: Vec<String> = shortcut
+                                    .keys
+                                    .iter()
+                                    .map(|k| ui.ctx().format_shortcut(k))
+                                    .collect();
+                                ui.label(RichText::new(keys.join("  ")).monospace().strong());
+                                ui.label(shortcut.description);
+                                ui.end_row();
+                            }
+                        });
+                    ui.add_space(8.0);
+                    if ui.button("Close").clicked() {
                         outcome = Outcome::Closed;
                     }
                 }

@@ -224,8 +224,8 @@ fn var_edit_with(
         .map(|range| char_to_byte(text, range.primary.index.0));
 
     // Inspect on click or Alt+Enter.
-    let alt_enter = response.has_focus()
-        && ui.input_mut(|i| i.consume_key(egui::Modifiers::ALT, egui::Key::Enter));
+    let alt_enter =
+        response.has_focus() && ui.input_mut(|i| i.consume_shortcut(&crate::shortcuts::INSPECT));
     if (response.clicked() || alt_enter)
         && let Some(token) = cursor.and_then(|c| vars::token_at(text, c))
     {
@@ -315,6 +315,19 @@ fn var_edit_with(
         }
     }
     response
+}
+
+/// Focus a single-line field and select all of its text, as Cmd/Ctrl+L does for the URL.
+pub fn focus_and_select_all(ctx: &egui::Context, field: &egui::Response, chars: usize) {
+    field.request_focus();
+    let mut state = egui::TextEdit::load_state(ctx, field.id).unwrap_or_default();
+    state
+        .cursor
+        .set_char_range(Some(egui::text::CCursorRange::two(
+            egui::text::CCursor::new(0),
+            egui::text::CCursor::new(chars),
+        )));
+    state.store(ctx, field.id);
 }
 
 /// What the user chose in the inspector.

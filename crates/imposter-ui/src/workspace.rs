@@ -594,6 +594,7 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
         snapshot,
         inspect,
         actions,
+        focus_url,
         ..
     } = state;
     let Some(pane) = editor else { return };
@@ -616,15 +617,18 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 let send_width = 96.0;
                 let width =
                     (ui.available_width() - send_width - ui.spacing().item_spacing.x).max(80.0);
-                url_edited = widgets::var_edit(
+                let url = widgets::var_edit(
                     ui,
                     &mut pane.editor.url,
                     "Request URL",
                     width,
                     false,
                     &mut vars,
-                )
-                .changed();
+                );
+                if std::mem::take(focus_url) {
+                    widgets::focus_and_select_all(ui.ctx(), &url, pane.editor.url.chars().count());
+                }
+                url_edited = url.changed();
                 let (label, fill) = if executing {
                     ("Cancel", PALETTE.warning)
                 } else {
