@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::StoreError;
 
 /// Every migration in order; the database's `user_version` counts how many have run.
-pub const MIGRATIONS: &[&str] = &[V1, V2];
+pub const MIGRATIONS: &[&str] = &[V1, V2, V3];
 
 const V1: &str = r"
 CREATE TABLE collections (
@@ -87,6 +87,11 @@ const V2: &str = r"
 ALTER TABLE globals ADD COLUMN saved_values TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE environments ADD COLUMN saved_values TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE collections ADD COLUMN saved_values TEXT NOT NULL DEFAULT '{}';
+";
+
+/// The URL beside name and method, for the sidebar filter, without decoding templates.
+const V3: &str = r"
+ALTER TABLE requests ADD COLUMN url TEXT GENERATED ALWAYS AS (json_extract(template, '$.url')) VIRTUAL;
 ";
 
 /// Open a connection with the pragmas every connection needs.

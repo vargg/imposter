@@ -63,6 +63,9 @@ Python/PyQt6 version, and preserves its native collection format. New exports us
   or cmd) to open it as a draft, or copy any request as a ready-to-run curl command.
 
 **Interface**
+- Command palette (Cmd/Ctrl+K) over actions, the requests of every collection and
+  environments; recent requests with Cmd/Ctrl+P, and Ctrl+Tab back to the previous one.
+- Sidebar filter: text, `"phrases"`, `method:POST`, `url:users`, `name:…`, `-word`, OR.
 - Side-by-side or stacked request and response, switched from the status bar. Collections
   sidebar can be hidden. Splitter positions, window size and the last selection are restored.
 - Dark theme. Every control has an accessible name for screen readers; text colors meet

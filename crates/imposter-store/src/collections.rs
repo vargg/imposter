@@ -31,6 +31,7 @@ pub struct RequestSummary {
     pub folder_id: Option<FolderId>,
     pub name: String,
     pub method: String,
+    pub url: String,
     pub position: i64,
 }
 
@@ -152,7 +153,7 @@ pub fn tree(db: &Connection, id: CollectionId) -> Result<Option<Tree>, StoreErro
     };
     let folders = folders(db, id)?;
     let mut statement = db.prepare(
-        "SELECT id, folder_id, name, method, position FROM requests
+        "SELECT id, folder_id, name, method, url, position FROM requests
          WHERE collection_id = ?1 ORDER BY position, id",
     )?;
     let requests = statement
@@ -162,7 +163,8 @@ pub fn tree(db: &Connection, id: CollectionId) -> Result<Option<Tree>, StoreErro
                 folder_id: row.get::<_, Option<i64>>(1)?.map(FolderId),
                 name: row.get(2)?,
                 method: row.get(3)?,
-                position: row.get(4)?,
+                url: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                position: row.get(5)?,
             })
         })?
         .collect::<Result<_, _>>()?;

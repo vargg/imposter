@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use imposter_app::core::ids::{FolderId, RequestId};
 use imposter_app::store::collections::{Folder, RequestSummary, Tree};
 
+use crate::filter::{Candidate, Query};
+
 /// Something in the tree that can be renamed, moved or deleted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NodeId {
@@ -96,6 +98,42 @@ impl TreeView {
         out
     }
 
+    /// The tree with only the requests `query` matches and the folders that lead to them.
+    pub fn filtered(&self, query: &Query) -> Vec<Node> {
+        fn keep(nodes: &[Node], path: &[&str], query: &Query) -> Vec<Node> {
+            nodes
+                .iter()
+                .filter_map(|node| match node {
+                    Node::Folder { folder, children } => {
+                        let mut inner = path.to_vec();
+                        inner.push(&folder.name);
+                        let children = keep(children, &inner, query);
+                        (!children.is_empty()).then(|| Node::Folder {
+                            folder: folder.clone(),
+                            children,
+                        })
+                    }
+                    Node::Request(request) => {
+                        let mut full = path.to_vec();
+                        full.push(&request.name);
+                        let candidate = Candidate {
+                            path: &full.join(" / "),
+                            name: &request.name,
+                            method: &request.method,
+                            url: &request.url,
+                        };
+                        query.matches(&candidate).then(|| node.clone())
+                    }
+                })
+                .collect()
+        }
+        if query.is_all() {
+            // Unfiltered, empty folders stay: they are where new requests go.
+            return self.roots.clone();
+        }
+        keep(&self.roots, &[], query)
+    }
+
     /// Every request inside `folder`, at any depth.
     pub fn requests_under(&self, folder: FolderId) -> Vec<RequestId> {
         let mut inside = vec![folder];
@@ -180,6 +218,7 @@ mod tests {
             folder_id: folder.map(FolderId),
             name: name.into(),
             method: "GET".into(),
+            url: format!("http://h/{name}"),
             position,
         }
     }
@@ -231,5 +270,38 @@ mod tests {
         );
         assert_eq!(view.requests_under(FolderId(10)), [RequestId(2)]);
         assert_eq!(view.requests_under(FolderId(12)), []);
+    }
+
+    fn shape(nodes: &[Node]) -> Vec<String> {
+        nodes
+            .iter()
+            .map(|node| match node {
+                Node::Folder { folder, children } => {
+                    format!("{}[{}]", folder.name, shape(children).join(","))
+                }
+                Node::Request(request) => request.name.clone(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn filtering_keeps_matches_and_the_folders_leading_to_them() {
+        let view = view();
+        assert_eq!(
+            shape(&view.filtered(&Query::parse("promote"))),
+            ["Users[Admin[promote]]"]
+        );
+        assert_eq!(
+            shape(&view.filtered(&Query::parse("admin"))),
+            ["Users[Admin[promote]]"],
+            "a folder name finds what is inside it"
+        );
+        assert_eq!(
+            shape(&view.filtered(&Query::parse("-promote"))),
+            ["health", "late"],
+            "folders left empty disappear"
+        );
+        assert_eq!(shape(&view.filtered(&Query::parse("url:late"))), ["late"]);
+        assert_eq!(view.filtered(&Query::parse("")), view.roots);
     }
 }

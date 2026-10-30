@@ -656,6 +656,8 @@ pub struct State {
     pub clipboard: Option<String>,
     /// Focus and select the request URL on the next frame (Cmd/Ctrl+L).
     pub focus_url: bool,
+    /// The sidebar filter as typed (see `filter::Query`).
+    pub sidebar_filter: String,
     /// The header logo, uploaded on first use.
     pub logo: Option<egui::TextureHandle>,
     /// Requests opened recently, newest first (the palette lists them first).
@@ -719,6 +721,7 @@ impl ImposterApp {
                 postman: None,
                 clipboard: None,
                 focus_url: false,
+                sidebar_filter: String::new(),
                 logo: None,
                 recent: Vec::new(),
                 actions: Vec::new(),

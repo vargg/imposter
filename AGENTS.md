@@ -302,6 +302,15 @@ numbers, so both are excluded. Each logical change is its own commit.
   Ctrl+Tab goes back to the previous request; Shift starts from the oldest; Esc cancels. A
   release that comes before the index loads opens as soon as it arrives. Why: the
   back-and-forth between two requests is the most common jump.
+- **The sidebar filter is a small query language** (`filter.rs`, after Yaak's): words combine
+  with AND, plus OR, NOT/`-word`, `"phrases"`, parentheses, and `method:` (whole method),
+  `url:` and `name:`. Plain words match the request's folder path, name and URL, so typing a
+  folder name shows its requests and a negation never brings a whole folder back; folders
+  left without matches are hidden. Text that does not parse is searched as typed. Filtered
+  folders are drawn open under their own collapse ids, so clearing the filter restores the
+  folders the user closed. The tree reads `url` through a virtual generated column
+  (migration V3), like `name` and `method`. Cmd/Ctrl+F over the sidebar focuses the filter,
+  as Find elsewhere applies to what is under the pointer.
 - **Packaging: cargo-packager** (`.app`/`.dmg`, `.deb`/`.AppImage`, NSIS per-user installer),
   configured in `crates/imposter/Cargo.toml`. Releases are drafts built from `v*` tags. The macOS
   bundle is always signed, ad-hoc unless the Developer ID secrets exist (`docs/release.md`);

@@ -211,5 +211,16 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-palette.png")))
             .unwrap();
+        harness.key_press(egui::Key::Escape);
+        settle(&mut harness);
+        harness.get_by_label("Requests").click();
+        settle(&mut harness);
+        harness.state_mut().state.sidebar_filter = "method:POST".into();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-filter.png")))
+            .unwrap();
     }
 }

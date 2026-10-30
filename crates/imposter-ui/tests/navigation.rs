@@ -297,3 +297,127 @@ fn deleted_requests_leave_the_recent_list() {
         .unwrap();
     assert!(!stored.contains(&b), "the stored list is pruned too");
 }
+
+/// API: Health (GET, root), Users/{List users GET, Create user POST}, Orders/{Place order POST}.
+fn foldered() -> support::App {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                use imposter_app::core::model::{BodyType, RequestTemplate};
+                use imposter_app::store::collections::{
+                    create_collection, create_folder, create_request,
+                };
+                let api = create_collection(db, "API", "", &Variables::new())?;
+                let users = create_folder(db, api.id, None, "Users", "", 1)?;
+                let orders = create_folder(db, api.id, None, "Orders", "", 2)?;
+                for (folder, name, method, url) in [
+                    (None, "Health", "GET", "http://h/health"),
+                    (Some(users.id), "List users", "GET", "http://h/users"),
+                    (Some(users.id), "Create user", "POST", "http://h/users"),
+                    (
+                        Some(orders.id),
+                        "Place order",
+                        "POST",
+                        "http://h/store/orders",
+                    ),
+                ] {
+                    let template = RequestTemplate {
+                        name: name.into(),
+                        method: method.into(),
+                        url: url.into(),
+                        body_type: BodyType::None,
+                        ..RequestTemplate::default()
+                    };
+                    create_request(db, api.id, folder, &template)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+    });
+    settle(&mut app.harness);
+    app
+}
+
+fn shown(app: &support::App, label: &str) -> bool {
+    app.harness.query_by_label(label).is_some()
+}
+
+fn filter(app: &mut support::App, text: &str) {
+    app.harness.state_mut().state.sidebar_filter = text.into();
+    app.harness.run_steps(2);
+}
+
+#[test]
+fn the_sidebar_filter_shows_matches_with_their_folders() {
+    let mut app = foldered();
+    filter(&mut app, "method:POST -create");
+    assert!(shown(&app, "POST Place order"));
+    assert!(shown(&app, "Folder Orders"));
+    assert!(
+        !shown(&app, "Folder Users"),
+        "a folder left empty is hidden"
+    );
+    assert!(!shown(&app, "GET Health"));
+
+    filter(&mut app, "\"list users\" OR url:health");
+    assert!(shown(&app, "GET List users"));
+    assert!(shown(&app, "GET Health"));
+    assert!(!shown(&app, "POST Create user"));
+
+    filter(&mut app, "nothing-like-this");
+    app.harness.get_by_label("No requests match");
+    click(&mut app.harness, "Clear the filter");
+    assert_eq!(app.harness.state().state.sidebar_filter, "");
+    assert!(shown(&app, "POST Create user"));
+}
+
+#[test]
+fn clearing_the_filter_keeps_the_folders_the_user_closed() {
+    let mut app = foldered();
+    let header = app.harness.get_by_label("Folder Users").rect();
+    let arrow = egui::pos2(header.left() - 10.0, header.center().y);
+    app.harness.drag_at(arrow);
+    app.harness.drop_at(arrow);
+    app.harness.run_steps(3);
+    assert!(!shown(&app, "GET List users"), "the folder is closed");
+
+    filter(&mut app, "list");
+    assert!(
+        shown(&app, "GET List users"),
+        "matches show inside closed folders"
+    );
+    filter(&mut app, "");
+    assert!(
+        !shown(&app, "GET List users"),
+        "and the folder is closed again"
+    );
+}
+
+#[test]
+fn find_over_the_sidebar_focuses_the_filter_and_escape_clears_it() {
+    let mut app = foldered();
+    let field = app.harness.get_by_label("Filter requests").rect();
+    app.harness
+        .hover_at(egui::pos2(field.center().x, field.bottom() + 60.0));
+    app.harness.run_steps(1);
+    app.harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    app.harness.run_steps(2);
+    assert!(app.harness.get_by_label("Filter requests").is_focused());
+
+    app.harness.event(egui::Event::Text("health".into()));
+    app.harness.run_steps(2);
+    assert_eq!(app.harness.state().state.sidebar_filter, "health");
+    assert!(!shown(&app, "Folder Users"));
+    app.harness.key_press(Key::Escape);
+    app.harness.run_steps(2);
+    assert_eq!(app.harness.state().state.sidebar_filter, "");
+}
+
+#[test]
+fn a_typed_filter_does_not_widen_the_sidebar() {
+    let mut app = foldered();
+    let before = app.harness.state().state.layout.sidebar_width;
+    filter(&mut app, "method:POST");
+    app.harness.run_steps(20);
+    assert_eq!(app.harness.state().state.layout.sidebar_width, before);
+}

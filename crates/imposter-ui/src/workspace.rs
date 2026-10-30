@@ -294,8 +294,11 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
         return;
     }
     ui.add_space(6.0);
+    sidebar_filter(state, ui);
+    ui.add_space(6.0);
     ui.separator();
     ui.add_space(6.0);
+    let query = crate::filter::Query::parse(&state.sidebar_filter);
     egui::ScrollArea::vertical()
         .id_salt("tree")
         .auto_shrink([false, false])
@@ -311,9 +314,18 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                 ));
             }
             let mut actions = Vec::new();
-            let roots = tree.roots.clone();
+            let filtering = !query.is_all();
+            let roots = tree.filtered(&query);
+            if filtering && roots.is_empty() {
+                ui.label(tone_text("No requests match", Tone::Muted));
+            }
             let destinations = tree.destinations();
-            nodes(ui, &roots, state.selected, &destinations, &mut actions);
+            let view = NodesView {
+                selected: state.selected,
+                destinations: &destinations,
+                filtering,
+            };
+            nodes(ui, &roots, &view, &mut actions);
             if egui::DragAndDrop::has_payload_of_type::<NodeId>(ui.ctx()) {
                 let (_, dropped) =
                     ui.dnd_drop_zone::<NodeId, _>(egui::Frame::default().inner_margin(6.0), |ui| {
@@ -416,23 +428,75 @@ fn folder_of(node: &Node) -> Option<FolderId> {
     }
 }
 
-fn nodes(
-    ui: &mut Ui,
-    list: &[Node],
+/// How the tree is drawn this frame.
+struct NodesView<'a> {
     selected: Option<NodeId>,
-    destinations: &[(String, Option<FolderId>)],
-    actions: &mut Vec<Action>,
-) {
+    destinations: &'a [(String, Option<FolderId>)],
+    /// Filtered folders are drawn open under their own ids, so the user's open and closed
+    /// folders are as they left them when the filter is cleared.
+    filtering: bool,
+}
+
+/// The filter field above the tree. Cmd/Ctrl+F over the sidebar focuses it; Esc or × clear.
+fn sidebar_filter(state: &mut State, ui: &mut Ui) {
+    let over_sidebar = ui.rect_contains_pointer(ui.max_rect());
+    let find = over_sidebar && ui.input_mut(|i| i.consume_shortcut(&crate::shortcuts::FIND));
+    ui.horizontal(|ui| {
+        // Exactly the room left by the clear button: wider content would widen the panel.
+        let clear_width = if state.sidebar_filter.is_empty() {
+            0.0
+        } else {
+            24.0 + ui.spacing().item_spacing.x
+        };
+        let field = ui.add(
+            egui::TextEdit::singleline(&mut state.sidebar_filter)
+                .hint_text("Filter: text, method:POST, url:…")
+                .desired_width(ui.available_width() - clear_width),
+        );
+        name(&field, "Filter requests");
+        if find {
+            field.request_focus();
+        }
+        // Esc also ends the field's focus, possibly in this same frame.
+        if (field.has_focus() || field.lost_focus())
+            && ui.input(|i| i.key_pressed(egui::Key::Escape))
+        {
+            state.sidebar_filter.clear();
+        }
+        if !state.sidebar_filter.is_empty() {
+            let clear = ui.add_sized([24.0, 24.0], egui::Button::new("×").frame(false));
+            name(&clear, "Clear the filter");
+            if clear.clicked() {
+                state.sidebar_filter.clear();
+            }
+        }
+    });
+}
+
+fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Action>) {
+    let NodesView {
+        selected,
+        destinations,
+        filtering,
+    } = *view;
     for node in list {
         let id = node.id();
         let response = match node {
             Node::Folder { folder, children } => {
-                let key = ui.make_persistent_id(("folder", folder.id.0));
-                let collapsing = egui::collapsing_header::CollapsingState::load_with_default_open(
-                    ui.ctx(),
-                    key,
-                    true,
-                );
+                let key = if filtering {
+                    ui.make_persistent_id(("filtered folder", folder.id.0))
+                } else {
+                    ui.make_persistent_id(("folder", folder.id.0))
+                };
+                let mut collapsing =
+                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ui.ctx(),
+                        key,
+                        true,
+                    );
+                if filtering {
+                    collapsing.set_open(true);
+                }
                 let (_, header, _) = collapsing
                     .show_header(ui, |ui| {
                         let button = egui::Button::selectable(
@@ -444,7 +508,7 @@ fn nodes(
                         name(&response, &format!("Folder {}", folder.name));
                         response
                     })
-                    .body(|ui| nodes(ui, children, selected, destinations, actions));
+                    .body(|ui| nodes(ui, children, view, actions));
                 let response = header.inner;
                 if response.dnd_hover_payload::<NodeId>().is_some() {
                     ui.painter().rect_stroke(
