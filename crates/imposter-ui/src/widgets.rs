@@ -375,6 +375,29 @@ pub fn option<'a>(ui: &mut Ui, selected: bool, atoms: impl egui::IntoAtoms<'a>) 
     ui.add(egui::Button::selectable(selected, atoms).stroke(egui::Stroke::NONE))
 }
 
+/// The grip in the middle of a split's `handle`: a short bar across the split, in the
+/// control-edge color (≥3:1, so it can be found), the text color while `active`.
+pub fn split_grip(ui: &Ui, handle: egui::Rect, vertical_split: bool, active: bool) {
+    let color = if active {
+        palette().text_muted
+    } else {
+        palette().field_border
+    };
+    let size = if vertical_split {
+        egui::vec2(3.0, GRIP_LENGTH)
+    } else {
+        egui::vec2(GRIP_LENGTH, 3.0)
+    };
+    ui.painter().rect_filled(
+        egui::Rect::from_center_size(handle.center(), size),
+        2.0,
+        color,
+    );
+}
+
+/// The length of a split's grip.
+pub const GRIP_LENGTH: f32 = 32.0;
+
 /// The marker beside a selected row: a bar on its left edge.
 pub fn selection_bar(ui: &Ui, rect: egui::Rect) {
     let bar = egui::Rect::from_min_size(

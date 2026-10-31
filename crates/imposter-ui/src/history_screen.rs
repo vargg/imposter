@@ -146,12 +146,13 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             / (area.height() - SEPARATOR))
             .clamp(crate::layout::RATIO.0, crate::layout::RATIO.1);
     }
-    let color = if drag.hovered() || drag.dragged() {
-        palette().text_muted
-    } else {
-        palette().border
-    };
-    ui.painter().rect_filled(handle.shrink(2.0), 2.0, color);
+    // A hairline across, and a grip that says it can be dragged.
+    ui.painter().hline(
+        handle.x_range(),
+        handle.center().y,
+        egui::Stroke::new(1.0, palette().border),
+    );
+    widgets::split_grip(ui, handle, false, drag.hovered() || drag.dragged());
 
     ui.scope_builder(
         UiBuilder::new().max_rect(list).id_salt("history list"),

@@ -895,17 +895,12 @@ fn split(state: &mut State, ui: &mut Ui) {
         }
     }
     // Hover is neutral; orange is for primary, selected and focused things.
-    let color = if drag.hovered() || drag.dragged() {
-        palette().text_muted
-    } else {
-        palette().border
-    };
-    let grip = match orientation {
-        Orientation::SideBySide => vec2(3.0, 32.0),
-        Orientation::Stacked => vec2(32.0, 3.0),
-    };
-    ui.painter()
-        .rect_filled(Rect::from_center_size(handle.center(), grip), 2.0, color);
+    widgets::split_grip(
+        ui,
+        handle,
+        orientation == Orientation::SideBySide,
+        drag.hovered() || drag.dragged(),
+    );
     for rect in [first, second] {
         ui.painter().rect(
             rect,

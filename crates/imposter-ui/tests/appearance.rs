@@ -280,3 +280,33 @@ fn hovering_an_icon_button_draws_no_orange() {
     assert!(!strokes.is_empty(), "the icon is drawn");
     assert!(!strokes.contains(&accent), "{strokes:?}");
 }
+
+/// Grips painted last frame: bars of the grip's length in the control-edge color.
+fn grips(app: &support::App) -> usize {
+    let edge = imposter_ui::theme::palette().field_border;
+    app.harness
+        .output()
+        .shapes
+        .iter()
+        .filter(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => {
+                let long = |side: f32| (side - imposter_ui::widgets::GRIP_LENGTH).abs() < 0.5;
+                rect.fill == edge && (long(rect.rect.width()) != long(rect.rect.height()))
+            }
+            _ => false,
+        })
+        .count()
+}
+
+#[test]
+fn splits_show_a_grip_that_can_be_found() {
+    let mut app = many_requests();
+    app.harness.hover_at(egui::pos2(5.0, 5.0));
+    app.harness.run_steps(2);
+    assert_eq!(grips(&app), 1, "request and response");
+    click(&mut app.harness, "History");
+    settle(&mut app.harness);
+    app.harness.hover_at(egui::pos2(5.0, 5.0));
+    app.harness.run_steps(2);
+    assert_eq!(grips(&app), 1, "History's list and details");
+}
