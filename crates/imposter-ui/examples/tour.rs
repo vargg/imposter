@@ -381,6 +381,18 @@ fn main() {
         tour.click("Send");
         tour.settle();
         tour.shot("2-05-json-response");
+        // The overflow menus, where the window is too small for every tab and tool.
+        for (menu, name) in [
+            ("More request tabs", "2-05b-more-tabs"),
+            ("More tools", "2-05c-more-tools"),
+        ] {
+            if tour.harness.query_by_label(menu).is_some() {
+                tour.click(menu);
+                tour.shot(name);
+                tour.harness.key_press(egui::Key::Escape);
+                tour.settle();
+            }
+        }
         tour.harness.state_mut().state.response.tab = ResponseTab::Headers;
         tour.settle();
         tour.shot("2-06-response-headers");
