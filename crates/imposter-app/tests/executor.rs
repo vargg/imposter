@@ -229,6 +229,94 @@ async fn captured_values_feed_the_next_request() {
 }
 
 #[tokio::test]
+async fn generated_values_are_the_same_wherever_one_send_uses_them() {
+    use imposter_core::check::{Check, Op, Verdict};
+    use imposter_core::select::Selector;
+    let (_dir, store) = open();
+    let server = Server::start(|_, received| {
+        // Echo the id the request carried in its header.
+        let id = received.header("x-id").unwrap_or_default().to_owned();
+        response(
+            "200 OK",
+            &[("Content-Type", "application/json")],
+            format!("{{\"id\":\"{id}\"}}").as_bytes(),
+        )
+    })
+    .await;
+    let mut request = setup(&store, &server.url).await;
+    request.template.url = "{{base}}/items/{{$uuid}}?n={{$randomInt 1 9}}&other={{$uuid b}}".into();
+    request.template.headers = vec![ParamItem::new("X-Id", "{{$uuid}}")];
+    request.template.body = b"{\"id\": \"{{$uuid}}\", \"at\": {{$timestamp}}}".to_vec();
+    request.template.checks = vec![Check::new(
+        Selector::Json("$.id".into()),
+        Op::Equals,
+        "{{$uuid}}",
+    )];
+
+    let executed = execute(&store.handle(), request.clone(), CancellationToken::new())
+        .await
+        .unwrap();
+    let received = server.requests().remove(0);
+    let id = received.header("x-id").unwrap().to_owned();
+    assert_eq!(id.len(), 36);
+    let (path, query) = received.request_line.split_once('?').unwrap();
+    assert!(path.ends_with(&format!("/items/{id}")), "{path}");
+    assert!(
+        !query.contains(&id),
+        "a labelled expression is another value: {query}"
+    );
+    let body: serde_json::Value = serde_json::from_slice(&received.body).unwrap();
+    assert_eq!(body["id"], id.as_str());
+    assert!(body["at"].as_i64().unwrap() > 1_700_000_000);
+    assert_eq!(
+        executed.response.checks[0].verdict,
+        Verdict::Passed,
+        "checks see the sent value"
+    );
+
+    // Another send generates anew.
+    execute(&store.handle(), request.clone(), CancellationToken::new())
+        .await
+        .unwrap();
+    assert_ne!(server.requests().remove(1).header("x-id").unwrap(), id);
+
+    // A name the user defined wins; an unknown one stops the send.
+    store
+        .call(|db| environments::set_globals(db, &vars(&[("$uuid", "mine")])))
+        .await
+        .unwrap();
+    let with_url = |url: &str| Request {
+        template: RequestTemplate {
+            url: url.into(),
+            ..request.template.clone()
+        },
+        ..request.clone()
+    };
+    execute(
+        &store.handle(),
+        with_url("{{base}}/{{$uuid}}"),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let received = server.requests().remove(2);
+    assert!(
+        received.request_line.starts_with("POST /mine "),
+        "{}",
+        received.request_line
+    );
+    assert_eq!(received.header("x-id"), Some("mine"));
+    let error = execute(
+        &store.handle(),
+        with_url("{{base}}/{{$randomFirstName}}"),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.to_string(), "Unresolved variables: $randomFirstName");
+}
+
+#[tokio::test]
 async fn inherited_settings_resolve_against_the_same_variables() {
     let (_dir, store) = open();
     let proxy = Server::start(|_, _| response("200 OK", &[], b"via proxy")).await;

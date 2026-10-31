@@ -3,6 +3,7 @@
 
 use std::ops::Range;
 
+use imposter_app::core::generate;
 use imposter_app::core::model::{SavedValues, Variables};
 pub use imposter_app::core::variables::Scope;
 use imposter_app::core::variables::{Definition, Snapshot, Source};
@@ -53,16 +54,48 @@ pub fn open_token(text: &str, cursor: usize) -> Option<(usize, &str)> {
     Some((start, typed))
 }
 
-/// Defined names matching `query` (case-insensitive substring), in definition order. Names
-/// only: suggestions never show values.
-pub fn suggestions<'a>(snapshot: &'a Snapshot, query: &str) -> Vec<(&'a str, &'a Definition)> {
+/// A name offered while typing `{{`, and where it comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Suggestion {
+    pub name: String,
+    /// The scope and its name, or what a generated value makes. Never a value.
+    pub detail: String,
+}
+
+/// Defined names matching `query` (case-insensitive substring), in definition order. Once
+/// the query starts with `$`, generated values come first. Names only: suggestions never
+/// show values.
+pub fn suggestions(snapshot: &Snapshot, query: &str) -> Vec<Suggestion> {
     let query = query.trim().to_lowercase();
-    snapshot
+    let defined = snapshot
         .definitions
         .iter()
         .filter(|(name, _)| name.to_lowercase().contains(&query))
-        .filter_map(|(name, definitions)| Some((name.as_str(), definitions.first()?)))
+        .filter_map(|(name, definitions)| {
+            let source = &definitions.first()?.source;
+            Some(Suggestion {
+                name: name.clone(),
+                detail: format!("{} · {}", scope_label(source), source.label()),
+            })
+        });
+    if !query.starts_with('$') {
+        return defined.collect();
+    }
+    generate::FUNCTIONS
+        .iter()
+        .filter(|(name, _)| name.to_lowercase().contains(&query))
+        .map(|(name, description)| Suggestion {
+            name: (*name).to_owned(),
+            detail: format!("Generated · {description}"),
+        })
+        .chain(defined)
         .collect()
+}
+
+/// Whether a `{{name}}` resolves: a defined variable, or a generated value it can make.
+pub fn resolves(snapshot: Option<&Snapshot>, name: &str) -> bool {
+    snapshot.is_some_and(|s| s.definitions.contains_key(name))
+        || matches!(generate::describe(name), Some(Ok(_)))
 }
 
 /// Replace the open token starting at `start` (up to `cursor`, plus closing braces already
@@ -259,14 +292,40 @@ mod tests {
     #[test]
     fn suggestions_match_names_without_values() {
         let snapshot = snapshot();
-        let names: Vec<&str> = suggestions(&snapshot, "HO")
+        let names: Vec<String> = suggestions(&snapshot, "HO")
             .into_iter()
-            .map(|(n, _)| n)
+            .map(|s| s.name)
             .collect();
         assert_eq!(names, ["host", "Host"]);
-        let (_, definition) = suggestions(&snapshot, "host")[0];
-        assert_eq!(definition.source.label(), "Dev");
-        assert_eq!(suggestions(&snapshot, "").len(), 3);
+        assert_eq!(
+            suggestions(&snapshot, "host")[0].detail,
+            "Environment · Dev"
+        );
+        assert_eq!(
+            suggestions(&snapshot, "").len(),
+            3,
+            "no generated values unasked"
+        );
+    }
+
+    #[test]
+    fn a_dollar_suggests_generated_values_and_they_resolve() {
+        let snapshot = snapshot();
+        let names: Vec<String> = suggestions(&snapshot, "$rand")
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(names, ["$randomUUID", "$randomInt", "$randomString"]);
+        assert!(
+            suggestions(&snapshot, "$")[0]
+                .detail
+                .starts_with("Generated · ")
+        );
+        assert!(resolves(Some(&snapshot), "host"));
+        assert!(resolves(None, "$uuid label"));
+        assert!(!resolves(Some(&snapshot), "$randomInt 9 1"));
+        assert!(!resolves(Some(&snapshot), "$nope"));
+        assert!(!resolves(None, "host"));
     }
 
     #[test]

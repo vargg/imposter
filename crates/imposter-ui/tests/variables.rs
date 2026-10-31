@@ -508,3 +508,67 @@ fn removing_a_row_takes_two_clicks() {
     app.harness.get_by_label("Remove variable 1");
     assert_eq!(names(&app), ["b"]);
 }
+
+#[test]
+fn a_dollar_suggests_generated_values_and_the_inspector_explains_them() {
+    let mut app = with_request();
+    type_into(&mut app.harness, "Request URL", "/{{$rand");
+    app.harness
+        .get_by_label_contains("$randomInt · Generated · ");
+    assert!(
+        app.harness.query_by_label_contains("host ·").is_none(),
+        "only names containing the query"
+    );
+    app.harness.key_press(egui::Key::Enter);
+    app.harness.run_steps(2);
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .url,
+        "http://x/{{$randomUUID}}"
+    );
+
+    for (name, expected) in [
+        ("$randomUUID", "A random UUID (Postman's name)"),
+        ("$randomInt 9 1", "$randomInt needs min ≤ max"),
+        (
+            "$randomFirstName",
+            "$randomFirstName is not a generated value",
+        ),
+    ] {
+        app.harness.state_mut().state.inspect = Some(imposter_ui::widgets::Inspection {
+            name: name.into(),
+            masked: false,
+            anchor: egui::pos2(100.0, 100.0),
+        });
+        app.harness.run_steps(2);
+        app.harness.get_by_label(expected);
+    }
+    app.harness.state_mut().state.inspect = Some(imposter_ui::widgets::Inspection {
+        name: "$uuid".into(),
+        masked: false,
+        anchor: egui::pos2(100.0, 100.0),
+    });
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Generated on each send");
+    let example = app
+        .harness
+        .get_by_label_contains("For example: ")
+        .value()
+        .unwrap_or_default();
+    app.harness.run_steps(3);
+    assert_eq!(
+        app.harness
+            .get_by_label_contains("For example: ")
+            .value()
+            .unwrap_or_default(),
+        example,
+        "the example holds still while the inspector is open"
+    );
+    assert_eq!(example.trim_start_matches("For example: ").len(), 36);
+}

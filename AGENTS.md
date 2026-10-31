@@ -237,8 +237,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   glyph, which would otherwise render as a box. `cargo run -p imposter-ui --example screenshot --
   <dir>` renders the app offscreen (wgpu) for looking at layouts.
 - **Variables in the editor:** fields mark `{{name}}` tokens with the Python app's highlight
-  pattern (`\{\{([^{}\n]+)\}\}`, stricter than the resolution pattern): defined names in the
-  accent color, unknown ones in the error color. Typing `{{` suggests names with their scope and
+  pattern (`\{\{([^{}\n]+)\}\}`, stricter than the resolution pattern): defined names and
+  generated values in the accent color, unknown ones in the error color. Typing `{{` suggests names with their scope and
   source, never values; the list opens only from typing in an unfinished token (clicking into
   a token only inspects it) and can be chosen by keyboard or pointer. Values appear only in the inspector, opened explicitly (click on a token
   or Alt+Enter); from a password field they stay masked until "Reveal". The inspector and
@@ -376,6 +376,20 @@ numbers, so both are excluded. Each logical change is its own commit.
   OpenAPI import adds a status check for the lowest documented success code and none when
   there is no documented success. Postman export lists checks as not exported. Rejected: a
   JavaScript engine (Postman's `pm.test`), a large dependency with an open-ended surface.
+- **Generated values are placeholders named `$function args`** (`core::generate`): `$uuid`
+  (and Postman's `$guid`, `$randomUUID`), `$timestamp`, `$timestampMs`, `$isoTimestamp`, `$date`
+  with a strftime format, each with an optional offset (`-1d`, `+2h`), `$randomInt [min max]`
+  and `$randomString [length]`. They are generated when a request is resolved for sending (or
+  copying as curl), once per distinct expression, so `{{$uuid}}` in the URL, a header, the body,
+  every redirect hop, the digest retry and a check's expected value is one value; words after
+  a function's own arguments are labels that make separate values (`{{$uuid a}}`). A variable
+  the user defines with the same name wins. Unknown functions and bad arguments stay unresolved
+  and stop the send as any missing variable does; the inspector says why. Core reads no clock
+  or randomness: `Entropy` comes from the app (`executor::SystemEntropy`, operating-system
+  randomness) or a fixed one in tests. Postman import keeps the dynamic variables Imposter
+  generates and still removes, with consent, the ones it does not. Rejected: a counter (a
+  database write on every send; timestamps and random values cover uniqueness) and Postman's
+  fake names and addresses (large tables, little testing value).
 - **Captures set variables from a response, explicitly and visibly** (`core::capture`): a
   variable name and a selector, stored with the request. The value goes to the scope whose
   definition the request saw (so the value it used is the one replaced), else to the active
@@ -436,7 +450,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   port written from reading code copies the reader's misreadings. Change a fixture only by
   regenerating it; a deliberate divergence is asserted in its own test with the reason.
   Current divergences: no empty `Cookie:` header when every cookie is disabled; converted
-  documents are marked native version 2.
+  documents are marked native version 2; Postman dynamic variables Imposter generates are
+  kept rather than removed.
 - **No line-ending conversion** (`.gitattributes`: `* -text`). Why: fixtures, golden exports
   and the pinned schema are compared byte for byte; a CRLF checkout on Windows broke them.
   Enforced by: the Windows CI job, which runs those tests.

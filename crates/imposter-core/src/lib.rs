@@ -5,6 +5,7 @@ pub mod capture;
 pub mod check;
 pub mod curl;
 pub mod execution;
+pub mod generate;
 pub mod ids;
 pub mod model;
 pub mod prepare;

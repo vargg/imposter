@@ -108,7 +108,7 @@ pub fn variable_job(
 ) -> LayoutJob {
     let mut job = spans_job(text, spans, font, wrap);
     for token in vars::tokens(text) {
-        let defined = snapshot.is_some_and(|s| s.definitions.contains_key(&token.name));
+        let defined = vars::resolves(snapshot, &token.name);
         let color = if defined {
             PALETTE.accent
         } else {
@@ -312,21 +312,17 @@ fn var_edit_with(
                 state.selected =
                     (state.selected as i64 + step).rem_euclid(items.len() as i64) as usize;
             }
-            let mut chosen = accept.then(|| items[state.selected].0.to_owned());
+            let mut chosen = accept.then(|| items[state.selected].name.clone());
             let area = egui::Area::new(id.with("completion"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(response.rect.left_bottom() + egui::vec2(0.0, 2.0))
                 .show(&ctx, |ui| {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.set_max_width(width.clamp(200.0, 360.0));
-                        for (index, (name, definition)) in items.iter().enumerate() {
-                            let row = format!(
-                                "{name} · {} · {}",
-                                vars::scope_label(&definition.source),
-                                definition.source.label()
-                            );
+                        for (index, item) in items.iter().enumerate() {
+                            let row = format!("{} · {}", item.name, item.detail);
                             if ui.selectable_label(index == state.selected, row).clicked() {
-                                chosen = Some((*name).to_owned());
+                                chosen = Some(item.name.clone());
                             }
                         }
                     });
@@ -411,6 +407,8 @@ pub fn inspector(
     let mut open = None;
     let reveal_id = egui::Id::unique(("inspector reveal", current.name.as_str()));
     let mut revealed: bool = ctx.data(|d| d.get_temp(reveal_id)).unwrap_or(false);
+    // One example per opening, so it does not change every frame.
+    let sample_id = egui::Id::unique(("generated sample", current.name.as_str()));
     let area = egui::Area::new(egui::Id::unique("variable inspector"))
         .order(egui::Order::Foreground)
         .fixed_pos(current.anchor + egui::vec2(0.0, 4.0))
@@ -433,9 +431,29 @@ pub fn inspector(
                             }
                         });
                     }
-                    (None, None) => {
-                        ui.label(tone_text("Not defined", Tone::Error));
-                    }
+                    (None, None) => match imposter_app::core::generate::describe(&current.name) {
+                        Some(Ok(description)) => {
+                            ui.label(tone_text("Generated on each send", Tone::Muted).small());
+                            ui.label(description);
+                            let sample: String = ctx.data_mut(|d| {
+                                d.get_temp_mut_or_insert_with(sample_id, || {
+                                    imposter_app::core::generate::generate(
+                                        &current.name,
+                                        &mut imposter_app::executor::SystemEntropy::default(),
+                                    )
+                                    .unwrap_or_default()
+                                })
+                                .clone()
+                            });
+                            ui.label(tone_text(format!("For example: {sample}"), Tone::Muted));
+                        }
+                        Some(Err(reason)) => {
+                            ui.label(tone_text(reason, Tone::Error));
+                        }
+                        None => {
+                            ui.label(tone_text("Not defined", Tone::Error));
+                        }
+                    },
                 }
                 let effective = definitions.and_then(|d| d.first()).filter(|_| error.is_none());
                 if let Some(effective) = effective.filter(|d| !d.saved.is_empty())
@@ -491,7 +509,10 @@ pub fn inspector(
         && !area.response.hovered();
     ctx.data_mut(|d| d.insert_temp(reveal_id, revealed));
     if close || (clicked_outside && !ctx.input(|i| i.pointer.any_released())) {
-        ctx.data_mut(|d| d.remove_temp::<bool>(reveal_id));
+        ctx.data_mut(|d| {
+            d.remove_temp::<bool>(reveal_id);
+            d.remove_temp::<String>(sample_id);
+        });
         *inspection = None;
     }
     open

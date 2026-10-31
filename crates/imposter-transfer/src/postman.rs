@@ -127,7 +127,9 @@ fn truthy(value: Option<&Value>) -> bool {
     }
 }
 
-/// Remove `{{ $dynamic }}` placeholders (Python `\{\{\s*\$.*?\}\}`); returns whether any was found.
+/// Remove `{{ $dynamic }}` placeholders (Python `\{\{\s*\$.*?\}\}`) that Imposter does not
+/// generate; returns whether any was removed. Ones it generates (`$guid`, `$timestamp`, …) stay:
+/// a deliberate divergence from the Python app, which had no generated values.
 fn strip_dynamic(text: &str) -> Option<String> {
     let mut out = String::with_capacity(text.len());
     let mut found = false;
@@ -143,7 +145,12 @@ fn strip_dynamic(text: &str) -> Option<String> {
             let close = rest.find("}}")?;
             (!rest[..close].contains('\n')).then_some(body + 1 + close + 2)
         });
+        let generated = |end: usize| {
+            let name = text[start + 2..end - 2].trim();
+            matches!(imposter_core::generate::describe(name), Some(Ok(_)))
+        };
         match matched.flatten() {
+            Some(end) if generated(end) => from = end,
             Some(end) => {
                 out.push_str(&text[last..start]);
                 last = end;
@@ -912,7 +919,16 @@ mod tests {
         assert_eq!(py_repr("a"), "'a'");
         assert_eq!(py_repr("it's"), "\"it's\"");
         assert_eq!(py_repr("a'\"b"), "'a\\'\"b'");
-        assert_eq!(strip_dynamic("x{{$guid}}y{{ $t }}z"), Some("xyz".into()));
+        assert_eq!(
+            strip_dynamic("x{{$randomFirstName}}y{{ $t }}z"),
+            Some("xyz".into())
+        );
+        assert_eq!(
+            strip_dynamic("{{$guid}}-{{ $timestamp -1d }}-{{$x}}"),
+            Some("{{$guid}}-{{ $timestamp -1d }}-".into()),
+            "generated values stay"
+        );
+        assert_eq!(strip_dynamic("{{$uuid}}"), None);
         assert_eq!(strip_dynamic("{{normal}}"), None);
         assert_eq!(strip_dynamic("{{$a\n}}"), None);
         assert_eq!(

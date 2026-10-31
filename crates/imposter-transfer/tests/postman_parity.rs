@@ -53,6 +53,10 @@ fn document_value(document: &NativeDocument) -> Value {
 fn decoding_matches_python_including_warnings_and_consent() {
     for case in fixture()["decode"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
+        if name == "dynamic variables" {
+            // Deliberate divergence: see generated_dynamic_variables_are_kept.
+            continue;
+        }
         let mut decoder = Decoder::default();
         let result = decoder.decode(&case["input"]);
         let expected = &case["expected"];
@@ -119,4 +123,52 @@ fn encoding_matches_python() {
         companion("Dev", &values, "environment"),
         fixture["companion_bytes"]
     );
+}
+
+/// The Python app removed every Postman dynamic variable, with consent. Imposter generates
+/// `$guid`, `$timestamp`, `$randomInt` and the rest of its own, so those stay as they are and
+/// need no consent; only the ones it cannot generate are removed, as before.
+#[test]
+fn generated_dynamic_variables_are_kept() {
+    let case = fixture()["decode"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == "dynamic variables")
+        .unwrap()
+        .clone();
+    let mut decoder = Decoder::default();
+    let document = decoder.decode(&case["input"]).unwrap();
+    let request = &document.collection.requests[0];
+    assert!(
+        request.url.starts_with("http://h/{{$guid}}"),
+        "{}",
+        request.url
+    );
+    assert_eq!(
+        (
+            request.queries[0].name.as_str(),
+            request.queries[0].value.as_str()
+        ),
+        ("t", "{{ $timestamp }}")
+    );
+    assert_eq!(request.headers[0].value, "{{$randomInt}}");
+    assert!(decoder.warnings.is_empty(), "{:?}", decoder.warnings);
+    assert!(!decoder.requires_removal);
+    assert_eq!(
+        case["expected"]["warnings"].as_array().unwrap().len(),
+        2,
+        "Python removed them"
+    );
+
+    let mut input = case["input"].clone();
+    input["item"][0]["request"]["header"][0]["value"] = "{{$randomFirstName}}".into();
+    let mut decoder = Decoder::default();
+    let document = decoder.decode(&input).unwrap();
+    assert_eq!(document.collection.requests[0].headers[0].value, "");
+    assert_eq!(
+        decoder.warnings,
+        ["C/R: Postman dynamic variables will be removed"]
+    );
+    assert!(decoder.requires_removal);
 }

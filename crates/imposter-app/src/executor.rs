@@ -5,8 +5,9 @@ use std::time::Instant;
 
 use imposter_core::capture::Write;
 use imposter_core::execution::{ExecutionRecord, Outcome, Response, Timestamp};
+use imposter_core::generate::Entropy;
 use imposter_core::ids::ExecutionId;
-use imposter_core::model::{Request, SavedValues};
+use imposter_core::model::{Request, SavedValues, Variables};
 use imposter_core::prepare::prepare;
 use imposter_core::settings::AppSettings;
 use imposter_core::variables::{
@@ -114,10 +115,73 @@ pub fn now() -> Timestamp {
     Timestamp(i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX))
 }
 
+/// The clock, local time zone and operating-system randomness behind generated values.
+pub struct SystemEntropy {
+    /// Mixed in only if the operating system cannot supply randomness.
+    fallback: u64,
+}
+
+impl Default for SystemEntropy {
+    fn default() -> Self {
+        Self {
+            fallback: u64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+                    & u128::from(u64::MAX),
+            )
+            .unwrap_or_default()
+                ^ u64::from(std::process::id()),
+        }
+    }
+}
+
+impl Entropy for SystemEntropy {
+    fn now(&self) -> Timestamp {
+        now()
+    }
+
+    fn utc_offset(&self) -> i32 {
+        jiff::tz::TimeZone::system()
+            .to_offset(jiff::Timestamp::now())
+            .seconds()
+    }
+
+    fn random(&mut self) -> u64 {
+        getrandom::u64().unwrap_or_else(|_| {
+            // SplitMix64: distinct values even without the operating system's randomness.
+            self.fallback = self.fallback.wrapping_add(0x9e37_79b9_7f4a_7c15);
+            let mut z = self.fallback;
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            z ^ (z >> 31)
+        })
+    }
+}
+
 /// Resolve `request` against `inputs`: inherited settings become explicit options first, so
 /// variables inside inherited paths resolve against the same snapshot as the request.
+/// Generated values come from the system.
 pub fn resolve(request: &Request, inputs: &Inputs) -> Result<(Request, AppSettings), ExecuteError> {
-    let values = inputs.snapshot.values();
+    resolve_with(request, inputs, &mut SystemEntropy::default()).map(|(r, s, _)| (r, s))
+}
+
+/// [`resolve`] with generated values from `entropy`, also returning every value used, so
+/// checks and redirects see the same generated values as the request.
+pub fn resolve_with(
+    request: &Request,
+    inputs: &Inputs,
+    entropy: &mut impl Entropy,
+) -> Result<(Request, AppSettings, Variables), ExecuteError> {
+    let mut values = inputs.snapshot.values();
+    let mut with_settings = request.template.clone();
+    // Inherited settings can hold placeholders too: generate for the request with them, once.
+    with_settings.options = inputs
+        .settings
+        .resolve_for_url(&request.template.url, &request.template.options)
+        .as_options();
+    imposter_core::generate::fill(&with_settings, &mut values, entropy);
     let mut missing = std::collections::BTreeSet::new();
     let url = imposter_core::variables::substitute(
         &request.template.url,
@@ -137,7 +201,7 @@ pub fn resolve(request: &Request, inputs: &Inputs) -> Result<(Request, AppSettin
         collection_variables_snapshot: inputs.snapshot.collection_values.clone(),
         ..request.clone()
     };
-    Ok((resolved, settings))
+    Ok((resolved, settings, values))
 }
 
 /// `request` as a curl command with what Send would send now: variables resolved, auth
@@ -178,7 +242,8 @@ pub async fn execute(
     cancel: CancellationToken,
 ) -> Result<Executed, ExecuteError> {
     let inputs = inputs(store, &request).await?;
-    let (resolved, settings) = resolve(&request, &inputs)?;
+    let (resolved, settings, values) =
+        resolve_with(&request, &inputs, &mut SystemEntropy::default())?;
     let prepared = prepare(&resolved.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
 
@@ -187,7 +252,7 @@ pub async fn execute(
     policy.identity_routing = Some(Box::new(imposter_http::transport::IdentityRouting {
         settings: inputs.settings.clone(),
         options: request.template.options.clone(),
-        variables: inputs.snapshot.values(),
+        variables: values.clone(),
     }));
     let mut response = match imposter_http::send(&prepared, &policy, &cancel).await {
         Ok(response) => response,
@@ -199,11 +264,7 @@ pub async fn execute(
         }
     };
     response.elapsed = started.elapsed().as_secs_f64();
-    response.checks = imposter_core::check::evaluate(
-        &request.template.checks,
-        &response,
-        &inputs.snapshot.values(),
-    );
+    response.checks = imposter_core::check::evaluate(&request.template.checks, &response, &values);
     let (captured, writes) = imposter_core::capture::evaluate(
         &request.template.captures,
         &response,

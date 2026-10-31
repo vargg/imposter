@@ -31,6 +31,12 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 - Placeholders are highlighted: defined names in orange, unknown ones in red. Typing `{{`
   suggests names. Clicking a placeholder, or pressing Alt+Enter, shows where its value comes
   from. Values from password fields stay masked until revealed.
+- Generated values, made fresh for each send: `{{$uuid}}`, `{{$timestamp}}`,
+  `{{$timestampMs}}`, `{{$isoTimestamp}}`, `{{$date %Y-%m-%d}}` (each takes an offset such as
+  `-1d` or `+2h`), `{{$randomInt 1 100}}` and `{{$randomString 12}}`. One expression is one
+  value throughout a send, so the same `{{$uuid}}` in the URL and the body match; add a word
+  for another value (`{{$uuid second}}`). Postman's `$guid`, `$randomUUID`, `$timestamp`,
+  `$isoTimestamp` and `$randomInt` work as imported. Type `{{$` for the list.
 - Saved values: keep several values of one variable (user IDs, names) in its scope, then swap
   the current one from the placeholder's inspector in one click. Each environment keeps its
   own list. Native exports carry saved values with their variables; Postman exports carry the
