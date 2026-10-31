@@ -273,6 +273,9 @@ fn sidebar_settings_and_the_shortcut_sheet() {
             .get_by_role_and_label(egui::accesskit::Role::Label, group);
     }
     assert_eq!(app.harness.query_all_by_label("or").count(), 2);
+    // Keys as keyboards print them, one cap each; never egui's "Slash".
+    app.harness.get_by_label("Ctrl Shift /");
+    assert!(app.harness.query_by_label_contains("Slash").is_none());
     let navigate = app.harness.get_by_label("Navigate").rect();
     let view = app.harness.get_by_label("View").rect();
     assert!(navigate.top() < view.top());

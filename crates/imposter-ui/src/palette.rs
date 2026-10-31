@@ -63,7 +63,7 @@ pub struct Item {
     pub group: Group,
     pub label: String,
     pub method: Option<String>,
-    pub hint: Option<String>,
+    pub hint: Option<egui::KeyboardShortcut>,
     pub action: Action,
 }
 
@@ -90,12 +90,12 @@ pub struct Palette {
 }
 
 impl Palette {
-    pub fn open(state: &State, mode: Mode, ctx: &egui::Context) -> Self {
+    pub fn open(state: &State, mode: Mode) -> Self {
         Self {
             mode,
             query: String::new(),
             selected: 0,
-            fixed: fixed_items(state, ctx),
+            fixed: fixed_items(state),
             recent: state.recent.clone(),
             index: None,
             chosen: None,
@@ -107,11 +107,11 @@ impl Palette {
 
     /// The Ctrl+Tab switcher: requests only, recent first, the previous one (or with Shift
     /// the oldest) selected.
-    pub fn switcher(state: &State, step: Step, ctx: &egui::Context) -> Self {
+    pub fn switcher(state: &State, step: Step) -> Self {
         Self {
             switcher: true,
             start: Some(step),
-            ..Self::open(state, Mode::Requests, ctx)
+            ..Self::open(state, Mode::Requests)
         }
     }
 
@@ -358,11 +358,17 @@ fn row(ui: &mut Ui, item: &Item, query: &str, selected: bool) -> egui::Response 
         egui::TextStyle::Monospace.resolve(ui.style()),
         &egui::TextStyle::Body.resolve(ui.style()),
     );
-    let hint =
-        egui::RichText::new(item.hint.clone().unwrap_or_default()).color(palette().text_muted);
+    // Drawn as key caps, as in the shortcut sheet.
+    let keys = item
+        .hint
+        .map(|shortcut| shortcuts::keys(ui.ctx(), &shortcut))
+        .unwrap_or_default();
+    let caps = egui::Atom::paint(crate::widgets::caps_size(ui, &keys), move |ui, args| {
+        crate::widgets::paint_caps(ui, args.rect, &keys);
+    });
     let response = ui.add_sized(
         [ui.available_width(), ui.spacing().interact_size.y],
-        egui::Button::selectable(selected, (text, egui::Atom::grow(), hint))
+        egui::Button::selectable(selected, (text, egui::Atom::grow(), caps))
             .stroke(egui::Stroke::NONE)
             .truncate(),
     );
@@ -394,14 +400,14 @@ fn request_item(request: &IndexedRequest) -> Item {
 }
 
 /// Actions and environments that apply now.
-fn fixed_items(state: &State, ctx: &egui::Context) -> Vec<Item> {
+fn fixed_items(state: &State) -> Vec<Item> {
     let mut items = Vec::new();
     let mut action = |label: &str, shortcut: Option<&egui::KeyboardShortcut>, action: Action| {
         items.push(Item {
             group: Group::Actions,
             label: label.to_owned(),
             method: None,
-            hint: shortcut.map(|s| ctx.format_shortcut(s)),
+            hint: shortcut.copied(),
             action,
         });
     };

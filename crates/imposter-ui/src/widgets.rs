@@ -488,16 +488,70 @@ pub fn key_caps(ui: &mut Ui, keys: &[egui::KeyboardShortcut]) {
             if i > 0 {
                 ui.label(tone_text("or", Tone::Muted).small());
             }
-            egui::Frame::new()
-                .fill(palette().input)
-                .stroke(egui::Stroke::new(1.0, palette().field_border))
-                .corner_radius(4)
-                .inner_margin(egui::Margin::symmetric(5, 1))
-                .show(ui, |ui| {
-                    ui.label(RichText::new(ui.ctx().format_shortcut(key)).monospace());
-                });
+            let parts = crate::shortcuts::keys(ui.ctx(), key);
+            let (rect, response) =
+                ui.allocate_exact_size(caps_size(ui, &parts), egui::Sense::hover());
+            paint_caps(ui, rect, &parts);
+            let text = parts.join(" ");
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
         }
     });
+}
+
+/// The space between two keys of a chord and inside a key.
+const CAP_GAP: f32 = 3.0;
+const CAP_PADDING: f32 = 5.0;
+
+fn cap_galleys(ui: &Ui, keys: &[&str]) -> Vec<std::sync::Arc<egui::Galley>> {
+    keys.iter()
+        .map(|key| {
+            ui.fonts_mut(|fonts| {
+                fonts.layout_no_wrap(
+                    (*key).to_owned(),
+                    egui::TextStyle::Monospace.resolve(ui.style()),
+                    palette().text,
+                )
+            })
+        })
+        .collect()
+}
+
+/// The size of [`paint_caps`] for `keys`.
+pub fn caps_size(ui: &Ui, keys: &[&str]) -> egui::Vec2 {
+    let galleys = cap_galleys(ui, keys);
+    let width = galleys
+        .iter()
+        .map(|galley| galley.size().x.max(galley.size().y) + 2.0 * CAP_PADDING + CAP_GAP)
+        .sum::<f32>()
+        - CAP_GAP;
+    let height = galleys.iter().map(|g| g.size().y).fold(0.0, f32::max) + 4.0;
+    egui::vec2(width.max(0.0), height)
+}
+
+/// One key cap per key of a chord, from `rect`'s left and centred on it, so a chord reads
+/// as keys pressed together and looks the same in the palette and the shortcut sheet.
+pub fn paint_caps(ui: &Ui, rect: egui::Rect, keys: &[&str]) {
+    let painter = ui.painter();
+    let height = caps_size(ui, keys).y;
+    let mut left = rect.left();
+    for galley in cap_galleys(ui, keys) {
+        // At least square, so "/" is not a sliver.
+        let width = galley.size().x.max(galley.size().y) + 2.0 * CAP_PADDING;
+        let cap = egui::Rect::from_min_size(
+            egui::pos2(left, rect.center().y - height / 2.0),
+            egui::vec2(width, height),
+        );
+        painter.rect(
+            cap,
+            4.0,
+            palette().input,
+            egui::Stroke::new(1.0, palette().field_border),
+            egui::StrokeKind::Inside,
+        );
+        let at = cap.center() - galley.size() / 2.0;
+        painter.galley(at, galley, palette().text);
+        left = cap.right() + CAP_GAP;
+    }
 }
 
 /// The marker beside a selected row: a bar on its left edge.

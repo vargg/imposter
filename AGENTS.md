@@ -482,7 +482,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   (`shortcuts::handle`) and doing nothing while a dialog is open. The same table drives the
   shortcut sheet (Cmd/Ctrl+Shift+/: grouped as Navigate, Send, Edit and View, keys drawn as
   caps with "or" between alternatives, which side by side read as a chord), and a test
-  checks that the README table equals it.
+  checks that the README table equals it. Keys are one cap each, written as keyboards
+  print them (`shortcuts::keys`: "Ctrl", "/", "Esc"; "⇧", "⌘" on a Mac), and the palette
+  draws the same caps: egui's "Ctrl+Shift+Slash" in one cap had to be translated (Q12).
   Cmd/Ctrl+R sends (the Python app's Run); F2 renames, with Ctrl+Shift+R because F2 needs Fn
   on Mac keyboards (Yaak's choice). egui ignores extra Shift/Alt when matching, so the
   handler consumes the most specific combinations first. Find, Alt+Enter and Esc are listed

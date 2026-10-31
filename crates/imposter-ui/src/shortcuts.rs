@@ -197,7 +197,40 @@ pub const ALL: &[Shortcut] = &[
 
 /// `label (shortcut)` for hover texts, in the platform's notation.
 pub fn hint(ctx: &egui::Context, label: &str, shortcut: &KeyboardShortcut) -> String {
-    format!("{label} ({})", ctx.format_shortcut(shortcut))
+    let joiner = if ctx.os().is_mac() { "" } else { "+" };
+    format!("{label} ({})", keys(ctx, shortcut).join(joiner))
+}
+
+/// The keys of `shortcut` one by one, as keyboards print them: "Ctrl", "Shift", "/", or on
+/// a Mac "⇧", "⌘", "/". egui's names ("Slash", "Comma", "Escape") had to be translated.
+pub fn keys(ctx: &egui::Context, shortcut: &KeyboardShortcut) -> Vec<&'static str> {
+    let m = shortcut.modifiers;
+    let command = m.command || m.mac_cmd;
+    // In the order each platform writes them.
+    let modifiers: [(bool, &str); 4] = if ctx.os().is_mac() {
+        [(m.ctrl, "⌃"), (m.alt, "⌥"), (m.shift, "⇧"), (command, "⌘")]
+    } else {
+        [
+            (m.ctrl || command, "Ctrl"),
+            (m.alt, "Alt"),
+            (m.shift, "Shift"),
+            (false, ""),
+        ]
+    };
+    let mut keys: Vec<&'static str> = modifiers
+        .into_iter()
+        .filter(|(on, _)| *on)
+        .map(|(_, name)| name)
+        .collect();
+    keys.push(key_name(shortcut.logical_key));
+    keys
+}
+
+fn key_name(key: Key) -> &'static str {
+    match key {
+        Key::Escape => "Esc",
+        other => other.symbol_or_name(),
+    }
 }
 
 /// How many modifiers a shortcut needs: egui ignores extra Shift and Alt when matching, so
@@ -235,11 +268,11 @@ pub fn handle(state: &mut State, ctx: &egui::Context) {
         return;
     }
     for command in pressed(ctx) {
-        run(state, command, ctx);
+        run(state, command);
     }
 }
 
-fn run(state: &mut State, command: Command, ctx: &egui::Context) {
+fn run(state: &mut State, command: Command) {
     let requests = state.screen == Screen::Requests;
     let open = state.editor.as_ref().and_then(|p| p.editor.id());
     match command {
@@ -273,10 +306,10 @@ fn run(state: &mut State, command: Command, ctx: &egui::Context) {
         Command::Shortcuts => state.actions.push(Action::Prompt(Dialog::Shortcuts)),
         Command::Palette | Command::Recent | Command::SwitchBack | Command::SwitchForward => {
             let palette = match command {
-                Command::Palette => Palette::open(state, Mode::All, ctx),
-                Command::Recent => Palette::open(state, Mode::Requests, ctx),
-                Command::SwitchBack => Palette::switcher(state, Step::Back, ctx),
-                _ => Palette::switcher(state, Step::Forward, ctx),
+                Command::Palette => Palette::open(state, Mode::All),
+                Command::Recent => Palette::open(state, Mode::Requests),
+                Command::SwitchBack => Palette::switcher(state, Step::Back),
+                _ => Palette::switcher(state, Step::Forward),
             };
             state
                 .actions
@@ -317,10 +350,7 @@ pub fn notation(shortcut: &KeyboardShortcut) -> String {
     if m.shift {
         parts.push("Shift");
     }
-    parts.push(match shortcut.logical_key {
-        Key::Escape => "Esc",
-        other => other.symbol_or_name(),
-    });
+    parts.push(key_name(shortcut.logical_key));
     parts.join("+")
 }
 
@@ -337,6 +367,19 @@ pub fn readme_rows() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keys_are_written_as_keyboards_print_them() {
+        let ctx = egui::Context::default();
+        ctx.set_os(egui::os::OperatingSystem::Windows);
+        let sheet = KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::Slash);
+        assert_eq!(keys(&ctx, &sheet), ["Ctrl", "Shift", "/"]);
+        assert_eq!(keys(&ctx, &ESCAPE), ["Esc"]);
+        assert_eq!(hint(&ctx, "Sheet", &sheet), "Sheet (Ctrl+Shift+/)");
+        ctx.set_os(egui::os::OperatingSystem::Mac);
+        assert_eq!(keys(&ctx, &sheet), ["⇧", "⌘", "/"]);
+        assert_eq!(hint(&ctx, "Sheet", &sheet), "Sheet (⇧⌘/)");
+    }
 
     #[test]
     fn no_two_commands_share_keys() {
