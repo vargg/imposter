@@ -259,4 +259,23 @@ fn a_long_define_button_keeps_one_line_in_the_smallest_window() {
         "{define:?} is taller than {open:?}: its label wrapped"
     );
     assert!(define.right() <= app.harness.ctx.content_rect().right());
+    assert!(
+        painted_text(app)
+            .iter()
+            .any(|text| text == "Define in Global"),
+        "the button shows where the variable goes"
+    );
+}
+
+/// Every text painted last frame.
+fn painted_text(app: &support::App) -> Vec<String> {
+    app.harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
+            _ => None,
+        })
+        .collect()
 }

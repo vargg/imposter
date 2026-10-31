@@ -1284,11 +1284,16 @@ fn blocked_card(
                 .wrap(),
             );
             ui.horizontal_wrapped(|ui| {
-                let label = format!("Define {{{{{first}}}}} in {scope_name}");
-                // One line: a long name is cut, and the hover text has it whole.
+                // The headline names the variable; the button says where it goes, which a
+                // long name would cut off. Hover and screen readers get both.
+                let full = format!("Define {{{{{first}}}}} in {scope_name}");
                 let define = ui
-                    .add(egui::Button::new(label.as_str()).wrap_mode(egui::TextWrapMode::Truncate))
-                    .on_hover_text(label.as_str());
+                    .add(
+                        egui::Button::new(format!("Define in {scope_name}"))
+                            .wrap_mode(egui::TextWrapMode::Truncate),
+                    )
+                    .on_hover_text(full.as_str());
+                name(&define, &full);
                 if define.clicked() {
                     act(BlockedAction::Define(first.clone()));
                 }

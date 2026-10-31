@@ -416,8 +416,10 @@ numbers, so both are excluded. Each logical change is its own commit.
     open request's pane, not in History.
   - **A send that never went out** (`app::NotSent`): the reason replaces any earlier response,
     which would read as this send's. Undefined variables come as names
-    (`ExecuteError::Unresolved`), so the pane offers "Define {{x}} in <active environment or
-    Global>". That opens Variables with a new unsaved row; nothing is written until Save.
+    (`ExecuteError::Unresolved`), so the pane offers "Define in <active environment or
+    Global>" under the headline that names `{{x}}` (its accessible name is the whole
+    "Define {{x}} in …", since a long name cut the destination off). That opens Variables
+    with a new unsaved row; nothing is written until Save.
 
   Why: the review found raw `os error 61` text clipped at the pane edge, and an empty-state
   invitation shown right under "Request failed".
