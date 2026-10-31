@@ -531,6 +531,30 @@ fn the_first_run_offers_a_way_in_and_says_it_once() {
     for label in ["Import Collection…", "Paste curl…"] {
         app.harness.get_by_label(label);
     }
+    // The buttons are centred under the title, and the first, the next step, is filled.
+    let title = app.harness.get_by_label("Start with a collection").rect();
+    let button = |app: &support::App, label: &str| {
+        app.harness
+            .get_all_by_label(label)
+            .map(|node| node.rect())
+            .max_by(|a, b| a.left().total_cmp(&b.left()))
+            .unwrap()
+    };
+    let first = button(&app, "New Collection");
+    let last = button(&app, "Paste curl…");
+    assert!(
+        (f32::midpoint(first.left(), last.right()) - title.center().x).abs() < 2.0,
+        "{first:?} … {last:?} under {title:?}"
+    );
+    let accent = imposter_ui::theme::palette().accent;
+    let filled = |area: egui::Rect| {
+        app.harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Rect(rect)
+                if rect.fill == accent && rect.rect.contains(area.center()))
+        })
+    };
+    assert!(filled(first));
+    assert!(!filled(last));
     // The New menu says why its folder and request items are greyed, without a hover.
     click(&mut app.harness, "New");
     app.harness.get_by_label("Create a collection first");

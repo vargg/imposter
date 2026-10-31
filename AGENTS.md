@@ -435,7 +435,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   "Ready" during a send. A status that outlives its context misleads more than no status.
 - **Each pane says what to do once, as buttons.** With no request open, the request pane
   offers the next step: New Collection, Import Collection… and Paste curl… on first run;
-  New Request in an empty collection; otherwise "Select a request". The sidebar,
+  New Request in an empty collection; otherwise "Select a request". The buttons are
+  centred under the text, the first filled as the next step (left-aligned equal outlines
+  looked unfinished, Q6). The sidebar,
   breadcrumb and response pane stay quiet meanwhile (they repeated it two or three times,
   the review's #16, #17). Disabled menu items say why ("Create a collection first"),
   under them rather than only on hover; the curl entry is "Paste curl…" everywhere; the

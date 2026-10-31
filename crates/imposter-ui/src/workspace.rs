@@ -988,30 +988,73 @@ fn empty_request_pane(state: &mut State, ui: &mut Ui) {
         ui.add(egui::Label::new(tone_text(text, Tone::Muted)).wrap());
         ui.add_space(10.0);
     });
-    let mut chosen = Vec::new();
-    ui.horizontal_wrapped(|ui| {
-        if first_run {
-            if ui.button("New Collection").clicked() {
-                chosen.push(Action::Prompt(Dialog::name(
-                    "New Collection",
-                    "Name:",
-                    "",
-                    NamePurpose::NewCollection,
-                )));
+    let mut offers = Vec::new();
+    if first_run {
+        offers.push((
+            "New Collection",
+            Action::Prompt(Dialog::name(
+                "New Collection",
+                "Name:",
+                "",
+                NamePurpose::NewCollection,
+            )),
+        ));
+        offers.push(("Import Collection…", Action::Import));
+    } else if state.collection.is_some() {
+        offers.push((
+            "New Request",
+            Action::Prompt(crate::shortcuts::new_dialog(state)),
+        ));
+    }
+    offers.push((
+        PASTE_CURL,
+        Action::Prompt(Dialog::Curl {
+            text: String::new(),
+        }),
+    ));
+    if let Some(action) = offer_buttons(ui, offers) {
+        state.actions.push(action);
+    }
+}
+
+/// Centred under the text that introduces them, the first filled as the next step; one
+/// above the other when they do not fit side by side.
+fn offer_buttons(ui: &mut Ui, offers: Vec<(&str, Action)>) -> Option<Action> {
+    let gap = ui.spacing().item_spacing.x;
+    let widths: Vec<f32> = offers
+        .iter()
+        .map(|(label, _)| widgets::button_width(ui, RichText::new(*label)))
+        .collect();
+    let total = widths.iter().map(|width| width + gap).sum::<f32>() - gap;
+    let button = |ui: &mut Ui, index: usize, label: &str| {
+        let button = if index == 0 {
+            egui::Button::new(RichText::new(label).color(palette().on_accent))
+                .fill(palette().accent)
+        } else {
+            egui::Button::new(label)
+        };
+        ui.add(button).clicked()
+    };
+    let mut chosen = None;
+    if total <= ui.available_width() {
+        ui.horizontal(|ui| {
+            ui.add_space((ui.available_width() - total) / 2.0);
+            for (index, (label, action)) in offers.into_iter().enumerate() {
+                if button(ui, index, label) {
+                    chosen = Some(action);
+                }
             }
-            if ui.button("Import Collection…").clicked() {
-                chosen.push(Action::Import);
+        });
+    } else {
+        ui.vertical_centered(|ui| {
+            for (index, (label, action)) in offers.into_iter().enumerate() {
+                if button(ui, index, label) {
+                    chosen = Some(action);
+                }
             }
-        } else if state.collection.is_some() && ui.button("New Request").clicked() {
-            chosen.push(Action::Prompt(crate::shortcuts::new_dialog(state)));
-        }
-        if ui.button(PASTE_CURL).clicked() {
-            chosen.push(Action::Prompt(Dialog::Curl {
-                text: String::new(),
-            }));
-        }
-    });
-    state.actions.extend(chosen);
+        });
+    }
+    chosen
 }
 
 /// The one name of starting a request from a curl command.
