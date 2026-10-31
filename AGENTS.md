@@ -205,7 +205,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Checked by** `imposter-ui/tests/appearance.rs`: the row pitch in both densities, and
     at least 10 tree rows at the minimum window in Compact (7 before).
 - **Orange means primary, selected or focused; nothing else.**
-  - **Hover and press** outline a control in the muted text color.
+  - **Hover and press** outline a control in the muted text color; a hovered icon turns
+    the text color.
   - **Selection** (`selection.stroke`) is the accent: selected items' text, a focused field's
     1.5-point ring, and a 2-point bar on the left of selected tree, History and palette rows
     (`widgets::selection_bar`). Selected rows and menu options are filled, never outlined
@@ -363,7 +364,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   response, never a dump of the stored template. Restoring an entry opens an unsaved draft through the unsaved-changes guard and
   never sends; the draft keeps the captured collection variables for a deleted collection.
 - **The layout is a switch, not a mode:** side by side or stacked, changed only by the status
-  bar button, never by the window width. The window can shrink to 720×480 (`MIN_WINDOW`; the
+  bar's two layout buttons (the current one selected: one button showing the other
+  layout's icon read as the current state), never by the window width. The window can shrink to 720×480 (`MIN_WINDOW`; the
   Python app's 1000×650 took more than half a laptop screen), so narrow panes adapt instead
   of wrapping: single-line fields and button labels never wrap (a long label is cut, with
   the whole text on hover).

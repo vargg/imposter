@@ -6,7 +6,7 @@ mod support;
 
 use std::time::Duration;
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::model::{BodyType, Request, RequestTemplate};
 use imposter_app::store::{collections, executions, kv};
 use imposter_ui::app::{CloseState, EditorTab};
@@ -289,10 +289,28 @@ fn the_layout_switch_and_the_sidebar_toggle() {
         app.harness.state().state.layout.orientation,
         Orientation::SideBySide
     );
+    // Both layouts have a button; the current one is selected.
+    let selected = |app: &support::App, label: &str| {
+        app.harness
+            .get_by_label(label)
+            .accesskit_node()
+            .toggled()
+            .map(|state| state == egui::accesskit::Toggled::True)
+    };
+    assert_eq!(
+        selected(&app, "Put request and response side by side"),
+        Some(true)
+    );
+    assert_eq!(selected(&app, "Stack request and response"), Some(false));
     click(&mut app.harness, "Stack request and response");
     assert_eq!(
         app.harness.state().state.layout.orientation,
         Orientation::Stacked
+    );
+    assert_eq!(selected(&app, "Stack request and response"), Some(true));
+    assert_eq!(
+        selected(&app, "Put request and response side by side"),
+        Some(false)
     );
     click(&mut app.harness, "Put request and response side by side");
     assert_eq!(

@@ -59,8 +59,11 @@ pub fn button_with_hint(
     if ui.is_rect_visible(response.rect) {
         let color = if !ui.is_enabled() {
             palette().text_muted.gamma_multiply(0.45)
-        } else if selected || response.hovered() || response.has_focus() {
+        } else if selected || response.has_focus() {
             palette().accent
+        } else if response.hovered() {
+            // Hover is neutral; orange is for primary, selected and focused things.
+            palette().text
         } else {
             palette().text_muted
         };

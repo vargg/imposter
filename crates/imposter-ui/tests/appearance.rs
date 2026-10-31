@@ -255,3 +255,28 @@ fn tab_labels_keep_their_distance() {
     let screens = gap(&app, "Requests", "Variables");
     assert!(screens >= 16.0, "screen tabs {screens} apart");
 }
+
+#[test]
+fn hovering_an_icon_button_draws_no_orange() {
+    let mut app = many_requests();
+    // Not the current layout, so not selected.
+    let button = app.harness.get_by_label("Stack request and response");
+    let area = button.rect();
+    button.hover();
+    app.harness.run_steps(2);
+    let accent = imposter_ui::theme::palette().accent;
+    let strokes: Vec<egui::Color32> = shapes_in(&app, area)
+        .into_iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::LineSegment { stroke, .. } => Some(stroke.color),
+            egui::Shape::Rect(rect) => Some(rect.stroke.color),
+            egui::Shape::Path(path) => match path.stroke.color {
+                egui::epaint::ColorMode::Solid(color) => Some(color),
+                egui::epaint::ColorMode::UV(_) => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert!(!strokes.is_empty(), "the icon is drawn");
+    assert!(!strokes.contains(&accent), "{strokes:?}");
+}

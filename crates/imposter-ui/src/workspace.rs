@@ -734,13 +734,25 @@ fn environment_picker(state: &mut State, ui: &mut Ui) {
 }
 
 /// Switch between side by side and stacked. The icon shows what a click switches to.
+/// Two buttons, one per layout; the current one is selected. One button showing the other
+/// layout's icon read as the current state.
 fn layout_switch(layout: &mut WorkspaceLayout, ui: &mut Ui) {
-    let (icon, label) = match layout.orientation {
-        Orientation::SideBySide => (Icon::Rows, "Stack request and response"),
-        Orientation::Stacked => (Icon::Columns, "Put request and response side by side"),
-    };
-    if icons::button(ui, icon, label, false).clicked() {
-        layout.orientation = layout.orientation.switched();
+    for (orientation, icon, label) in [
+        (
+            Orientation::SideBySide,
+            Icon::Columns,
+            "Put request and response side by side",
+        ),
+        (
+            Orientation::Stacked,
+            Icon::Rows,
+            "Stack request and response",
+        ),
+    ] {
+        let current = layout.orientation == orientation;
+        if icons::button(ui, icon, label, current).clicked() {
+            layout.orientation = orientation;
+        }
     }
 }
 
