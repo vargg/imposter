@@ -59,8 +59,9 @@ fn a_native_file_is_reviewed_then_imported_and_shown() {
     );
 
     app.harness.get_by_label("Review collection import");
+    // Nested folders and their requests count: 4 at the top, 5 inside.
     app.harness
-        .get_by_label("Creates Full collection: 4 requests in 2 folders");
+        .get_by_label("Creates Full collection: 9 requests in 4 folders");
     app.harness.get_by_label("New environments: Dev, Empty env");
     assert_eq!(
         collection_names(&app),
@@ -80,7 +81,15 @@ fn a_native_file_is_reviewed_then_imported_and_shown() {
             .collect::<Vec<_>>(),
         ["Full collection"]
     );
-    assert!(state.tree.is_some(), "the imported collection is selected");
+    let tree = state
+        .tree
+        .as_ref()
+        .expect("the imported collection is selected");
+    assert_eq!(
+        (tree.source.requests.len(), tree.source.folders.len()),
+        (9, 4),
+        "the review counted what was written"
+    );
     assert_eq!(
         state
             .environments
@@ -156,7 +165,9 @@ fn an_openapi_yaml_file_skips_companions_and_opens_as_requests() {
         "only Postman files have companions"
     );
     app.harness.get_by_label("Review collection import");
-    app.harness.get_by_label_contains("Creates Pet Store: ");
+    // Two tagged folders hold six of the eight operations.
+    app.harness
+        .get_by_label("Creates Pet Store: 8 requests in 2 folders");
     app.harness.get_by_label(
         "Path parameters without an example need collection variables before sending: ownerId",
     );

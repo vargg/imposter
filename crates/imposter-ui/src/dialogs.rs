@@ -553,12 +553,12 @@ fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outc
     let mut outcome = Outcome::Open;
     ui.set_min_width(520.0);
     ui.heading("Review collection import");
-    let collection = &preview.document.collection;
+    // Nested folders and their requests count too: the summary is what gets written.
     ui.label(format!(
         "Creates {}: {} in {}",
         preview.collection_name,
-        counted(collection.requests.len(), "request"),
-        counted(collection.folders.len(), "folder"),
+        counted(preview.document.requests().len(), "request"),
+        counted(preview.document.folder_count(), "folder"),
     ));
     let environments = if preview.environment_names.is_empty() {
         "None".to_owned()

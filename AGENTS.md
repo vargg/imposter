@@ -424,7 +424,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   breadcrumb and response pane stay quiet meanwhile (they repeated it two or three times,
   the review's #16, #17). Disabled menu items say why ("Create a collection first"); the
   curl entry is "Paste curl…" everywhere; the import review says what it creates
-  ("Creates Pet Store: 7 requests in 2 folders").
+  ("Creates Pet Store: 8 requests in 2 folders", counted at every depth).
 - **Every problem in the response pane says what happened and what to do next.**
   - **Transport failure:** a plain headline per error kind and a hint (`viewer::failure_title`,
     `failure_hint`); the raw library text sits under a collapsed Details; Retry appears in the

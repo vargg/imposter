@@ -158,6 +158,14 @@ impl NativeDocument {
         visit(&self.collection.folders, &mut out);
         out
     }
+
+    /// How many folders the document holds, at any depth.
+    pub fn folder_count(&self) -> usize {
+        fn count(folders: &[TransferFolder]) -> usize {
+            folders.iter().map(|f| 1 + count(&f.folders)).sum()
+        }
+        count(&self.collection.folders)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -313,6 +321,35 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
+
+    fn folder(name: &str, folders: Vec<TransferFolder>, requests: usize) -> TransferFolder {
+        TransferFolder {
+            name: Name::new(name).unwrap(),
+            description: String::new(),
+            position: 0,
+            folders,
+            requests: vec![RequestTemplate::default(); requests],
+        }
+    }
+
+    #[test]
+    fn requests_and_folders_are_counted_at_every_depth() {
+        let mut document = NativeDocument::new(TransferCollection {
+            name: Name::new("API").unwrap(),
+            description: String::new(),
+            variables: Variables::new(),
+            folders: vec![
+                folder("Users", vec![folder("Admin", vec![], 2)], 1),
+                folder("Empty", vec![], 0),
+            ],
+            requests: vec![RequestTemplate::default()],
+            saved_values: SavedValues::default(),
+        });
+        assert_eq!(document.requests().len(), 4);
+        assert_eq!(document.folder_count(), 3);
+        document.collection.folders.clear();
+        assert_eq!(document.folder_count(), 0);
+    }
 
     #[test]
     fn unique_names_are_numbered_from_two() {
