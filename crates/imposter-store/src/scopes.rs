@@ -62,6 +62,20 @@ pub fn write(
     Ok(())
 }
 
+/// Set the current values of `values`' names in `scope`: existing names keep their place and
+/// saved values, new names are added at the end. Captures from responses write this way.
+pub fn set_current(
+    db: &Connection,
+    scope: Scope,
+    values: &[(String, String)],
+) -> Result<(), StoreError> {
+    let (mut variables, saved) = read(db, scope)?;
+    for (name, value) in values {
+        variables.insert(name.clone(), value.clone());
+    }
+    write(db, scope, &variables, &saved)
+}
+
 /// Make `value` the current value of `name`, which the scope must still define. Only that
 /// variable changes; order and the other values stay.
 pub fn choose_value(

@@ -3,6 +3,7 @@
 
 use std::time::Instant;
 
+use imposter_core::capture::Write;
 use imposter_core::execution::{ExecutionRecord, Outcome, Response, Timestamp};
 use imposter_core::ids::ExecutionId;
 use imposter_core::model::{Request, SavedValues};
@@ -81,6 +82,26 @@ pub struct Executed {
     pub response: Response,
     /// The history entry, unless recording failed (see `response.history_error`).
     pub record: Option<ExecutionId>,
+    /// Values the request's captures took, to write into variables. The caller writes them
+    /// ([`write_captures`]) once it knows no unsaved edit to the same scope would be lost.
+    pub writes: Vec<Write>,
+}
+
+/// Write captured values, one transaction for all of them.
+pub async fn write_captures(store: &StoreHandle, writes: Vec<Write>) -> Result<(), StoreError> {
+    store
+        .call(move |db| {
+            for scope in imposter_core::capture::scopes(&writes) {
+                let values: Vec<(String, String)> = writes
+                    .iter()
+                    .filter(|w| w.scope == scope)
+                    .map(|w| (w.name.clone(), w.value.clone()))
+                    .collect();
+                scopes::set_current(db, scope, &values)?;
+            }
+            Ok(())
+        })
+        .await
 }
 
 pub const HISTORY_ERROR: &str = "Response received, but history could not be saved";
@@ -183,6 +204,13 @@ pub async fn execute(
         &response,
         &inputs.snapshot.values(),
     );
+    let (captured, writes) = imposter_core::capture::evaluate(
+        &request.template.captures,
+        &response,
+        &inputs.snapshot,
+        &inputs.context,
+    );
+    response.captures = captured;
 
     let mut template = request.clone();
     template.collection_variables_snapshot = resolved.collection_variables_snapshot.clone();
@@ -204,6 +232,7 @@ pub async fn execute(
         Ok(id) => Ok(Executed {
             response,
             record: Some(id),
+            writes,
         }),
         Err(error) => {
             tracing::warn!(%error, "recording an execution failed");
@@ -211,6 +240,7 @@ pub async fn execute(
             Ok(Executed {
                 response,
                 record: None,
+                writes,
             })
         }
     }

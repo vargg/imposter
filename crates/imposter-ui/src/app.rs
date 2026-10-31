@@ -183,6 +183,11 @@ pub enum Message {
         name: String,
         result: Result<(), Failure>,
     },
+    CapturesWritten {
+        scopes: Vec<Scope>,
+        names: Vec<String>,
+        result: Result<(), Failure>,
+    },
     VariablesSaved {
         scope: Scope,
         result: Result<(), Failure>,
@@ -273,6 +278,8 @@ pub enum Action {
     PickFile(FileRequest),
     /// Append a check to the open request and show its Tests tab.
     AddCheck(imposter_app::core::check::Check),
+    /// Append a capture to the open request and show its Tests tab.
+    AddCapture(imposter_app::core::capture::Capture),
     ShowRun(ExecutionId),
     Screen(Screen),
     /// Open a request from any collection, switching to that collection first.
@@ -684,7 +691,10 @@ impl ResponsePane {
         self.notice = Some((crate::viewer::notice(&response, &preview), Tone::Muted))
             .filter(|(n, _)| !n.is_empty());
         self.preview = Some((preview, headers));
-        if self.tab == ResponseTab::Tests && response.checks.is_empty() {
+        if self.tab == ResponseTab::Tests
+            && response.checks.is_empty()
+            && response.captures.is_empty()
+        {
             self.tab = ResponseTab::Body;
         }
         self.response = Some(response);
@@ -1240,6 +1250,11 @@ impl ImposterApp {
                 name,
                 result,
             } => self.value_chosen(scope, &name, result),
+            Message::CapturesWritten {
+                scopes,
+                names,
+                result,
+            } => self.captures_written(&scopes, &names, result),
             Message::HistoryPage { generation, result } => self.history_page(generation, result),
             Message::HistoryRecord { id, result } => {
                 if self.state.history.selected == Some(id) {
@@ -1989,6 +2004,7 @@ impl ImposterApp {
             description: pane.editor.description.clone(),
             position: kept.position,
             checks: pane.editor.checks.clone(),
+            captures: pane.editor.captures.clone(),
             ..parsed.template
         };
         pane.editor = Editor::load(&request);
@@ -2113,9 +2129,15 @@ impl ImposterApp {
         ));
     }
 
-    fn executed(&mut self, generation: u64, result: Result<Box<Executed>, Failure>) {
+    fn executed(&mut self, generation: u64, mut result: Result<Box<Executed>, Failure>) {
         self.state.execution = None;
         self.state.response.pending = false;
+        // Captured values are written even when the user has moved on: a login's token must
+        // not depend on staying on the login request.
+        let kept = match &mut result {
+            Ok(executed) => self.write_captures(std::mem::take(&mut executed.writes)),
+            Err(_) => None,
+        };
         if self.smoke.as_ref().is_some_and(|s| s.sent) {
             let outcome = match &result {
                 Ok(executed) if executed.response.outcome == ExchangeOutcome::Response => {
@@ -2135,6 +2157,9 @@ impl ImposterApp {
             self.load_history();
         }
         if generation != self.state.generation {
+            if let Some(kept) = kept {
+                self.status(&kept);
+            }
             return;
         }
         match result {
@@ -2153,6 +2178,9 @@ impl ImposterApp {
                 self.state.status = summary;
                 self.state.response.shown_run = executed.record;
                 self.state.response.show(response);
+                if let Some(kept) = kept {
+                    self.state.response.notice = Some((kept, Tone::Warning));
+                }
                 if let Some(id) = self.state.editor.as_ref().and_then(|p| p.editor.id()) {
                     self.load_runs(id);
                 }
@@ -2428,6 +2456,13 @@ impl ImposterApp {
             Action::AddCheck(check) => {
                 if let Some(pane) = &mut self.state.editor {
                     pane.editor.checks.push(check);
+                    pane.tab = EditorTab::Tests;
+                    self.edited(false, false, now);
+                }
+            }
+            Action::AddCapture(capture) => {
+                if let Some(pane) = &mut self.state.editor {
+                    pane.editor.captures.push(capture);
                     pane.tab = EditorTab::Tests;
                     self.edited(false, false, now);
                 }
@@ -2944,6 +2979,58 @@ impl ImposterApp {
                 result: result.map_err(failure),
             },
         );
+    }
+
+    /// Write captured values in the background. Values for the scope the Variables screen
+    /// has unsaved edits to are not written, so its Save cannot quietly undo them, nor they
+    /// the edits; the returned message says which.
+    fn write_captures(
+        &mut self,
+        writes: Vec<imposter_app::core::capture::Write>,
+    ) -> Option<String> {
+        let screen = &self.state.variables;
+        let blocked = screen.dirty().then_some(screen.scope);
+        let (kept, writes): (Vec<_>, Vec<_>) =
+            writes.into_iter().partition(|w| Some(w.scope) == blocked);
+        if !writes.is_empty() {
+            let scopes = imposter_app::core::capture::scopes(&writes);
+            let names: Vec<String> = writes.iter().map(|w| w.name.clone()).collect();
+            let db = self.db.clone();
+            self.bridge.spawn(move |_| async move {
+                Message::CapturesWritten {
+                    scopes,
+                    names,
+                    result: executor::write_captures(&db, writes).await.map_err(failure),
+                }
+            });
+        }
+        (!kept.is_empty()).then(|| {
+            let names: Vec<&str> = kept.iter().map(|w| w.name.as_str()).collect();
+            format!(
+                "Not set: {} — the Variables screen has unsaved changes to that scope",
+                names.join(", ")
+            )
+        })
+    }
+
+    fn captures_written(
+        &mut self,
+        scopes: &[Scope],
+        names: &[String],
+        result: Result<(), Failure>,
+    ) {
+        match result {
+            // Values can be secrets, so the status names the variables alone.
+            Ok(()) => {
+                self.status(&format!("Set {}", names.join(", ")));
+                let screen = &self.state.variables;
+                if screen.loaded && scopes.contains(&screen.scope) && !screen.dirty() {
+                    self.load_variables(screen.scope);
+                }
+                self.load_snapshot();
+            }
+            Err(error) => self.error("Captured values were not saved", error),
+        }
     }
 
     fn value_chosen(&mut self, scope: Scope, name: &str, result: Result<(), Failure>) {

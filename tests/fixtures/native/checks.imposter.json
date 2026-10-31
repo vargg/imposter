@@ -95,6 +95,27 @@
             "op": "not_exists",
             "expected": ""
           }
+        ],
+        "captures": [
+          {
+            "enabled": true,
+            "variable": "user_id",
+            "selector": {
+              "json": "$.id"
+            }
+          },
+          {
+            "enabled": true,
+            "variable": "etag",
+            "selector": {
+              "header": "ETag"
+            }
+          },
+          {
+            "enabled": false,
+            "variable": "status",
+            "selector": "status"
+          }
         ]
       }
     ]

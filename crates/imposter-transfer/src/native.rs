@@ -1,6 +1,6 @@
 //! The native format. Version 1 (`"format": "poster"`) is the full-fidelity contract shared
-//! with the Python app; version 2 (`"format": "imposter"`) adds request checks and saved
-//! variable values. Strict:
+//! with the Python app; version 2 (`"format": "imposter"`) adds request checks, captures and
+//! saved variable values. Strict:
 //! unknown fields are rejected at every level, a version 1 document may not use version 2
 //! data, and a document keeps its version when encoded again.
 
@@ -174,7 +174,7 @@ pub enum NativeError {
     Auth { request: String },
     #[error("A {format:?} document must be version {expected}")]
     Marker { format: &'static str, expected: u8 },
-    #[error("Request {request:?}: checks need format version 2")]
+    #[error("Request {request:?}: checks and captures need format version 2")]
     ChecksInVersion1 { request: String },
     #[error("Saved values need format version 2")]
     SavedValuesInVersion1,
@@ -220,7 +220,7 @@ pub fn decode(data: &[u8]) -> Result<NativeDocument, NativeError> {
         if let Some(request) = document
             .requests()
             .into_iter()
-            .find(|r| !r.checks.is_empty())
+            .find(|r| !r.checks.is_empty() || !r.captures.is_empty())
         {
             return Err(NativeError::ChecksInVersion1 {
                 request: request.name.clone(),

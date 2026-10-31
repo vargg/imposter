@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use imposter_app::core::capture::Capture;
 use imposter_app::core::check::{Check, Op};
 use imposter_app::core::model::{BodyType, ParamItem, RequestTemplate};
 use imposter_app::core::select::Selector;
@@ -51,6 +52,10 @@ fn main() {
                         Check::new(Selector::Json("$.users[0].name".into()), Op::Equals, "Bo"),
                         Check::new(Selector::Duration, Op::Less, "500"),
                     ],
+                    captures: vec![Capture::new(
+                        "first_user",
+                        Selector::Json("$.users[0].id".into()),
+                    )],
                     ..RequestTemplate::default()
                 };
                 collections::create_request(db, api.id, Some(users.id), &list)?;

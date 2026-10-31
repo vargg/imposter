@@ -165,6 +165,70 @@ async fn checks_run_against_the_response_with_the_same_variables_and_are_recorde
 }
 
 #[tokio::test]
+async fn captured_values_feed_the_next_request() {
+    use imposter_app::executor::write_captures;
+    use imposter_core::capture::{Capture, Taken};
+    use imposter_core::select::Selector;
+    let (_dir, store) = open();
+    let server = Server::start(|index, _| {
+        if index == 0 {
+            response(
+                "200 OK",
+                &[("Content-Type", "application/json")],
+                br#"{"token":"fresh","id":42}"#,
+            )
+        } else {
+            response("200 OK", &[], b"ok")
+        }
+    })
+    .await;
+    let mut login = setup(&store, &server.url).await;
+    login.template.captures = vec![
+        Capture::new("token", Selector::Json("$.token".into())),
+        Capture::new("scope", Selector::Json("$.id".into())),
+        Capture::new("new_one", Selector::Status),
+    ];
+    let executed = execute(&store.handle(), login.clone(), CancellationToken::new())
+        .await
+        .unwrap();
+    let targets: Vec<(&str, &Taken, &str)> = executed
+        .response
+        .captures
+        .iter()
+        .map(|c| (c.variable.as_str(), &c.taken, c.target.as_str()))
+        .collect();
+    assert_eq!(
+        targets,
+        [
+            ("token", &Taken::Value("fresh".into()), "Global"),
+            ("scope", &Taken::Value("42".into()), "Dev"),
+            ("new_one", &Taken::Value("200".into()), "Dev"),
+        ],
+        "each name goes where its value came from; new names to the active environment"
+    );
+    write_captures(&store.handle(), executed.writes)
+        .await
+        .unwrap();
+
+    let values = inputs(&store.handle(), &login)
+        .await
+        .unwrap()
+        .snapshot
+        .values();
+    assert_eq!(values["token"], "fresh");
+    assert_eq!(values["scope"], "42");
+    assert_eq!(values["new_one"], "200");
+    let mut next = login;
+    next.template.captures.clear();
+    execute(&store.handle(), next, CancellationToken::new())
+        .await
+        .unwrap();
+    let sent = server.requests().remove(1);
+    assert_eq!(sent.body, br#"{"token": "fresh"}"#);
+    assert_eq!(sent.header("x-scope"), Some("42"));
+}
+
+#[tokio::test]
 async fn inherited_settings_resolve_against_the_same_variables() {
     let (_dir, store) = open();
     let proxy = Server::start(|_, _| response("200 OK", &[], b"via proxy")).await;

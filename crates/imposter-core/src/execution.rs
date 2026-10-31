@@ -36,6 +36,9 @@ pub struct Response {
     /// The request's checks, evaluated against this response.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<crate::check::CheckResult>,
+    /// What the request's captures took from this response.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub captures: Vec<crate::capture::Captured>,
 }
 
 impl Response {

@@ -57,6 +57,10 @@ Python/PyQt6 version and imports its native collection format. New exports use `
   why instead of failing.
 - Right-click a JSON value and choose Add check to check for it. OpenAPI import adds a status
   check for each operation's documented success.
+- Set variables from a response, for example a login's `token` from `$.access_token` or a
+  created item's id: the value goes to the scope that defines the variable, or to the active
+  environment, and the next request uses it. Right-click a JSON value and choose Set variable
+  to add one. Nothing is set while the Variables screen has unsaved changes to that scope.
 
 **History**
 - Every execution with its environment, the request exactly as it was sent, and the full

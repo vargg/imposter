@@ -711,6 +711,12 @@ fn export_request(
             request.name
         ));
     }
+    if !request.captures.is_empty() {
+        warnings.push(format!(
+            "{}: captured variables are not exported to Postman, which sets them in scripts",
+            request.name
+        ));
+    }
     let parts = url::split(&request.url);
     let queries: Vec<ParamItem> = if request.queries.is_empty() {
         url::parse_pairs(&parts.query)

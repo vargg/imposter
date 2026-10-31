@@ -370,6 +370,9 @@ pub struct RequestTemplate {
     /// checks keeps the native version 1 shape.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<crate::check::Check>,
+    /// Values taken from every response into variables. Left out when empty, like `checks`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub captures: Vec<crate::capture::Capture>,
 }
 
 impl Default for RequestTemplate {
@@ -390,6 +393,7 @@ impl Default for RequestTemplate {
             body_type: BodyType::default(),
             options: Options::default(),
             checks: Vec::new(),
+            captures: Vec::new(),
         }
     }
 }

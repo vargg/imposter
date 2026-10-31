@@ -904,7 +904,12 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
             }
             EditorTab::Auth => edited = widgets::auth_form(ui, &mut pane.editor.auth, &mut vars),
             EditorTab::Tests => {
-                edited = crate::checks::editor(ui, &mut pane.editor.checks, &mut vars);
+                edited = crate::checks::tests_tab(
+                    ui,
+                    &mut pane.editor.checks,
+                    &mut pane.editor.captures,
+                    &mut vars,
+                );
             }
             EditorTab::Settings => {
                 edited = widgets::options_form(
@@ -1010,13 +1015,14 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
         }
         ui.horizontal(|ui| runs_picker(ui, response_state, actions));
     }
-    if let Some(widgets::RowAction::AddCheck { path, value }) =
-        response_body(ui, response_state, "response", false, true)
-    {
-        actions.push(Action::AddCheck(crate::checks::check_for(
-            &path,
-            value.as_deref(),
-        )));
+    match response_body(ui, response_state, "response", false, true) {
+        Some(widgets::RowAction::AddCheck { path, value }) => actions.push(Action::AddCheck(
+            crate::checks::check_for(&path, value.as_deref()),
+        )),
+        Some(widgets::RowAction::Capture { path }) => {
+            actions.push(Action::AddCapture(crate::checks::capture_for(&path)));
+        }
+        None => {}
     }
 }
 
@@ -1180,13 +1186,14 @@ pub fn response_body(
         ResponseTab::Tests => {}
     };
     let results = response.as_ref().map_or(&[][..], |r| r.checks.as_slice());
+    let captured = response.as_ref().map_or(&[][..], |r| r.captures.as_slice());
     ui.horizontal(|ui| {
         for (choice, label) in [
             (ResponseTab::Body, "Body"),
             (ResponseTab::Headers, "Headers"),
             (ResponseTab::Tests, "Tests"),
         ] {
-            if choice == ResponseTab::Tests && results.is_empty() {
+            if choice == ResponseTab::Tests && results.is_empty() && captured.is_empty() {
                 continue;
             }
             let response = widgets::tab(ui, *tab == choice, label);
@@ -1255,7 +1262,7 @@ pub fn response_body(
             None,
         ),
         ResponseTab::Tests => {
-            crate::checks::results(ui, results);
+            crate::checks::results(ui, results, captured);
             None
         }
     };

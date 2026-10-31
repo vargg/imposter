@@ -1,18 +1,21 @@
-//! Checks: edited in the request's Tests tab, evaluated after each response, shown with the
-//! response and in History, and added from a JSON value.
+//! Checks and captures: edited in the request's Tests tab, evaluated after each response,
+//! shown with the response and in History; checks can be added from a JSON value, captures
+//! write variables unless that would lose unsaved edits.
 #![cfg(test)]
 #![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 
 mod support;
 
 use egui_kittest::kittest::Queryable;
+use imposter_app::core::capture::Capture;
 use imposter_app::core::check::{Check, Op};
 use imposter_app::core::model::Request;
 use imposter_app::core::select::Selector;
-use imposter_app::store::collections;
+use imposter_app::core::variables::Scope;
+use imposter_app::store::{collections, scopes};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::{EditorTab, HistoryTab};
-use support::{click, collection, request, settle, start_with, text_input};
+use support::{click, collection, request, settle, start_with, text_input, type_into};
 
 struct Fixture {
     app: support::App,
@@ -22,6 +25,10 @@ struct Fixture {
 
 /// The open request "Users", answered with 201 and a small JSON body.
 fn opened(checks: Vec<Check>) -> Fixture {
+    opened_with(checks, Vec::new())
+}
+
+fn opened_with(checks: Vec<Check>, captures: Vec<Capture>) -> Fixture {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let server = runtime.block_on(Server::start(|_, _| {
         response(
@@ -35,6 +42,7 @@ fn opened(checks: Vec<Check>) -> Fixture {
         let api = collection(store, "API");
         let mut saved = request(store, api.id, "Users", &url);
         saved.template.checks = checks;
+        saved.template.captures = captures;
         let id = saved.id.unwrap();
         store
             .call_blocking(move |db| collections::update_request(db, id, &saved.template))
@@ -189,5 +197,134 @@ fn history_keeps_the_results_of_each_run() {
     assert!(
         app.harness.query_by_label("Add check").is_none(),
         "History offers no check editing"
+    );
+}
+
+fn globals(app: &support::App) -> imposter_app::core::model::Variables {
+    app.harness
+        .state()
+        .store()
+        .call_blocking(|db| scopes::read(db, Scope::Global))
+        .unwrap()
+        .0
+}
+
+#[test]
+fn captures_set_variables_that_the_next_send_uses() {
+    let mut fixture = opened(Vec::new());
+    let app = &mut fixture.app;
+    click(&mut app.harness, "Tests");
+    click(&mut app.harness, "Add variable");
+    type_into(&mut app.harness, "Capture 1 variable", "user_id");
+    replace(app, "Capture 1 JSON path", "$.id");
+    click(&mut app.harness, "Add variable");
+    type_into(&mut app.harness, "Capture 2 variable", "missing");
+    replace(app, "Capture 2 JSON path", "$.nope");
+    click(&mut app.harness, "Save request");
+    settle(&mut app.harness);
+    assert_eq!(
+        stored(app).template.captures,
+        [
+            Capture::new("user_id", Selector::Json("$.id".into())),
+            Capture::new("missing", Selector::Json("$.nope".into())),
+        ]
+    );
+
+    send(app);
+    assert_eq!(globals(app).get("user_id").map(String::as_str), Some("7"));
+    assert!(
+        !globals(app).contains_key("missing"),
+        "nothing there, nothing set"
+    );
+    assert_eq!(app.harness.state().state.status, "Set user_id");
+    click(&mut app.harness, "Check results");
+    app.harness.get_by_label("in Global: 7");
+    app.harness
+        .get_by_label("nothing there; the variable keeps its value");
+    assert!(
+        app.harness
+            .state()
+            .state
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .values()["user_id"]
+            == "7",
+        "the editor's variables follow"
+    );
+}
+
+#[test]
+fn captures_wait_for_unsaved_variables_and_refresh_a_clean_screen() {
+    let mut fixture = opened_with(
+        Vec::new(),
+        vec![Capture::new("user_id", Selector::Json("$.id".into()))],
+    );
+    let app = &mut fixture.app;
+    app.harness
+        .state()
+        .store()
+        .call_blocking(|db| {
+            scopes::write(
+                db,
+                Scope::Global,
+                &[("user_id".to_owned(), "1".to_owned())]
+                    .into_iter()
+                    .collect(),
+                &imposter_app::core::model::SavedValues::default(),
+            )
+        })
+        .unwrap();
+
+    // Unsaved edits to the globals: the captured value is not written.
+    click(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    type_into(&mut app.harness, "Variable 1 value", "0");
+    click(&mut app.harness, "Requests");
+    send(app);
+    assert_eq!(globals(app)["user_id"], "1");
+    app.harness
+        .get_by_label("Not set: user_id — the Variables screen has unsaved changes to that scope");
+
+    // Once saved, the next capture is written and the clean screen shows it.
+    click(&mut app.harness, "Variables");
+    click(&mut app.harness, "Save variables");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Requests");
+    send(app);
+    assert_eq!(globals(app)["user_id"], "7");
+    let screen = &app.harness.state().state.variables;
+    assert!(!screen.dirty());
+    click(&mut app.harness, "Variables");
+    assert_eq!(
+        text_input(&app.harness, "Variable 1 value")
+            .value()
+            .as_deref(),
+        Some("7")
+    );
+}
+
+#[test]
+fn a_json_value_becomes_a_variable_named_after_it() {
+    let mut fixture = opened(Vec::new());
+    let app = &mut fixture.app;
+    send(app);
+    app.harness
+        .get_by_label_contains("\"id\": 7")
+        .click_secondary();
+    app.harness.run_steps(2);
+    click(&mut app.harness, "Set variable");
+    settle(&mut app.harness);
+    let pane = app.harness.state().state.editor.as_ref().unwrap();
+    assert_eq!(pane.tab, EditorTab::Tests);
+    assert_eq!(
+        pane.editor.captures,
+        [Capture::new("id", Selector::Json("$.id".into()))]
+    );
+    send(app);
+    assert_eq!(
+        globals(app)["id"],
+        "7",
+        "the unsaved capture runs with the next send"
     );
 }

@@ -1133,7 +1133,8 @@ pub struct Folding<'a> {
     pub outline: &'a viewer::Outline,
     /// Lines whose containers are folded.
     pub folded: &'a mut std::collections::BTreeSet<usize>,
-    /// Offer "Add check" in the row menu (the response belongs to the open request).
+    /// Offer "Add check" and "Set variable" in the row menu (the response belongs to the
+    /// open request).
     pub add_check: bool,
 }
 
@@ -1142,6 +1143,8 @@ pub struct Folding<'a> {
 pub enum RowAction {
     /// Add a check on the value at `path`; `value` is its text, as "Copy value" gives it.
     AddCheck { path: String, value: Option<String> },
+    /// Capture the value at `path` into a variable.
+    Capture { path: String },
 }
 
 const GUTTER: f32 = 12.0;
@@ -1210,6 +1213,12 @@ fn row_menu(
         *action = Some(RowAction::AddCheck {
             path: entry.path.clone(),
             value: outline.copy_value(text, line),
+        });
+        ui.close();
+    }
+    if folding.add_check && ui.button("Set variable").clicked() {
+        *action = Some(RowAction::Capture {
+            path: entry.path.clone(),
         });
         ui.close();
     }

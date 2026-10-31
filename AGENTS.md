@@ -353,12 +353,13 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Native format: version 1 (`"format": "poster"`) is read as the Python app's contract;
-  Imposter writes version 2 (`"format": "imposter"`), which adds request checks and saved
-  values.** New exports
+  Imposter writes version 2 (`"format": "imposter"`), which adds request checks, captures
+  and saved values.** New exports
   use `.imposter.json`; imports accept both extensions and both versions without a companion
   prompt. A document keeps its version when decoded and encoded again, so Python exports still
   round-trip byte for byte (`imposter-transfer/tests/native_golden.rs`); markers and versions
-  must agree, and a version 1 document with checks is refused rather than half-read. Fields
+  must agree, and a version 1 document with checks, captures or saved values is refused
+  rather than half-read. Fields
   only version 2 has are left out when empty, so its requests otherwise look like version 1.
   Why: moving from the Python app stays supported, and Imposter-only data travels with the
   collection instead of being dropped (user's choice); the cost is that the Python app cannot
@@ -375,6 +376,17 @@ numbers, so both are excluded. Each logical change is its own commit.
   OpenAPI import adds a status check for the lowest documented success code and none when
   there is no documented success. Postman export lists checks as not exported. Rejected: a
   JavaScript engine (Postman's `pm.test`), a large dependency with an open-ended surface.
+- **Captures set variables from a response, explicitly and visibly** (`core::capture`): a
+  variable name and a selector, stored with the request. The value goes to the scope whose
+  definition the request saw (so the value it used is the one replaced), else to the active
+  environment, else to the globals; current values only, saved values untouched
+  (`scopes::set_current`). Nothing is taken without a response, and a selector that names
+  nothing leaves the variable alone. The executor only computes the writes; the app applies
+  them in one transaction when the response arrives, even if the user has moved to another
+  request, except for the scope the Variables screen has unsaved edits to: those are not
+  written and the response says so, as with saved values. Statuses name variables, never
+  values. Rejected: Yaak's `response.body.path(request)` template function, which hides the
+  dependency in a placeholder and can send another request on its own.
 - **Imports never change existing data and write nothing before review.** The preview computes
   fresh names (`Name (2)`) and global conflicts first; the import is one transaction; existing
   global values win, with a warning. Postman losses that change how a request runs (scripts,

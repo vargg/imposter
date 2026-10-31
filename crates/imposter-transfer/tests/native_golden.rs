@@ -57,6 +57,9 @@ fn version_2_documents_carry_checks_and_round_trip_byte_for_byte() {
     assert_eq!(checks.len(), 8);
     assert!(!checks[5].enabled);
     assert_eq!(checks[6].describe(), "$.email matches ^[^@]+@{{domain}}$");
+    let captures = &document.requests()[0].captures;
+    assert_eq!(captures.len(), 3);
+    assert_eq!(captures[1].variable, "etag");
     assert_eq!(
         String::from_utf8(encode(&document)).unwrap(),
         String::from_utf8(original).unwrap()
@@ -87,7 +90,7 @@ fn markers_and_versions_must_agree_and_version_1_stays_python_shaped() {
     let error = decode(as_version_1.as_bytes()).unwrap_err().to_string();
     assert_eq!(
         error,
-        "Request \"Create user\": checks need format version 2"
+        "Request \"Create user\": checks and captures need format version 2"
     );
     let python = std::fs::read(fixtures().join("native/full.poster.json")).unwrap();
     let document = decode(&python).unwrap();
@@ -99,7 +102,7 @@ fn markers_and_versions_must_agree_and_version_1_stays_python_shaped() {
 }
 
 #[test]
-fn postman_exports_name_the_checks_they_leave_out() {
+fn postman_exports_name_the_checks_and_captures_they_leave_out() {
     let original = std::fs::read(fixtures().join("native/checks.imposter.json")).unwrap();
     let document = decode(&original).unwrap();
     let (data, warnings) = imposter_transfer::postman::encode(&document).unwrap();
@@ -107,6 +110,13 @@ fn postman_exports_name_the_checks_they_leave_out() {
     assert!(
         warnings.contains(
             &"Create user: checks are not exported to Postman, which runs tests as scripts"
+                .to_owned()
+        ),
+        "{warnings:?}"
+    );
+    assert!(
+        warnings.contains(
+            &"Create user: captured variables are not exported to Postman, which sets them in scripts"
                 .to_owned()
         ),
         "{warnings:?}"

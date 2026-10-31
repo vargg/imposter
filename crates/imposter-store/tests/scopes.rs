@@ -179,3 +179,45 @@ fn a_version_1_database_gains_empty_saved_values() {
     assert_eq!(variables, vars(&[("a", "1")]));
     assert!(saved_values.is_empty());
 }
+
+#[test]
+fn captured_values_replace_current_ones_and_keep_saved_values() {
+    let (_dir, store) = store();
+    let dev = store
+        .call_blocking(|db| {
+            let dev =
+                environments::create_environment(db, "Dev", &vars(&[("user", "42"), ("x", "1")]))?;
+            scopes::write(
+                db,
+                Scope::Environment(dev.id),
+                &dev.variables,
+                &saved("user", &["42", "77"]),
+            )?;
+            Ok(dev.id)
+        })
+        .unwrap();
+    store
+        .call_blocking(move |db| {
+            scopes::set_current(
+                db,
+                Scope::Environment(dev),
+                &[
+                    ("user".to_owned(), "91".to_owned()),
+                    ("token".to_owned(), "t".to_owned()),
+                ],
+            )
+        })
+        .unwrap();
+    let (variables, saved_values) = store
+        .call_blocking(move |db| scopes::read(db, Scope::Environment(dev)))
+        .unwrap();
+    assert_eq!(
+        variables,
+        vars(&[("user", "91"), ("x", "1"), ("token", "t")]),
+        "names keep their place; new ones come last"
+    );
+    assert_eq!(saved_values, saved("user", &["42", "77"]));
+    let gone = store
+        .call_blocking(|db| scopes::set_current(db, Scope::Environment(EnvironmentId(999)), &[]));
+    assert!(matches!(gone, Err(StoreError::NotFound(_))));
+}
