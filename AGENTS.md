@@ -132,7 +132,7 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **GUI: egui + eframe (glow backend); Iced not needed.** Why: the most mature tables, trees and
   panels, custom text layout for `{{var}}` highlighting, and a UI test harness (`egui_kittest`,
   headless, no GPU). Slint was rejected for limited text-editing control and license
-  conditions; gpui for an unstable API. Accepted trade-off: a custom dark theme (accent
+  conditions; gpui for an unstable API. Accepted trade-off: custom dark and light themes (accent
   `#ff6c37`), not a native look. Confirmed in stage 0: release binary 5.6 MiB (LTO, stripped,
   macOS arm64); first frame about 225 ms after process start (24 ms after app creation).
 - **Response viewer: virtualized rows, never one big text widget.** Only visible rows are laid
@@ -153,6 +153,20 @@ numbers, so both are excluded. Each logical change is its own commit.
   numbers keep their value but not their spelling (`1.50` becomes `1.5`); the formatted body,
   "Copy value" and the preview keep tokens exactly as received. A truncated body is refused
   rather than reported as invalid JSON.
+- **Two themes from one set of named roles** (`theme::Palette`: background, surface, input,
+  field_border, selected_bar, text, tones, syntax…, as `DARK` and `LIGHT`).
+  - **Setting:** Settings → Appearance → Dark / Light / System; it applies at once and is
+    stored in UI state (`appearance`), not in the Python-shaped application settings.
+  - **Reading colors:** widgets read colors through `theme::palette()`, a thread-local that
+    `theme::begin_frame` sets from the frame's theme. egui draws a frame on one thread, and a
+    context-free lookup keeps helpers like `tone_text` simple.
+  - **Contrast, checked by `theme.rs` tests for both palettes:**
+    - text, tones, accent, syntax and method colors are ≥4.5:1 on every background they
+      appear on;
+    - control edges (`field_border`, used for fields and buttons) and the selection marker
+      are ≥3:1, per WCAG 1.4.11.
+  - **Light accent:** the light theme's accent is a darker orange (#b83b0a), because
+    #ff6c37 on white is below 3:1.
 - **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
   256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
   dependency.

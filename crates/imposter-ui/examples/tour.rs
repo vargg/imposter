@@ -23,11 +23,13 @@ use imposter_app::core::variables::Scope;
 use imposter_app::paths::open_store;
 use imposter_app::store::{collections, environments, kv, scopes};
 use imposter_ui::app::{HistoryTab, ImposterApp, ResponseTab};
+use imposter_ui::theme::ThemeChoice;
 
 struct Tour {
     harness: Harness<'static, ImposterApp>,
     out: PathBuf,
-    size: &'static str,
+    /// The file name prefix: the size, and the theme unless it is dark.
+    size: String,
 }
 
 impl Tour {
@@ -218,6 +220,21 @@ fn seed(dir: &Path, base: &str) {
     store.close().unwrap();
 }
 
+fn set_theme(dir: &Path, theme: ThemeChoice) {
+    let store = open_store(dir).unwrap();
+    store
+        .call_blocking(move |db| {
+            kv::set(
+                db,
+                kv::Table::UiState,
+                "appearance",
+                &serde_json::json!({ "theme": theme }),
+            )
+        })
+        .unwrap();
+    store.close().unwrap();
+}
+
 fn harness(dir: &Path, size: egui::Vec2) -> Harness<'static, ImposterApp> {
     let store = open_store(dir).unwrap();
     Harness::builder()
@@ -277,16 +294,28 @@ fn main() {
         }
     }));
 
-    for (size, window) in [
-        ("narrow", egui::Vec2::from(imposter_ui::layout::MIN_WINDOW)),
-        ("wide", egui::vec2(1500.0, 850.0)),
-    ] {
+    for (theme, (size, window)) in [ThemeChoice::Dark, ThemeChoice::Light]
+        .into_iter()
+        .flat_map(|theme| {
+            [
+                ("narrow", egui::Vec2::from(imposter_ui::layout::MIN_WINDOW)),
+                ("wide", egui::vec2(1500.0, 850.0)),
+            ]
+            .map(|size| (theme, size))
+        })
+    {
+        let size = if theme == ThemeChoice::Dark {
+            size.to_owned()
+        } else {
+            format!("{size}-light")
+        };
         // Task 1: the very first start, then a first import.
         let empty = tempfile::tempdir().unwrap();
+        set_theme(empty.path(), theme);
         let mut tour = Tour {
             harness: harness(empty.path(), window),
             out: out.clone(),
-            size,
+            size: size.clone(),
         };
         tour.settle();
         tour.shot("1-01-first-start");
@@ -309,6 +338,7 @@ fn main() {
 
         let dir = tempfile::tempdir().unwrap();
         seed(dir.path(), &server.url);
+        set_theme(dir.path(), theme);
         let mut tour = Tour {
             harness: harness(dir.path(), window),
             out: out.clone(),

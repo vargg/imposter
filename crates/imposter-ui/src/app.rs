@@ -45,6 +45,15 @@ pub const AUTOSAVE_DELAY: f64 = 0.5;
 
 const LAST_KEY: &str = "last";
 const RECENT_KEY: &str = "recent_requests";
+const APPEARANCE_KEY: &str = "appearance";
+
+/// How the app looks: a UI preference, kept in UI state beside the layout rather than in the
+/// application settings the Python app shares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Appearance {
+    pub theme: theme::ThemeChoice,
+}
 const LAYOUT_KEY: &str = "workspace_layout";
 const DRAFT_KEY: &str = "draft";
 const WINDOW_KEY: &str = "window";
@@ -64,6 +73,7 @@ pub struct Startup {
     active_environment: Option<EnvironmentId>,
     last: Last,
     recent: Vec<RequestId>,
+    appearance: Appearance,
     layout: Value,
     draft: Option<Request>,
 }
@@ -290,6 +300,8 @@ pub enum Action {
     ToggleSidebar,
     /// Switch between side by side and stacked.
     ToggleLayout,
+    /// Choose and remember the theme.
+    SetTheme(theme::ThemeChoice),
     /// A curl command pasted over the whole URL: it replaces the open request's contents.
     PasteCurl(String),
     /// Switch the active execution environment (`None`: globals only).
@@ -904,6 +916,7 @@ pub struct State {
     pub logo: Option<egui::TextureHandle>,
     /// Requests opened recently, newest first (the palette lists them first).
     pub recent: Vec<RequestId>,
+    pub appearance: Appearance,
     pub actions: Vec<Action>,
 }
 
@@ -917,11 +930,13 @@ pub struct ImposterApp {
     /// Scripted file dialog answers (tests); `None` opens native dialogs.
     file_answers: Option<VecDeque<Option<PathBuf>>>,
     smoke: Option<SmokeTest>,
+    /// The appearance last installed in egui, to reinstall only on a change.
+    applied: Option<Appearance>,
 }
 
 impl ImposterApp {
     pub fn new(ctx: &egui::Context, store: Store) -> std::io::Result<Self> {
-        theme::apply(ctx);
+        theme::apply(ctx, theme::ThemeChoice::default());
         let repaint = ctx.clone();
         let bridge = Bridge::new(move || repaint.request_repaint())?;
         let db = store.handle();
@@ -974,12 +989,14 @@ impl ImposterApp {
                 sidebar_filter: String::new(),
                 logo: None,
                 recent: Vec::new(),
+                appearance: Appearance::default(),
                 actions: Vec::new(),
             },
             window: None,
             first_frame: Some(std::time::Instant::now()),
             file_answers: None,
             smoke: None,
+            applied: None,
         };
         app.state.response.clear("No request selected");
         app.task(
@@ -992,6 +1009,11 @@ impl ImposterApp {
                     last: kv::get(db, Table::UiState, LAST_KEY)?.unwrap_or_default(),
                     // A convenience list: an unreadable one starts empty rather than failing.
                     recent: kv::get(db, Table::UiState, RECENT_KEY)
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default(),
+                    // A preference too: unreadable means the defaults.
+                    appearance: kv::get(db, Table::UiState, APPEARANCE_KEY)
                         .ok()
                         .flatten()
                         .unwrap_or_default(),
@@ -1512,6 +1534,7 @@ impl ImposterApp {
         state.environments = startup.environments;
         state.active_environment = startup.active_environment;
         state.recent = startup.recent;
+        state.appearance = startup.appearance;
         if let Some(draft) = startup.draft {
             self.load_editor(&draft);
             self.request_status(
@@ -2599,6 +2622,11 @@ impl ImposterApp {
             }
             Action::ToggleSidebar => {
                 self.state.layout.sidebar_visible = !self.state.layout.sidebar_visible;
+            }
+            Action::SetTheme(choice) => {
+                self.state.appearance.theme = choice;
+                let stored = serde_json::to_value(self.state.appearance).unwrap_or(Value::Null);
+                self.write_ui_state(APPEARANCE_KEY, stored);
             }
             Action::ToggleLayout => {
                 self.state.layout.orientation = self.state.layout.orientation.switched();
@@ -3873,6 +3901,11 @@ impl eframe::App for ImposterApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if self.applied != Some(self.state.appearance) {
+            theme::apply(ui.ctx(), self.state.appearance.theme);
+            self.applied = Some(self.state.appearance);
+        }
+        theme::begin_frame(ui.ctx());
         crate::workspace::draw(self, ui);
         let now = ui.input(|i| i.time);
         for action in std::mem::take(&mut self.state.actions) {

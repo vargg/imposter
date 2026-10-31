@@ -5,7 +5,7 @@ use egui::{Align, Layout, RichText, Ui};
 
 use crate::app::{Action, State, VariablesAction};
 use crate::icons::{self, Icon};
-use crate::theme::{PALETTE, Tone};
+use crate::theme::{Tone, palette};
 use crate::vars::{self, Scope};
 use crate::widgets::{SaveStatus, name, save_controls, tone_text};
 
@@ -106,8 +106,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut edited = false;
     let highlight = state.variables.highlight.take();
     egui::Frame::new()
-        .fill(PALETTE.surface)
-        .stroke(egui::Stroke::new(1.0, PALETTE.border))
+        .fill(palette().surface)
+        .stroke(egui::Stroke::new(1.0, palette().border))
         .corner_radius(12)
         .inner_margin(14)
         .show(ui, |ui| {

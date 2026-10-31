@@ -10,7 +10,7 @@ use crate::dialogs::{ConfirmPurpose, Dialog, NamePurpose};
 use crate::editor::BODY_CHOICES;
 use crate::icons::{self, Icon};
 use crate::layout::{Orientation, SIDEBAR_WIDTH, WorkspaceLayout};
-use crate::theme::{PALETTE, Tone, method_color};
+use crate::theme::{Tone, method_color, palette};
 use crate::tree::{Node, NodeId};
 use crate::viewer::{self, Language};
 use crate::widgets::{self, FileRequest, VarUi, name, tone_text};
@@ -29,7 +29,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
     egui::Panel::top("screens")
         .frame(
             egui::Frame::new()
-                .fill(PALETTE.surface)
+                .fill(palette().surface)
                 .inner_margin(egui::Margin::symmetric(16, 10)),
         )
         .show(ui, |ui| {
@@ -51,7 +51,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                 brand.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::accesskit::Role::Image, true, "I’mposter")
                 });
-                ui.painter().galley(rect.min, galley, PALETTE.text);
+                ui.painter().galley(rect.min, galley, palette().text);
                 ui.add_space(if compact { 8.0 } else { 24.0 });
                 for (screen, label) in [
                     (Screen::Requests, "Requests"),
@@ -85,7 +85,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
     egui::Panel::bottom("status")
         .frame(
             egui::Frame::new()
-                .fill(PALETTE.surface)
+                .fill(palette().surface)
                 .inner_margin(egui::Margin::symmetric(16, 5)),
         )
         .show(ui, |ui| {
@@ -117,31 +117,47 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
         });
     if state.screen == Screen::Variables {
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
+            .frame(
+                egui::Frame::new()
+                    .fill(palette().background)
+                    .inner_margin(16),
+            )
             .show(ui, |ui| crate::variables_screen::draw(state, ui));
         return;
     }
     if state.screen == Screen::History {
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
+            .frame(
+                egui::Frame::new()
+                    .fill(palette().background)
+                    .inner_margin(16),
+            )
             .show(ui, |ui| crate::history_screen::draw(state, ui));
         return;
     }
     if state.screen == Screen::Mocks {
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
+            .frame(
+                egui::Frame::new()
+                    .fill(palette().background)
+                    .inner_margin(16),
+            )
             .show(ui, |ui| crate::mock_screen::draw(state, ui));
         return;
     }
     if state.screen == Screen::Settings {
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
+            .frame(
+                egui::Frame::new()
+                    .fill(palette().background)
+                    .inner_margin(16),
+            )
             .show(ui, |ui| crate::settings_screen::draw(state, ui));
         return;
     }
     if state.layout.sidebar_visible {
         let panel = egui::Panel::left("sidebar")
-            .frame(egui::Frame::new().fill(PALETTE.surface).inner_margin(12))
+            .frame(egui::Frame::new().fill(palette().surface).inner_margin(12))
             .resizable(true)
             .default_size(state.layout.sidebar_width)
             .size_range(SIDEBAR_WIDTH.0..=SIDEBAR_WIDTH.1)
@@ -154,7 +170,11 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
             .round();
     }
     egui::CentralPanel::default()
-        .frame(egui::Frame::new().fill(PALETTE.background).inner_margin(16))
+        .frame(
+            egui::Frame::new()
+                .fill(palette().background)
+                .inner_margin(16),
+        )
         .show(ui, |ui| {
             context_bar(state, ui, save, save_text);
             ui.add_space(8.0);
@@ -522,7 +542,7 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
                     ui.painter().rect_stroke(
                         response.rect,
                         4.0,
-                        egui::Stroke::new(1.5, PALETTE.accent),
+                        egui::Stroke::new(1.5, palette().accent),
                         egui::StrokeKind::Inside,
                     );
                 }
@@ -550,7 +570,7 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
                     4.0,
                     egui::TextFormat {
                         font_id: egui::FontId::proportional(13.0),
-                        color: PALETTE.text,
+                        color: palette().text,
                         ..Default::default()
                     },
                 );
@@ -698,8 +718,8 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
     let mut url_edited = false;
     let mut edited = false;
     egui::Frame::new()
-        .fill(PALETTE.surface)
-        .stroke(egui::Stroke::new(1.0, PALETTE.border))
+        .fill(palette().surface)
+        .stroke(egui::Stroke::new(1.0, palette().border))
         .corner_radius(10)
         .inner_margin(8)
         .show(ui, |ui| {
@@ -731,13 +751,13 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 }
                 url_edited = url.changed();
                 let (label, fill) = if executing {
-                    ("Cancel", PALETTE.warning)
+                    ("Cancel", palette().warning)
                 } else {
-                    ("Send", PALETTE.accent)
+                    ("Send", palette().accent)
                 };
                 let send = ui.add_sized(
                     vec2(send_width, 36.0),
-                    egui::Button::new(RichText::new(label).color(PALETTE.on_accent).strong())
+                    egui::Button::new(RichText::new(label).color(palette().on_accent).strong())
                         .fill(fill),
                 );
                 let send = send.on_hover_text(crate::shortcuts::hint(
@@ -804,9 +824,9 @@ fn split(state: &mut State, ui: &mut Ui) {
         }
     }
     let color = if drag.hovered() || drag.dragged() {
-        PALETTE.accent
+        palette().accent
     } else {
-        PALETTE.border
+        palette().border
     };
     let grip = match orientation {
         Orientation::SideBySide => vec2(3.0, 32.0),
@@ -818,8 +838,8 @@ fn split(state: &mut State, ui: &mut Ui) {
         ui.painter().rect(
             rect,
             12.0,
-            PALETTE.surface,
-            egui::Stroke::new(1.0, PALETTE.border),
+            palette().surface,
+            egui::Stroke::new(1.0, palette().border),
             egui::StrokeKind::Inside,
         );
     }
@@ -860,7 +880,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                 RichText::new(">_")
                     .monospace()
                     .size(32.0)
-                    .color(PALETTE.accent),
+                    .color(palette().accent),
             );
             ui.heading("Start with a request");
             ui.add_space(4.0);
@@ -1170,7 +1190,7 @@ fn problem_frame(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
 
 fn problem_box(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
     egui::Frame::new()
-        .stroke(egui::Stroke::new(1.0, PALETTE.error.gamma_multiply(0.6)))
+        .stroke(egui::Stroke::new(1.0, palette().error.gamma_multiply(0.6)))
         .corner_radius(8)
         .inner_margin(12)
         .show(ui, |ui| {
@@ -1508,9 +1528,9 @@ fn run_label(run: &imposter_app::store::executions::ExecutionSummary) -> String 
 fn wordmark(compact: bool) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     for (text, color) in [
-        ("I", PALETTE.text),
-        ("’m", PALETTE.accent),
-        (if compact { "p" } else { "poster" }, PALETTE.text),
+        ("I", palette().text),
+        ("’m", palette().accent),
+        (if compact { "p" } else { "poster" }, palette().text),
     ] {
         job.append(
             text,
@@ -1539,9 +1559,9 @@ mod branding_tests {
                 &job.text[job.sections[1].byte_range.start.0..job.sections[1].byte_range.end.0],
                 "’m"
             );
-            assert_eq!(job.sections[1].format.color, PALETTE.accent);
-            assert_eq!(job.sections[0].format.color, PALETTE.text);
-            assert_eq!(job.sections[2].format.color, PALETTE.text);
+            assert_eq!(job.sections[1].format.color, palette().accent);
+            assert_eq!(job.sections[0].format.color, palette().text);
+            assert_eq!(job.sections[2].format.color, palette().text);
         }
     }
 }

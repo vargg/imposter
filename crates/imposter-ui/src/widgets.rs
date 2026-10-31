@@ -13,7 +13,7 @@ use crate::editor::{
 };
 use crate::highlight::{self, Spans};
 use crate::icons::{self, Icon};
-use crate::theme::{PALETTE, Tone, token_color};
+use crate::theme::{Tone, palette, token_color};
 use crate::vars;
 use crate::viewer::{self, Language};
 use imposter_app::core::variables::Snapshot;
@@ -27,14 +27,14 @@ pub fn name(response: &egui::Response, label: &str) {
 }
 
 pub fn tone_text(text: impl Into<String>, tone: Tone) -> RichText {
-    RichText::new(text.into()).color(PALETTE.tone(tone))
+    RichText::new(text.into()).color(palette().tone(tone))
 }
 
 pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
     let text = RichText::new(label).color(if selected {
-        PALETTE.accent
+        palette().accent
     } else {
-        PALETTE.text_muted
+        palette().text_muted
     });
     let response = ui.add(egui::Button::selectable(selected, text).min_size(egui::vec2(0.0, 30.0)));
     if selected {
@@ -44,7 +44,7 @@ pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
                 rect.left_bottom() + egui::vec2(8.0, -1.0),
                 rect.right_bottom() + egui::vec2(-8.0, -1.0),
             ],
-            egui::Stroke::new(2.0, PALETTE.accent),
+            egui::Stroke::new(2.0, palette().accent),
         );
     }
     response
@@ -52,8 +52,8 @@ pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
 
 pub fn badge(ui: &mut Ui, text: &str, tone: Tone) -> egui::Response {
     egui::Frame::new()
-        .fill(PALETTE.input)
-        .stroke(egui::Stroke::new(1.0, PALETTE.border))
+        .fill(palette().input)
+        .stroke(egui::Stroke::new(1.0, palette().border))
         .corner_radius(6)
         .inner_margin(egui::Margin::symmetric(8, 4))
         .show(ui, |ui| {
@@ -110,9 +110,9 @@ pub fn variable_job(
     for token in vars::tokens(text) {
         let defined = vars::resolves(snapshot, &token.name);
         let color = if defined {
-            PALETTE.accent
+            palette().accent
         } else {
-            PALETTE.error
+            palette().error
         };
         restyle(&mut job, token.range, |format| {
             format.color = color;
@@ -591,8 +591,8 @@ pub fn remove_button(ui: &mut Ui, id: egui::Id, what: &str, height: f32) -> bool
     let armed_at: Option<(f64, Option<egui::Pos2>)> = ui.data(|d| d.get_temp(id));
     let armed = armed_at.is_some_and(|(at, _)| now - at < REMOVE_ARMED_SECONDS);
     let button = if armed {
-        egui::Button::new(RichText::new("×").strong().color(PALETTE.error))
-            .stroke(egui::Stroke::new(1.0, PALETTE.error))
+        egui::Button::new(RichText::new("×").strong().color(palette().error))
+            .stroke(egui::Stroke::new(1.0, palette().error))
     } else {
         egui::Button::new("×")
     };
@@ -1193,9 +1193,9 @@ fn fold_marker(ui: &mut Ui, folding: &mut Folding<'_>, line: usize, first: bool,
         folding.folded.insert(line);
     }
     let color = if response.hovered() {
-        PALETTE.accent
+        palette().accent
     } else {
-        PALETTE.text_muted
+        palette().text_muted
     };
     let c = rect.center();
     let points = if open {
@@ -1303,7 +1303,7 @@ pub fn code_viewer(
     }
 
     egui::Frame::new()
-        .fill(PALETTE.input)
+        .fill(palette().input)
         .corner_radius(8)
         .inner_margin(10)
         .show(ui, |ui| {
@@ -1363,9 +1363,9 @@ pub fn code_viewer(
                                 &mut job,
                                 start..end,
                                 if strong {
-                                    PALETTE.accent.gamma_multiply(0.6)
+                                    palette().accent.gamma_multiply(0.6)
                                 } else {
-                                    PALETTE.accent.gamma_multiply(0.25)
+                                    palette().accent.gamma_multiply(0.25)
                                 },
                             );
                         }
@@ -1387,7 +1387,7 @@ pub fn code_viewer(
                         job.append(
                             &format!(" … {closing}"),
                             0.0,
-                            TextFormat::simple(font.clone(), PALETTE.text_muted),
+                            TextFormat::simple(font.clone(), palette().text_muted),
                         );
                     }
                     ui.horizontal(|ui| {

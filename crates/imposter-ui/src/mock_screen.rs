@@ -6,7 +6,7 @@ use imposter_app::core::model::ParamItem;
 use imposter_app::runtime::TaskId;
 
 use crate::app::{Action, State};
-use crate::theme::{PALETTE, Tone};
+use crate::theme::{Tone, palette};
 use crate::widgets::{self, SaveStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,7 +64,7 @@ fn text(ui: &mut Ui, label: &str, value: &mut String, width: f32) -> bool {
 fn checked_text(ui: &mut Ui, label: &str, value: &mut String, width: f32, invalid: bool) -> bool {
     ui.scope(|ui| {
         if invalid {
-            let stroke = egui::Stroke::new(1.0, PALETTE.error);
+            let stroke = egui::Stroke::new(1.0, palette().error);
             let widgets = &mut ui.visuals_mut().widgets;
             for state in [
                 &mut widgets.inactive,

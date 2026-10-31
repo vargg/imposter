@@ -2,7 +2,7 @@
 
 use egui::{Color32, Pos2, Rect, Response, Stroke, Ui, vec2};
 
-use crate::theme::PALETTE;
+use crate::theme::palette;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Icon {
@@ -53,11 +53,11 @@ pub fn button_with_hint(
     crate::widgets::name(&response, label);
     if ui.is_rect_visible(response.rect) {
         let color = if !ui.is_enabled() {
-            PALETTE.text_muted.gamma_multiply(0.45)
+            palette().text_muted.gamma_multiply(0.45)
         } else if selected || response.hovered() || response.has_focus() {
-            PALETTE.accent
+            palette().accent
         } else {
-            PALETTE.text_muted
+            palette().text_muted
         };
         paint(ui, icon, response.rect.center() - vec2(8.0, 8.0), color);
     }
@@ -277,8 +277,8 @@ pub fn app_icon(size: u32) -> Vec<u8> {
             && x <= 0.668 - 0.0576 * fraction;
         (square, stem || apostrophe)
     };
-    let background = PALETTE.accent;
-    let letter = PALETTE.on_accent;
+    let background = palette().accent;
+    let letter = palette().on_accent;
     let mut pixels = Vec::with_capacity((size * size * 4) as usize);
     #[allow(clippy::cast_precision_loss)] // icon sizes are small
     let scale = (size * SAMPLES) as f32;
@@ -350,15 +350,15 @@ mod tests {
             };
             assert_eq!(
                 pixel(size * 40 / 100, size / 2),
-                PALETTE.on_accent.to_array()
+                palette().on_accent.to_array()
             );
             assert_eq!(
                 pixel(size * 60 / 100, size * 33 / 100),
-                PALETTE.on_accent.to_array()
+                palette().on_accent.to_array()
             );
             assert_eq!(
                 pixel(size * 60 / 100, size * 60 / 100),
-                PALETTE.accent.to_array()
+                palette().accent.to_array()
             );
         }
     }

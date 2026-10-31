@@ -223,3 +223,42 @@ fn host_certificates_save_only_on_save_and_validate_duplicates() {
     click(&mut app.harness, "Cancel");
     assert_eq!(app.harness.state().close_state(), CloseState::Open);
 }
+
+#[test]
+fn the_theme_applies_at_once_and_is_remembered() {
+    let mut app = start();
+    open_settings(&mut app);
+    assert_eq!(
+        app.harness.ctx.theme(),
+        egui::Theme::Dark,
+        "dark by default"
+    );
+    app.harness
+        .get_by_role_and_label(Role::ComboBox, "Theme")
+        .click();
+    app.harness.run_steps(2);
+    click(&mut app.harness, "Light");
+    settle(&mut app.harness);
+
+    assert_eq!(app.harness.ctx.theme(), egui::Theme::Light);
+    assert_eq!(imposter_ui::theme::palette(), &imposter_ui::theme::LIGHT);
+    assert!(!save_enabled(&app), "a preference, not an unsaved setting");
+    let stored: serde_json::Value = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| kv::get(db, kv::Table::UiState, "appearance"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored["theme"], "light");
+
+    let dir = app.dir;
+    drop(app.harness);
+    let mut again = support::harness_at(dir.path(), egui::vec2(1400.0, 900.0));
+    settle(&mut again);
+    assert_eq!(
+        again.ctx.theme(),
+        egui::Theme::Light,
+        "restored at the next start"
+    );
+}

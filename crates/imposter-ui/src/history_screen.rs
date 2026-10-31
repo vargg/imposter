@@ -6,7 +6,7 @@ use imposter_app::core::execution::Outcome;
 use imposter_app::store::executions::ExecutionSummary;
 
 use crate::app::{Action, HISTORY_PAGE, HistoryAction, HistoryTab, SentTab, State};
-use crate::theme::{PALETTE, Tone};
+use crate::theme::{Tone, palette};
 use crate::viewer::{self, Language};
 use crate::widgets::{self, name, tone_text};
 
@@ -123,9 +123,9 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             .clamp(crate::layout::RATIO.0, crate::layout::RATIO.1);
     }
     let color = if drag.hovered() || drag.dragged() {
-        PALETTE.accent
+        palette().accent
     } else {
-        PALETTE.border
+        palette().border
     };
     ui.painter().rect_filled(handle.shrink(2.0), 2.0, color);
 
@@ -162,20 +162,20 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                             &format!("History {} {} {}", row.method, row.url, when),
                         );
                         let fill = if selected {
-                            PALETTE.selected
+                            palette().selected
                         } else if response.hovered() {
-                            PALETTE.hover
+                            palette().hover
                         } else {
                             egui::Color32::TRANSPARENT
                         };
                         ui.painter().rect_filled(rect, 4.0, fill);
                         let (outcome, tone) = outcome_text(row);
                         let cells = [
-                            (when, PALETTE.text),
-                            (row.method.clone(), PALETTE.text),
-                            (row.url.clone(), PALETTE.text),
-                            (outcome, PALETTE.tone(tone)),
-                            (row.environment.clone(), PALETTE.text_muted),
+                            (when, palette().text),
+                            (row.method.clone(), palette().text),
+                            (row.url.clone(), palette().text),
+                            (outcome, palette().tone(tone)),
+                            (row.environment.clone(), palette().text_muted),
                         ];
                         let mut x = rect.left() + 4.0;
                         for ((text, color), column) in cells.into_iter().zip(columns) {

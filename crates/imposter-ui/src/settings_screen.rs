@@ -5,7 +5,7 @@ use egui::{Align, Grid, Layout, Ui};
 use imposter_app::core::settings::{AppSettings, HostIdentity};
 
 use crate::app::{Action, State};
-use crate::theme::{PALETTE, Tone};
+use crate::theme::{Tone, palette};
 use crate::widgets::{SaveStatus, save_controls};
 
 const MIB: u64 = 1024 * 1024;
@@ -74,8 +74,8 @@ impl SettingsForm {
 
 fn group(ui: &mut Ui, title: &str, contents: impl FnOnce(&mut Ui)) {
     egui::Frame::new()
-        .fill(PALETTE.surface)
-        .stroke(egui::Stroke::new(1.0, PALETTE.border))
+        .fill(palette().surface)
+        .stroke(egui::Stroke::new(1.0, palette().border))
         .corner_radius(8)
         .inner_margin(12)
         .show(ui, |ui| {
@@ -150,6 +150,30 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.set_max_width(760.0);
+            // Appearance applies at once and is remembered apart from Save: it is how this
+            // app looks, not an application setting.
+            let mut theme = state.appearance.theme;
+            group(ui, "Appearance", |ui| {
+                row(ui, "Theme", |ui| {
+                    let combo = egui::ComboBox::from_id_salt("theme")
+                        .selected_text(
+                            crate::theme::ThemeChoice::ALL
+                                .iter()
+                                .find(|(choice, _)| *choice == theme)
+                                .map_or("", |(_, label)| *label),
+                        )
+                        .show_ui(ui, |ui| {
+                            for (choice, label) in crate::theme::ThemeChoice::ALL {
+                                ui.selectable_value(&mut theme, choice, label);
+                            }
+                        });
+                    combo.response
+                });
+            });
+            if theme != state.appearance.theme {
+                state.actions.push(Action::SetTheme(theme));
+            }
+            ui.add_space(8.0);
             ui.add_enabled_ui(loaded, |ui| {
                 let form = &mut screen.form;
                 group(ui, "General", |ui| {

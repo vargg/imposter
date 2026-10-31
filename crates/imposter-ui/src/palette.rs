@@ -9,7 +9,7 @@ use imposter_app::store::collections::IndexedRequest;
 use crate::app::{Action, Screen, State};
 use crate::dialogs::{Dialog, NamePurpose, Outcome};
 use crate::shortcuts;
-use crate::theme::{PALETTE, Tone};
+use crate::theme::{Tone, palette};
 use crate::tree::NodeId;
 use crate::widgets::{name, tone_text};
 
@@ -307,19 +307,19 @@ fn row(ui: &mut Ui, item: &Item, selected: bool) -> egui::Response {
         text.append(
             &format!("{method:<7}"),
             0.0,
-            egui::TextFormat::simple(mono, PALETTE.accent),
+            egui::TextFormat::simple(mono, palette().accent),
         );
     }
     text.append(
         &item.label,
         0.0,
-        egui::TextFormat::simple(body.clone(), PALETTE.text),
+        egui::TextFormat::simple(body.clone(), palette().text),
     );
     if let Some(hint) = &item.hint {
         text.append(
             hint,
             16.0,
-            egui::TextFormat::simple(body, PALETTE.text_muted),
+            egui::TextFormat::simple(body, palette().text_muted),
         );
     }
     let response = ui.add(egui::Button::selectable(selected, text).truncate());

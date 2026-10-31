@@ -205,7 +205,7 @@ impl Dialog {
                     ui.horizontal(|ui| {
                         if ui
                             .button(
-                                RichText::new(confirm.as_str()).color(crate::theme::PALETTE.error),
+                                RichText::new(confirm.as_str()).color(crate::theme::palette().error),
                             )
                             .clicked()
                         {
