@@ -1,7 +1,7 @@
 //! The History screen: every execution, newest first, with its executed request and response.
 //! Restoring opens an unsaved draft; nothing is sent.
 
-use egui::{Align, Layout, Rect, Sense, Ui, UiBuilder, vec2};
+use egui::{Rect, Sense, Ui, UiBuilder, vec2};
 use imposter_app::core::execution::Outcome;
 use imposter_app::store::executions::ExecutionSummary;
 
@@ -11,6 +11,8 @@ use crate::viewer::{self, Language};
 use crate::widgets::{self, name, tone_text};
 
 const SEPARATOR: f32 = 6.0;
+/// Below this width the toolbar wraps rather than pinning "Clear all" to the right edge.
+const TOOLBAR_ONE_ROW: f32 = 900.0;
 
 fn outcome_text(row: &ExecutionSummary) -> (String, Tone) {
     match row.outcome {
@@ -36,51 +38,67 @@ fn megabytes(bytes: u64) -> String {
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut actions = Vec::new();
     let history = &mut state.history;
-    ui.horizontal(|ui| {
-        let mut only = history.only_current;
-        if ui.checkbox(&mut only, "Current request only").changed() {
-            actions.push(Action::History(HistoryAction::OnlyCurrent(only)));
-        }
-        if ui.button("Refresh").clicked() {
-            actions.push(Action::History(HistoryAction::Refresh));
-        }
-        if ui
-            .add_enabled(history.offset > 0, egui::Button::new("Newer"))
-            .clicked()
-        {
-            actions.push(Action::History(HistoryAction::Newer));
-        }
-        if ui
-            .add_enabled(
-                history.rows.len() as u64 == HISTORY_PAGE,
-                egui::Button::new("Older"),
-            )
-            .clicked()
-        {
-            actions.push(Action::History(HistoryAction::Older));
-        }
-        let restore = ui
-            .add_enabled(
-                history.record.is_some(),
-                egui::Button::new("Restore as draft"),
-            )
-            .on_hover_text("Open an editable request draft without sending it.");
-        if restore.clicked() {
-            actions.push(Action::History(HistoryAction::Restore));
-        }
-        if ui
-            .add_enabled(history.record.is_some(), egui::Button::new("Copy as curl"))
-            .on_hover_text("Copy the request as it was sent, as a curl command")
-            .clicked()
-        {
-            actions.push(Action::History(HistoryAction::CopyCurl));
-        }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.button("Clear all history…").clicked() {
-                actions.push(Action::History(HistoryAction::Clear));
+    // One row with "Clear all" at the right edge; in a narrow window the row wraps instead,
+    // so its buttons never overlap.
+    let tools =
+        |ui: &mut Ui, actions: &mut Vec<Action>, history: &mut crate::app::HistoryScreen| {
+            let mut only = history.only_current;
+            if ui.checkbox(&mut only, "Current request only").changed() {
+                actions.push(Action::History(HistoryAction::OnlyCurrent(only)));
             }
+            if ui.button("Refresh").clicked() {
+                actions.push(Action::History(HistoryAction::Refresh));
+            }
+            if ui
+                .add_enabled(history.offset > 0, egui::Button::new("Newer"))
+                .clicked()
+            {
+                actions.push(Action::History(HistoryAction::Newer));
+            }
+            if ui
+                .add_enabled(
+                    history.rows.len() as u64 == HISTORY_PAGE,
+                    egui::Button::new("Older"),
+                )
+                .clicked()
+            {
+                actions.push(Action::History(HistoryAction::Older));
+            }
+            let restore = ui
+                .add_enabled(
+                    history.record.is_some(),
+                    egui::Button::new("Restore as draft"),
+                )
+                .on_hover_text("Open an editable request draft without sending it.");
+            if restore.clicked() {
+                actions.push(Action::History(HistoryAction::Restore));
+            }
+            if ui
+                .add_enabled(history.record.is_some(), egui::Button::new("Copy as curl"))
+                .on_hover_text("Copy the request as it was sent, as a curl command")
+                .clicked()
+            {
+                actions.push(Action::History(HistoryAction::CopyCurl));
+            }
+        };
+    let clear = |ui: &mut Ui, actions: &mut Vec<Action>| {
+        if ui.button("Clear all history…").clicked() {
+            actions.push(Action::History(HistoryAction::Clear));
+        }
+    };
+    if ui.available_width() >= TOOLBAR_ONE_ROW {
+        ui.horizontal(|ui| {
+            tools(ui, &mut actions, history);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                clear(ui, &mut actions);
+            });
         });
-    });
+    } else {
+        ui.horizontal_wrapped(|ui| {
+            tools(ui, &mut actions, history);
+            clear(ui, &mut actions);
+        });
+    }
     ui.horizontal(|ui| {
         let field = ui.add(
             egui::TextEdit::singleline(&mut history.filter)
