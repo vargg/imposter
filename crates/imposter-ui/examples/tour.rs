@@ -52,7 +52,11 @@ impl Tour {
             eprintln!("tour ({}): no control named {label:?}", self.size);
             return false;
         };
-        node.click();
+        // Rows below the fold of a small window must be scrolled to before a click lands.
+        // Scrolling animates; wait until it has settled.
+        node.scroll_to_me();
+        self.harness.run_steps(12);
+        self.harness.query_by_label(label).unwrap().click();
         self.harness.run_steps(2);
         true
     }
