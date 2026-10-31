@@ -411,7 +411,7 @@ pub fn status(response: &Response) -> Status {
                 response.reason.clone()
             };
             Status {
-                text: format!("Transport failure: {reason}"),
+                text: failure_title(&response.error_kind).to_owned(),
                 tone: Tone::Error,
                 detail: reason,
             }
@@ -457,6 +457,26 @@ pub fn failure_title(kind: &str) -> &'static str {
         "InvalidProxy" => "Invalid proxy",
         _ => "Request failed",
     }
+}
+
+/// What to check after a transport failure of `kind`, if there is a useful general hint.
+pub fn failure_hint(kind: &str) -> Option<&'static str> {
+    Some(match kind {
+        "ConnectError" => {
+            "Nothing answered at that address. Is the server running, and are the host and port right?"
+        }
+        "Timeout" => {
+            "No answer within the timeout. Check the server, or raise the timeout in this request's Settings tab."
+        }
+        "TlsError" => {
+            "The secure connection failed. Check http vs https, the CA bundle, or certificate verification in Settings."
+        }
+        "TooManyRedirects" => "The server kept redirecting (more than 20 times).",
+        "InvalidUrl" => "The URL must be absolute and start with http:// or https://.",
+        "InvalidProxy" => "Check the proxy URL in Settings.",
+        "UploadError" => "A file to upload could not be read. Check its path in the Body tab.",
+        _ => return None,
+    })
 }
 
 /// The status bar's one-line result of a send: "200 OK · 12 ms", "Couldn't connect · 3 ms",
@@ -1103,7 +1123,14 @@ mod tests {
             Tone::Error
         );
         let failed = Response::failure(Outcome::TransportError, "ConnectError", "refused");
-        assert_eq!(status(&failed).text, "Transport failure: refused");
+        assert_eq!(
+            (
+                status(&failed).text.as_str(),
+                status(&failed).detail.as_str()
+            ),
+            ("Couldn't connect", "refused"),
+            "the raw text is the detail, not the headline"
+        );
         let cancelled = Response::failure(Outcome::Cancelled, "Cancelled", "");
         assert_eq!(status(&cancelled).tone, Tone::Warning);
 

@@ -151,7 +151,7 @@ pub enum Message {
     },
     Executed {
         generation: u64,
-        result: Result<Box<Executed>, Failure>,
+        result: Result<Box<Executed>, NotSent>,
     },
     Runs {
         generation: u64,
@@ -296,6 +296,8 @@ pub enum Action {
     SetEnvironment(Option<EnvironmentId>),
     /// The inspector's "Open definition": edit `name` in `scope`.
     OpenDefinition(Scope, String),
+    /// Open the Variables screen on a scope with a new row for an undefined name.
+    DefineVariable(Scope, String),
     /// The inspector's saved values: make `value` the current value of `name` in `scope`.
     ChooseValue {
         scope: Scope,
@@ -447,6 +449,8 @@ enum VarTransition {
     RenameEnvironment(EnvironmentId),
     DeleteEnvironment(EnvironmentId),
     OpenDefinition(Scope, String),
+    /// Open `scope` with a new row for `name`, unless it already has one.
+    Define(Scope, String),
     Close,
 }
 
@@ -461,6 +465,8 @@ pub struct VariablesScreen {
     pub confirm_clear: bool,
     /// A name to highlight after "Open definition".
     pub highlight: Option<String>,
+    /// A name to add as a new row once the scope has loaded ("Define" from a blocked send).
+    define: Option<String>,
     pending: Option<VarTransition>,
     saving: bool,
 }
@@ -607,6 +613,8 @@ pub struct ResponsePane {
     pub preview: Option<(crate::viewer::Preview, String)>,
     /// Folded lines of the formatted body.
     pub body_folds: BTreeSet<usize>,
+    /// The last send went nowhere, and why; shown instead of a response.
+    pub blocked: Option<NotSent>,
     pub filter: ResponseFilter,
     /// Identifies the shown response, so a late filter result for another one is dropped.
     shown: u64,
@@ -682,6 +690,7 @@ impl Default for ResponsePane {
             headers_view: ViewerState::new(),
             preview: None,
             body_folds: BTreeSet::new(),
+            blocked: None,
             filter: ResponseFilter::default(),
             shown: 0,
         }
@@ -702,6 +711,7 @@ impl ResponsePane {
             self.tab = ResponseTab::Body;
         }
         self.response = Some(response);
+        self.blocked = None;
         self.body_folds.clear();
         self.shown = NEXT_SHOWN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // The filter stays open with its query and runs again on the new body.
@@ -814,6 +824,27 @@ impl State {
     pub fn sending_for(&mut self, now: f64) -> Option<f64> {
         let execution = self.execution.as_mut()?;
         Some(now - *execution.shown_at.get_or_insert(now))
+    }
+}
+
+/// Why a send went nowhere: the request could not be prepared. `unresolved` names the
+/// variables nothing defines, so the response pane can offer to define them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotSent {
+    pub message: String,
+    pub unresolved: Vec<String>,
+}
+
+impl From<ExecuteError> for NotSent {
+    fn from(error: ExecuteError) -> Self {
+        let unresolved = match &error {
+            ExecuteError::Unresolved(names) => names.clone(),
+            ExecuteError::Invalid(_) | ExecuteError::Store(_) => Vec::new(),
+        };
+        Self {
+            message: format!("Not sent: {error}"),
+            unresolved,
+        }
     }
 }
 
@@ -2198,16 +2229,14 @@ impl ImposterApp {
             let result = executor::execute(&db, request, cancel).await;
             Message::Executed {
                 generation,
-                result: result.map(Box::new).map_err(|error| match error {
-                    ExecuteError::Invalid(message) => format!("Not sent: {message}"),
-                    ExecuteError::Store(error) => format!("Not sent: {error}"),
-                }),
+                result: result.map(Box::new).map_err(NotSent::from),
             }
         });
         self.state.execution = Some(Execution {
             task,
             shown_at: None,
         });
+        self.state.response.blocked = None;
         let previous = self.state.response.response.is_some();
         self.state.response.pending = true;
         self.state.response.notice = Some((
@@ -2221,7 +2250,7 @@ impl ImposterApp {
         ));
     }
 
-    fn executed(&mut self, generation: u64, mut result: Result<Box<Executed>, Failure>) {
+    fn executed(&mut self, generation: u64, mut result: Result<Box<Executed>, NotSent>) {
         self.state.execution = None;
         self.state.response.pending = false;
         // Captured values are written even when the user has moved on: a login's token must
@@ -2241,7 +2270,7 @@ impl ImposterApp {
                     executed.response.error_kind,
                     executed.response.reason
                 )),
-                Err(error) => Err(error.clone()),
+                Err(error) => Err(error.message.clone()),
             };
             return self.finish_smoke(outcome);
         }
@@ -2272,10 +2301,12 @@ impl ImposterApp {
                     self.load_runs(id);
                 }
             }
-            Err(message) => {
-                // The response pane says why; the status bar only that nothing went out.
+            Err(not_sent) => {
+                // The response pane says why and what to do; the status bar only that
+                // nothing went out.
                 self.request_status("Not sent", Tone::Error);
-                self.state.response.notice = Some((message, Tone::Error));
+                self.state.response.notice = None;
+                self.state.response.blocked = Some(not_sent);
             }
         }
     }
@@ -2613,6 +2644,9 @@ impl ImposterApp {
             Action::SetEnvironment(id) => self.set_environment(id),
             Action::OpenDefinition(scope, name) => {
                 self.variables_navigate(VarTransition::OpenDefinition(scope, name));
+            }
+            Action::DefineVariable(scope, name) => {
+                self.variables_navigate(VarTransition::Define(scope, name));
             }
             Action::ChooseValue { scope, name, value } => self.choose_value(scope, name, value),
             Action::Variables(action) => self.variables_action(action),
@@ -2952,6 +2986,12 @@ impl ImposterApp {
                 screen.baseline = vars::entries(&screen.rows);
                 screen.loaded = true;
                 screen.status = None;
+                if let Some(name) = screen.define.take() {
+                    if !screen.rows.iter().any(|row| row.name == name) {
+                        screen.rows.push(vars::Row::new(name.clone(), ""));
+                    }
+                    screen.highlight = Some(name);
+                }
             }
             Err(error) => {
                 screen.status = Some((
@@ -3004,6 +3044,11 @@ impl ImposterApp {
             VarTransition::OpenDefinition(scope, name) => {
                 self.state.screen = Screen::Variables;
                 self.state.variables.highlight = Some(name);
+                self.load_variables(scope);
+            }
+            VarTransition::Define(scope, name) => {
+                self.state.screen = Screen::Variables;
+                self.state.variables.define = Some(name);
                 self.load_variables(scope);
             }
             VarTransition::Close => self.settings_close(),

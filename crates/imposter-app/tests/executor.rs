@@ -379,9 +379,7 @@ async fn requests_that_cannot_be_sent_are_rejected_and_not_recorded() {
     let first = execute(&store.handle(), unresolved, CancellationToken::new()).await;
     let second = execute(&store.handle(), bad_url, CancellationToken::new()).await;
 
-    assert!(
-        matches!(first, Err(ExecuteError::Invalid(ref m)) if m == "Unresolved variables: missing")
-    );
+    assert!(matches!(first, Err(ExecuteError::Unresolved(ref names)) if names == &["missing"]));
     // Unlike the Python app, which recorded URL errors as transport errors: nothing was sent.
     assert!(
         matches!(second, Err(ExecuteError::Invalid(ref m)) if m == "Enter an absolute HTTP or HTTPS URL")
@@ -594,7 +592,11 @@ async fn copy_as_curl_resolves_what_send_would_send_without_sending() {
     let mut broken = request.clone();
     broken.template.url = "{{missing}}/x".into();
     let error = imposter_app::executor::curl_command(&store.handle(), &broken).await;
-    assert!(matches!(error, Err(ExecuteError::Invalid(_))));
+    assert_eq!(
+        error.unwrap_err().to_string(),
+        "Unresolved variables: missing",
+        "the message stays the same"
+    );
 }
 
 #[tokio::test]

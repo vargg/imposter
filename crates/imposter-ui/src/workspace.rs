@@ -1026,6 +1026,23 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
 const RESPONSE_HEADER_ROW: f32 = 640.0;
 
 fn response_pane(state: &mut State, ui: &mut Ui) {
+    if let Some(blocked) = state.response.blocked.clone() {
+        // Only why nothing went out: an earlier response here would read as this send's.
+        let target = state
+            .active_environment
+            .and_then(|id| state.environments.iter().find(|e| e.id == id))
+            .map_or((crate::vars::Scope::Global, "Global".to_owned()), |e| {
+                (crate::vars::Scope::Environment(e.id), e.name.clone())
+            });
+        ui.horizontal(|ui| runs_picker(ui, &state.response, &mut state.actions));
+        blocked_card(ui, &blocked, &target.1, |action| {
+            state.actions.push(match action {
+                BlockedAction::Define(name) => Action::DefineVariable(target.0, name),
+                BlockedAction::OpenVariables => Action::Screen(Screen::Variables),
+            });
+        });
+        return;
+    }
     let response_state = &mut state.response;
     let actions = &mut state.actions;
     // The status line takes the place of a "Response" heading.
@@ -1045,14 +1062,129 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
         ui.horizontal(|ui| runs_picker(ui, response_state, actions));
     }
     match response_body(ui, response_state, "response", false, true) {
-        Some(widgets::RowAction::AddCheck { path, value }) => actions.push(Action::AddCheck(
-            crate::checks::check_for(&path, value.as_deref()),
-        )),
-        Some(widgets::RowAction::Capture { path }) => {
+        Some(PaneAction::Row(widgets::RowAction::AddCheck { path, value })) => actions.push(
+            Action::AddCheck(crate::checks::check_for(&path, value.as_deref())),
+        ),
+        Some(PaneAction::Row(widgets::RowAction::Capture { path })) => {
             actions.push(Action::AddCapture(crate::checks::capture_for(&path)));
         }
+        Some(PaneAction::Retry) => actions.push(Action::Send),
         None => {}
     }
+}
+
+/// What a response pane asks of the app.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PaneAction {
+    Row(widgets::RowAction),
+    /// Send the request again after a failure.
+    Retry,
+}
+
+enum BlockedAction {
+    Define(String),
+    OpenVariables,
+}
+
+/// `{{a}}`, `{{a}} and {{b}}`, `{{a}}, {{b}} and {{c}}`.
+fn placeholder_list(names: &[String]) -> String {
+    let tokens: Vec<String> = names.iter().map(|name| format!("{{{{{name}}}}}")).collect();
+    match tokens.as_slice() {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// Why a send went nowhere, with a way to fix undefined variables.
+fn blocked_card(
+    ui: &mut Ui,
+    blocked: &crate::app::NotSent,
+    scope_name: &str,
+    mut act: impl FnMut(BlockedAction),
+) {
+    problem_frame(ui, |ui| {
+        let headline = match blocked.unresolved.as_slice() {
+            [] => blocked.message.clone(),
+            [_] => format!(
+                "Not sent: {} is not defined",
+                placeholder_list(&blocked.unresolved)
+            ),
+            _ => format!(
+                "Not sent: {} are not defined",
+                placeholder_list(&blocked.unresolved)
+            ),
+        };
+        ui.add(egui::Label::new(tone_text(headline, Tone::Error).strong()).wrap());
+        if let Some(first) = blocked.unresolved.first() {
+            ui.add(
+                egui::Label::new(tone_text(
+                    "Nothing was sent. Define the variable, or fix the name in the request.",
+                    Tone::Muted,
+                ))
+                .wrap(),
+            );
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .button(format!("Define {{{{{first}}}}} in {scope_name}"))
+                    .clicked()
+                {
+                    act(BlockedAction::Define(first.clone()));
+                }
+                if ui.button("Open Variables").clicked() {
+                    act(BlockedAction::OpenVariables);
+                }
+            });
+        }
+    });
+}
+
+/// A bordered block for a problem, inside the pane's padding and wrapping its text.
+fn problem_frame(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
+    ui.add_space(8.0);
+    egui::Frame::new()
+        .stroke(egui::Stroke::new(1.0, PALETTE.error.gamma_multiply(0.6)))
+        .corner_radius(8)
+        .inner_margin(12)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 8.0;
+            contents(ui);
+        });
+}
+
+/// A transport failure in plain words, the raw text on request, and Retry when `live`.
+fn failure_card(
+    ui: &mut Ui,
+    response: &imposter_app::core::execution::Response,
+    id: &str,
+    live: bool,
+) -> bool {
+    let mut retry = false;
+    problem_frame(ui, |ui| {
+        ui.add(
+            egui::Label::new(
+                tone_text(viewer::failure_title(&response.error_kind), Tone::Error).strong(),
+            )
+            .wrap(),
+        );
+        if let Some(hint) = viewer::failure_hint(&response.error_kind) {
+            ui.add(egui::Label::new(tone_text(hint, Tone::Muted)).wrap());
+        }
+        egui::CollapsingHeader::new("Details")
+            .id_salt((id, "failure details"))
+            .show(ui, |ui| {
+                ui.add(
+                    egui::Label::new(RichText::new(response.reason.as_str()).monospace())
+                        .wrap()
+                        .selectable(true),
+                );
+            });
+        if live && ui.button("Retry").clicked() {
+            retry = true;
+        }
+    });
+    retry
 }
 
 /// The recorded runs of the open request, to show an earlier response.
@@ -1123,15 +1255,15 @@ fn status_badges(ui: &mut Ui, response: &imposter_app::core::execution::Response
 }
 
 /// Notice, body, headers and check results of `pane`'s response, with its status line when
-/// `status`; `id` names its viewers. `add_check` offers "Add check" on JSON rows, whose
-/// choice is returned.
+/// `status`; `id` names its viewers. `live` marks the open request's own pane: JSON rows
+/// offer "Add check" and failures offer Retry. What the user chose is returned.
 pub fn response_body(
     ui: &mut Ui,
     response_state: &mut crate::app::ResponsePane,
     id: &str,
     status: bool,
-    add_check: bool,
-) -> Option<widgets::RowAction> {
+    live: bool,
+) -> Option<PaneAction> {
     if status && let Some(response) = &response_state.response {
         ui.horizontal_wrapped(|ui| status_badges(ui, response));
     }
@@ -1160,22 +1292,24 @@ pub fn response_body(
         });
         return None;
     };
-    let failure = response
+    if let Some(failure) = response
         .as_ref()
-        .filter(|r| r.outcome == imposter_app::core::execution::Outcome::TransportError);
+        .filter(|r| r.outcome == imposter_app::core::execution::Outcome::TransportError)
+    {
+        return failure_card(ui, failure, id, live).then_some(PaneAction::Retry);
+    }
     let filterable = response.as_ref().is_some_and(viewer::is_json);
     let filtered = (filterable && filter.open && !filter.query.trim().is_empty())
         .then_some(filter.result.as_ref())
         .flatten()
         .and_then(|(_, result)| result.as_ref().ok());
-    let (body, outline, folds) = match (failure, filtered) {
-        (Some(failure), _) => (failure.reason.as_str(), None, body_folds),
-        (None, Some(found)) => (
+    let (body, outline, folds) = match filtered {
+        Some(found) => (
             found.text.as_str(),
             found.outline.as_ref(),
             &mut filter.folds,
         ),
-        (None, None) => (preview.text.as_str(), preview.outline.as_ref(), body_folds),
+        None => (preview.text.as_str(), preview.outline.as_ref(), body_folds),
     };
     let copy_body = if filtered.is_some() {
         "Copy filtered result"
@@ -1279,7 +1413,7 @@ pub fn response_body(
             outline.map(|outline| widgets::Folding {
                 outline,
                 folded: folds,
-                add_check,
+                add_check: live,
             }),
         ),
         ResponseTab::Headers => widgets::code_viewer(
@@ -1304,7 +1438,7 @@ pub fn response_body(
             filter.open();
         }
     }
-    action
+    action.map(PaneAction::Row)
 }
 
 /// What the filter bar says about the current query.

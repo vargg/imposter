@@ -291,6 +291,17 @@ numbers, so both are excluded. Each logical change is its own commit.
 
   Why: the review found it reporting an earlier request's failure after a blocked send, and
   "Ready" during a send. A status that outlives its context misleads more than no status.
+- **Every problem in the response pane says what happened and what to do next.**
+  - **Transport failure:** a plain headline per error kind and a hint (`viewer::failure_title`,
+    `failure_hint`); the raw library text sits under a collapsed Details; Retry appears in the
+    open request's pane, not in History.
+  - **A send that never went out** (`app::NotSent`): the reason replaces any earlier response,
+    which would read as this send's. Undefined variables come as names
+    (`ExecuteError::Unresolved`), so the pane offers "Define {{x}} in <active environment or
+    Global>". That opens Variables with a new unsaved row; nothing is written until Save.
+
+  Why: the review found raw `os error 61` text clipped at the pane edge, and an empty-state
+  invitation shown right under "Request failed".
 - **Every screen saves the same way:** its state in one word and a disk icon at the top right
   (`widgets::save_controls`); Variables adds a revert icon. The header logo is the app icon
   drawing, like the window and Dock icon.

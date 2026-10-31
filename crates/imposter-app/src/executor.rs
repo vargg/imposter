@@ -74,6 +74,10 @@ pub enum ExecuteError {
     /// Nothing was sent and nothing is recorded.
     #[error("{0}")]
     Invalid(String),
+    /// Variables the request uses that nothing defines, by name: the UI offers to define
+    /// them. Nothing was sent.
+    #[error("Unresolved variables: {}", .0.join(", "))]
+    Unresolved(Vec<String>),
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -193,8 +197,12 @@ pub fn resolve_with(
         .resolve_for_url(&url, &request.template.options);
     let mut template = request.template.clone();
     template.options = settings.as_options();
-    let template =
-        resolve_template(&template, &values).map_err(|e| ExecuteError::Invalid(e.to_string()))?;
+    let template = resolve_template(&template, &values).map_err(|error| match error {
+        imposter_core::variables::ResolveError::Unresolved(names) => {
+            ExecuteError::Unresolved(names.into_iter().collect())
+        }
+        other => ExecuteError::Invalid(other.to_string()),
+    })?;
     let settings = settings.resolve(&template.options);
     let resolved = Request {
         template,
