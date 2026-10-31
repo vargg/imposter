@@ -233,7 +233,7 @@ fn more_marks_hidden_tabs_that_hold_something() {
             .accesskit_node()
             .description()
     };
-    assert_eq!(more(&app), None, "nothing set");
+    assert_eq!(more(&app).as_deref(), Some("More tabs"), "nothing set");
     app.harness
         .state_mut()
         .state
@@ -243,5 +243,48 @@ fn more_marks_hidden_tabs_that_hold_something() {
         .editor
         .headers = vec![imposter_app::core::model::ParamItem::new("Accept", "*/*")];
     app.harness.run_steps(3);
-    assert_eq!(more(&app).as_deref(), Some("Headers: 1 in use"));
+    assert_eq!(more(&app).as_deref(), Some("More tabs: Headers: 1 in use"));
+}
+
+#[test]
+fn the_check_marks_keep_their_place_in_the_smallest_window() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime.block_on(imposter_testkit::Server::start(|_, _| {
+        imposter_testkit::response("200 OK", &[("Content-Type", "application/json")], b"{}")
+    }));
+    let url = format!("{}/items", server.url);
+    let mut app = start_with(move |store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Items", &url);
+    });
+    app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
+    click(&mut app.harness, "GET Items");
+    settle(&mut app.harness);
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .checks = vec![
+        imposter_app::core::check::Check::new(
+            imposter_app::core::select::Selector::Status,
+            imposter_app::core::check::Op::Equals,
+            "200",
+        ),
+        imposter_app::core::check::Check::new(
+            imposter_app::core::select::Selector::Status,
+            imposter_app::core::check::Op::Equals,
+            "201",
+        ),
+    ];
+    click(&mut app.harness, "Send");
+    settle(&mut app.harness);
+    let checks = app
+        .harness
+        .get_by_label("Checks: 1 passed, 1 failed")
+        .rect();
+    let runs = app.harness.get_by_label("Recorded runs").rect();
+    assert!(checks.right() <= runs.left(), "{checks:?} before {runs:?}");
 }

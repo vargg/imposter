@@ -377,8 +377,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   control-edge color (`widgets::split_grip`, ≥3:1), History's included. Why: a ratio alone left a pane with
   only its tab row at 720×480 (the review's #10, #14). Checked by `imposter-ui/tests/fit.rs`.
 - **Rows of tabs, tools and status stay one row high; what does not fit goes into a menu.**
-  - **Tabs** (`widgets::tab_strip`): tabs that do not fit go under "More"; the selected tab
-    always stays, in place of the last one that fitted. Tabs come before tools.
+  - **Tabs** (`widgets::tab_strip`): tabs that do not fit go under "More", a chevron no
+    wider than a target needs; the selected tab always stays, in place of the last one that
+    fitted. Tabs come before tools.
   - **Badges** say what a tab holds without opening it (`Editor::badge`): Query, Headers,
     Cookies and Tests count rows in use (enabled and named); Auth, Body and Docs show a dot
     when set. The Tests count is red after a run with a failed check; the response's
@@ -387,7 +388,9 @@ numbers, so both are excluded. Each logical change is its own commit.
     something, and names those tabs in its description.
   - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
     first, then Wrap, the filter, Find and Copy.
-  - **The response's status** is one line that drops its least important parts first: the
+  - **The response's status** is one line whose parts show in order of importance while
+    they fit what the row has left (measured as drawn: fitting them all up front
+    overestimated and dropped the checks with room to spare): the
     status as a pill ("200 OK"), the checks as "✓3 ✗1 ?1" (a click opens their results;
     screen readers hear "Checks: 3 passed, 1 failed"), "12 ms", "103 B", the content type.
     The pill's hover text has them all; earlier runs are under a "Runs" menu at its end.

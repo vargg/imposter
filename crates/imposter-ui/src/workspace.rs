@@ -1405,23 +1405,23 @@ fn status_line(
     reserve: f32,
 ) -> bool {
     let status = viewer::status(response);
-    // (importance, part); shown in this order.
-    let mut parts = vec![(0_u8, StatusPart::Pill(status.text.clone(), status.tone))];
+    // In order of importance.
+    let mut parts = vec![StatusPart::Pill(status.text.clone(), status.tone)];
     if !response.checks.is_empty() {
         let tally = crate::checks::Tally::of(&response.checks);
-        parts.push((1, StatusPart::Checks(tally)));
+        parts.push(StatusPart::Checks(tally));
     }
     let time = viewer::format_duration(response.elapsed);
-    parts.push((2, StatusPart::Text(tone_text(time.as_str(), Tone::Muted))));
+    parts.push(StatusPart::Text(tone_text(time.as_str(), Tone::Muted)));
     let delivered = response.outcome == imposter_app::core::execution::Outcome::Response;
     let size = viewer::size_text(response);
     if delivered {
-        parts.push((3, StatusPart::Text(tone_text(size.as_str(), Tone::Muted))));
+        parts.push(StatusPart::Text(tone_text(size.as_str(), Tone::Muted)));
     }
     let content_type = viewer::content_type(&response.headers);
     let kind = content_type.split(';').next().unwrap_or_default().trim();
     if delivered && !kind.is_empty() {
-        parts.push((4, StatusPart::Text(tone_text(kind, Tone::Muted))));
+        parts.push(StatusPart::Text(tone_text(kind, Tone::Muted)));
     }
     let mut hover = vec![status.detail.clone()];
     if !response.checks.is_empty() {
@@ -1447,28 +1447,12 @@ fn status_line(
                 + 2.0 * ui.spacing().button_padding.x
         }
     };
-    let available = ui.available_width() - reserve;
-    let widths: Vec<f32> = parts
-        .iter()
-        .map(|(_, part)| width(ui, part) + gap)
-        .collect();
-    let mut total: f32 = widths.iter().sum();
-    let mut kept = vec![true; parts.len()];
-    for importance in (1..=4).rev() {
-        if total <= available {
-            break;
-        }
-        for (i, (part, _)) in parts.iter().enumerate() {
-            if *part == importance && kept[i] {
-                kept[i] = false;
-                total -= widths[i];
-            }
-        }
-    }
     let mut open_checks = false;
-    for (i, (_, part)) in parts.into_iter().enumerate() {
-        if !kept[i] {
-            continue;
+    // Parts come in order of importance: each shows if it fits what the row has left, and
+    // the first that does not ends the line. The status always shows, cut if need be.
+    for (i, part) in parts.into_iter().enumerate() {
+        if i > 0 && width(ui, &part) > ui.available_width() - reserve {
+            break;
         }
         match part {
             StatusPart::Pill(text, tone) => {
