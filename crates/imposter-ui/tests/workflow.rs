@@ -418,7 +418,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
     app.harness.run_steps(2);
     click(&mut app.harness, "GET Health");
     settle(&mut app.harness);
-    click(&mut app.harness, "Query");
+    support::open_tab(&mut app.harness, "Query");
     let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
     for label in [
         "Request URL",
@@ -428,7 +428,8 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
         "Save request",
         "Copy as curl",
         "Settings",
-        "Request settings",
+        // Request tabs that do not fit are under More (tests/fit.rs).
+        "More tabs",
         "Add query",
     ] {
         assert!(
@@ -436,7 +437,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
             "{label} must fit the window"
         );
     }
-    click(&mut app.harness, "Auth");
+    support::open_tab(&mut app.harness, "Auth");
     app.harness
         .get_by_label("No authentication is configured for this request.");
     assert_eq!(

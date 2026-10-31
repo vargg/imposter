@@ -338,8 +338,12 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **The layout is a switch, not a mode:** side by side or stacked, changed only by the status
   bar button, never by the window width. The window can shrink to 720×480 (`MIN_WINDOW`; the
   Python app's 1000×650 took more than half a laptop screen), so narrow panes adapt instead:
-  status as wrapping text, tabs and tools on separate rows, single-line fields never wrap.
+  status as wrapping text, tools on their own row, single-line fields never wrap.
   Why: an automatic choice next to a manual one made the button seem broken.
+- **Tabs stay on one row** (`widgets::tab_strip`): tabs that do not fit go under "More",
+  and the selected tab always stays in the row, in place of the last one that fitted.
+  Why: at 720×480 the request tabs wrapped onto three rows and pushed the editor down; the
+  review's #12. Checked by `imposter-ui/tests/fit.rs`.
 - **The status bar tells the latest result, only while it applies** (`app::StatusLine`).
   - **Request messages:** a message about the open request (a send's result, "Not sent", a
     restored draft) lasts while that request and screen stay shown.

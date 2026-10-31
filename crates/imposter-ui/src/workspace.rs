@@ -907,18 +907,16 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         snapshot: snapshot.as_ref(),
         inspect,
     };
-    ui.horizontal_wrapped(|ui| {
-        for (tab, label) in EditorTab::ALL {
-            let response = widgets::tab(ui, pane.tab == tab, label);
-            if tab == EditorTab::Settings {
-                // The Settings screen tab has the same text; screen readers need them apart.
-                name(&response, "Request settings");
-            }
-            if response.clicked() {
-                pane.tab = tab;
-            }
+    let tabs = EditorTab::ALL.map(|(tab, label)| {
+        let spec = widgets::TabSpec::new(tab, label);
+        if tab == EditorTab::Settings {
+            // The Settings screen tab has the same text; screen readers need them apart.
+            spec.named("Request settings")
+        } else {
+            spec
         }
     });
+    ui.horizontal(|ui| widgets::tab_strip(ui, &tabs, &mut pane.tab, 0.0));
     ui.separator();
     let mut edited = false;
     let mut params = false;

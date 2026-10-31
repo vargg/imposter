@@ -72,6 +72,17 @@ pub fn click(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     harness.run_steps(2);
 }
 
+/// Open the request tab named `label`, from the row or, when it did not fit, from "More".
+pub fn open_tab(harness: &mut Harness<'_, ImposterApp>, label: &str) {
+    if harness
+        .query_by_role_and_label(egui::accesskit::Role::Button, label)
+        .is_none()
+    {
+        click_button(harness, "More tabs");
+    }
+    click_button(harness, label);
+}
+
 /// Click the button named `label` when the same text also appears elsewhere (a title).
 pub fn click_button(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     harness

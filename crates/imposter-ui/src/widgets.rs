@@ -30,20 +30,37 @@ pub fn tone_text(text: impl Into<String>, tone: Tone) -> RichText {
     RichText::new(text.into()).color(palette().tone(tone))
 }
 
-/// A tab: muted text, or semibold accent text with an underline when selected; no fill.
-pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
-    let text = if selected {
+fn tab_text(label: &str, selected: bool) -> RichText {
+    if selected {
         RichText::new(label)
             .color(palette().accent)
             .font(crate::theme::semibold(13.0))
     } else {
         RichText::new(label).color(palette().text_muted)
-    };
-    let height = crate::theme::spacing().control + 6.0;
+    }
+}
+
+fn tab_height() -> f32 {
+    crate::theme::spacing().control + 6.0
+}
+
+/// The width `text` takes on a button, padding included.
+fn button_width(ui: &Ui, text: RichText) -> f32 {
+    let galley = egui::WidgetText::from(text).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::TextStyle::Button,
+    );
+    galley.size().x + 2.0 * ui.spacing().button_padding.x
+}
+
+/// A tab: muted text, or semibold accent text with an underline when selected; no fill.
+pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
     let response = ui.add(
-        egui::Button::new(text)
+        egui::Button::new(tab_text(label, selected))
             .frame_when_inactive(false)
-            .min_size(egui::vec2(0.0, height)),
+            .min_size(egui::vec2(0.0, tab_height())),
     );
     if selected {
         let rect = response.rect;
@@ -56,6 +73,164 @@ pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
         );
     }
     response
+}
+
+/// One tab of a [`tab_strip`].
+pub struct TabSpec<'a, T> {
+    pub value: T,
+    pub label: &'a str,
+    /// The accessible name, when the label alone is ambiguous (another tab has the same text).
+    pub name: Option<&'a str>,
+}
+
+impl<'a, T> TabSpec<'a, T> {
+    pub fn new(value: T, label: &'a str) -> Self {
+        Self {
+            value,
+            label,
+            name: None,
+        }
+    }
+
+    #[must_use]
+    pub fn named(mut self, name: &'a str) -> Self {
+        self.name = Some(name);
+        self
+    }
+}
+
+/// Which tabs of `widths` show in a row `available` wide, in order, when `more` is the width
+/// of the "More" button: as many as fit from the start, and always the selected one.
+fn shown_tabs(
+    widths: &[f32],
+    selected: Option<usize>,
+    available: f32,
+    more: f32,
+    gap: f32,
+) -> Vec<usize> {
+    let total: f32 = widths.iter().map(|w| w + gap).sum::<f32>() - gap;
+    if total <= available {
+        return (0..widths.len()).collect();
+    }
+    let budget = available - more;
+    let mut shown = Vec::new();
+    let mut used = 0.0;
+    for (i, width) in widths.iter().enumerate() {
+        if used + width + gap > budget {
+            break;
+        }
+        shown.push(i);
+        used += width + gap;
+    }
+    if let Some(selected) = selected.filter(|s| !shown.contains(s)) {
+        while used + widths[selected] + gap > budget {
+            let Some(last) = shown.pop() else { break };
+            used -= widths[last] + gap;
+        }
+        shown.push(selected);
+    }
+    shown
+}
+
+const CHEVRON: f32 = 12.0;
+
+/// The button that opens the tabs left out of a row: "More" and a chevron.
+fn more_tabs_button(ui: &mut Ui) -> egui::Response {
+    let galley = egui::WidgetText::from(RichText::new("More").color(palette().text_muted))
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::TextStyle::Button,
+        );
+    let pad = ui.spacing().button_padding.x;
+    let size = egui::vec2(galley.size().x + 2.0 * pad + CHEVRON, tab_height());
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let enabled = ui.is_enabled();
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, "More tabs"));
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        if response.hovered() || response.has_focus() {
+            let visuals = ui.style().interact(&response);
+            painter.rect(
+                rect,
+                visuals.corner_radius,
+                visuals.weak_bg_fill,
+                visuals.bg_stroke,
+                egui::StrokeKind::Inside,
+            );
+        }
+        let color = palette().text_muted;
+        let text = egui::pos2(rect.left() + pad, rect.center().y - galley.size().y / 2.0);
+        painter.galley(text, galley, color);
+        let c = egui::pos2(rect.right() - pad - CHEVRON / 2.0 + 2.0, rect.center().y);
+        painter.add(egui::Shape::convex_polygon(
+            vec![
+                c + egui::vec2(-4.0, -2.0),
+                c + egui::vec2(4.0, -2.0),
+                c + egui::vec2(0.0, 2.5),
+            ],
+            color,
+            egui::Stroke::NONE,
+        ));
+    }
+    response
+}
+
+/// One row of tabs in a horizontal `ui`. Tabs that do not fit, leaving `reserve` points for
+/// what follows on the row, go into a "More" menu; the selected tab always stays in the row.
+/// Returns whether the user chose a tab.
+pub fn tab_strip<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    tabs: &[TabSpec<'_, T>],
+    selected: &mut T,
+    reserve: f32,
+) -> bool {
+    let current = tabs.iter().position(|tab| tab.value == *selected);
+    let widths: Vec<f32> = tabs
+        .iter()
+        .enumerate()
+        .map(|(i, tab)| button_width(ui, tab_text(tab.label, Some(i) == current)))
+        .collect();
+    let more = button_width(ui, RichText::new("More")) + CHEVRON;
+    let gap = ui.spacing().item_spacing.x;
+    let shown = shown_tabs(&widths, current, ui.available_width() - reserve, more, gap);
+    let mut chosen = None;
+    for &i in &shown {
+        let spec = &tabs[i];
+        let response = tab(ui, Some(i) == current, spec.label);
+        if let Some(label) = spec.name {
+            name(&response, label);
+        }
+        if response.clicked() {
+            chosen = Some(spec.value);
+        }
+    }
+    if shown.len() < tabs.len() {
+        let button = more_tabs_button(ui);
+        egui::Popup::menu(&button).show(|ui| {
+            for (i, spec) in tabs.iter().enumerate() {
+                if shown.contains(&i) {
+                    continue;
+                }
+                let item = ui.button(spec.label);
+                if let Some(label) = spec.name {
+                    name(&item, label);
+                }
+                if item.clicked() {
+                    chosen = Some(spec.value);
+                    ui.close();
+                }
+            }
+        });
+    }
+    match chosen {
+        Some(value) if value != *selected => {
+            *selected = value;
+            true
+        }
+        _ => false,
+    }
 }
 
 /// The marker beside a selected row: a bar on its left edge.
@@ -1466,6 +1641,23 @@ fn restyle(job: &mut LayoutJob, range: std::ops::Range<usize>, change: impl Fn(&
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tabs_that_do_not_fit_leave_the_row_but_the_selected_one_stays() {
+        let widths = [40.0, 40.0, 40.0, 40.0];
+        // 4 × 40 + 3 gaps of 4 = 172.
+        assert_eq!(shown_tabs(&widths, Some(0), 172.0, 30.0, 4.0), [0, 1, 2, 3]);
+        // 100 wide, 30 for More: two tabs (88 with their gaps) fit before it.
+        assert_eq!(shown_tabs(&widths, Some(0), 120.0, 30.0, 4.0), [0, 1]);
+        // The selected tab takes the place of the last one that fitted.
+        assert_eq!(shown_tabs(&widths, Some(3), 120.0, 30.0, 4.0), [0, 3]);
+        // Even when nothing else fits.
+        assert_eq!(shown_tabs(&widths, Some(2), 50.0, 30.0, 4.0), [2]);
+        assert_eq!(
+            shown_tabs(&widths, None, 50.0, 30.0, 4.0),
+            Vec::<usize>::new()
+        );
+    }
 
     #[test]
     fn saved_values_are_labelled_by_their_first_line_shortened() {
