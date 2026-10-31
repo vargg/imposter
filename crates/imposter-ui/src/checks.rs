@@ -374,17 +374,6 @@ impl Tally {
         .collect::<Vec<_>>()
         .join(", ")
     }
-
-    /// The worst result's tone: a failure, then an undecided check.
-    pub fn tone(self) -> Tone {
-        if self.failed > 0 {
-            Tone::Error
-        } else if self.unchecked > 0 {
-            Tone::Warning
-        } else {
-            Tone::Ok
-        }
-    }
 }
 
 fn verdict_text(verdict: &Verdict) -> (&'static str, Tone) {
@@ -486,15 +475,13 @@ mod tests {
     }
 
     #[test]
-    fn tallies_count_each_verdict_and_take_the_worst_tone() {
+    fn tallies_count_each_verdict() {
         let passed = result(Verdict::Passed);
         let failed = result(Verdict::Failed);
         let unchecked = result(Verdict::Unchecked("why".into()));
         let one = Tally::of(std::slice::from_ref(&passed));
         assert_eq!(one.marks(), [("✓1".to_owned(), Tone::Ok)]);
-        assert_eq!((one.words().as_str(), one.tone()), ("1 passed", Tone::Ok));
-        let undecided = Tally::of(&[passed.clone(), unchecked.clone()]);
-        assert_eq!(undecided.tone(), Tone::Warning);
+        assert_eq!(one.words(), "1 passed");
         let all = Tally::of(&[unchecked, failed, passed.clone(), passed]);
         assert_eq!(
             all.marks(),
@@ -505,7 +492,6 @@ mod tests {
             ]
         );
         assert_eq!(all.words(), "2 passed, 1 failed, 1 not checked");
-        assert_eq!(all.tone(), Tone::Error);
     }
 
     #[test]

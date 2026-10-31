@@ -937,22 +937,11 @@ fn count_badge(count: usize, tone: Tone) -> Option<widgets::TabBadge> {
     })
 }
 
-/// A request tab's badge: rows in use, or a dot when it holds something; the Tests count
-/// is red when the last run `failed` a check.
-fn editor_badge(
-    editor: &crate::editor::Editor,
-    tab: EditorTab,
-    failed: bool,
-) -> Option<widgets::TabBadge> {
+/// A request tab's badge: rows in use, or a dot when it holds something. It describes the
+/// request, not its last response, so the Tests count is never red.
+fn editor_badge(editor: &crate::editor::Editor, tab: EditorTab) -> Option<widgets::TabBadge> {
     match editor.badge(tab)? {
-        crate::editor::Badge::Count(count) => {
-            let tone = if tab == EditorTab::Tests && failed {
-                Tone::Error
-            } else {
-                Tone::Muted
-            };
-            count_badge(count, tone)
-        }
+        crate::editor::Badge::Count(count) => count_badge(count, Tone::Muted),
         // Green, as API clients mark a tab that holds something.
         crate::editor::Badge::Dot => Some(widgets::TabBadge {
             mark: widgets::Mark::Dot,
@@ -1033,14 +1022,8 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         inspect,
         settings,
         actions,
-        response,
         ..
     } = state;
-    // The last run failed a check: the Tests count turns red.
-    let failed = response
-        .response
-        .as_ref()
-        .is_some_and(|r| crate::checks::Tally::of(&r.checks).failed > 0);
     let Some(pane) = editor else {
         return;
     };
@@ -1049,7 +1032,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         inspect,
     };
     let tabs = EditorTab::ALL.map(|(tab, label)| {
-        let spec = widgets::TabSpec::new(tab, label).badge(editor_badge(&pane.editor, tab, failed));
+        let spec = widgets::TabSpec::new(tab, label).badge(editor_badge(&pane.editor, tab));
         if tab == EditorTab::Settings {
             // The Settings screen tab has the same text; screen readers need them apart.
             spec.named("Request settings")
@@ -1690,12 +1673,22 @@ pub fn response_body(
             .badge(count_badge(headers_count, Tone::Muted)),
     ];
     if !results.is_empty() || !captured.is_empty() {
-        let tone = crate::checks::Tally::of(results).tone();
+        // Failures, when there are any: a red total read as that many failures.
+        let failed = crate::checks::Tally::of(results).failed;
+        let badge = if failed > 0 {
+            Some(widgets::TabBadge {
+                mark: widgets::Mark::Failed(failed),
+                tone: Tone::Error,
+                description: format!("{failed} failed"),
+            })
+        } else {
+            count_badge(results.len() + captured.len(), Tone::Muted)
+        };
         // The request's Tests tab has the same text.
         tabs.push(
             widgets::TabSpec::new(ResponseTab::Tests, "Tests")
                 .named("Check results")
-                .badge(count_badge(results.len() + captured.len(), tone)),
+                .badge(badge),
         );
     }
     ui.horizontal(|ui| {

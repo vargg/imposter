@@ -395,8 +395,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Badges** say what a tab holds without opening it (`Editor::badge`): Query, Headers,
     Cookies and Tests count rows in use (enabled and named); Auth, Body and Docs show a
     small green dot raised to the top of the line when set (a muted "•" at mid-height read
-    as a separator, Q2). The Tests count is red after a run with a failed check; the
-    response's Headers and Tests are counted too. Screen readers hear the count as the
+    as a separator, Q2). The request's badges describe the request, never its last
+    response; the response's Headers are counted, and its Tests show "✗1" in red when
+    checks failed, else their count (a red total read as that many failures, Q5). Screen readers hear the count as the
     tab's description, so its name stays the label. "More" shows how many tabs it hides
     ("+2", so it does not read as the tools' "⋯" beside it; dropped only when even the
     selected tab leaves no room) and the dot when one of them holds something, and names

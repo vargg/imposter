@@ -6,7 +6,7 @@
 
 mod support;
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::capture::Capture;
 use imposter_app::core::check::{Check, Op};
 use imposter_app::core::model::Request;
@@ -119,6 +119,19 @@ fn checks_are_edited_saved_and_run_after_each_response() {
     );
 
     send(app);
+    // The request's tab counts its checks; the response's says how many failed, since a
+    // red total read as that many failures.
+    let description = |app: &support::App, label: &str| {
+        app.harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, label)
+            .accesskit_node()
+            .description()
+    };
+    assert_eq!(description(app, "Tests").as_deref(), Some("2 in use"));
+    assert_eq!(
+        description(app, "Check results").as_deref(),
+        Some("1 failed")
+    );
     // The marks in the status line open the results.
     click(&mut app.harness, "Checks: 1 passed, 1 failed");
     app.harness.get_by_label("got 201");

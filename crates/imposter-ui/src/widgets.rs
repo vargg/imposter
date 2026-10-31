@@ -42,6 +42,8 @@ pub struct TabBadge {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mark {
     Count(usize),
+    /// Checks that failed: "✗1". A red total read as that many failures.
+    Failed(usize),
     /// The tab holds something.
     Dot,
 }
@@ -49,28 +51,33 @@ pub enum Mark {
 /// Append `mark` to a tab's text. The dot is small and raised to the top of the line: a
 /// muted "•" at mid-height read as a separator between tabs.
 fn append_mark(job: &mut LayoutJob, mark: Mark, color: Color32) {
-    match mark {
-        Mark::Count(count) => job.append(
-            &count.to_string(),
-            4.0,
-            TextFormat {
-                font_id: FontId::proportional(12.0),
-                color,
-                valign: egui::Align::Center,
-                ..Default::default()
-            },
-        ),
-        Mark::Dot => job.append(
-            "●",
-            2.0,
-            TextFormat {
-                font_id: FontId::proportional(DOT_SIZE),
-                color,
-                valign: egui::Align::TOP,
-                ..Default::default()
-            },
-        ),
-    }
+    let text = match mark {
+        Mark::Count(total) => total.to_string(),
+        Mark::Failed(failed) => format!("✗{failed}"),
+        Mark::Dot => {
+            job.append(
+                "●",
+                2.0,
+                TextFormat {
+                    font_id: FontId::proportional(DOT_SIZE),
+                    color,
+                    valign: egui::Align::TOP,
+                    ..Default::default()
+                },
+            );
+            return;
+        }
+    };
+    job.append(
+        &text,
+        4.0,
+        TextFormat {
+            font_id: FontId::proportional(12.0),
+            color,
+            valign: egui::Align::Center,
+            ..Default::default()
+        },
+    );
 }
 
 const DOT_SIZE: f32 = 7.0;
