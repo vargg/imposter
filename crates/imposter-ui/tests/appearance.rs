@@ -306,6 +306,9 @@ fn grips(app: &support::App) -> usize {
 #[test]
 fn splits_show_a_grip_that_can_be_found() {
     let mut app = many_requests();
+    // The split shows once a request is open; before, one pane says what to do.
+    click(&mut app.harness, "GET Request 00");
+    settle(&mut app.harness);
     app.harness.hover_at(egui::pos2(5.0, 5.0));
     app.harness.run_steps(2);
     assert_eq!(grips(&app), 1, "request and response");

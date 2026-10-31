@@ -180,6 +180,10 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                 .inner_margin(16),
         )
         .show(ui, |ui| {
+            if state.editor.is_none() {
+                nothing_open(state, ui);
+                return;
+            }
             context_bar(state, ui, save, save_text);
             ui.add_space(8.0);
             command_bar(state, ui, executing);
@@ -905,13 +909,7 @@ fn split(state: &mut State, ui: &mut Ui) {
         drag.hovered() || drag.dragged(),
     );
     for rect in [first, second] {
-        ui.painter().rect(
-            rect,
-            12.0,
-            palette().surface,
-            egui::Stroke::new(1.0, palette().border),
-            egui::StrokeKind::Inside,
-        );
+        pane_frame(ui, rect);
     }
     ui.scope_builder(
         UiBuilder::new()
@@ -1060,11 +1058,33 @@ fn offer_buttons(ui: &mut Ui, offers: Vec<(&str, Action)>) -> Option<Action> {
 /// The one name of starting a request from a curl command.
 pub const PASTE_CURL: &str = "Paste curl…";
 
+/// With no request open, one pane over the whole area says what to do next: an empty
+/// request bar and response pane beside it read as a failed render.
+fn nothing_open(state: &mut State, ui: &mut Ui) {
+    let area = ui.available_rect_before_wrap();
+    pane_frame(ui, area);
+    ui.scope_builder(
+        UiBuilder::new()
+            .max_rect(area.shrink(14.0))
+            .id_salt("request pane"),
+        |ui| empty_request_pane(state, ui),
+    );
+    ui.allocate_rect(area, Sense::hover());
+}
+
+fn pane_frame(ui: &Ui, rect: Rect) {
+    ui.painter().rect(
+        rect,
+        PANE_RADIUS,
+        palette().surface,
+        egui::Stroke::new(1.0, palette().border),
+        egui::StrokeKind::Inside,
+    );
+}
+
+const PANE_RADIUS: f32 = 12.0;
+
 fn request_pane(state: &mut State, ui: &mut Ui) {
-    if state.editor.is_none() {
-        empty_request_pane(state, ui);
-        return;
-    }
     let State {
         editor,
         snapshot,

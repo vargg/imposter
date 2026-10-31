@@ -555,6 +555,20 @@ fn the_first_run_offers_a_way_in_and_says_it_once() {
     };
     assert!(filled(first));
     assert!(!filled(last));
+    // One pane says it: no empty request bar or response pane beside it.
+    let panes = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .filter(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Rect(rect)
+                if rect.corner_radius == egui::CornerRadius::same(12)
+                    && rect.fill == imposter_ui::theme::palette().surface)
+        })
+        .count();
+    assert_eq!(panes, 1);
+    assert!(app.harness.query_by_label("Request URL").is_none());
     // The New menu says why its folder and request items are greyed, without a hover.
     click(&mut app.harness, "New");
     app.harness.get_by_label("Create a collection first");

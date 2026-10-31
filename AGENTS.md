@@ -440,8 +440,9 @@ numbers, so both are excluded. Each logical change is its own commit.
 
   Why: the review found it reporting an earlier request's failure after a blocked send, and
   "Ready" during a send. A status that outlives its context misleads more than no status.
-- **Each pane says what to do once, as buttons.** With no request open, the request pane
-  offers the next step: New Collection, Import Collection… and Paste curl… on first run;
+- **Each pane says what to do once, as buttons.** With no request open, one pane over the
+  whole work area (no request bar, no response pane: empty, they read as a failed render,
+  Q7) offers the next step: New Collection, Import Collection… and Paste curl… on first run;
   New Request in an empty collection; otherwise "Select a request". The buttons are
   centred under the text, the first filled as the next step (left-aligned equal outlines
   looked unfinished, Q6). The sidebar,
