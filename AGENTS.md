@@ -212,7 +212,9 @@ numbers, so both are excluded. Each logical change is its own commit.
     (`widgets::option`): egui outlines a selected button with the control edge, which
     read as a hover left on.
   - **Tabs** are frameless: muted text, or semibold accent text with an underline. Hover
-    previews the underline in the muted color rather than drawing a button frame.
+    previews the underline in the muted color rather than drawing a button frame. They
+    keep the button padding (a transparent frame; `frame(false)` drops the padding and ran
+    the labels together, 1.3 points apart).
 
   Why: an orange outline on every hover diluted the accent until it meant nothing (the
   review's #60). Checked in `theme.rs` tests.
@@ -304,7 +306,8 @@ numbers, so both are excluded. Each logical change is its own commit.
     walks the screens, a sent response, a History run and the dialogs.
   - **Widths:** no visible control, and no outlined frame (panes, groups, cards, read
     from the painted shapes), may run past the window's sides.
-  - **Overlap:** no two buttons may overlap. This is checked only without a dialog open,
+  - **Overlap:** no two buttons may overlap, and no text label may run into a button
+    (a long "500 Internal Server Error" into the Runs menu). This is checked only without a dialog open,
     since a dialog is a layer above.
   - **Clipping:** egui does not tell AccessKit about clipping, so controls crossing the
     header's bottom or the status bar's top count as scrolled out, as does anything below

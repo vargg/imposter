@@ -63,6 +63,36 @@ fn controls(app: &support::App) -> Vec<(Role, String, Rect)> {
         .collect()
 }
 
+/// Visible text labels, with the same clipping rules as [`controls`].
+fn labels(app: &support::App) -> Vec<(Role, String, Rect)> {
+    let window = app.harness.ctx.content_rect();
+    let header_bottom = app
+        .harness
+        .get_by_role_and_label(Role::ComboBox, "Environment")
+        .rect()
+        .bottom()
+        + 8.0;
+    let status_top = app
+        .harness
+        .query_by_label("Hide Collections")
+        .or_else(|| app.harness.query_by_label("Show Collections"))
+        .map_or(window.bottom(), |node| node.rect().top() - 6.0);
+    app.harness
+        .query_all_by_role(Role::Label)
+        .map(|node| {
+            let ak = node.accesskit_node();
+            let text = ak.label().or_else(|| ak.value()).unwrap_or_default();
+            (Role::Label, text, node.rect())
+        })
+        .filter(|(_, _, rect)| {
+            rect.intersects(window)
+                && rect.area() > 0.0
+                && rect.top() >= header_bottom
+                && rect.bottom() <= status_top
+        })
+        .collect()
+}
+
 /// What is wrong with the current frame, if anything. With a dialog open, only widths are
 /// checked: the dialog sits on a layer above what it overlaps.
 fn problems(app: &support::App, state: &str) -> Vec<String> {
@@ -97,6 +127,17 @@ fn problems(app: &support::App, state: &str) -> Vec<String> {
         .iter()
         .filter(|(role, _, _)| *role == Role::Button)
         .collect();
+    // Text drawn into a button: a status running into the menu after it.
+    for (role, label, rect) in labels(app) {
+        for (_, button, area) in &buttons {
+            let overlap = rect.intersect(*area);
+            if overlap.is_positive() && overlap.area() > 4.0 {
+                found.push(format!(
+                    "{state}: {role:?} {label:?} runs into button {button:?}"
+                ));
+            }
+        }
+    }
     for (i, (_, a, ra)) in buttons.iter().enumerate() {
         for (_, b, rb) in &buttons[i + 1..] {
             let overlap = ra.intersect(*rb);
@@ -130,6 +171,12 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, "Send");
     settle(&mut app.harness);
     check(app, "response");
+    // A long status beside the runs menu.
+    click(&mut app.harness, "GET Broken");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Send");
+    settle(&mut app.harness);
+    check(app, "error response");
     for screen in ["Variables", "History", "Settings", "Mocks"] {
         click(&mut app.harness, screen);
         settle(&mut app.harness);
@@ -177,7 +224,10 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
 #[test]
 fn no_control_runs_past_the_window_or_overlaps_another() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let server = runtime.block_on(Server::start(|_, _| {
+    let server = runtime.block_on(Server::start(|_, received| {
+        if received.request_line.contains("/broken") {
+            return response("500 Internal Server Error", &[], b"oops");
+        }
         response(
             "200 OK",
             &[("Content-Type", "application/json")],
@@ -194,6 +244,7 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
                     let api = collection(store, "API");
                     request(store, api.id, "Users", &url);
                     request(store, api.id, "Health", "http://127.0.0.1:9/");
+                    request(store, api.id, "Broken", &format!("{url}/broken"));
                 });
                 app.harness.set_size(size);
                 appearance(&mut app, theme, density);

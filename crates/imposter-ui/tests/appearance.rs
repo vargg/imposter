@@ -220,3 +220,38 @@ fn a_selected_row_is_filled_and_marked_but_not_outlined() {
         "no outline: {frames:?}"
     );
 }
+
+/// Where the text `exactly` was painted last frame, every time.
+fn painted(app: &support::App, exactly: &str) -> Vec<egui::Rect> {
+    app.harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) if text.galley.job.text == exactly => {
+                Some(text.visual_bounding_rect())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn tab_labels_keep_their_distance() {
+    let mut app = many_requests();
+    click(&mut app.harness, "GET Request 03");
+    settle(&mut app.harness);
+    app.harness.run_steps(1);
+    let gap = |app: &support::App, left: &str, right: &str| {
+        let a = painted(app, left);
+        let b = painted(app, right);
+        a.iter()
+            .flat_map(|a| b.iter().map(move |b| b.left() - a.right()))
+            .filter(|gap| *gap > -1.0)
+            .fold(f32::INFINITY, f32::min)
+    };
+    let request = gap(&app, "Body", "Auth");
+    assert!(request >= 10.0, "request tabs {request} apart");
+    let screens = gap(&app, "Requests", "Variables");
+    assert!(screens >= 16.0, "screen tabs {screens} apart");
+}

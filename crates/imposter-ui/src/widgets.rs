@@ -112,9 +112,12 @@ pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
 /// A [`tab`] with a badge after its name. Its accessible name stays the label; the badge
 /// is its description.
 fn tab_with(ui: &mut Ui, selected: bool, label: &str, badge: Option<&TabBadge>) -> egui::Response {
+    // Framed, so it keeps the button padding, but with nothing drawn: `frame(false)` drops
+    // the padding too and runs the labels together.
     let response = ui.add(
         egui::Button::new(tab_job(ui, label, selected, badge))
-            .frame(false)
+            .fill(Color32::TRANSPARENT)
+            .stroke(egui::Stroke::NONE)
             .min_size(egui::vec2(0.0, tab_height())),
     );
     if let Some(badge) = badge {
@@ -444,21 +447,24 @@ pub const PILL_PADDING: i8 = 7;
 /// How strongly a pill is tinted with its tone.
 pub const PILL_TINT: f32 = 0.12;
 
-/// A small rounded label tinted with its tone, for a status: "200 OK".
-pub fn pill(ui: &mut Ui, text: &str, tone: Tone) -> egui::Response {
+/// A small rounded label tinted with its tone, for a status: "200 OK". It is at most
+/// `max_width` wide; a longer text is cut, with all of it on hover.
+pub fn pill(ui: &mut Ui, text: &str, tone: Tone, max_width: f32) -> egui::Response {
     let color = palette().tone(tone);
+    let inner = (max_width - 2.0 * f32::from(PILL_PADDING)).max(24.0);
     egui::Frame::new()
         .fill(color.gamma_multiply(PILL_TINT))
         .corner_radius(10)
         .inner_margin(egui::Margin::symmetric(PILL_PADDING, 1))
         .show(ui, |ui| {
+            ui.set_max_width(inner);
             ui.add(
                 egui::Label::new(
                     RichText::new(text)
                         .color(color)
                         .font(crate::theme::semibold(13.0)),
                 )
-                .extend(),
+                .truncate(),
             )
         })
         .inner

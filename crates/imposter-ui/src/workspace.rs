@@ -1460,7 +1460,8 @@ fn status_line(
         }
         match part {
             StatusPart::Pill(text, tone) => {
-                widgets::pill(ui, &text, tone).on_hover_text(hover.join(" · "));
+                let room = ui.available_width() - reserve;
+                widgets::pill(ui, &text, tone, room).on_hover_text(hover.join(" · "));
             }
             StatusPart::Text(text) => {
                 ui.add(egui::Label::new(text).truncate());
