@@ -193,11 +193,9 @@ fn environments_are_created_renamed_and_deleted() {
 
     click(&mut app.harness, "New environment");
     app.harness.run_steps(2);
-    app.harness
-        .get_by_label("Environment Name:")
-        .type_text("Staging");
+    support::text_input(&app.harness, "Environment Name").type_text("Staging");
     app.harness.run_steps(1);
-    click(&mut app.harness, "OK");
+    click_button(&mut app.harness, "Create");
     settle(&mut app.harness);
     assert!(matches!(
         app.harness.state().state.variables.scope,
@@ -206,9 +204,9 @@ fn environments_are_created_renamed_and_deleted() {
 
     click(&mut app.harness, "Rename environment");
     app.harness.run_steps(2);
-    app.harness.get_by_label("Name:").type_text(" EU");
+    support::text_input(&app.harness, "Name").type_text(" EU");
     app.harness.run_steps(1);
-    click(&mut app.harness, "OK");
+    click_button(&mut app.harness, "Rename");
     settle(&mut app.harness);
     let names: Vec<String> = app
         .harness

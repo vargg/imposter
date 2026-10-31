@@ -35,9 +35,9 @@ fn tree_context_menus_rename_move_and_create_inside_folders() {
     app.harness.get_by_label("GET Old name").click_secondary();
     app.harness.run_steps(2);
     click(&mut app.harness, "Rename");
-    app.harness.get_by_label("Name:").type_text(" (renamed)");
+    support::text_input(&app.harness, "Name").type_text(" (renamed)");
     app.harness.run_steps(1);
-    click(&mut app.harness, "OK");
+    click_button(&mut app.harness, "Rename");
     settle(&mut app.harness);
     app.harness.get_by_label("API / Old name (renamed)");
 
@@ -176,8 +176,8 @@ fn a_restored_draft_is_saved_into_the_selected_collection() {
     app.harness.get_by_label("Draft");
 
     click(&mut app.harness, "Save to collection…");
-    app.harness.get_by_label("Request name in API:");
-    click(&mut app.harness, "OK");
+    app.harness.get_by_label("Request name in API");
+    click_button(&mut app.harness, "Save");
     settle(&mut app.harness);
 
     app.harness.get_by_label("API / Draft");

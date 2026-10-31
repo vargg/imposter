@@ -283,7 +283,7 @@ fn leaving_a_restored_draft_offers_to_keep_it_as_a_new_request() {
     click_button(&mut app.harness, "Save as new request");
     settle(&mut app.harness);
     // Saving a draft asks for its name, prefilled.
-    click(&mut app.harness, "OK");
+    click_button(&mut app.harness, "Save");
     settle(&mut app.harness);
     let names: Vec<String> = app
         .harness

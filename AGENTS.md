@@ -526,6 +526,18 @@ numbers, so both are excluded. Each logical change is its own commit.
   the expectations are in `imposter-transfer/tests/openapi.rs`.
 - **File dialogs go through one seam** (`ImposterApp::pick`); tests answer them with
   `script_file_dialogs`, since native dialogs cannot be driven headless.
+- **Every dialog ends with the same button row** (`dialogs::buttons`).
+  - **Order:** the choices and Cancel come first; the main action comes last, filled with
+    the accent (or red when destructive) and labelled with a verb (Create, Rename, Save,
+    Delete, Import).
+  - **Keys:** Enter presses it unless the dialog edits multi-line text (curl); a name field
+    reads Enter before drawing, because a single-line field consumes it. Escape cancels.
+  - **Captions** have no trailing colons.
+  - **Height:** dialogs are capped at the window, and long ones scroll inside.
+  - **Layout:** the row is laid out left to right, because a right-to-left row in an
+    auto-sized modal put its buttons outside the modal, where clicks missed.
+
+  Checked by `imposter-ui/tests/dialogs.rs`.
 - **Each dialog kind has its own modal id.** Why: a dialog replacing another (the import review
   followed by the unsaved-changes guard) inherited the old one's area, so a click on its buttons
   counted as a click outside and cancelled it.

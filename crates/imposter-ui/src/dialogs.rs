@@ -125,11 +125,72 @@ pub enum Outcome {
     Closed,
 }
 
+impl NamePurpose {
+    /// The verb on the dialog's main button.
+    const fn verb(self) -> &'static str {
+        match self {
+            Self::NewCollection
+            | Self::NewFolder { .. }
+            | Self::NewRequest { .. }
+            | Self::NewEnvironment => "Create",
+            Self::RenameCollection(_) | Self::Rename(_) | Self::RenameEnvironment(_) => "Rename",
+            Self::SaveDraft(_) => "Save",
+        }
+    }
+}
+
+/// How a dialog button reads: the main action, a destructive one, or the rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Primary,
+    Danger,
+    Plain,
+}
+
+/// The button row every dialog ends with, laid out left to right as given: choices and
+/// Cancel first, the main or destructive action last. Enter presses the
+/// last button when `enter` and it is enabled; Escape closes the dialog (the modal does that).
+/// Returns the index of the button pressed.
+fn buttons(ui: &mut egui::Ui, row: &[(&str, Kind, bool)], enter: bool) -> Option<usize> {
+    let mut pressed = None;
+    ui.add_space(12.0);
+    // Left to right: a right-to-left row in an auto-sized modal can land outside it.
+    ui.horizontal(|ui| {
+        for (index, (label, kind, enabled)) in row.iter().enumerate() {
+            let palette = crate::theme::palette();
+            let button = match kind {
+                Kind::Primary => egui::Button::new(RichText::new(*label).color(palette.on_accent))
+                    .fill(palette.accent),
+                Kind::Danger => egui::Button::new(RichText::new(*label).color(palette.on_accent))
+                    .fill(palette.error),
+                Kind::Plain => egui::Button::new(*label),
+            };
+            if ui.add_enabled(*enabled, button).clicked() {
+                pressed = Some(index);
+            }
+        }
+    });
+    let last = row.len().checked_sub(1);
+    if pressed.is_none()
+        && enter
+        && last.is_some_and(|last| row[last].2)
+        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+    {
+        pressed = last;
+    }
+    pressed
+}
+
+/// "Name:" and "Name" read the same; dialogs show captions without the colon.
+fn caption(label: &str) -> String {
+    label.trim_end().trim_end_matches(':').to_owned()
+}
+
 impl Dialog {
     pub fn name(title: &str, label: &str, value: &str, purpose: NamePurpose) -> Self {
         Self::Name {
             title: title.into(),
-            label: label.into(),
+            label: caption(label),
             value: value.into(),
             purpose,
         }
@@ -161,8 +222,11 @@ impl Dialog {
             modal = modal
                 .area(egui::Modal::default_area(id).anchor(egui::Align2::CENTER_TOP, [0.0, 72.0]));
         }
+        // Taller dialogs scroll inside the window instead of running off it.
+        let max_height = ctx.content_rect().height() - 96.0;
         let modal = modal.show(ctx, |ui| {
             ui.set_min_width(360.0);
+            ui.set_max_height(max_height);
             match self {
                 Self::Name {
                     title,
@@ -171,6 +235,8 @@ impl Dialog {
                     purpose,
                 } => {
                     ui.heading(title.as_str());
+                    // Read before the field draws: a single-line field consumes Enter.
+                    let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
                     let caption = ui.label(label.as_str());
                     let field =
                         ui.add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY));
@@ -179,19 +245,19 @@ impl Dialog {
                         field.request_focus();
                     }
                     let valid = !value.trim().is_empty();
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        let enter =
-                            field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        if ui.add_enabled(valid, egui::Button::new("OK")).clicked()
-                            || (valid && enter)
-                        {
+                    let enter = enter_pressed && (field.lost_focus() || field.has_focus());
+                    match buttons(
+                        ui,
+                        &[("Cancel", Kind::Plain, true), (purpose.verb(), Kind::Primary, valid)],
+                        false,
+                    ) {
+                        Some(0) => outcome = Outcome::Closed,
+                        Some(_) => outcome = Outcome::Name(*purpose, value.trim().to_owned()),
+                        None if valid && enter => {
                             outcome = Outcome::Name(*purpose, value.trim().to_owned());
                         }
-                        if ui.button("Cancel").clicked() {
-                            outcome = Outcome::Closed;
-                        }
-                    });
+                        None => {}
+                    }
                 }
                 Self::Confirm {
                     title,
@@ -201,20 +267,15 @@ impl Dialog {
                 } => {
                     ui.heading(title.as_str());
                     ui.label(message.as_str());
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        if ui
-                            .button(
-                                RichText::new(confirm.as_str()).color(crate::theme::palette().error),
-                            )
-                            .clicked()
-                        {
-                            outcome = Outcome::Confirmed(*purpose);
-                        }
-                        if ui.button("Cancel").clicked() {
-                            outcome = Outcome::Closed;
-                        }
-                    });
+                    match buttons(
+                        ui,
+                        &[("Cancel", Kind::Plain, true), (confirm.as_str(), Kind::Danger, true)],
+                        true,
+                    ) {
+                        Some(0) => outcome = Outcome::Closed,
+                        Some(_) => outcome = Outcome::Confirmed(*purpose),
+                        None => {}
+                    }
                 }
                 Self::Guard {
                     request,
@@ -237,45 +298,34 @@ impl Dialog {
                         ui.heading("Unsaved request changes");
                         ui.label(format!("Save changes to \"{request}\" before continuing?"));
                     }
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        let save = match (&failed, &draft) {
-                            (Some(_), _) => "Retry",
-                            (None, Some(_)) => "Save as new request",
-                            (None, None) => "Save",
-                        };
-                        if ui.button(save).clicked() {
-                            outcome = Outcome::Guard(GuardChoice::Save);
-                        }
-                        if ui.button("Discard").clicked() {
-                            outcome = Outcome::Guard(GuardChoice::Discard);
-                        }
-                        let stay = if draft.is_some() { "Stay" } else { "Cancel" };
-                        if ui.button(stay).clicked() {
-                            outcome = Outcome::Guard(GuardChoice::Cancel);
-                        }
-                    });
+                    let save = match (&failed, &draft) {
+                        (Some(_), _) => "Retry",
+                        (None, Some(_)) => "Save as new request",
+                        (None, None) => "Save",
+                    };
+                    let stay = if draft.is_some() { "Stay" } else { "Cancel" };
+                    if let Some(choice) = guard_buttons(ui, stay, save) {
+                        outcome = Outcome::Guard(choice);
+                    }
                 }
                 Self::VariablesGuard => {
                     ui.heading("Unsaved variables");
                     ui.label("Save variable changes before continuing?");
-                    ui.add_space(8.0);
-                    if let Some(choice) = guard_buttons(ui) {
+                    if let Some(choice) = guard_buttons(ui, "Cancel", "Save") {
                         outcome = Outcome::VariablesGuard(choice);
                     }
                 }
                 Self::MocksGuard => {
                     ui.heading("Unsaved mocks");
                     ui.label("Save mock configuration before continuing?");
-                    if let Some(choice) = guard_buttons(ui) {
+                    if let Some(choice) = guard_buttons(ui, "Cancel", "Save") {
                         outcome = Outcome::MocksGuard(choice);
                     }
                 }
                 Self::SettingsGuard => {
                     ui.heading("Unsaved application settings");
                     ui.label("Save application settings before exiting?");
-                    ui.add_space(8.0);
-                    if let Some(choice) = guard_buttons(ui) {
+                    if let Some(choice) = guard_buttons(ui, "Cancel", "Save") {
                         outcome = Outcome::SettingsGuard(choice);
                     }
                 }
@@ -285,7 +335,7 @@ impl Dialog {
                     choice,
                 } => {
                     ui.heading("Move");
-                    let caption = ui.label("Destination:");
+                    let caption = ui.label("Destination");
                     let selected = options.get(*choice).map_or("", |(label, _)| label.as_str());
                     let combo = egui::ComboBox::from_id_salt("move destination")
                         .width(300.0)
@@ -296,17 +346,19 @@ impl Dialog {
                             }
                         });
                     combo.response.labelled_by(caption.id);
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Move").clicked()
-                            && let Some((_, target)) = options.get(*choice)
-                        {
-                            outcome = Outcome::Move(*node, *target);
+                    match buttons(
+                        ui,
+                        &[("Cancel", Kind::Plain, true), ("Move", Kind::Primary, true)],
+                        true,
+                    ) {
+                        Some(0) => outcome = Outcome::Closed,
+                        Some(_) => {
+                            if let Some((_, target)) = options.get(*choice) {
+                                outcome = Outcome::Move(*node, *target);
+                            }
                         }
-                        if ui.button("Cancel").clicked() {
-                            outcome = Outcome::Closed;
-                        }
-                    });
+                        None => {}
+                    }
                 }
                 Self::Message {
                     title,
@@ -314,10 +366,9 @@ impl Dialog {
                     tone,
                 } => {
                     ui.heading(title.as_str());
-                    let text = ui.label(tone_text(message.as_str(), *tone));
+                    let text = ui.add(egui::Label::new(tone_text(message.as_str(), *tone)).wrap());
                     name(&text, message);
-                    ui.add_space(8.0);
-                    if ui.button("OK").clicked() {
+                    if buttons(ui, &[("OK", Kind::Primary, true)], true).is_some() {
                         outcome = Outcome::Closed;
                     }
                 }
@@ -325,38 +376,44 @@ impl Dialog {
                 Self::Shortcuts => {
                     ui.heading("Keyboard shortcuts");
                     ui.add_space(4.0);
-                    egui::Grid::new("shortcuts")
-                        .num_columns(2)
-                        .spacing([24.0, 6.0])
+                    // The button row stays visible; the list scrolls in what is left.
+                    egui::ScrollArea::vertical()
+                        .max_height((max_height - 96.0).max(120.0))
                         .show(ui, |ui| {
-                            for shortcut in crate::shortcuts::ALL {
-                                let keys: Vec<String> = shortcut
-                                    .keys
-                                    .iter()
-                                    .map(|k| ui.ctx().format_shortcut(k))
-                                    .collect();
-                                ui.label(RichText::new(keys.join("  ")).monospace().strong());
-                                ui.label(shortcut.description);
-                                ui.end_row();
-                            }
+                            egui::Grid::new("shortcuts")
+                                .num_columns(2)
+                                .spacing([24.0, 6.0])
+                                .show(ui, |ui| {
+                                    for shortcut in crate::shortcuts::ALL {
+                                        let keys: Vec<String> = shortcut
+                                            .keys
+                                            .iter()
+                                            .map(|k| ui.ctx().format_shortcut(k))
+                                            .collect();
+                                        ui.label(
+                                            RichText::new(keys.join("  ")).monospace().strong(),
+                                        );
+                                        ui.label(shortcut.description);
+                                        ui.end_row();
+                                    }
+                                });
                         });
-                    ui.add_space(8.0);
-                    if ui.button("Close").clicked() {
+                    if buttons(ui, &[("Close", Kind::Plain, true)], true).is_some() {
                         outcome = Outcome::Closed;
                     }
                 }
                 Self::Companions { .. } => {
                     ui.heading("Companion files");
                     ui.label("Include Postman environment or global JSON files?");
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Yes").clicked() {
-                            outcome = Outcome::Companions(true);
-                        }
-                        if ui.button("No").clicked() {
-                            outcome = Outcome::Companions(false);
-                        }
-                    });
+                    match buttons(
+                        ui,
+                        &[("No", Kind::Plain, true), ("Yes", Kind::Primary, true)],
+                        true,
+                    ) {
+                        Some(0) => outcome = Outcome::Companions(false),
+                        Some(_) => outcome = Outcome::Companions(true),
+                        None => {}
+                    }
                 }
                 Self::Import {
                     preview,
@@ -383,27 +440,25 @@ impl Dialog {
     }
 }
 
-fn guard_buttons(ui: &mut egui::Ui) -> Option<GuardChoice> {
-    let mut choice = None;
-    ui.horizontal(|ui| {
-        if ui.button("Save").clicked() {
-            choice = Some(GuardChoice::Save);
-        }
-        if ui.button("Discard").clicked() {
-            choice = Some(GuardChoice::Discard);
-        }
-        if ui.button("Cancel").clicked() {
-            choice = Some(GuardChoice::Cancel);
-        }
-    });
-    choice
+/// Stay, then Discard (destructive), then the save action, which Enter presses.
+fn guard_buttons(ui: &mut egui::Ui, stay: &str, save: &str) -> Option<GuardChoice> {
+    buttons(
+        ui,
+        &[
+            (stay, Kind::Plain, true),
+            ("Discard", Kind::Danger, true),
+            (save, Kind::Primary, true),
+        ],
+        true,
+    )
+    .map(|index| [GuardChoice::Cancel, GuardChoice::Discard, GuardChoice::Save][index])
 }
 
 fn curl(ui: &mut egui::Ui, text: &mut String) -> Outcome {
     let mut outcome = Outcome::Open;
     ui.set_min_width(560.0);
     ui.heading("Import from curl");
-    let caption = ui.label("curl command:");
+    let caption = ui.label("curl command");
     let field = ui.add(
         egui::TextEdit::multiline(text)
             .code_editor()
@@ -427,19 +482,20 @@ fn curl(ui: &mut egui::Ui, text: &mut String) -> Outcome {
         }
         None => {}
     }
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        let valid = matches!(parsed, Some(Ok(_)));
-        if ui
-            .add_enabled(valid, egui::Button::new("Open as draft"))
-            .clicked()
-        {
-            outcome = Outcome::Curl;
-        }
-        if ui.button("Cancel").clicked() {
-            outcome = Outcome::Closed;
-        }
-    });
+    let valid = matches!(parsed, Some(Ok(_)));
+    // Enter types a new line in the command, so it does not press the button.
+    match buttons(
+        ui,
+        &[
+            ("Cancel", Kind::Plain, true),
+            ("Open as draft", Kind::Primary, valid),
+        ],
+        false,
+    ) {
+        Some(0) => outcome = Outcome::Closed,
+        Some(_) => outcome = Outcome::Curl,
+        None => {}
+    }
     outcome
 }
 
@@ -470,18 +526,18 @@ fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outc
         ui.checkbox(remove, "Remove the listed unsupported execution features");
     }
     let allowed = !preview.requires_removal || *remove;
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        if ui
-            .add_enabled(allowed, egui::Button::new("Import"))
-            .clicked()
-        {
-            outcome = Outcome::Import;
-        }
-        if ui.button("Cancel").clicked() {
-            outcome = Outcome::Closed;
-        }
-    });
+    match buttons(
+        ui,
+        &[
+            ("Cancel", Kind::Plain, true),
+            ("Import", Kind::Primary, allowed),
+        ],
+        true,
+    ) {
+        Some(0) => outcome = Outcome::Closed,
+        Some(_) => outcome = Outcome::Import,
+        None => {}
+    }
     outcome
 }
 
@@ -499,7 +555,7 @@ fn export(
         ui.radio_value(postman, true, "Postman v2.1");
     });
     ui.add_space(6.0);
-    ui.label("Include optional environments:");
+    ui.label("Include optional environments");
     if environments.is_empty() {
         ui.label(tone_text("No environments", Tone::Muted));
     }
@@ -516,14 +572,17 @@ fn export(
         "Literal credentials and file paths are included. Uploaded file contents are excluded.",
         Tone::Muted,
     ));
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        if ui.button("Export").clicked() {
-            outcome = Outcome::Export;
-        }
-        if ui.button("Cancel").clicked() {
-            outcome = Outcome::Closed;
-        }
-    });
+    match buttons(
+        ui,
+        &[
+            ("Cancel", Kind::Plain, true),
+            ("Export", Kind::Primary, true),
+        ],
+        true,
+    ) {
+        Some(0) => outcome = Outcome::Closed,
+        Some(_) => outcome = Outcome::Export,
+        None => {}
+    }
     outcome
 }

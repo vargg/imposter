@@ -101,12 +101,13 @@ pub fn text_input<'h>(
         .unwrap_or_else(|| panic!("no text input named {label:?}"))
 }
 
-/// Answer the open name dialog.
+/// Answer the open name dialog with Enter, which presses its main button.
 pub fn answer_name(harness: &mut Harness<'_, ImposterApp>, text: &str) {
     harness.run_steps(2);
-    harness.get_by_label("Name:").type_text(text);
+    text_input(harness, "Name").type_text(text);
     harness.run_steps(1);
-    click(harness, "OK");
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(2);
     settle(harness);
 }
 

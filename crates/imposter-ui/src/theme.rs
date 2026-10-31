@@ -508,8 +508,9 @@ mod tests {
     #[test]
     fn text_on_the_send_button_is_readable_in_both_states() {
         for (name, palette) in BOTH {
-            // Send uses the accent fill; Cancel (while a request runs) the warning fill.
-            for fill in [palette.accent, palette.warning] {
+            // Send and dialogs' main buttons use the accent fill; Cancel (while a request
+            // runs) the warning fill; destructive dialog buttons the error fill.
+            for fill in [palette.accent, palette.warning, palette.error] {
                 let ratio = contrast(palette.on_accent, fill);
                 assert!(ratio >= AA, "{name} {fill:?}: {ratio:.2}");
             }

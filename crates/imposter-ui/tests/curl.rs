@@ -59,7 +59,7 @@ fn a_pasted_command_opens_as_an_unsaved_draft() {
         collection(store, "API");
     });
     open_curl_dialog(&mut app);
-    text_input(&app.harness, "curl command:").type_text(
+    text_input(&app.harness, "curl command").type_text(
         "curl 'https://api.example.com/items' -H 'X-Trace: on' --data-raw '{\"a\":1}' --http2",
     );
     app.harness.run_steps(2);
@@ -89,7 +89,7 @@ fn a_command_that_does_not_parse_says_why() {
         collection(store, "API");
     });
     open_curl_dialog(&mut app);
-    text_input(&app.harness, "curl command:").type_text("wget http://h");
+    text_input(&app.harness, "curl command").type_text("wget http://h");
     app.harness.run_steps(2);
 
     app.harness

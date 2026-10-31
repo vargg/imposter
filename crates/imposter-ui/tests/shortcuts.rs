@@ -229,12 +229,14 @@ fn duplicate_and_rename_shortcuts_act_on_the_open_request() {
 
     app.harness.key_press(Key::F2);
     app.harness.run_steps(2);
-    app.harness.get_by_label("Rename");
+    app.harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Rename");
     click(&mut app.harness, "Cancel");
     app.harness
         .key_press_modifiers(Modifiers::CTRL.plus(Modifiers::SHIFT), Key::R);
     app.harness.run_steps(2);
-    app.harness.get_by_label("Rename");
+    app.harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Rename");
     click(&mut app.harness, "Cancel");
     settle(&mut app.harness);
     let sent = app
