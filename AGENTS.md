@@ -189,6 +189,15 @@ numbers, so both are excluded. Each logical change is its own commit.
     what Compact uses.
   - **Checked by** `imposter-ui/tests/appearance.rs`: the row pitch in both densities, and
     at least 10 tree rows at the minimum window in Compact (7 before).
+- **Orange means primary, selected or focused; nothing else.**
+  - **Hover and press** outline a control in the muted text color.
+  - **Selection** (`selection.stroke`) is the accent: selected items' text, a focused field's
+    1.5-point ring, and a 2-point bar on the left of selected tree, History and palette rows
+    (`widgets::selection_bar`).
+  - **Tabs** are frameless: muted text, or semibold accent text with an underline.
+
+  Why: an orange outline on every hover diluted the accent until it meant nothing (the
+  review's #60). Checked in `theme.rs` tests.
 - **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
   256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
   dependency.

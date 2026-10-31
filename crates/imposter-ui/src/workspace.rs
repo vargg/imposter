@@ -593,6 +593,9 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
                 response.on_hover_text(&request.name)
             }
         };
+        if selected == Some(id) {
+            widgets::selection_bar(ui, response.rect);
+        }
         response.dnd_set_drag_payload(id);
         if response.clicked() {
             actions.push(match node {

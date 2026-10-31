@@ -270,7 +270,8 @@ pub fn visuals(palette: &Palette, theme: Theme) -> Visuals {
     visuals.warn_fg_color = palette.warning;
     visuals.error_fg_color = palette.error;
     visuals.selection.bg_fill = palette.selected;
-    visuals.selection.stroke = Stroke::new(1.0, palette.text);
+    // The selection is the accent: selected items' text and a focused field's ring.
+    visuals.selection.stroke = Stroke::new(1.5, palette.accent);
     visuals.window_corner_radius = CornerRadius::same(12);
     visuals.menu_corner_radius = CornerRadius::same(8);
 
@@ -293,10 +294,11 @@ pub fn visuals(palette: &Palette, theme: Theme) -> Visuals {
     visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, palette.field_border);
     visuals.widgets.hovered.weak_bg_fill = palette.hover;
     visuals.widgets.hovered.bg_fill = palette.hover;
-    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, palette.accent);
+    // Hover is neutral: orange is kept for what is primary, selected or focused.
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, palette.text_muted);
     visuals.widgets.active.weak_bg_fill = palette.selected;
     visuals.widgets.active.bg_fill = palette.selected;
-    visuals.widgets.active.bg_stroke = Stroke::new(1.0, palette.accent);
+    visuals.widgets.active.bg_stroke = Stroke::new(1.0, palette.text_muted);
     visuals.widgets.open.weak_bg_fill = palette.hover;
     visuals.widgets.open.bg_fill = palette.hover;
     visuals.widgets.open.bg_stroke = Stroke::new(1.0, palette.border);
@@ -538,6 +540,17 @@ mod tests {
                 .color,
             DARK.field_border,
             "controls get the readable edge"
+        );
+
+        let dark = ctx.style_of(Theme::Dark).visuals.clone();
+        assert_ne!(
+            dark.widgets.hovered.bg_stroke.color, DARK.accent,
+            "hover is neutral"
+        );
+        assert_ne!(dark.widgets.active.bg_stroke.color, DARK.accent);
+        assert_eq!(
+            dark.selection.stroke.color, DARK.accent,
+            "selection and focus"
         );
 
         apply(&ctx, ThemeChoice::Light, Density::Compact);

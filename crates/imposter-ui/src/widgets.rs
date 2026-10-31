@@ -30,15 +30,21 @@ pub fn tone_text(text: impl Into<String>, tone: Tone) -> RichText {
     RichText::new(text.into()).color(palette().tone(tone))
 }
 
+/// A tab: muted text, or semibold accent text with an underline when selected; no fill.
 pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
-    let text = RichText::new(label).color(if selected {
-        palette().accent
+    let text = if selected {
+        RichText::new(label)
+            .color(palette().accent)
+            .font(crate::theme::semibold(13.0))
     } else {
-        palette().text_muted
-    });
+        RichText::new(label).color(palette().text_muted)
+    };
     let height = crate::theme::spacing().control + 6.0;
-    let response =
-        ui.add(egui::Button::selectable(selected, text).min_size(egui::vec2(0.0, height)));
+    let response = ui.add(
+        egui::Button::new(text)
+            .frame_when_inactive(false)
+            .min_size(egui::vec2(0.0, height)),
+    );
     if selected {
         let rect = response.rect;
         ui.painter().line_segment(
@@ -50,6 +56,15 @@ pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
         );
     }
     response
+}
+
+/// The marker beside a selected row: a bar on its left edge.
+pub fn selection_bar(ui: &Ui, rect: egui::Rect) {
+    let bar = egui::Rect::from_min_size(
+        rect.left_top() + egui::vec2(0.0, 3.0),
+        egui::vec2(2.0, rect.height() - 6.0),
+    );
+    ui.painter().rect_filled(bar, 1.0, palette().selected_bar);
 }
 
 pub fn badge(ui: &mut Ui, text: &str, tone: Tone) -> egui::Response {

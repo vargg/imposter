@@ -174,6 +174,9 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                                 egui::Color32::TRANSPARENT
                             };
                             ui.painter().rect_filled(rect, 4.0, fill);
+                            if selected {
+                                widgets::selection_bar(ui, rect);
+                            }
                             let (outcome, tone) = outcome_text(row);
                             let cells = [
                                 (when, palette().text),

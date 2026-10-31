@@ -323,6 +323,9 @@ fn row(ui: &mut Ui, item: &Item, selected: bool) -> egui::Response {
         );
     }
     let response = ui.add(egui::Button::selectable(selected, text).truncate());
+    if selected {
+        crate::widgets::selection_bar(ui, response.rect);
+    }
     let label = match &item.method {
         Some(method) => format!("{method} {}", item.label),
         None => item.label.clone(),
