@@ -122,3 +122,60 @@ fn the_status_and_runs_share_one_row_and_an_earlier_run_can_be_shown() {
     app.harness.get_by_label("201 Created");
     assert!(app.harness.query_by_label("404 Not Found").is_none());
 }
+
+/// The top of the stacked split's handle, found by its resize cursor along `x`.
+fn handle_top(app: &mut support::App, x: f32) -> f32 {
+    let mut y = 100.0;
+    while y < 800.0 {
+        app.harness.hover_at(egui::pos2(x, y));
+        app.harness.run_steps(1);
+        if app.harness.output().platform_output.cursor_icon == egui::CursorIcon::ResizeVertical {
+            return y;
+        }
+        y += 1.0;
+    }
+    panic!("no split handle along x = {x}");
+}
+
+/// Drag the split handle whose top is at `top` along `x` by `by` points, in steps.
+fn drag_handle(app: &mut support::App, x: f32, top: f32, by: f32) {
+    let grab = top + 2.0;
+    app.harness.drag_at(egui::pos2(x, grab));
+    app.harness.run_steps(1);
+    for step in 1..=10_u8 {
+        app.harness
+            .hover_at(egui::pos2(x, grab + by * f32::from(step) / 10.0));
+        app.harness.run_steps(1);
+    }
+    app.harness.drop_at(egui::pos2(x, grab + by));
+    app.harness.run_steps(2);
+}
+
+#[test]
+fn a_stacked_pane_keeps_its_minimum_and_follows_the_drag_back_at_once() {
+    let mut app = small();
+    app.harness.set_size(egui::vec2(1500.0, 850.0));
+    app.harness.state_mut().state.layout.orientation = imposter_ui::layout::Orientation::Stacked;
+    app.harness.run_steps(3);
+    let x = 900.0;
+    let body = app
+        .harness
+        .query_all_by_role_and_label(Role::Button, "Body")
+        .map(|node| node.rect().top())
+        .fold(f32::INFINITY, f32::min);
+    let start = handle_top(&mut app, x);
+    drag_handle(&mut app, x, start, -600.0);
+    let lowest = handle_top(&mut app, x);
+    // The request pane's tabs sit a padding below its top.
+    let pane = lowest - body;
+    assert!(
+        (pane - imposter_ui::layout::MIN_PANE_TALL).abs() <= 20.0,
+        "held near its minimum: {pane}"
+    );
+    drag_handle(&mut app, x, lowest, 50.0);
+    let back = handle_top(&mut app, x);
+    assert!(
+        (back - lowest - 50.0).abs() <= 2.0,
+        "the drag back moves the pane at once: {lowest} -> {back}"
+    );
+}

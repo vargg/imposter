@@ -128,7 +128,12 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
 
     let area = ui.available_rect_before_wrap();
     let ratio = state.layout.history_ratio;
-    let list_height = (area.height() - SEPARATOR) * ratio;
+    let list_height = crate::layout::split(
+        area.height() - SEPARATOR,
+        ratio,
+        crate::layout::MIN_HISTORY_LIST,
+        crate::layout::MIN_HISTORY_DETAILS,
+    );
     let list = Rect::from_min_size(area.min, vec2(area.width(), list_height));
     let handle = Rect::from_min_size(list.left_bottom(), vec2(area.width(), SEPARATOR));
     let details = Rect::from_min_max(handle.left_bottom(), area.max);
@@ -136,11 +141,13 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         .interact(handle, ui.scope_id().with("history split"), Sense::drag())
         .on_hover_cursor(egui::CursorIcon::ResizeVertical);
     if drag.dragged() && area.height() > SEPARATOR {
-        state.layout.history_ratio = (ratio + drag.drag_delta().y / (area.height() - SEPARATOR))
+        // From the list's height as drawn, which a minimum may hold away from the ratio.
+        state.layout.history_ratio = ((list_height + drag.drag_delta().y)
+            / (area.height() - SEPARATOR))
             .clamp(crate::layout::RATIO.0, crate::layout::RATIO.1);
     }
     let color = if drag.hovered() || drag.dragged() {
-        palette().accent
+        palette().text_muted
     } else {
         palette().border
     };

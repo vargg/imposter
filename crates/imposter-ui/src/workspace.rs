@@ -822,7 +822,12 @@ fn split(state: &mut State, ui: &mut Ui) {
     let ratio = state.layout.ratio(orientation);
     let (first, handle, second) = match orientation {
         Orientation::SideBySide => {
-            let width = (area.width() - SEPARATOR) * ratio;
+            let width = crate::layout::split(
+                area.width() - SEPARATOR,
+                ratio,
+                crate::layout::MIN_PANE_WIDE,
+                crate::layout::MIN_PANE_WIDE,
+            );
             let first = Rect::from_min_size(area.min, vec2(width, area.height()));
             let handle = Rect::from_min_size(first.right_top(), vec2(SEPARATOR, area.height()));
             (
@@ -832,7 +837,12 @@ fn split(state: &mut State, ui: &mut Ui) {
             )
         }
         Orientation::Stacked => {
-            let height = (area.height() - SEPARATOR) * ratio;
+            let height = crate::layout::split(
+                area.height() - SEPARATOR,
+                ratio,
+                crate::layout::MIN_PANE_TALL,
+                crate::layout::MIN_PANE_TALL,
+            );
             let first = Rect::from_min_size(area.min, vec2(area.width(), height));
             let handle = Rect::from_min_size(first.left_bottom(), vec2(area.width(), SEPARATOR));
             (
@@ -855,12 +865,19 @@ fn split(state: &mut State, ui: &mut Ui) {
             Orientation::SideBySide => (delta.x, area.width() - SEPARATOR),
             Orientation::Stacked => (delta.y, area.height() - SEPARATOR),
         };
+        // From the pane's size as drawn, which a minimum may hold away from the ratio, so
+        // dragging back responds at once.
+        let size = match orientation {
+            Orientation::SideBySide => first.width(),
+            Orientation::Stacked => first.height(),
+        };
         if total > 0.0 {
-            state.layout.set_ratio(orientation, ratio + moved / total);
+            state.layout.set_ratio(orientation, (size + moved) / total);
         }
     }
+    // Hover is neutral; orange is for primary, selected and focused things.
     let color = if drag.hovered() || drag.dragged() {
-        palette().accent
+        palette().text_muted
     } else {
         palette().border
     };

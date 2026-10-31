@@ -349,6 +349,11 @@ numbers, so both are excluded. Each logical change is its own commit.
   of wrapping: single-line fields and button labels never wrap (a long label is cut, with
   the whole text on hover).
   Why: an automatic choice next to a manual one made the button seem broken.
+- **Split panes keep a minimum in points** (`layout::split`): request and response 220 wide
+  or 160 tall, the History list 110 and its details 160; when both minimums do not fit,
+  they share in proportion. A drag starts from the size as drawn, not the stored ratio, so
+  dragging back from a held minimum responds at once. Why: a ratio alone left a pane with
+  only its tab row at 720×480 (the review's #10, #14). Checked by `imposter-ui/tests/fit.rs`.
 - **Rows of tabs, tools and status stay one row high; what does not fit goes into a menu.**
   - **Tabs** (`widgets::tab_strip`): tabs that do not fit go under "More"; the selected tab
     always stays, in place of the last one that fitted. Tabs come before tools.

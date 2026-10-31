@@ -56,6 +56,24 @@ impl Default for WorkspaceLayout {
 pub const SIDEBAR_WIDTH: (f32, f32) = (200.0, 400.0);
 pub const RATIO: (f32, f32) = (0.15, 0.85);
 
+/// The least a request or response pane gets beside the other: room for the tab row and
+/// tools (side by side), or for the tab row and a few lines (stacked).
+pub const MIN_PANE_WIDE: f32 = 220.0;
+pub const MIN_PANE_TALL: f32 = 160.0;
+/// The least the History list (three rows and its header) and the details below it get.
+pub const MIN_HISTORY_LIST: f32 = 110.0;
+pub const MIN_HISTORY_DETAILS: f32 = 160.0;
+
+/// The size of the first of two panes sharing `total` points by `ratio`, keeping each at
+/// its minimum; when both minimums do not fit, they share in proportion to them.
+pub fn split(total: f32, ratio: f32, min_first: f32, min_second: f32) -> f32 {
+    let total = total.max(0.0);
+    if total <= min_first + min_second {
+        return total * min_first / (min_first + min_second);
+    }
+    (total * ratio).clamp(min_first, total - min_second)
+}
+
 impl WorkspaceLayout {
     /// Read stored state, keeping every valid field and defaulting each invalid one, so a
     /// damaged or older payload never loses the rest. Unknown versions start over.
@@ -128,6 +146,15 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn a_split_keeps_each_pane_at_its_minimum() {
+        assert_eq!(split(1000.0, 0.5, 160.0, 160.0), 500.0);
+        assert_eq!(split(1000.0, 0.05, 160.0, 160.0), 160.0, "first kept");
+        assert_eq!(split(1000.0, 0.95, 160.0, 160.0), 840.0, "second kept");
+        assert_eq!(split(200.0, 0.9, 100.0, 300.0), 50.0, "in proportion");
+        assert_eq!(split(-5.0, 0.5, 160.0, 160.0), 0.0);
+    }
 
     #[test]
     fn stored_state_is_sanitized_field_by_field() {
