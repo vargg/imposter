@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use imposter_core::model::{
-    BodyType, FormItem, FormKind, ParamItem, RequestAuth, RequestTemplate, Variables,
+    BodyType, FormItem, FormKind, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
 };
 use imposter_core::url;
 use serde_json::{Map, Value, json};
@@ -578,6 +578,7 @@ impl Decoder {
             variables,
             folders: Vec::new(),
             requests: Vec::new(),
+            saved_values: SavedValues::default(),
         };
         if let Some(root) = data.as_object() {
             self.extras(root, "Collection");
@@ -616,6 +617,7 @@ impl Decoder {
                 document.environments.push(TransferEnvironment {
                     name: Name::new(name).ok_or(PostmanError::EmptyName)?,
                     variables,
+                    saved_values: SavedValues::default(),
                 });
             }
             Some(_) => return Err(PostmanError::CompanionScope),

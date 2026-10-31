@@ -530,31 +530,41 @@ async fn imported_openapi_requests_send_once_their_variables_are_set() {
 }
 
 #[tokio::test]
-async fn exports_carry_current_values_and_never_saved_ones() {
+async fn saved_values_travel_with_their_scopes_and_existing_globals_keep_theirs() {
     use imposter_core::model::SavedValues;
     use imposter_core::variables::Scope;
     use imposter_store::scopes;
 
+    let saved = |values: &[&str]| {
+        let mut saved = SavedValues::default();
+        saved.set("user", values.iter().map(|v| (*v).to_owned()));
+        saved
+    };
     let (dir, store) = open();
     let (api, dev) = store
-        .call(|db| {
-            let mut saved = SavedValues::default();
-            saved.set("user", ["42".to_owned(), "77".to_owned()]);
+        .call(move |db| {
             let api = collections::create_collection(db, "API", "", &vars(&[("user", "42")]))?;
             scopes::write(
                 db,
                 Scope::Collection(api.id),
                 &vars(&[("user", "77")]),
-                &saved,
+                &saved(&["42", "77"]),
             )?;
             let dev = environments::create_environment(db, "Dev", &vars(&[]))?;
             scopes::write(
                 db,
                 Scope::Environment(dev.id),
                 &vars(&[("user", "42")]),
-                &saved,
+                &saved(&["42", "91"]),
             )?;
-            scopes::write(db, Scope::Global, &vars(&[("user", "1")]), &saved)?;
+            let mut globals = saved(&["1", "2"]);
+            globals.set("region", ["eu".to_owned(), "us".to_owned()]);
+            scopes::write(
+                db,
+                Scope::Global,
+                &vars(&[("user", "1"), ("region", "eu")]),
+                &globals,
+            )?;
             Ok((api.id, dev.id))
         })
         .await
@@ -571,9 +581,62 @@ async fn exports_carry_current_values_and_never_saved_ones() {
         .unwrap();
 
     let raw = std::fs::read_to_string(&out).unwrap();
-    assert!(!raw.contains("saved"), "{raw}");
     let document = native::decode(raw.as_bytes()).unwrap();
     assert_eq!(document.collection.variables, vars(&[("user", "77")]));
-    assert_eq!(document.environments[0].variables, vars(&[("user", "42")]));
-    assert_eq!(document.globals, vars(&[("user", "1")]));
+    assert_eq!(
+        document.collection.saved_values.values("user"),
+        ["42", "77"]
+    );
+    assert_eq!(
+        document.environments[0].saved_values.values("user"),
+        ["42", "91"]
+    );
+    assert_eq!(document.globals, vars(&[("user", "1"), ("region", "eu")]));
+    assert_eq!(document.saved_globals.values("region"), ["eu", "us"]);
+
+    // Into a database whose globals already define `user` with other saved values.
+    let (_dir2, store2) = open();
+    store2
+        .call(move |db| {
+            scopes::write(
+                db,
+                Scope::Global,
+                &vars(&[("user", "mine")]),
+                &saved(&["mine", "x"]),
+            )
+        })
+        .await
+        .unwrap();
+    let preview = read_preview(&store2.handle(), out, Vec::new())
+        .await
+        .unwrap();
+    let id = import(&store2.handle(), preview, false).await.unwrap();
+    let (collection, environment, globals) = store2
+        .call(move |db| {
+            let dev = environments::environments(db)?
+                .into_iter()
+                .find(|e| e.name == "Dev")
+                .unwrap()
+                .id;
+            Ok((
+                scopes::saved_values(db, Scope::Collection(id))?,
+                scopes::saved_values(db, Scope::Environment(dev))?,
+                scopes::read(db, Scope::Global)?,
+            ))
+        })
+        .await
+        .unwrap();
+    assert_eq!(collection.values("user"), ["42", "77"]);
+    assert_eq!(environment.values("user"), ["42", "91"]);
+    assert_eq!(globals.0, vars(&[("user", "mine"), ("region", "eu")]));
+    assert_eq!(
+        globals.1.values("user"),
+        ["mine", "x"],
+        "existing globals keep theirs"
+    );
+    assert_eq!(
+        globals.1.values("region"),
+        ["eu", "us"],
+        "new globals bring theirs"
+    );
 }

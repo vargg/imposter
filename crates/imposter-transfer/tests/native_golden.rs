@@ -112,3 +112,21 @@ fn postman_exports_name_the_checks_they_leave_out() {
         "{warnings:?}"
     );
 }
+
+#[test]
+fn saved_values_need_version_2() {
+    let minimal = std::fs::read_to_string(fixtures().join("native/minimal.poster.json")).unwrap();
+    let with_saved = minimal.replace(
+        "\"globals\": {}",
+        "\"globals\": {\"user\": \"1\"},\n  \"saved_globals\": {\"user\": [\"1\", \"2\"]}",
+    );
+    assert_eq!(
+        decode(with_saved.as_bytes()).unwrap_err().to_string(),
+        "Saved values need format version 2"
+    );
+    let version_2 = with_saved
+        .replace("\"poster\"", "\"imposter\"")
+        .replace("\"version\": 1", "\"version\": 2");
+    let document = decode(version_2.as_bytes()).unwrap();
+    assert_eq!(document.saved_globals.values("user"), ["1", "2"]);
+}

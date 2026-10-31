@@ -1,12 +1,13 @@
 //! The native format. Version 1 (`"format": "poster"`) is the full-fidelity contract shared
-//! with the Python app; version 2 (`"format": "imposter"`) adds request checks. Strict:
+//! with the Python app; version 2 (`"format": "imposter"`) adds request checks and saved
+//! variable values. Strict:
 //! unknown fields are rejected at every level, a version 1 document may not use version 2
 //! data, and a document keeps its version when encoded again.
 
 use std::io::{Read as _, Write as _};
 use std::path::Path;
 
-use imposter_core::model::{RequestTemplate, Variables, is_method_token};
+use imposter_core::model::{RequestTemplate, SavedValues, Variables, is_method_token};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Imports larger than this are rejected before parsing.
@@ -100,6 +101,9 @@ pub struct TransferCollection {
     pub folders: Vec<TransferFolder>,
     #[serde(default)]
     pub requests: Vec<RequestTemplate>,
+    /// Version 2: values saved to swap the collection's variables with.
+    #[serde(default, skip_serializing_if = "SavedValues::is_empty")]
+    pub saved_values: SavedValues,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -108,6 +112,9 @@ pub struct TransferEnvironment {
     pub name: Name,
     #[serde(default)]
     pub variables: Variables,
+    /// Version 2: values saved to swap the environment's variables with.
+    #[serde(default, skip_serializing_if = "SavedValues::is_empty")]
+    pub saved_values: SavedValues,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -122,6 +129,9 @@ pub struct NativeDocument {
     pub environments: Vec<TransferEnvironment>,
     #[serde(default)]
     pub globals: Variables,
+    /// Version 2: values saved to swap the globals with.
+    #[serde(default, skip_serializing_if = "SavedValues::is_empty")]
+    pub saved_globals: SavedValues,
 }
 
 impl NativeDocument {
@@ -132,6 +142,7 @@ impl NativeDocument {
             collection,
             environments: Vec::new(),
             globals: Variables::new(),
+            saved_globals: SavedValues::default(),
         }
     }
 
@@ -165,6 +176,8 @@ pub enum NativeError {
     Marker { format: &'static str, expected: u8 },
     #[error("Request {request:?}: checks need format version 2")]
     ChecksInVersion1 { request: String },
+    #[error("Saved values need format version 2")]
+    SavedValuesInVersion1,
     #[error("Request {request:?}: {source}")]
     Body {
         request: String,
@@ -203,15 +216,25 @@ pub fn decode(data: &[u8]) -> Result<NativeDocument, NativeError> {
             });
         }
     }
-    if document.version == Version::V1
-        && let Some(request) = document
+    if document.version == Version::V1 {
+        if let Some(request) = document
             .requests()
             .into_iter()
             .find(|r| !r.checks.is_empty())
-    {
-        return Err(NativeError::ChecksInVersion1 {
-            request: request.name.clone(),
-        });
+        {
+            return Err(NativeError::ChecksInVersion1 {
+                request: request.name.clone(),
+            });
+        }
+        if !document.collection.saved_values.is_empty()
+            || !document.saved_globals.is_empty()
+            || document
+                .environments
+                .iter()
+                .any(|e| !e.saved_values.is_empty())
+        {
+            return Err(NativeError::SavedValuesInVersion1);
+        }
     }
     validate_templates(&document)?;
     Ok(document)

@@ -6,7 +6,8 @@ use std::collections::HashSet;
 
 use imposter_core::check::{Check, Op};
 use imposter_core::model::{
-    BodyType, FormItem, ParamItem, RequestAuth, RequestTemplate, Variables, is_method_token,
+    BodyType, FormItem, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
+    is_method_token,
 };
 use imposter_core::select::Selector;
 use imposter_core::url;
@@ -110,6 +111,7 @@ pub fn decode(data: &Value) -> Result<(NativeDocument, Vec<String>), OpenApiErro
         variables: walk.variables,
         folders,
         requests: positioned(untagged, offset),
+        saved_values: SavedValues::default(),
     };
     Ok((NativeDocument::new(collection), walk.warnings))
 }

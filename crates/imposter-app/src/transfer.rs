@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 
 use imposter_core::ids::{CollectionId, EnvironmentId, FolderId};
 use imposter_core::model::{Request, RequestTemplate};
-use imposter_core::variables::VariableContext;
+use imposter_core::variables::{Scope, VariableContext};
 use imposter_store::collections::{self, Folder};
-use imposter_store::{StoreError, StoreHandle, Tx, environments};
+use imposter_store::{StoreError, StoreHandle, Tx, environments, scopes};
 use imposter_transfer::native::{
     self, Name, NativeDocument, NativeError, TransferCollection, TransferEnvironment,
     TransferFolder, unique_name,
@@ -173,17 +173,21 @@ pub fn snapshot(db: &Tx<'_>, scope: &ExportScope) -> Result<NativeDocument, Stor
         variables: collection.variables,
         folders: root_folders,
         requests: root_requests,
+        saved_values: scopes::saved_values(db, Scope::Collection(id))?,
     });
     for environment in environments::environments(db)? {
         if scope.environments.contains(&environment.id) {
             document.environments.push(TransferEnvironment {
                 name: Name::new(environment.name).ok_or(StoreError::NotFound("collection"))?,
                 variables: environment.variables,
+                saved_values: scopes::saved_values(db, Scope::Environment(environment.id))?,
             });
         }
     }
     if scope.globals {
-        document.globals = environments::globals(db)?;
+        let (globals, saved) = scopes::read(db, Scope::Global)?;
+        document.globals = globals;
+        document.saved_globals = saved;
     }
     Ok(document)
 }
@@ -287,6 +291,14 @@ pub fn commit(db: &Tx<'_>, preview: &ImportPreview) -> Result<CollectionId, Stor
         &document.collection.description,
         &document.collection.variables,
     )?;
+    if !document.collection.saved_values.is_empty() {
+        scopes::write(
+            db,
+            Scope::Collection(collection.id),
+            &document.collection.variables,
+            &document.collection.saved_values,
+        )?;
+    }
     create_tree(
         db,
         collection.id,
@@ -297,16 +309,26 @@ pub fn commit(db: &Tx<'_>, preview: &ImportPreview) -> Result<CollectionId, Stor
     let mut environment_names = reserved_environment_names(db)?;
     for environment in &document.environments {
         let name = unique_name(environment.name.as_str(), &mut environment_names);
-        environments::create_environment(db, &name, &environment.variables)?;
+        let created = environments::create_environment(db, &name, &environment.variables)?;
+        if !environment.saved_values.is_empty() {
+            scopes::write(
+                db,
+                Scope::Environment(created.id),
+                &environment.variables,
+                &environment.saved_values,
+            )?;
+        }
     }
     if !document.globals.is_empty() {
-        let mut globals = environments::globals(db)?;
+        // Existing globals win, with their saved values; new names bring theirs.
+        let (mut globals, mut saved) = scopes::read(db, Scope::Global)?;
         for (key, value) in &document.globals {
             if !globals.contains_key(key) {
                 globals.insert(key.clone(), value.clone());
+                saved.set(key, document.saved_globals.values(key));
             }
         }
-        environments::set_globals(db, &globals)?;
+        scopes::write(db, Scope::Global, &globals, &saved)?;
     }
     Ok(collection.id)
 }

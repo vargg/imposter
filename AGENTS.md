@@ -253,9 +253,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   swapping (`scopes::choose_value`, from the inspector) is a stored write, not a mode. Lists
   live in the defining scope, so each environment has its own. The inspector does not offer a
   swap while the Variables screen has unsaved edits to that scope, so a later Save cannot
-  undo it unseen, and a clean screen on that scope reloads. Saved values are not exported:
-  native v1 is the contract shared with the Python app and rejects unknown fields; Postman has
-  no equivalent. Rejected: linked rows switched together (Paw's environment domains; the
+  undo it unseen, and a clean screen on that scope reloads. Saved values travel in native
+  version 2 with their scope; an import's new global names bring theirs and existing globals
+  keep their own, as their values do. Postman has no equivalent, so its exports leave them
+  out. Rejected: linked rows switched together (Paw's environment domains; the
   user swaps values independently), a send-time prompt (Insomnia; keeps nothing), and one
   environment per value (Postman; multiplies environments).
 - **History shows times in the system time zone** (via `jiff`, display only); records store UTC
@@ -352,7 +353,8 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Native format: version 1 (`"format": "poster"`) is read as the Python app's contract;
-  Imposter writes version 2 (`"format": "imposter"`), which adds request checks.** New exports
+  Imposter writes version 2 (`"format": "imposter"`), which adds request checks and saved
+  values.** New exports
   use `.imposter.json`; imports accept both extensions and both versions without a companion
   prompt. A document keeps its version when decoded and encoded again, so Python exports still
   round-trip byte for byte (`imposter-transfer/tests/native_golden.rs`); markers and versions

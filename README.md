@@ -33,7 +33,8 @@ Python/PyQt6 version and imports its native collection format. New exports use `
   from. Values from password fields stay masked until revealed.
 - Saved values: keep several values of one variable (user IDs, names) in its scope, then swap
   the current one from the placeholder's inspector in one click. Each environment keeps its
-  own list. Saved values are not exported; exports carry the current value.
+  own list. Native exports carry saved values with their variables; Postman exports carry the
+  current value only.
 
 **Responses**
 - Status, time, size and content type at a glance.
@@ -66,7 +67,8 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 ![History: executions, and the request as it was sent](docs/images/history.png)
 
 **Import and export**
-- Native `.imposter.json` (version 2, `"format": "imposter"`), which carries request checks.
+- Native `.imposter.json` (version 2, `"format": "imposter"`), which carries request checks
+  and saved variable values.
   `.poster.json` files from the Python version (version 1) import unchanged; the Python
   version cannot read version 2.
 - Postman Collection v2.1 import and export, validated against the official schema, with

@@ -88,6 +88,7 @@ fn companions_match_python() {
             variables: imposter_core::model::Variables::new(),
             folders: Vec::new(),
             requests: Vec::new(),
+            saved_values: imposter_core::model::SavedValues::default(),
         });
         let result = decoder.companion(&case["input"], &mut document);
         let expected = &case["expected"];
