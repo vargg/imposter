@@ -236,7 +236,11 @@ fn captures_set_variables_that_the_next_send_uses() {
         !globals(app).contains_key("missing"),
         "nothing there, nothing set"
     );
-    app.harness.get_by_label("Set user_id");
+    app.harness
+        .get_by_label_contains("201 Created · ")
+        .value()
+        .filter(|text| text.ends_with(" · set user_id"))
+        .expect("the result and the capture share the status bar");
     click(&mut app.harness, "Check results");
     app.harness.get_by_label("in Global: 7");
     app.harness

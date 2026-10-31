@@ -1026,6 +1026,21 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
 const RESPONSE_HEADER_ROW: f32 = 640.0;
 
 fn response_pane(state: &mut State, ui: &mut Ui) {
+    let now = ui.input(|i| i.time);
+    if let Some(seconds) = state.sending_for(now) {
+        let sending = format!("Sending… {seconds:.1} s");
+        if state.response.preview.is_none() {
+            ui.add_space(24.0);
+            ui.vertical_centered(|ui| {
+                ui.add(egui::Spinner::new().size(20.0));
+                ui.label(RichText::new(sending).strong());
+                ui.label(tone_text("Cancel stops it.", Tone::Muted));
+            });
+            return;
+        }
+        state.response.notice =
+            Some((format!("{sending} · showing the previous run"), Tone::Muted));
+    }
     if let Some(blocked) = state.response.blocked.clone() {
         // Only why nothing went out: an earlier response here would read as this send's.
         let target = state
@@ -1034,7 +1049,9 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
             .map_or((crate::vars::Scope::Global, "Global".to_owned()), |e| {
                 (crate::vars::Scope::Environment(e.id), e.name.clone())
             });
-        ui.horizontal(|ui| runs_picker(ui, &state.response, &mut state.actions));
+        if !state.response.runs.is_empty() {
+            ui.horizontal(|ui| runs_picker(ui, &state.response, &mut state.actions));
+        }
         blocked_card(ui, &blocked, &target.1, |action| {
             state.actions.push(match action {
                 BlockedAction::Define(name) => Action::DefineVariable(target.0, name),
@@ -1059,7 +1076,9 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
         if let Some(response) = &response_state.response {
             ui.horizontal_wrapped(|ui| status_text(ui, response));
         }
-        ui.horizontal(|ui| runs_picker(ui, response_state, actions));
+        if !response_state.runs.is_empty() {
+            ui.horizontal(|ui| runs_picker(ui, response_state, actions));
+        }
     }
     match response_body(ui, response_state, "response", false, true) {
         Some(PaneAction::Row(widgets::RowAction::AddCheck { path, value })) => actions.push(
@@ -1139,9 +1158,17 @@ fn blocked_card(
     });
 }
 
-/// A bordered block for a problem, inside the pane's padding and wrapping its text.
+/// A bordered block for a problem, inside the pane's padding and wrapping its text; it
+/// scrolls when the pane is too short for it.
 fn problem_frame(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
     ui.add_space(8.0);
+    egui::ScrollArea::vertical()
+        .id_salt("problem")
+        .auto_shrink([false, true])
+        .show(ui, |ui| problem_box(ui, contents));
+}
+
+fn problem_box(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
     egui::Frame::new()
         .stroke(egui::Stroke::new(1.0, PALETTE.error.gamma_multiply(0.6)))
         .corner_radius(8)

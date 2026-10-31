@@ -213,7 +213,7 @@ fn cancelling_a_running_request_records_a_cancelled_run() {
     click(&mut app.harness, "Send");
     accepted_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     app.harness.run_steps(1);
-    app.harness.get_by_label("Request in progress");
+    app.harness.get_by_label("Cancel stops it.");
     click(&mut app.harness, "Cancel");
     settle(&mut app.harness);
 

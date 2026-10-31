@@ -2255,17 +2255,9 @@ impl ImposterApp {
             shown_at: None,
         });
         self.state.response.blocked = None;
-        let previous = self.state.response.response.is_some();
         self.state.response.pending = true;
-        self.state.response.notice = Some((
-            if previous {
-                "Request in progress · showing previous run"
-            } else {
-                "Request in progress"
-            }
-            .into(),
-            Tone::Muted,
-        ));
+        // The pane says "Sending…" with the elapsed time while it runs.
+        self.state.response.notice = None;
     }
 
     fn executed(&mut self, generation: u64, mut result: Result<Box<Executed>, NotSent>) {
@@ -3174,7 +3166,15 @@ impl ImposterApp {
         match result {
             // Values can be secrets, so the status names the variables alone.
             Ok(()) => {
-                self.status(&format!("Set {}", names.join(", ")));
+                let set = format!("set {}", names.join(", "));
+                let (generation, screen) = (self.state.generation, self.state.screen);
+                // Beside the send's result when that still shows, so neither hides the other.
+                match &mut self.state.status {
+                    Some(line) if line.lasting == (Lasting::While { generation, screen }) => {
+                        line.text = format!("{} · {set}", line.text);
+                    }
+                    _ => self.status(&format!("Set {}", names.join(", "))),
+                }
                 let screen = &self.state.variables;
                 if screen.loaded && scopes.contains(&screen.scope) && !screen.dirty() {
                     self.load_variables(screen.scope);

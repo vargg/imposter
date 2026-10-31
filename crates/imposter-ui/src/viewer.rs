@@ -493,6 +493,15 @@ pub fn outcome_summary(response: &Response) -> (String, Tone) {
             } else {
                 format!("{} {} · {time}", response.status, response.reason)
             };
+            let failed = response
+                .checks
+                .iter()
+                .filter(|r| r.verdict == imposter_app::core::check::Verdict::Failed)
+                .count();
+            if failed > 0 {
+                let checks = if failed == 1 { "check" } else { "checks" };
+                return (format!("{line} · {failed} {checks} failed"), Tone::Error);
+            }
             (line, status.tone)
         }
         Outcome::TransportError => (
@@ -1188,6 +1197,25 @@ mod tests {
         );
         assert_eq!(failure_title("Timeout"), "Timed out");
         assert_eq!(failure_title("Something new"), "Request failed");
+        let mut checked = ok.clone();
+        let result = |verdict| imposter_app::core::check::CheckResult {
+            check: imposter_app::core::check::Check::new(
+                select::Selector::Status,
+                imposter_app::core::check::Op::Equals,
+                "200",
+            ),
+            verdict,
+            actual: None,
+        };
+        checked.checks = vec![
+            result(imposter_app::core::check::Verdict::Passed),
+            result(imposter_app::core::check::Verdict::Failed),
+        ];
+        assert_eq!(
+            outcome_summary(&checked),
+            ("200 OK · 12 ms · 1 check failed".to_owned(), Tone::Error),
+            "a failed check outweighs a good status"
+        );
         let cancelled = Response::failure(Outcome::Cancelled, "Cancelled", "Request cancelled");
         assert_eq!(outcome_summary(&cancelled).0, "Send cancelled");
     }

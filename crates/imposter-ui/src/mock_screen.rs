@@ -88,7 +88,7 @@ fn problem_lines(ui: &mut Ui, problems: &[RouteProblem], route: usize, field: Ro
         .iter()
         .filter(|p| p.route == route && p.field == field)
     {
-        ui.label(widgets::tone_text(problem.reason.as_str(), Tone::Error).small());
+        ui.label(widgets::tone_text(problem.reason.as_str(), Tone::Error));
     }
 }
 

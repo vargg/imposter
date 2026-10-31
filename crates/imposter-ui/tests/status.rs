@@ -112,7 +112,17 @@ fn a_running_send_shows_its_time() {
     settle(&mut app.harness);
     click(&mut app.harness, "Send");
     app.harness.run_steps(3);
-    app.harness.get_by_label_contains("Sending… ");
+    assert_eq!(
+        app.harness.query_all_by_label_contains("Sending… ").count(),
+        2,
+        "the status bar and the response pane"
+    );
+    assert!(
+        app.harness
+            .query_by_label("Your response will appear here")
+            .is_none(),
+        "no invitation to send while sending"
+    );
     settle(&mut app.harness);
     assert!(app.harness.query_by_label_contains("Sending… ").is_none());
     app.harness.get_by_label_contains("200 OK · ");
@@ -192,6 +202,18 @@ fn a_connection_failure_reads_plainly_fits_and_can_be_retried() {
     );
 
     assert_eq!(runs(app), 1);
+    // At the smallest window Retry is still reachable.
+    app.harness
+        .set_size(egui::Vec2::from(imposter_ui::layout::MIN_WINDOW));
+    app.harness.run_steps(3);
+    let retry = app.harness.get_by_label("Retry");
+    retry.scroll_to_me();
+    app.harness.run_steps(12);
+    let rect = app.harness.get_by_label("Retry").rect();
+    assert!(
+        app.harness.ctx.content_rect().contains_rect(rect),
+        "{rect:?}"
+    );
     click(&mut app.harness, "Retry");
     settle(&mut app.harness);
     assert_eq!(runs(app), 2, "Retry sends again");
