@@ -1151,8 +1151,10 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
             } else {
                 widgets::menu_text_button_width(ui, RUNS)
             };
-            if let Some(response) = &response_state.response {
-                status_line(ui, response, runs);
+            if let Some(response) = &response_state.response
+                && status_line(ui, response, runs)
+            {
+                response_state.tab = ResponseTab::Tests;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 runs_menu(ui, response_state, actions);
@@ -1322,40 +1324,69 @@ fn runs_menu(ui: &mut Ui, response_state: &crate::app::ResponsePane, actions: &m
     });
 }
 
-/// One line about a response: its status, then what fits of the checks, time, size and
-/// content type, dropped in reverse order of importance. The status's hover text has them
-/// all. `reserve` keeps room at the end of the row.
-fn status_line(ui: &mut Ui, response: &imposter_app::core::execution::Response, reserve: f32) {
+/// A part of a response's status line.
+enum StatusPart {
+    Pill(String, Tone),
+    Text(RichText),
+    Checks(crate::checks::Tally),
+}
+
+/// One line about a response: its status as a pill, then what fits of the checks, time,
+/// size and content type, dropped in reverse order of importance. The status's hover text
+/// has them all. `reserve` keeps room at the end of the row. Returns whether the checks were
+/// clicked, which asks for their results.
+fn status_line(
+    ui: &mut Ui,
+    response: &imposter_app::core::execution::Response,
+    reserve: f32,
+) -> bool {
     let status = viewer::status(response);
-    // (importance, text); shown in this order.
-    let mut parts: Vec<(u8, RichText)> = vec![(
-        0,
-        tone_text(status.text.as_str(), status.tone).font(crate::theme::semibold(13.0)),
-    )];
-    parts.push((
-        2,
-        tone_text(viewer::format_duration(response.elapsed), Tone::Muted),
-    ));
-    let delivered = response.outcome == imposter_app::core::execution::Outcome::Response;
-    if delivered {
-        parts.push((3, tone_text(viewer::size_text(response), Tone::Muted)));
-    }
+    // (importance, part); shown in this order.
+    let mut parts = vec![(0_u8, StatusPart::Pill(status.text.clone(), status.tone))];
     if !response.checks.is_empty() {
-        let (text, tone) = crate::checks::summary(&response.checks);
-        parts.push((1, tone_text(text, tone)));
+        let tally = crate::checks::Tally::of(&response.checks);
+        parts.push((1, StatusPart::Checks(tally)));
+    }
+    let time = viewer::format_duration(response.elapsed);
+    parts.push((2, StatusPart::Text(tone_text(time.as_str(), Tone::Muted))));
+    let delivered = response.outcome == imposter_app::core::execution::Outcome::Response;
+    let size = viewer::size_text(response);
+    if delivered {
+        parts.push((3, StatusPart::Text(tone_text(size.as_str(), Tone::Muted))));
     }
     let content_type = viewer::content_type(&response.headers);
     let kind = content_type.split(';').next().unwrap_or_default().trim();
     if delivered && !kind.is_empty() {
-        parts.push((4, tone_text(kind, Tone::Muted)));
+        parts.push((4, StatusPart::Text(tone_text(kind, Tone::Muted))));
     }
     let mut hover = vec![status.detail.clone()];
-    hover.extend(parts.iter().skip(1).map(|(_, text)| text.text().to_owned()));
+    if !response.checks.is_empty() {
+        hover.push(format!(
+            "checks: {}",
+            crate::checks::Tally::of(&response.checks).words()
+        ));
+    }
+    hover.push(time.clone());
+    if delivered {
+        hover.push(format!("{} bytes", response.body.len()));
+        hover.push(content_type.to_owned());
+    }
     let gap = 10.0;
+    let width = |ui: &Ui, part: &StatusPart| match part {
+        StatusPart::Pill(text, _) => {
+            widgets::text_width(ui, RichText::new(text).font(crate::theme::semibold(13.0)))
+                + 2.0 * f32::from(widgets::PILL_PADDING)
+        }
+        StatusPart::Text(text) => widgets::text_width(ui, text.clone()),
+        StatusPart::Checks(tally) => {
+            widgets::text_width(ui, RichText::new(checks_text(*tally)))
+                + 2.0 * ui.spacing().button_padding.x
+        }
+    };
     let available = ui.available_width() - reserve;
     let widths: Vec<f32> = parts
         .iter()
-        .map(|(_, text)| widgets::text_width(ui, text.clone()) + gap)
+        .map(|(_, part)| width(ui, part) + gap)
         .collect();
     let mut total: f32 = widths.iter().sum();
     let mut kept = vec![true; parts.len()];
@@ -1370,16 +1401,48 @@ fn status_line(ui: &mut Ui, response: &imposter_app::core::execution::Response, 
             }
         }
     }
-    for (i, (importance, text)) in parts.into_iter().enumerate() {
+    let mut open_checks = false;
+    for (i, (_, part)) in parts.into_iter().enumerate() {
         if !kept[i] {
             continue;
         }
-        let label = ui.add(egui::Label::new(text).truncate());
-        if importance == 0 {
-            label.on_hover_text(hover.join(" · "));
+        match part {
+            StatusPart::Pill(text, tone) => {
+                widgets::pill(ui, &text, tone).on_hover_text(hover.join(" · "));
+            }
+            StatusPart::Text(text) => {
+                ui.add(egui::Label::new(text).truncate());
+            }
+            StatusPart::Checks(tally) => {
+                let mut job = egui::text::LayoutJob::default();
+                for (n, (mark, tone)) in tally.marks().into_iter().enumerate() {
+                    job.append(
+                        &mark,
+                        if n == 0 { 0.0 } else { 6.0 },
+                        egui::TextFormat::simple(
+                            egui::TextStyle::Body.resolve(ui.style()),
+                            palette().tone(tone),
+                        ),
+                    );
+                }
+                let button = ui.add(egui::Button::new(job).frame_when_inactive(false));
+                name(&button, &format!("Checks: {}", tally.words()));
+                open_checks |= button.on_hover_text("Show the check results").clicked();
+            }
         }
         ui.add_space(gap - ui.spacing().item_spacing.x);
     }
+    open_checks
+}
+
+/// The checks' marks as one string, for measuring: "✓3 ✗1".
+fn checks_text(tally: crate::checks::Tally) -> String {
+    tally
+        .marks()
+        .into_iter()
+        .map(|(mark, _)| mark)
+        .collect::<Vec<_>>()
+        .join("  ")
 }
 
 /// Notice, body, headers and check results of `pane`'s response, with its status line when
@@ -1392,8 +1455,11 @@ pub fn response_body(
     status: bool,
     live: bool,
 ) -> Option<PaneAction> {
-    if status && let Some(response) = &response_state.response {
-        ui.horizontal(|ui| status_line(ui, response, 0.0));
+    if status
+        && let Some(response) = &response_state.response
+        && ui.horizontal(|ui| status_line(ui, response, 0.0)).inner
+    {
+        response_state.tab = ResponseTab::Tests;
     }
     if let Some((notice, tone)) = &response_state.notice {
         ui.label(tone_text(notice.as_str(), *tone));

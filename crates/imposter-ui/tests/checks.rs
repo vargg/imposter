@@ -119,18 +119,19 @@ fn checks_are_edited_saved_and_run_after_each_response() {
     );
 
     send(app);
-    app.harness.get_by_label("1/2 passed");
-    click(&mut app.harness, "Check results");
-    app.harness.get_by_label("Failed");
-    app.harness.get_by_label("status = 200");
+    // The marks in the status line open the results.
+    click(&mut app.harness, "Checks: 1 passed, 1 failed");
     app.harness.get_by_label("got 201");
+    let failed = app.harness.get_by_label("status = 200").rect();
+    let passed = app.harness.get_by_label("$.id > 5").rect();
+    assert!(failed.top() < passed.top(), "failures come first");
+    app.harness.get_by_label("Failed");
     app.harness.get_by_label("Passed");
-    app.harness.get_by_label("$.id > 5");
 
     // Undecidable checks say why, and the results follow the next response.
     replace(app, "Check 2 JSON path", "id");
     send(app);
-    app.harness.get_by_label("0/2 passed");
+    app.harness.get_by_label("Checks: 1 failed, 1 not checked");
     app.harness.get_by_label("Not checked");
     app.harness.get_by_label_contains("Invalid JSONPath");
 }
@@ -168,7 +169,7 @@ fn a_json_value_becomes_a_check_on_the_open_request() {
     );
 
     send(app);
-    app.harness.get_by_label("1/1 passed");
+    app.harness.get_by_label("Checks: 1 passed");
 }
 
 #[test]
@@ -182,7 +183,7 @@ fn history_keeps_the_results_of_each_run() {
     ]);
     let app = &mut fixture.app;
     send(app);
-    app.harness.get_by_label("1/1 passed");
+    app.harness.get_by_label("Checks: 1 passed");
     click(&mut app.harness, "History");
     settle(&mut app.harness);
     app.harness.get_by_label_contains("History GET").click();
@@ -190,7 +191,7 @@ fn history_keeps_the_results_of_each_run() {
     settle(&mut app.harness);
     app.harness.state_mut().state.history.tab = HistoryTab::Response;
     app.harness.run_steps(2);
-    app.harness.get_by_label("1/1 passed");
+    app.harness.get_by_label("Checks: 1 passed");
     click(&mut app.harness, "Check results");
     app.harness.get_by_label("status = 2xx");
     app.harness.get_by_label("got 201");

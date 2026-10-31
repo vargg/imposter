@@ -165,6 +165,8 @@ numbers, so both are excluded. Each logical change is its own commit.
       appear on;
     - control edges (`field_border`, used for fields and buttons) and the selection marker
       are ≥3:1, per WCAG 1.4.11;
+    - tinted fills (status pills at 12%, the red tint of unknown variables and failed
+      checks at 12%) keep their text ≥4.5:1; 18% red fell to 4.08:1 in light;
     - every syntax color stays clearly apart from the accent (RGB distance ≥80), because
       `{{variables}}` inside a body are marked in the accent; light strings are green.
   - **Light accent:** the light theme's accent is a darker orange (#b83b0a), because
@@ -364,9 +366,11 @@ numbers, so both are excluded. Each logical change is its own commit.
     always stays, in place of the last one that fitted. Tabs come before tools.
   - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
     first, then Wrap, the filter, Find and Copy.
-  - **The response's status** is one line ("200 OK", checks, "12 ms", "103 B", content
-    type) that drops its least important parts first; the status's hover text has them all.
-    Earlier runs are under a "Runs" menu at its end.
+  - **The response's status** is one line that drops its least important parts first: the
+    status as a pill ("200 OK"), the checks as "✓3 ✗1 ?1" (a click opens their results;
+    screen readers hear "Checks: 3 passed, 1 failed"), "12 ms", "103 B", the content type.
+    The pill's hover text has them all; earlier runs are under a "Runs" menu at its end.
+    Check results list failures first, on a red tint.
 
   Why: at 720×480 the request tabs took three rows and the response header four before the
   body began (the review's #12, #13). Checked by `imposter-ui/tests/fit.rs`.

@@ -328,20 +328,63 @@ fn captures_table(ui: &mut Ui, captures: &mut Vec<Capture>) -> bool {
     changed
 }
 
-/// "3/4 passed", toned by the worst result: a failure, then an undecided check.
-pub fn summary(results: &[CheckResult]) -> (String, Tone) {
-    let passed = results
-        .iter()
-        .filter(|r| r.verdict == Verdict::Passed)
-        .count();
-    let tone = if results.iter().any(|r| r.verdict == Verdict::Failed) {
-        Tone::Error
-    } else if passed < results.len() {
-        Tone::Warning
-    } else {
-        Tone::Ok
-    };
-    (format!("{passed}/{} passed", results.len()), tone)
+/// What a response's checks came to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Tally {
+    pub passed: usize,
+    pub failed: usize,
+    pub unchecked: usize,
+}
+
+impl Tally {
+    pub fn of(results: &[CheckResult]) -> Self {
+        results.iter().fold(Self::default(), |mut tally, result| {
+            match result.verdict {
+                Verdict::Passed => tally.passed += 1,
+                Verdict::Failed => tally.failed += 1,
+                Verdict::Unchecked(_) => tally.unchecked += 1,
+            }
+            tally
+        })
+    }
+
+    /// "✓3", "✗1", "?1" (not checked), each in its tone; counts of zero are left out.
+    pub fn marks(self) -> Vec<(String, Tone)> {
+        [
+            ('✓', self.passed, Tone::Ok),
+            ('✗', self.failed, Tone::Error),
+            ('?', self.unchecked, Tone::Warning),
+        ]
+        .into_iter()
+        .filter(|(_, count, _)| *count > 0)
+        .map(|(mark, count, tone)| (format!("{mark}{count}"), tone))
+        .collect()
+    }
+
+    /// "3 passed, 1 failed, 1 not checked", for hover text and screen readers.
+    pub fn words(self) -> String {
+        [
+            (self.passed, "passed"),
+            (self.failed, "failed"),
+            (self.unchecked, "not checked"),
+        ]
+        .into_iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, word)| format!("{count} {word}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+    }
+
+    /// The worst result's tone: a failure, then an undecided check.
+    pub fn tone(self) -> Tone {
+        if self.failed > 0 {
+            Tone::Error
+        } else if self.unchecked > 0 {
+            Tone::Warning
+        } else {
+            Tone::Ok
+        }
+    }
 }
 
 fn verdict_text(verdict: &Verdict) -> (&'static str, Tone) {
@@ -356,25 +399,45 @@ fn verdict_text(verdict: &Verdict) -> (&'static str, Tone) {
 const SHOWN_VALUE: usize = 80;
 
 /// The results of a response's checks, one line each with what was read or why it could not
-/// be decided, then what its captures took. The checks' summary is the status line's badge,
-/// so it is not repeated here.
+/// be decided, failures first and tinted, then what its captures took. The checks' tally is
+/// in the status line, so it is not repeated here.
 pub fn results(ui: &mut Ui, results: &[CheckResult], captured: &[Captured]) {
     egui::ScrollArea::vertical()
         .id_salt("check results")
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            for result in results {
-                ui.horizontal_wrapped(|ui| {
-                    let (word, tone) = verdict_text(&result.verdict);
-                    ui.label(tone_text(word, tone).strong());
-                    ui.label(result.check.describe());
-                    let detail = match (&result.verdict, &result.actual) {
-                        (Verdict::Unchecked(reason), _) => reason.clone(),
-                        (_, Some(actual)) => format!("got {actual}"),
-                        (_, None) => "nothing there".to_owned(),
-                    };
-                    ui.label(tone_text(detail, Tone::Muted));
-                });
+            // Failures first, then undecided checks: what needs attention leads.
+            let mut ordered: Vec<&CheckResult> = results.iter().collect();
+            ordered.sort_by_key(|result| match result.verdict {
+                Verdict::Failed => 0,
+                Verdict::Unchecked(_) => 1,
+                Verdict::Passed => 2,
+            });
+            for result in ordered {
+                let failed = result.verdict == Verdict::Failed;
+                let tint = if failed {
+                    widgets::error_tint()
+                } else {
+                    egui::Color32::TRANSPARENT
+                };
+                egui::Frame::new()
+                    .fill(tint)
+                    .corner_radius(4)
+                    .inner_margin(egui::Margin::symmetric(4, 2))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal_wrapped(|ui| {
+                            let (word, tone) = verdict_text(&result.verdict);
+                            ui.label(tone_text(word, tone).strong());
+                            ui.label(result.check.describe());
+                            let detail = match (&result.verdict, &result.actual) {
+                                (Verdict::Unchecked(reason), _) => reason.clone(),
+                                (_, Some(actual)) => format!("got {actual}"),
+                                (_, None) => "nothing there".to_owned(),
+                            };
+                            ui.label(tone_text(detail, Tone::Muted));
+                        });
+                    });
             }
             if !captured.is_empty() {
                 if !results.is_empty() {
@@ -423,22 +486,26 @@ mod tests {
     }
 
     #[test]
-    fn summaries_count_passes_and_take_the_worst_tone() {
+    fn tallies_count_each_verdict_and_take_the_worst_tone() {
         let passed = result(Verdict::Passed);
         let failed = result(Verdict::Failed);
         let unchecked = result(Verdict::Unchecked("why".into()));
+        let one = Tally::of(std::slice::from_ref(&passed));
+        assert_eq!(one.marks(), [("✓1".to_owned(), Tone::Ok)]);
+        assert_eq!((one.words().as_str(), one.tone()), ("1 passed", Tone::Ok));
+        let undecided = Tally::of(&[passed.clone(), unchecked.clone()]);
+        assert_eq!(undecided.tone(), Tone::Warning);
+        let all = Tally::of(&[unchecked, failed, passed.clone(), passed]);
         assert_eq!(
-            summary(std::slice::from_ref(&passed)),
-            ("1/1 passed".into(), Tone::Ok)
+            all.marks(),
+            [
+                ("✓2".to_owned(), Tone::Ok),
+                ("✗1".to_owned(), Tone::Error),
+                ("?1".to_owned(), Tone::Warning)
+            ]
         );
-        assert_eq!(
-            summary(&[passed.clone(), unchecked.clone()]),
-            ("1/2 passed".into(), Tone::Warning)
-        );
-        assert_eq!(
-            summary(&[unchecked, failed, passed]),
-            ("1/3 passed".into(), Tone::Error)
-        );
+        assert_eq!(all.words(), "2 passed, 1 failed, 1 not checked");
+        assert_eq!(all.tone(), Tone::Error);
     }
 
     #[test]

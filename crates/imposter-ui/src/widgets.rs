@@ -374,16 +374,44 @@ pub fn variable_job(
             format.color = color;
             format.underline = egui::Stroke::new(1.0, color);
             if !defined {
-                format.background = unknown_tint();
+                format.background = error_tint();
             }
         });
     }
     job
 }
 
-/// The background of an unknown `{{variable}}`.
-pub fn unknown_tint() -> Color32 {
-    palette().error.gamma_multiply(0.18)
+/// The horizontal padding inside a [`pill`].
+pub const PILL_PADDING: i8 = 7;
+/// How strongly a pill is tinted with its tone.
+pub const PILL_TINT: f32 = 0.12;
+
+/// A small rounded label tinted with its tone, for a status: "200 OK".
+pub fn pill(ui: &mut Ui, text: &str, tone: Tone) -> egui::Response {
+    let color = palette().tone(tone);
+    egui::Frame::new()
+        .fill(color.gamma_multiply(PILL_TINT))
+        .corner_radius(10)
+        .inner_margin(egui::Margin::symmetric(PILL_PADDING, 1))
+        .show(ui, |ui| {
+            ui.add(
+                egui::Label::new(
+                    RichText::new(text)
+                        .color(color)
+                        .font(crate::theme::semibold(13.0)),
+                )
+                .extend(),
+            )
+        })
+        .inner
+}
+
+/// How strongly [`error_tint`] is tinted.
+pub const ERROR_TINT: f32 = 0.12;
+
+/// A faint red background: unknown `{{variables}}`, failed checks.
+pub fn error_tint() -> Color32 {
+    palette().error.gamma_multiply(ERROR_TINT)
 }
 
 /// A text field that marks `{{variables}}`, suggests names after `{{` and opens the inspector
@@ -1807,7 +1835,7 @@ mod tests {
             Some(Color32::TRANSPARENT),
             "generated, so known"
         );
-        assert_eq!(background(12), Some(unknown_tint()));
+        assert_eq!(background(12), Some(error_tint()));
     }
 
     #[test]

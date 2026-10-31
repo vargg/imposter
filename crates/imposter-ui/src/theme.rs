@@ -530,6 +530,50 @@ mod tests {
         }
     }
 
+    /// `color` at `amount` over `under`, as a tinted fill looks.
+    fn tinted(color: Color32, amount: f32, under: Color32) -> Color32 {
+        let mix = |top: u8, bottom: u8| {
+            let blended = f32::from(bottom) * (1.0 - amount) + f32::from(top) * amount;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            // between two channel values, so within 0..=255
+            let channel = blended.round() as u8;
+            channel
+        };
+        Color32::from_rgb(
+            mix(color.r(), under.r()),
+            mix(color.g(), under.g()),
+            mix(color.b(), under.b()),
+        )
+    }
+
+    /// A pill is its tone's text on the tone at `PILL_TINT` over the pane's surface.
+    #[test]
+    fn pills_are_readable_in_both_themes() {
+        for (name, palette) in BOTH {
+            for tone in [Tone::Ok, Tone::Warning, Tone::Error] {
+                let color = palette.tone(tone);
+                let fill = tinted(color, crate::widgets::PILL_TINT, palette.surface);
+                let ratio = contrast(color, fill);
+                assert!(ratio >= AA, "{name} {tone:?} pill: {ratio:.2}");
+            }
+        }
+    }
+
+    /// Unknown variables (red on the tint, in fields) and failed checks (red and plain text
+    /// on the tint, in a pane) stay readable.
+    #[test]
+    fn text_on_the_error_tint_is_readable_in_both_themes() {
+        for (name, palette) in BOTH {
+            for under in [palette.input, palette.surface] {
+                let fill = tinted(palette.error, crate::widgets::ERROR_TINT, under);
+                for text in [palette.error, palette.text] {
+                    let ratio = contrast(text, fill);
+                    assert!(ratio >= AA, "{name} {text:?} on {fill:?}: {ratio:.2}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn text_on_the_send_button_is_readable_in_both_states() {
         for (name, palette) in BOTH {
