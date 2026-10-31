@@ -936,6 +936,7 @@ pub struct ImposterApp {
 
 impl ImposterApp {
     pub fn new(ctx: &egui::Context, store: Store) -> std::io::Result<Self> {
+        ctx.set_fonts(theme::fonts());
         theme::apply(ctx, theme::ThemeChoice::default());
         let repaint = ctx.clone();
         let bridge = Bridge::new(move || repaint.request_repaint())?;

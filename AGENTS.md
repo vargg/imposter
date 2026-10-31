@@ -167,6 +167,18 @@ numbers, so both are excluded. Each logical change is its own commit.
       are ≥3:1, per WCAG 1.4.11.
   - **Light accent:** the light theme's accent is a darker orange (#b83b0a), because
     #ff6c37 on white is below 3:1.
+- **Bundled fonts: Inter (Regular, SemiBold) for the interface, JetBrains Mono for data.**
+  - **Files:** in `crates/imposter-ui/assets/fonts`, with their SIL OFL licenses (shipped in
+    every package as resources) and pinned hashes; egui's own fonts stay as fallbacks.
+  - **Type scale:** 12 meta, 13 interface, 15 SemiBold titles (`theme::semibold`).
+    Single-line variable fields (URL, headers, paths, values) are monospace.
+  - **Size:** together the fonts add about 1.1 MiB to the release binary; Inter Medium was
+    left out for that reason.
+  - **Coverage:** `theme.rs` tests check that the fonts cover every non-ASCII character in
+    the UI, domain and service string literals.
+
+  Why: stock egui fonts gave every text the same look and size, and lacked glyphs such as
+  "●".
 - **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
   256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
   dependency.

@@ -249,6 +249,61 @@ pub fn visuals(palette: &Palette, theme: Theme) -> Visuals {
     visuals
 }
 
+/// The family of the semibold weight, for titles and the active tab.
+pub const SEMIBOLD: &str = "semibold";
+
+/// A semibold font of `size`.
+pub fn semibold(size: f32) -> egui::FontId {
+    egui::FontId::new(size, egui::FontFamily::Name(SEMIBOLD.into()))
+}
+
+/// `Inter` for the interface and `JetBrains Mono` for data (`assets/fonts`), with egui's own
+/// fonts kept as fallbacks for anything they lack.
+pub fn fonts() -> egui::FontDefinitions {
+    use egui::{FontData, FontFamily};
+    use std::sync::Arc;
+    let mut fonts = egui::FontDefinitions::default();
+    for (name, data) in [
+        (
+            "Inter",
+            &include_bytes!("../assets/fonts/Inter-Regular.ttf")[..],
+        ),
+        (
+            "Inter-SemiBold",
+            &include_bytes!("../assets/fonts/Inter-SemiBold.ttf")[..],
+        ),
+        (
+            "JetBrainsMono",
+            &include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")[..],
+        ),
+    ] {
+        fonts
+            .font_data
+            .insert(name.to_owned(), Arc::new(FontData::from_static(data)));
+    }
+    let fallbacks = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    fonts
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .insert(0, "Inter".to_owned());
+    fonts
+        .families
+        .entry(FontFamily::Monospace)
+        .or_default()
+        .insert(0, "JetBrainsMono".to_owned());
+    let mut semibold = vec!["Inter-SemiBold".to_owned(), "Inter".to_owned()];
+    semibold.extend(fallbacks);
+    fonts
+        .families
+        .insert(FontFamily::Name(SEMIBOLD.into()), semibold);
+    fonts
+}
+
 /// Install both themes and choose `choice`. Each frame then draws in one of them
 /// ([`begin_frame`]).
 pub fn apply(ctx: &egui::Context, choice: ThemeChoice) {
@@ -259,12 +314,16 @@ pub fn apply(ctx: &egui::Context, choice: ThemeChoice) {
             style.spacing.button_padding = egui::vec2(10.0, 5.0);
             style.spacing.interact_size.y = 28.0;
             style.spacing.window_margin = egui::Margin::same(16);
-            style
-                .text_styles
-                .insert(egui::TextStyle::Small, egui::FontId::proportional(11.0));
-            style
-                .text_styles
-                .insert(egui::TextStyle::Heading, egui::FontId::proportional(18.0));
+            // The type scale: 12 for meta, 13 for the interface, 15 semibold for titles.
+            for (text_style, font) in [
+                (egui::TextStyle::Small, egui::FontId::proportional(12.0)),
+                (egui::TextStyle::Body, egui::FontId::proportional(13.0)),
+                (egui::TextStyle::Button, egui::FontId::proportional(13.0)),
+                (egui::TextStyle::Monospace, egui::FontId::monospace(12.5)),
+                (egui::TextStyle::Heading, semibold(15.0)),
+            ] {
+                style.text_styles.insert(text_style, font);
+            }
         });
     }
     ctx.options_mut(|options| options.theme_preference = choice.preference());
@@ -435,6 +494,58 @@ mod tests {
         apply(&ctx, ThemeChoice::System);
         assert_eq!(ctx.options(|o| o.theme_preference), ThemePreference::System);
         CURRENT.with(|current| current.set(&DARK));
+    }
+
+    /// Every non-ASCII character inside a string literal of the sources whose text the UI
+    /// shows: its own, the domain's (operators, errors) and the services'.
+    #[allow(clippy::disallowed_methods)] // a test reading sources, not the UI thread
+    fn interface_characters() -> std::collections::BTreeSet<char> {
+        let mut found = std::collections::BTreeSet::new();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let dirs = ["src", "../imposter-core/src", "../imposter-app/src"];
+        for entry in dirs
+            .iter()
+            .flat_map(|dir| std::fs::read_dir(root.join(dir)).unwrap())
+        {
+            let source = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+            for line in source.lines().filter(|l| !l.trim_start().starts_with("//")) {
+                // Odd-numbered pieces between quotes are inside literals.
+                for literal in line.split('"').skip(1).step_by(2) {
+                    found.extend(literal.chars().filter(|c| !c.is_ascii()));
+                }
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn the_bundled_fonts_cover_every_character_the_interface_writes() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(fonts());
+        // One frame loads the fonts; its texture updates are not drawn anywhere.
+        let mut output = ctx.run_ui(egui::RawInput::default(), |_| {});
+        output.textures_delta.clear();
+        let characters = interface_characters();
+        assert!(
+            characters.contains(&'…') && characters.contains(&'≠'),
+            "{characters:?}"
+        );
+        for font in [
+            egui::FontId::proportional(13.0),
+            egui::FontId::monospace(12.5),
+            semibold(15.0),
+        ] {
+            let missing: Vec<char> = characters
+                .iter()
+                .copied()
+                .filter(|c| !ctx.fonts_mut(|f| f.has_glyph(&font, *c)))
+                .collect();
+            assert_eq!(missing, Vec::<char>::new(), "{font:?}");
+        }
+        assert!(
+            ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::proportional(13.0), '●')),
+            "Inter adds glyphs the old font lacked"
+        );
     }
 
     #[test]

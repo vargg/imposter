@@ -214,6 +214,12 @@ copies the personal legacy profile. An empty override is an error. Update existi
 Logs go to stderr; `IMPOSTER_LOG` sets the level (for example `IMPOSTER_LOG=debug`). Imposter never
 logs credentials, tokens, or request and response bodies.
 
+## Credits
+
+The interface is set in [Inter](https://rsms.me/inter/) and data in
+[JetBrains Mono](https://www.jetbrains.com/lp/mono/), both under the SIL Open Font License 1.1;
+the licenses ship in `crates/imposter-ui/assets/fonts` and inside every package.
+
 ## Development
 
 The root Makefile wraps the existing Cargo commands and scripts. It requires GNU Make

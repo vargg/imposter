@@ -208,7 +208,8 @@ fn var_edit_with(
     let snapshot = vars.snapshot;
     let (font, body_json) = match multiline {
         Some((json, _)) => (FontId::monospace(13.0), json),
-        None => (egui::TextStyle::Body.resolve(ui.style()), false),
+        // Fields with variables hold data (URLs, header values, paths): set in monospace.
+        None => (egui::TextStyle::Monospace.resolve(ui.style()), false),
     };
     let single_line = multiline.is_none();
     let mut layouter = |ui: &Ui, buffer: &dyn egui::TextBuffer, wrap: f32| {
