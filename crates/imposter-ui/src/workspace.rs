@@ -1546,6 +1546,7 @@ pub fn response_body(
         filter,
         body_view,
         headers_view,
+        headers_raw,
         tab,
         ..
     } = response_state;
@@ -1605,7 +1606,24 @@ pub fn response_body(
             }),
             filterable.then_some((filter.open, &mut toggle_filter)),
         ),
-        ResponseTab::Headers => widgets::viewer_tools(ui, headers_view, headers, copy_headers),
+        ResponseTab::Headers => {
+            if ui
+                .add(egui::Button::selectable(*headers_raw, "Raw").stroke(egui::Stroke::NONE))
+                .on_hover_text("Show the headers as text, with Find and Wrap")
+                .clicked()
+            {
+                *headers_raw = !*headers_raw;
+            }
+            if *headers_raw {
+                widgets::viewer_tools(ui, headers_view, headers, copy_headers);
+            } else {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if icons::button(ui, Icon::Copy, copy_headers, false).clicked() {
+                        ui.ctx().copy_text(headers.clone());
+                    }
+                });
+            }
+        }
         ResponseTab::Tests => {}
     };
     let results = response.as_ref().map_or(&[][..], |r| r.checks.as_slice());
@@ -1672,6 +1690,11 @@ pub fn response_body(
                 add_check: live,
             }),
         ),
+        ResponseTab::Headers if !*headers_raw => {
+            let list = response.as_ref().map_or(&[][..], |r| r.headers.as_slice());
+            widgets::headers_table(ui, id, list);
+            None
+        }
         ResponseTab::Headers => widgets::code_viewer(
             ui,
             &format!("{id} headers"),

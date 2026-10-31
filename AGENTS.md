@@ -144,6 +144,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   "Body cut at … when captured") and offers Save body… (written atomically on the bridge,
   `transfer::write_file`) and Copy full body, in Requests and History. Why: the limit keeps
   the viewer fast; the old "truncated or preview limited" left no way to the rest.
+- **Response headers are a table by default** (`widgets::headers_table`): names muted,
+  values selectable and wrapping at words, a copy button on the row under the pointer.
+  "Raw" switches to the text viewer with Find and Wrap. Why: a raw block broke values
+  mid-word in a narrow pane (the review's #13, #27).
 - **JSON navigation keeps the virtualized rows.** Folding hides row ranges computed from an
   outline of the formatted text (`viewer::Outline`: path, depth and closing line for every
   line), so nothing is laid out that is not visible. A row with a fold marker is exactly as

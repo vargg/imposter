@@ -1572,6 +1572,56 @@ pub fn viewer_tools_with(
     }
 }
 
+/// Headers as a table: names muted, values selectable and wrapping. The row under the
+/// pointer offers a copy of `name: value`; `id` names its scroll area.
+pub fn headers_table(ui: &mut Ui, id: &str, headers: &[(String, String)]) {
+    egui::ScrollArea::vertical()
+        .id_salt((id, "headers table"))
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            let gap = ui.spacing().item_spacing.x;
+            let width = ui.available_width();
+            let names = (width * 0.35).clamp(90.0, 240.0);
+            let copy = icons::size();
+            let values = (width - names - copy - 2.0 * gap).max(60.0);
+            let pointer = ui.input(|i| i.pointer.hover_pos());
+            for (name, value) in headers {
+                ui.horizontal_top(|ui| {
+                    let top = ui.cursor().top();
+                    ui.allocate_ui(egui::vec2(names, 0.0), |ui| {
+                        ui.set_width(names);
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(name).monospace().color(palette().text_muted),
+                            )
+                            .wrap(),
+                        );
+                    });
+                    ui.allocate_ui(egui::vec2(values, 0.0), |ui| {
+                        ui.set_width(values);
+                        ui.add(
+                            egui::Label::new(RichText::new(value).monospace())
+                                .selectable(true)
+                                .wrap(),
+                        );
+                    });
+                    let bottom = ui.min_rect().bottom();
+                    let hovered = pointer.is_some_and(|p| {
+                        ui.max_rect().x_range().contains(p.x) && (top..=bottom).contains(&p.y)
+                    });
+                    if hovered {
+                        let label = format!("Copy {name}");
+                        if icons::button(ui, Icon::Copy, &label, false).clicked() {
+                            ui.ctx().copy_text(format!("{name}: {value}"));
+                        }
+                    } else {
+                        ui.allocate_space(egui::vec2(copy, copy));
+                    }
+                });
+            }
+        });
+}
+
 /// Folding and the row menu of a viewer showing formatted JSON.
 pub struct Folding<'a> {
     pub outline: &'a viewer::Outline,

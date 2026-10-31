@@ -638,6 +638,8 @@ pub struct ResponsePane {
     pub tab: ResponseTab,
     pub body_view: ViewerState,
     pub headers_view: ViewerState,
+    /// Headers as the raw text the viewer shows, instead of a table.
+    pub headers_raw: bool,
     /// The formatted preview of `response`, computed once per response.
     pub preview: Option<(crate::viewer::Preview, String)>,
     /// Folded lines of the formatted body.
@@ -717,6 +719,7 @@ impl Default for ResponsePane {
             tab: ResponseTab::Body,
             body_view: ViewerState::new(),
             headers_view: ViewerState::new(),
+            headers_raw: false,
             preview: None,
             body_folds: BTreeSet::new(),
             blocked: None,

@@ -359,6 +359,8 @@ fn response_tools_share_the_tab_row_with_copy_at_the_right() {
             body: b"response body".to_vec(),
             ..Default::default()
         });
+    // The viewer's tools belong to the raw text of the headers, not their table.
+    app.harness.state_mut().state.response.headers_raw = true;
     // The smallest window stacks the panes, as a user would there.
     for (size, orientation) in [
         (egui::Vec2::from(MIN_WINDOW), Orientation::Stacked),

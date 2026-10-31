@@ -270,3 +270,51 @@ fn a_body_larger_than_the_preview_can_be_saved_whole() {
     );
     app.harness.get_by_label("Saved the body to saved.json");
 }
+
+#[test]
+fn headers_show_as_a_table_with_a_copy_per_row_and_raw_on_request() {
+    let mut fixture = sent("application/json", BODY);
+    let app = &mut fixture.app;
+    app.harness
+        .query_all_by_role_and_label(egui::accesskit::Role::Button, "Headers")
+        .max_by(|a, b| a.rect().left().total_cmp(&b.rect().left()))
+        .unwrap()
+        .click();
+    app.harness.run_steps(2);
+    let name = app.harness.get_by_label("content-type").rect();
+    // The status line shows the content type too; the table's is below it.
+    let value = app
+        .harness
+        .query_all_by_label("application/json")
+        .map(|node| node.rect())
+        .max_by(|a, b| a.top().total_cmp(&b.top()))
+        .unwrap();
+    assert!(
+        (name.top() - value.top()).abs() < 1.0 && name.right() < value.left(),
+        "one row, two columns"
+    );
+    app.harness.hover_at(value.center());
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Copy content-type").click();
+    let mut copied = None;
+    for _ in 0..3 {
+        app.harness.step();
+        copied = copied.or_else(|| {
+            app.harness
+                .output()
+                .platform_output
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    egui::OutputCommand::CopyText(text) => Some(text.clone()),
+                    _ => None,
+                })
+        });
+    }
+    assert_eq!(copied.as_deref(), Some("content-type: application/json"));
+
+    click(&mut app.harness, "Raw");
+    app.harness
+        .get_by_label_contains("content-type: application/json");
+    app.harness.get_by_label("Find");
+}
