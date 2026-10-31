@@ -76,6 +76,20 @@ fn problems(app: &support::App, state: &str) -> Vec<String> {
             ));
         }
     }
+    // Outlined frames (panes, groups, cards) must fit too; egui clips them silently.
+    for clipped in &app.harness.output().shapes {
+        if let egui::Shape::Rect(frame) = &clipped.shape
+            && frame.stroke.width > 0.0
+            && frame.stroke.color != egui::Color32::TRANSPARENT
+            && (frame.rect.left() < window.left() - 0.5
+                || frame.rect.right() > window.right() + 0.5)
+        {
+            found.push(format!(
+                "{state}: a frame runs past the window: {:?}",
+                frame.rect
+            ));
+        }
+    }
     if app.harness.state().state.dialog.is_some() {
         return found;
     }

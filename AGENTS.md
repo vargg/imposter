@@ -291,7 +291,8 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **The layout lint gates every screen** (`imposter-ui/tests/layout.rs`).
   - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
     walks the screens, a sent response, a History run and the dialogs.
-  - **Widths:** no visible control may run past the window's sides.
+  - **Widths:** no visible control, and no outlined frame (panes, groups, cards, read
+    from the painted shapes), may run past the window's sides.
   - **Overlap:** no two buttons may overlap. This is checked only without a dialog open,
     since a dialog is a layer above.
   - **Clipping:** egui does not tell AccessKit about clipping, so controls crossing the
@@ -300,7 +301,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Upkeep:** new screens and states are added to its walk.
 
   Why: horizontal overflow and crowded rows only show at some sizes; the lint found
-  History's toolbar overlapping at 720 points in Comfortable.
+  History's toolbar overlapping at 720 points in Comfortable, and Settings groups 56
+  points past the window (`set_max_width` widens a narrower `Ui`).
 - **UI tests drive the real app through AccessKit** (`egui_kittest`): every widget a test or a
   screen reader needs has an accessible name, set with `widgets::name` when no visible label
   exists. Only characters present in egui's bundled fonts are used; kittest fails on a missing

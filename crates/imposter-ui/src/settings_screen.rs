@@ -124,7 +124,7 @@ fn text(ui: &mut Ui, value: &mut String, hint: &str, password: bool) -> egui::Re
         egui::TextEdit::singleline(value)
             .hint_text(hint)
             .password(password)
-            .desired_width(360.0),
+            .desired_width(ui.available_width().min(360.0)),
     )
 }
 
@@ -170,7 +170,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            ui.set_max_width(760.0);
+            // At most 760 wide, never wider than the window: `set_max_width` would widen.
+            ui.set_max_width(ui.available_width().min(760.0));
             // Appearance applies at once and is remembered apart from Save: it is how this
             // app looks, not an application setting.
             let mut appearance = state.appearance;
