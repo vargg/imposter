@@ -66,13 +66,15 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                         Screen::Mocks => state.mocks.dirty(),
                         Screen::Requests | Screen::History => false,
                     };
-                    let text = if dirty {
-                        format!("{label} •")
-                    } else {
-                        label.to_owned()
-                    };
-                    let tab = widgets::tab(ui, state.screen == screen, &text);
-                    name(&tab, label);
+                    // In the tone of the "Unsaved" state, so it differs from the green dot
+                    // of a request tab that holds something.
+                    let unsaved = dirty.then(|| widgets::TabBadge {
+                        mark: widgets::Mark::Dot,
+                        tone: Tone::Warning,
+                        description: "Unsaved changes".to_owned(),
+                    });
+                    let tab =
+                        widgets::tab_with(ui, state.screen == screen, label, unsaved.as_ref());
                     if tab.clicked() {
                         state.actions.push(Action::Screen(screen));
                     }

@@ -124,6 +124,36 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
     let mut app = opened(0);
     click(&mut app.harness, "Mock route 1");
     type_into(&mut app.harness, "Mock response body", "-kept");
+    // The screen's tab says so, in words for screen readers.
+    let marked = |app: &support::App| {
+        app.harness
+            .get_by_label("Mocks")
+            .accesskit_node()
+            .description()
+    };
+    assert_eq!(marked(&app).as_deref(), Some("Unsaved changes"));
+    // Amber, as the word "Unsaved": a request tab's green dot means it holds something.
+    let tab = app.harness.get_by_label("Mocks").rect();
+    let dots: Vec<egui::Color32> = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) if tab.contains(text.pos) => Some(text.galley.job.clone()),
+            _ => None,
+        })
+        .flat_map(|job| {
+            job.sections
+                .iter()
+                .filter(|section| {
+                    &job.text[section.byte_range.start.0..section.byte_range.end.0] == "●"
+                })
+                .map(|section| section.format.color)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(dots, [imposter_ui::theme::palette().warning]);
     click(&mut app.harness, "Requests");
     click(&mut app.harness, "Mocks");
     assert_eq!(
@@ -150,6 +180,7 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
     click(&mut app.harness, "Discard");
     settle(&mut app.harness);
     assert_eq!(app.harness.state().state.mocks.form.routes[0].body, "first");
+    assert_eq!(marked(&app), None);
 }
 
 #[test]

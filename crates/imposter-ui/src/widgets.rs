@@ -174,7 +174,12 @@ pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
 
 /// A [`tab`] with a badge after its name. Its accessible name stays the label; the badge
 /// is its description.
-fn tab_with(ui: &mut Ui, selected: bool, label: &str, badge: Option<&TabBadge>) -> egui::Response {
+pub fn tab_with(
+    ui: &mut Ui,
+    selected: bool,
+    label: &str,
+    badge: Option<&TabBadge>,
+) -> egui::Response {
     // Framed, so it keeps the button padding, but with nothing drawn: `frame(false)` drops
     // the padding too and runs the labels together.
     let response = ui.add(

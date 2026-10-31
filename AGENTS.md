@@ -401,7 +401,9 @@ numbers, so both are excluded. Each logical change is its own commit.
     tab's description, so its name stays the label. "More" shows how many tabs it hides
     ("+2", so it does not read as the tools' "⋯" beside it; dropped only when even the
     selected tab leaves no room) and the dot when one of them holds something, and names
-    those tabs in its description.
+    those tabs in its description. A screen with unsaved edits (Variables, Settings,
+    Mocks) has the same dot in the amber of the word "Unsaved", described as "Unsaved
+    changes": one muted "•" for both meant two things a few centimetres apart (Q16).
   - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
     first, then Wrap, the filter, Find and Copy.
   - **The response's status** is one line whose parts show in order of importance while
