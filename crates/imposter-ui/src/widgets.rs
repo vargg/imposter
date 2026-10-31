@@ -69,13 +69,27 @@ pub fn menu_text_button_width(ui: &Ui, text: &str) -> f32 {
 }
 
 /// A tab: muted text, or semibold accent text with an underline when selected; no fill.
+/// Hovering previews the underline in a neutral color; keyboard focus outlines the tab.
 pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
     let response = ui.add(
         egui::Button::new(tab_text(label, selected))
-            .frame_when_inactive(false)
+            .frame(false)
             .min_size(egui::vec2(0.0, tab_height())),
     );
-    if selected {
+    let underline = if selected {
+        Some(palette().accent)
+    } else if response.hovered() {
+        Some(palette().text_muted)
+    } else {
+        None
+    };
+    tab_marks(ui, &response, underline);
+    response
+}
+
+/// A tab's underline in `color`, under its text, and the outline of keyboard focus.
+fn tab_marks(ui: &Ui, response: &egui::Response, underline: Option<Color32>) {
+    if let Some(color) = underline {
         // Under the text, which sits inside the button's padding.
         let rect = response
             .rect
@@ -85,10 +99,17 @@ pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
                 rect.left_bottom() + egui::vec2(0.0, -1.0),
                 rect.right_bottom() + egui::vec2(0.0, -1.0),
             ],
-            egui::Stroke::new(2.0, palette().accent),
+            egui::Stroke::new(2.0, color),
         );
     }
-    response
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect,
+            4.0,
+            ui.visuals().selection.stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
 }
 
 /// One tab of a [`tab_strip`].
@@ -166,16 +187,6 @@ pub fn menu_text_button(ui: &mut Ui, text: &str, label: &str) -> egui::Response 
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
-        if response.hovered() || response.has_focus() {
-            let visuals = ui.style().interact(&response);
-            painter.rect(
-                rect,
-                visuals.corner_radius,
-                visuals.weak_bg_fill,
-                visuals.bg_stroke,
-                egui::StrokeKind::Inside,
-            );
-        }
         let color = palette().text_muted;
         let text = egui::pos2(rect.left() + pad, rect.center().y - galley.size().y / 2.0);
         painter.galley(text, galley, color);
@@ -190,6 +201,11 @@ pub fn menu_text_button(ui: &mut Ui, text: &str, label: &str) -> egui::Response 
             egui::Stroke::NONE,
         ));
     }
+    tab_marks(
+        ui,
+        &response,
+        response.hovered().then_some(palette().text_muted),
+    );
     response
 }
 

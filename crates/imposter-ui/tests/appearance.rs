@@ -107,3 +107,37 @@ fn the_density_is_chosen_in_settings_and_remembered() {
     assert_eq!(stored["density"], "comfortable");
     assert_eq!(stored["theme"], "dark", "the theme is kept");
 }
+
+/// The shapes painted last frame that lie within `area`.
+fn shapes_in(app: &support::App, area: egui::Rect) -> Vec<egui::Shape> {
+    app.harness
+        .output()
+        .shapes
+        .iter()
+        .map(|clipped| clipped.shape.clone())
+        .filter(|shape| area.expand(1.0).contains_rect(shape.visual_bounding_rect()))
+        .collect()
+}
+
+#[test]
+fn hovering_a_tab_previews_its_underline_without_a_button_frame() {
+    let mut app = many_requests();
+    let tab = app.harness.get_by_role_and_label(Role::Button, "History");
+    let area = tab.rect();
+    tab.hover();
+    app.harness.run_steps(2);
+    let shapes = shapes_in(&app, area);
+    assert!(
+        !shapes
+            .iter()
+            .any(|shape| matches!(shape, egui::Shape::Rect(rect) if rect.rect.height() > area.height() - 2.0)),
+        "no frame: {shapes:?}"
+    );
+    assert!(
+        shapes.iter().any(|shape| matches!(
+            shape,
+            egui::Shape::LineSegment { points, .. } if points[0].y > area.center().y
+        )),
+        "an underline: {shapes:?}"
+    );
+}

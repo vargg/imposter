@@ -196,7 +196,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Selection** (`selection.stroke`) is the accent: selected items' text, a focused field's
     1.5-point ring, and a 2-point bar on the left of selected tree, History and palette rows
     (`widgets::selection_bar`).
-  - **Tabs** are frameless: muted text, or semibold accent text with an underline.
+  - **Tabs** are frameless: muted text, or semibold accent text with an underline. Hover
+    previews the underline in the muted color rather than drawing a button frame.
 
   Why: an orange outline on every hover diluted the accent until it meant nothing (the
   review's #60). Checked in `theme.rs` tests.
