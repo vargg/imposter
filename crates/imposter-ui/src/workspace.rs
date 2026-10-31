@@ -1444,8 +1444,13 @@ fn status_line(
     reserve: f32,
 ) -> bool {
     let status = viewer::status(response);
-    // In order of importance.
-    let mut parts = vec![StatusPart::Pill(status.text.clone(), status.tone)];
+    // In order of importance. A transport failure has no status for a pill: the card under
+    // the line names it, and a pill would only repeat it.
+    let failed = response.outcome == imposter_app::core::execution::Outcome::TransportError;
+    let mut parts = Vec::new();
+    if !failed {
+        parts.push(StatusPart::Pill(status.text.clone(), status.tone));
+    }
     if !response.checks.is_empty() {
         let tally = crate::checks::Tally::of(&response.checks);
         parts.push(StatusPart::Checks(tally));
@@ -1499,7 +1504,10 @@ fn status_line(
                 widgets::pill(ui, &text, tone, room).on_hover_text(hover.join(" · "));
             }
             StatusPart::Text(text) => {
-                ui.add(egui::Label::new(text).truncate());
+                let label = ui.add(egui::Label::new(text).truncate());
+                if i == 0 {
+                    label.on_hover_text(hover.join(" · "));
+                }
             }
             StatusPart::Checks(tally) => {
                 let mut job = egui::text::LayoutJob::default();

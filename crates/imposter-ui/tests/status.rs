@@ -186,6 +186,11 @@ fn a_connection_failure_reads_plainly_fits_and_can_be_retried() {
     let app = &mut fixture.app;
     open_and_send(app, "GET Offline");
     app.harness.get_by_label_contains("Couldn't connect · ");
+    // Said once in the pane: the card's title, not a pill above it as well.
+    assert_eq!(
+        app.harness.query_all_by_label("Couldn't connect").count(),
+        1
+    );
     let hint = app
         .harness
         .get_by_label_contains("Is the server running")

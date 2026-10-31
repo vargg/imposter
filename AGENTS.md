@@ -412,7 +412,9 @@ numbers, so both are excluded. Each logical change is its own commit.
     status as a pill ("200 OK"), the checks as "✓3 ✗1 ?1" (a click opens their results;
     screen readers hear "Checks: 3 passed, 1 failed"), "12 ms", "103 B", the content type.
     The pill's hover text has them all; earlier runs are under a "Runs" menu at its end.
-    Check results list failures first, on a red tint.
+    A transport failure has no pill, only its time: the card below names it, and a pill
+    made "Couldn't connect" appear three times with the status bar (Q8). Check results
+    list failures first, on a red tint.
 
   Why: at 720×480 the request tabs took three rows and the response header four before the
   body began (the review's #12, #13). Checked by `imposter-ui/tests/fit.rs`.
