@@ -564,7 +564,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Keys:** Enter presses it unless the dialog edits multi-line text (curl); a name field
     reads Enter before drawing, because a single-line field consumes it. Escape cancels.
   - **Captions** have no trailing colons.
-  - **Height:** dialogs are capped at the window, and long ones scroll inside.
+  - **Height:** dialogs are capped at the window, and long ones scroll inside, with their
+    text wrapped clear of the scroll bar.
   - **Layout:** the row is laid out left to right, because a right-to-left row in an
     auto-sized modal put its buttons outside the modal, where clicks missed.
 

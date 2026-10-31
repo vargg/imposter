@@ -147,6 +147,9 @@ enum Kind {
     Plain,
 }
 
+/// Space kept free at the right of a scrolling list for its scroll bar.
+const SCROLL_BAR_ROOM: f32 = 16.0;
+
 /// How a dialog button is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Look {
@@ -403,9 +406,14 @@ impl Dialog {
                     egui::ScrollArea::vertical()
                         .max_height((max_height - 96.0).max(120.0))
                         .show(ui, |ui| {
+                            // Clear of the scroll bar; descriptions wrap in what is left
+                            // after the keys (about 180 points).
+                            let width = ui.available_width() - SCROLL_BAR_ROOM;
+                            ui.set_max_width(width);
                             egui::Grid::new("shortcuts")
                                 .num_columns(2)
                                 .spacing([24.0, 6.0])
+                                .max_col_width((width - 204.0).max(160.0))
                                 .show(ui, |ui| {
                                     for shortcut in crate::shortcuts::ALL {
                                         let keys: Vec<String> = shortcut
@@ -416,7 +424,7 @@ impl Dialog {
                                         ui.label(
                                             RichText::new(keys.join("  ")).monospace().strong(),
                                         );
-                                        ui.label(shortcut.description);
+                                        ui.add(egui::Label::new(shortcut.description).wrap());
                                         ui.end_row();
                                     }
                                 });

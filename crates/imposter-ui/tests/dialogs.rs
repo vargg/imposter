@@ -107,4 +107,18 @@ fn a_tall_dialog_keeps_its_button_inside_the_smallest_window() {
     assert!(window.contains_rect(close), "{close:?} in {window:?}");
     let title = app.harness.get_by_label("Keyboard shortcuts").rect();
     assert!(window.contains_rect(title));
+    // The sheet is centred: its content ends as far from the right as the title starts
+    // from the left. Text stays clear of the scroll bar inside that edge.
+    let content_right = window.width() - title.left();
+    for shortcut in imposter_ui::shortcuts::ALL {
+        if let Some(node) = app.harness.query_by_label(shortcut.description) {
+            let rect = node.rect();
+            assert!(
+                rect.right() <= content_right - 12.0,
+                "{:?} ends at {} under the scroll bar (content ends at {content_right})",
+                shortcut.description,
+                rect.right()
+            );
+        }
+    }
 }
