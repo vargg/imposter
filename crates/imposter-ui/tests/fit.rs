@@ -223,3 +223,25 @@ fn request_tabs_count_what_they_hold() {
     let auth = app.harness.get_by_role_and_label(Role::Button, "Auth");
     assert_eq!(auth.accesskit_node().description(), None, "nothing set");
 }
+
+#[test]
+fn more_marks_hidden_tabs_that_hold_something() {
+    let mut app = small();
+    let more = |app: &support::App| {
+        app.harness
+            .get_by_role_and_label(Role::Button, "More request tabs")
+            .accesskit_node()
+            .description()
+    };
+    assert_eq!(more(&app), None, "nothing set");
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .headers = vec![imposter_app::core::model::ParamItem::new("Accept", "*/*")];
+    app.harness.run_steps(3);
+    assert_eq!(more(&app).as_deref(), Some("Headers: 1 in use"));
+}

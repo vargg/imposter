@@ -380,7 +380,8 @@ numbers, so both are excluded. Each logical change is its own commit.
     Cookies and Tests count rows in use (enabled and named); Auth, Body and Docs show a dot
     when set. The Tests count is red after a run with a failed check; the response's
     Headers and Tests are counted too. Screen readers hear the count as the tab's
-    description, so its name stays the label.
+    description, so its name stays the label. "More" shows a dot when a tab it hides holds
+    something, and names those tabs in its description.
   - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
     first, then Wrap, the filter, Find and Copy.
   - **The response's status** is one line that drops its least important parts first: the

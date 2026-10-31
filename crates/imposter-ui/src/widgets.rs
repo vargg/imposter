@@ -306,7 +306,8 @@ fn tab_row<T: Copy + PartialEq>(
                 + 2.0 * ui.spacing().button_padding.x
         })
         .collect();
-    let more_width = menu_text_button_width(ui, "More");
+    // Measured with its dot, which shows when a hidden tab holds something.
+    let more_width = menu_text_button_width(ui, "More •");
     let gap = ui.spacing().item_spacing.x;
     let shown = shown_tabs(
         &widths,
@@ -327,7 +328,24 @@ fn tab_row<T: Copy + PartialEq>(
         }
     }
     if shown.len() < tabs.len() {
-        let button = menu_text_button(ui, "More", more);
+        // Hidden tabs that hold something: the button says so, and names them.
+        let held: Vec<String> = tabs
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !shown.contains(i))
+            .filter_map(|(_, spec)| {
+                let badge = spec.badge.as_ref()?;
+                Some(format!("{}: {}", spec.label, badge.description))
+            })
+            .collect();
+        let text = if held.is_empty() { "More" } else { "More •" };
+        let button = menu_text_button(ui, text, more);
+        if !held.is_empty() {
+            let description = held.join(", ");
+            button
+                .ctx
+                .accesskit_node_builder(button.id, |node| node.set_description(description));
+        }
         egui::Popup::menu(&button).show(|ui| {
             for (i, spec) in tabs.iter().enumerate() {
                 if shown.contains(&i) {
