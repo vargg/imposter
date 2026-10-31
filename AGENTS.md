@@ -197,7 +197,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Hover and press** outline a control in the muted text color.
   - **Selection** (`selection.stroke`) is the accent: selected items' text, a focused field's
     1.5-point ring, and a 2-point bar on the left of selected tree, History and palette rows
-    (`widgets::selection_bar`).
+    (`widgets::selection_bar`). Selected rows and menu options are filled, never outlined
+    (`widgets::option`): egui outlines a selected button with the control edge, which
+    read as a hover left on.
   - **Tabs** are frameless: muted text, or semibold accent text with an underline. Hover
     previews the underline in the muted color rather than drawing a button frame.
 

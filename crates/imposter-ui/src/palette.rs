@@ -336,7 +336,11 @@ fn row(ui: &mut Ui, item: &Item, selected: bool) -> egui::Response {
         egui::TextStyle::Monospace.resolve(ui.style()),
         egui::TextStyle::Body.resolve(ui.style()),
     );
-    let response = ui.add(egui::Button::selectable(selected, text).truncate());
+    let response = ui.add(
+        egui::Button::selectable(selected, text)
+            .stroke(egui::Stroke::NONE)
+            .truncate(),
+    );
     if selected {
         crate::widgets::selection_bar(ui, response.rect);
     }

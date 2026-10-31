@@ -270,12 +270,12 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                 )
                 .show_ui(ui, |ui| {
                     for collection in &state.collections {
-                        if ui
-                            .selectable_label(
-                                Some(collection.id) == state.collection,
-                                &collection.name,
-                            )
-                            .clicked()
+                        if widgets::option(
+                            ui,
+                            Some(collection.id) == state.collection,
+                            &collection.name,
+                        )
+                        .clicked()
                         {
                             state.actions.push(Action::SelectCollection(collection.id));
                         }
@@ -540,6 +540,7 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
                             selected == Some(id),
                             RichText::new(&folder.name).strong(),
                         )
+                        .stroke(egui::Stroke::NONE)
                         .sense(Sense::click_and_drag());
                         let response = ui.add(button);
                         name(&response, &format!("Folder {}", folder.name));
@@ -586,6 +587,7 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
                 let response = ui.add_sized(
                     [ui.available_width(), crate::theme::spacing().row],
                     egui::Button::selectable(selected == Some(id), (text, egui::Atom::grow()))
+                        .stroke(egui::Stroke::NONE)
                         .truncate()
                         .sense(Sense::click_and_drag()),
                 );
@@ -706,16 +708,11 @@ fn environment_picker(state: &mut State, ui: &mut Ui) {
         .width(170.0)
         .selected_text(selected)
         .show_ui(ui, |ui| {
-            if ui
-                .selectable_label(active.is_none(), "Global (no environment)")
-                .clicked()
-            {
+            if widgets::option(ui, active.is_none(), "Global (no environment)").clicked() {
                 state.actions.push(Action::SetEnvironment(None));
             }
             for environment in &state.environments {
-                if ui
-                    .selectable_label(active == Some(environment.id), &environment.name)
-                    .clicked()
+                if widgets::option(ui, active == Some(environment.id), &environment.name).clicked()
                 {
                     state
                         .actions
@@ -1293,10 +1290,7 @@ fn runs_menu(ui: &mut Ui, response_state: &crate::app::ResponsePane, actions: &m
     let button = widgets::menu_text_button(ui, RUNS, "Recorded runs").on_hover_text(hint);
     egui::Popup::menu(&button).show(|ui| {
         for run in &response_state.runs {
-            if ui
-                .selectable_label(Some(run.id) == shown, run_label(run))
-                .clicked()
-            {
+            if widgets::option(ui, Some(run.id) == shown, run_label(run)).clicked() {
                 actions.push(Action::ShowRun(run.id));
                 ui.close();
             }

@@ -32,7 +32,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             .selected_text(scope_label(state, current))
             .show_ui(ui, |ui| {
                 let mut pick = |ui: &mut Ui, scope: Scope, label: String| {
-                    if ui.selectable_label(scope == current, label).clicked() {
+                    if crate::widgets::option(ui, scope == current, label).clicked() {
                         actions.push(Action::Variables(VariablesAction::SelectScope(scope)));
                     }
                 };
@@ -208,8 +208,11 @@ fn saved_values(ui: &mut Ui, row: &mut vars::Row, index: usize, height: f32) -> 
             for (position, value) in row.saved.iter().enumerate() {
                 ui.horizontal(|ui| {
                     let text = crate::widgets::saved_label(value, false);
-                    let choice =
-                        ui.selectable_label(*value == row.value, RichText::new(&text).monospace());
+                    let choice = crate::widgets::option(
+                        ui,
+                        *value == row.value,
+                        RichText::new(&text).monospace(),
+                    );
                     name(
                         &choice,
                         &format!("Use saved value {}: {text}", position + 1),

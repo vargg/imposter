@@ -290,6 +290,12 @@ fn tab_row<T: Copy + PartialEq>(
     }
 }
 
+/// A choice in a menu or list: filled when selected or hovered, never outlined, so a selected
+/// row looks the same everywhere (the theme outlines controls, and egui would outline it too).
+pub fn option<'a>(ui: &mut Ui, selected: bool, atoms: impl egui::IntoAtoms<'a>) -> egui::Response {
+    ui.add(egui::Button::selectable(selected, atoms).stroke(egui::Stroke::NONE))
+}
+
 /// The marker beside a selected row: a bar on its left edge.
 pub fn selection_bar(ui: &Ui, rect: egui::Rect) {
     let bar = egui::Rect::from_min_size(
@@ -580,7 +586,7 @@ fn var_edit_with(
                         ui.set_max_width(width.clamp(200.0, 360.0));
                         for (index, item) in items.iter().enumerate() {
                             let row = format!("{} · {}", item.name, item.detail);
-                            if ui.selectable_label(index == state.selected, row).clicked() {
+                            if option(ui, index == state.selected, row).clicked() {
                                 chosen = Some(item.name.clone());
                             }
                         }
@@ -727,7 +733,7 @@ pub fn inspector(
                             for (index, value) in effective.saved.iter().enumerate() {
                                 let chosen = *value == effective.value;
                                 let text = saved_label(value, masked);
-                                let row = ui.selectable_label(chosen, RichText::new(&text).monospace());
+                                let row = option(ui, chosen, RichText::new(&text).monospace());
                                 name(&row, &format!("Use saved value {}: {text}", index + 1));
                                 if row.clicked() && !chosen {
                                     open = Some(InspectorAction::Choose { scope, value: value.clone() });
@@ -1245,13 +1251,12 @@ pub fn method_picker(ui: &mut Ui, method: &mut String, custom: &mut Option<Strin
         )
         .show_ui(ui, |ui| {
             for standard in STANDARD_METHODS {
-                if ui.selectable_label(method == standard, standard).clicked() && method != standard
-                {
+                if option(ui, method == standard, standard).clicked() && method != standard {
                     standard.clone_into(method);
                     changed = true;
                 }
             }
-            if ui.selectable_label(false, "Custom method…").clicked() {
+            if option(ui, false, "Custom method…").clicked() {
                 *custom = Some(method.clone());
             }
         });
@@ -1442,7 +1447,7 @@ pub fn viewer_tools_with(
             icons::menu(ui, Icon::More, "More tools", |ui| {
                 for &tool in &tools[shown..] {
                     let (_, label, selected) = describe(tool);
-                    if ui.selectable_label(selected, label).clicked() {
+                    if option(ui, selected, label).clicked() {
                         chosen = Some(tool);
                         ui.close();
                     }

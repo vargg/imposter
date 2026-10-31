@@ -189,3 +189,34 @@ fn titles_use_the_title_style() {
         "Settings group headings"
     );
 }
+
+#[test]
+fn a_selected_row_is_filled_and_marked_but_not_outlined() {
+    let mut app = many_requests();
+    click(&mut app.harness, "GET Request 03");
+    settle(&mut app.harness);
+    // Away from the row, so it is not hovered.
+    app.harness.hover_at(egui::pos2(900.0, 600.0));
+    app.harness.run_steps(2);
+    let row = app.harness.get_by_label("GET Request 03").rect();
+    let frames: Vec<egui::epaint::RectShape> = shapes_in(&app, row)
+        .into_iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Rect(rect) if rect.rect.height() > row.height() - 2.0 => Some(rect),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        frames
+            .iter()
+            .any(|frame| frame.fill != egui::Color32::TRANSPARENT),
+        "filled: {frames:?}"
+    );
+    assert!(
+        frames
+            .iter()
+            .all(|frame| frame.stroke.width == 0.0
+                || frame.stroke.color == egui::Color32::TRANSPARENT),
+        "no outline: {frames:?}"
+    );
+}
