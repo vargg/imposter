@@ -411,9 +411,18 @@ fn response_tools_share_the_tab_row_with_copy_at_the_right() {
             for tool in [wrap, search, copy] {
                 assert!((tool.center().y - tab_rect.center().y).abs() < 1.0);
             }
+            // The headers' Raw toggle ends the row, right after Copy.
+            let last = if tab == "Headers" {
+                let raw = app.harness.get_by_label("Raw").rect();
+                assert!(copy.right() < raw.left());
+                assert!((raw.center().y - tab_rect.center().y).abs() < 1.0);
+                raw
+            } else {
+                copy
+            };
             assert!(
-                (copy.right() - (size.x - 30.0)).abs() < 2.0,
-                "Copy is anchored to the panel's right inset"
+                (last.right() - (size.x - 30.0)).abs() < 2.0,
+                "the last tool is anchored to the panel's right inset"
             );
             app.harness.get_by_label(copy_label).click();
             app.harness.step();

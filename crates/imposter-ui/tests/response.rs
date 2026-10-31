@@ -5,7 +5,8 @@
 
 mod support;
 
-use egui_kittest::kittest::Queryable;
+use egui::accesskit::Toggled;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::HistoryTab;
 use support::{click, collection, request, settle, start_with, text_input, type_into};
@@ -345,8 +346,14 @@ fn headers_show_as_a_table_with_a_copy_per_row_and_raw_on_request() {
     }
     assert_eq!(copied.as_deref(), Some("content-type: application/json"));
 
+    // Raw is a toggle at the row's right end, after Copy, not a tab after Tests.
+    let raw = app.harness.get_by_label("Raw");
+    assert_eq!(raw.accesskit_node().toggled(), Some(Toggled::False));
+    assert!(raw.rect().left() > app.harness.get_by_label("Copy headers").rect().right());
     click(&mut app.harness, "Raw");
     app.harness
         .get_by_label_contains("content-type: application/json");
     app.harness.get_by_label("Find");
+    let raw = app.harness.get_by_label("Raw");
+    assert_eq!(raw.accesskit_node().toggled(), Some(Toggled::True));
 }

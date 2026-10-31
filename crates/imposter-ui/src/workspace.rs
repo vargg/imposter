@@ -1443,6 +1443,9 @@ enum StatusPart {
     Checks(crate::checks::Tally),
 }
 
+/// The response headers' view toggle.
+const RAW: &str = "Raw";
+
 /// One line about a response: its status as a pill, then what fits of the checks, time,
 /// size and content type, dropped in reverse order of importance. The status's hover text
 /// has them all. `reserve` keeps room at the end of the row. Returns whether the checks were
@@ -1651,23 +1654,27 @@ pub fn response_body(
             }),
             filterable.then_some((filter.open, &mut toggle_filter)),
         ),
+        // Raw sits at the right end, framed like a button: drawn after the tabs in their
+        // style, it read as a fourth tab.
         ResponseTab::Headers => {
-            if ui
-                .add(egui::Button::selectable(*headers_raw, "Raw").stroke(egui::Stroke::NONE))
-                .on_hover_text("Show the headers as text, with Find and Wrap")
-                .clicked()
-            {
-                *headers_raw = !*headers_raw;
-            }
-            if *headers_raw {
-                widgets::viewer_tools(ui, headers_view, headers, copy_headers);
-            } else {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if icons::button(ui, Icon::Copy, copy_headers, false).clicked() {
-                        ui.ctx().copy_text(headers.clone());
-                    }
-                });
-            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui
+                    .add(
+                        egui::Button::new(RAW)
+                            .selected(*headers_raw)
+                            .min_size(vec2(0.0, icons::size())),
+                    )
+                    .on_hover_text("Show the headers as text, with Find and Wrap")
+                    .clicked()
+                {
+                    *headers_raw = !*headers_raw;
+                }
+                if *headers_raw {
+                    widgets::viewer_tools(ui, headers_view, headers, copy_headers);
+                } else if icons::button(ui, Icon::Copy, copy_headers, false).clicked() {
+                    ui.ctx().copy_text(headers.clone());
+                }
+            });
         }
         ResponseTab::Tests => {}
     };
@@ -1689,8 +1696,12 @@ pub fn response_body(
         );
     }
     ui.horizontal(|ui| {
-        // At least the tools' menu button stays on the row.
-        let reserve = icons::size() + ui.spacing().item_spacing.x;
+        // At least the tools' menu button stays on the row, and Raw beside the headers'.
+        let gap = ui.spacing().item_spacing.x;
+        let mut reserve = icons::size() + gap;
+        if *tab == ResponseTab::Headers {
+            reserve += widgets::button_width(ui, RichText::new(RAW)) + gap;
+        }
         widgets::tab_strip(ui, &tabs, tab, reserve, "More response tabs");
         tools(ui, *tab);
     });

@@ -171,6 +171,13 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, "Send");
     settle(&mut app.harness);
     check(app, "response");
+    // Both panes have a Headers tab.
+    app.harness.state_mut().state.response.tab = imposter_ui::app::ResponseTab::Headers;
+    check(app, "response headers");
+    app.harness.state_mut().state.response.headers_raw = true;
+    check(app, "raw response headers");
+    app.harness.state_mut().state.response.headers_raw = false;
+    app.harness.state_mut().state.response.tab = imposter_ui::app::ResponseTab::Body;
     // A long status beside the runs menu.
     click(&mut app.harness, "GET Broken");
     settle(&mut app.harness);

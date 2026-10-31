@@ -94,7 +94,7 @@ pub fn text_width(ui: &Ui, text: RichText) -> f32 {
 }
 
 /// The width `text` takes on a button, padding included.
-fn button_width(ui: &Ui, text: RichText) -> f32 {
+pub fn button_width(ui: &Ui, text: RichText) -> f32 {
     text_width(ui, text) + 2.0 * ui.spacing().button_padding.x
 }
 
