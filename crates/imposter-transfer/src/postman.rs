@@ -703,6 +703,12 @@ fn export_request(
             request.name
         ));
     }
+    if !request.checks.is_empty() {
+        warnings.push(format!(
+            "{}: checks are not exported to Postman, which runs tests as scripts",
+            request.name
+        ));
+    }
     let parts = url::split(&request.url);
     let queries: Vec<ParamItem> = if request.queries.is_empty() {
         url::parse_pairs(&parts.query)

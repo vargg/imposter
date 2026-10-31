@@ -7,10 +7,12 @@ use std::time::Duration;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use imposter_app::core::check::{Check, Op};
 use imposter_app::core::model::{BodyType, ParamItem, RequestTemplate};
+use imposter_app::core::select::Selector;
 use imposter_app::paths::open_store;
 use imposter_app::store::collections;
-use imposter_ui::app::ImposterApp;
+use imposter_ui::app::{ImposterApp, ResponseTab};
 
 fn main() {
     let out = std::path::PathBuf::from(std::env::args().nth(1).expect("output directory"));
@@ -43,6 +45,12 @@ fn main() {
                     queries: vec![ParamItem::new("page", "1")],
                     headers: vec![ParamItem::new("Accept", "application/json")],
                     body_type: BodyType::None,
+                    checks: vec![
+                        Check::new(Selector::Status, Op::Equals, "2xx"),
+                        Check::new(Selector::Json("$.total".into()), Op::Equals, "2"),
+                        Check::new(Selector::Json("$.users[0].name".into()), Op::Equals, "Bo"),
+                        Check::new(Selector::Duration, Op::Less, "500"),
+                    ],
                     ..RequestTemplate::default()
                 };
                 collections::create_request(db, api.id, Some(users.id), &list)?;
@@ -121,6 +129,16 @@ fn main() {
         let path = out.join(format!("{label}.png"));
         image.save(&path).unwrap();
         println!("{}", path.display());
+        harness.get_by_label("Tests").click();
+        harness.get_by_label("Check results").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-checks.png")))
+            .unwrap();
+        harness.state_mut().state.response.tab = ResponseTab::Body;
+        settle(&mut harness);
         harness.get_by_label("Fold $.users[0]").click();
         settle(&mut harness);
         harness

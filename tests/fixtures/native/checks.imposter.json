@@ -1,0 +1,104 @@
+{
+  "format": "imposter",
+  "version": 2,
+  "collection": {
+    "name": "Checks",
+    "description": "",
+    "variables": {},
+    "folders": [],
+    "requests": [
+      {
+        "position": 0,
+        "name": "Create user",
+        "description": "",
+        "method": "POST",
+        "protocol": "",
+        "url": "{{base}}/users",
+        "path": "",
+        "auth": {
+          "type": null,
+          "basic": null,
+          "digest": null,
+          "bearer_token": null
+        },
+        "queries": [],
+        "headers": [],
+        "cookies": [],
+        "body": "",
+        "body_type": "json",
+        "options": {
+          "follow_redirects": null,
+          "verify_ssl": null,
+          "attach_cookies": null,
+          "proxy_url": null,
+          "timeout": null,
+          "ca_bundle": null,
+          "certificate_path": null,
+          "key_file": null,
+          "password": null,
+          "download_limit": null
+        },
+        "checks": [
+          {
+            "enabled": true,
+            "selector": "status",
+            "op": "equals",
+            "expected": "2xx"
+          },
+          {
+            "enabled": true,
+            "selector": {
+              "header": "Content-Type"
+            },
+            "op": "contains",
+            "expected": "json"
+          },
+          {
+            "enabled": true,
+            "selector": {
+              "json": "$.id"
+            },
+            "op": "is_type",
+            "expected": "integer"
+          },
+          {
+            "enabled": true,
+            "selector": "body",
+            "op": "not_contains",
+            "expected": "error"
+          },
+          {
+            "enabled": true,
+            "selector": "duration",
+            "op": "less",
+            "expected": "500"
+          },
+          {
+            "enabled": false,
+            "selector": "size",
+            "op": "less_or_equal",
+            "expected": "1024"
+          },
+          {
+            "enabled": true,
+            "selector": {
+              "json": "$.email"
+            },
+            "op": "matches",
+            "expected": "^[^@]+@{{domain}}$"
+          },
+          {
+            "enabled": true,
+            "selector": {
+              "json": "$.deleted"
+            },
+            "op": "not_exists",
+            "expected": ""
+          }
+        ]
+      }
+    ]
+  },
+  "environments": [],
+  "globals": {}
+}

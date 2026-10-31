@@ -33,6 +33,9 @@ pub struct Response {
     pub truncated: bool,
     /// Set when the response arrived but recording it in history failed.
     pub history_error: String,
+    /// The request's checks, evaluated against this response.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<crate::check::CheckResult>,
 }
 
 impl Response {

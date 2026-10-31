@@ -531,7 +531,7 @@ fn body_is_default_and_docs_save_with_the_request() {
     assert_eq!(
         labels,
         [
-            "Body", "Auth", "Query", "Headers", "Cookies", "Settings", "Docs"
+            "Body", "Auth", "Query", "Headers", "Cookies", "Settings", "Docs", "Tests"
         ]
     );
     let positions: Vec<_> = labels

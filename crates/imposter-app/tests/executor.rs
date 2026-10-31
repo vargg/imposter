@@ -112,6 +112,59 @@ async fn variables_resolve_by_precedence_and_history_records_both_forms() {
 }
 
 #[tokio::test]
+async fn checks_run_against_the_response_with_the_same_variables_and_are_recorded() {
+    use imposter_core::check::{Check, Op, Verdict};
+    use imposter_core::select::Selector;
+    let (_dir, store) = open();
+    let server = Server::start(|_, _| {
+        response(
+            "201 Created",
+            &[("Content-Type", "application/json")],
+            br#"{"scope":"environment","id":7}"#,
+        )
+    })
+    .await;
+    let mut request = setup(&store, &server.url).await;
+    request.template.checks = vec![
+        Check::new(Selector::Status, Op::Equals, "2xx"),
+        Check::new(Selector::Json("$.scope".into()), Op::Equals, "{{scope}}"),
+        Check::new(Selector::Json("$.id".into()), Op::Greater, "10"),
+        Check::new(
+            Selector::Header("X-Missing".into()),
+            Op::Equals,
+            "{{undefined}}",
+        ),
+    ];
+
+    let executed = execute(&store.handle(), request, CancellationToken::new())
+        .await
+        .unwrap();
+    let verdicts: Vec<&Verdict> = executed
+        .response
+        .checks
+        .iter()
+        .map(|r| &r.verdict)
+        .collect();
+    assert_eq!(
+        verdicts,
+        [
+            &Verdict::Passed,
+            &Verdict::Passed,
+            &Verdict::Failed,
+            &Verdict::Unchecked("Unresolved variables: undefined".into()),
+        ]
+    );
+    assert_eq!(executed.response.checks[1].check.expected, "environment");
+    let id = executed.record.unwrap();
+    let record = store
+        .call(move |db| executions::execution(db, id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.response.checks, executed.response.checks);
+}
+
+#[tokio::test]
 async fn inherited_settings_resolve_against_the_same_variables() {
     let (_dir, store) = open();
     let proxy = Server::start(|_, _| response("200 OK", &[], b"via proxy")).await;

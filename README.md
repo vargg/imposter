@@ -7,7 +7,8 @@ sent. It runs as one native binary per OS, with no account, no cloud and no tele
 ![Requests: collection tree, request editor and response viewer](docs/images/requests.png)
 
 I’mposter is written in Rust with [egui](https://github.com/emilk/egui). It replaces an earlier
-Python/PyQt6 version, and preserves its native collection format. New exports use `.imposter.json`; existing `.poster.json` files still import.
+Python/PyQt6 version and imports its native collection format. New exports use `.imposter.json`
+(native version 2); existing `.poster.json` files still import.
 
 ## Features
 
@@ -45,6 +46,17 @@ Python/PyQt6 version, and preserves its native collection format. New exports us
   again. Copying the path of a result gives its path in the full body.
 - Earlier runs of the same request stay one click away.
 
+**Checks**
+- Each request can carry checks, edited in its Tests tab and run after every response: the
+  status (`= 200`, `= 2xx`), a header, a JSONPath into the body, the body text, the duration
+  or the size, compared with `=`, `≠`, `<`, `≤`, `>`, `≥`, contains, matches (a regular
+  expression), exists or is of type. Expected values can use `{{variables}}`.
+- Results appear as a badge (`3/4 passed`) and in the response's Tests tab, with what was
+  read for each check, and stay with the run in History. A check that cannot be decided says
+  why instead of failing.
+- Right-click a JSON value and choose Add check to check for it. OpenAPI import adds a status
+  check for each operation's documented success.
+
 **History**
 - Every execution with its environment, the request exactly as it was sent, and the full
   response.
@@ -54,8 +66,9 @@ Python/PyQt6 version, and preserves its native collection format. New exports us
 ![History: executions, and the request as it was sent](docs/images/history.png)
 
 **Import and export**
-- Native `.imposter.json` (version 1), compatible with `.poster.json` from the Python version.
-  The serialized `"format": "poster"` marker remains unchanged for compatibility.
+- Native `.imposter.json` (version 2, `"format": "imposter"`), which carries request checks.
+  `.poster.json` files from the Python version (version 1) import unchanged; the Python
+  version cannot read version 2.
 - Postman Collection v2.1 import and export, validated against the official schema, with
   environment and globals files. Anything Postman features Imposter cannot represent is listed
   before import; changes to how a request runs need explicit consent.
@@ -228,10 +241,10 @@ which an architecture test enforces:
 
 | Crate | Responsibility |
 |---|---|
-| `imposter-core` | Domain types and rules: variables, settings, URLs, request preparation, curl. No IO. |
+| `imposter-core` | Domain types and rules: variables, settings, URLs, request preparation, curl, checks. No IO. |
 | `imposter-http` | HTTP transport: TLS (rustls), redirects, Digest auth, streamed uploads, cancellation. |
 | `imposter-store` | SQLite persistence on its own thread, with migrations and backups. |
-| `imposter-transfer` | `.poster.json`, Postman v2.1 and OpenAPI 3 conversion and validation. |
+| `imposter-transfer` | Native (`.imposter.json`, `.poster.json`), Postman v2.1 and OpenAPI 3 conversion and validation. |
 | `imposter-app` | Services the UI calls: execution, saving, history, import and export. |
 | `imposter-ui` | The egui interface. |
 | `imposter` | The binary. |

@@ -338,7 +338,10 @@ fn load(path: &Path) -> Result<(ImportKind, Value), TransferError> {
         },
     };
     let object = data.as_object().ok_or(TransferError::NotAnObject)?;
-    let kind = if object.get("format").and_then(Value::as_str) == Some("poster") {
+    let kind = if matches!(
+        object.get("format").and_then(Value::as_str),
+        Some("poster" | "imposter")
+    ) {
         ImportKind::Native
     } else if openapi::is_openapi(&data) {
         ImportKind::OpenApi

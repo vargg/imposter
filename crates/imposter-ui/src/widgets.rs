@@ -1133,6 +1133,15 @@ pub struct Folding<'a> {
     pub outline: &'a viewer::Outline,
     /// Lines whose containers are folded.
     pub folded: &'a mut std::collections::BTreeSet<usize>,
+    /// Offer "Add check" in the row menu (the response belongs to the open request).
+    pub add_check: bool,
+}
+
+/// What a row menu asks the caller to do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RowAction {
+    /// Add a check on the value at `path`; `value` is its text, as "Copy value" gives it.
+    AddCheck { path: String, value: Option<String> },
 }
 
 const GUTTER: f32 = 12.0;
@@ -1185,11 +1194,25 @@ fn fold_marker(ui: &mut Ui, folding: &mut Folding<'_>, line: usize, first: bool,
     ));
 }
 
-/// Copy path and Copy value for the line under a row.
-fn row_menu(ui: &mut Ui, outline: &viewer::Outline, text: &str, line: usize) {
+/// Copy path and Copy value for the line under a row, and Add check when offered.
+fn row_menu(
+    ui: &mut Ui,
+    folding: &Folding<'_>,
+    text: &str,
+    line: usize,
+    action: &mut Option<RowAction>,
+) {
+    let outline = folding.outline;
     let Some(entry) = outline.lines.get(line) else {
         return;
     };
+    if folding.add_check && ui.button("Add check").clicked() {
+        *action = Some(RowAction::AddCheck {
+            path: entry.path.clone(),
+            value: outline.copy_value(text, line),
+        });
+        ui.close();
+    }
     if ui.button("Copy path").clicked() {
         ui.ctx().copy_text(entry.path.clone());
         ui.close();
@@ -1210,7 +1233,8 @@ pub fn code_viewer(
     text: &str,
     language: Language,
     mut folding: Option<Folding<'_>>,
-) {
+) -> Option<RowAction> {
+    let mut action = None;
     let area = ui.max_rect();
     if ui.rect_contains_pointer(area)
         && ui.input_mut(|i| i.consume_shortcut(&crate::shortcuts::FIND))
@@ -1339,11 +1363,14 @@ pub fn code_viewer(
                     ui.horizontal(|ui| {
                         fold_marker(ui, folding, row.line, first, row_height);
                         let response = ui.add(label(job));
-                        response.context_menu(|ui| row_menu(ui, folding.outline, text, row.line));
+                        response.context_menu(|ui| {
+                            row_menu(ui, folding, text, row.line, &mut action);
+                        });
                     });
                 }
             });
         });
+    action
 }
 
 /// Unfold every container that hides the text at byte `offset`, so Find can show it.

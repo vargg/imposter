@@ -299,6 +299,7 @@ pub struct Editor {
     pub binary_path: String,
     pub auth: AuthForm,
     pub options: OptionsForm,
+    pub checks: Vec<imposter_app::core::check::Check>,
 }
 
 fn named<T: Clone>(rows: &[T], name: impl Fn(&T) -> &str) -> Vec<T> {
@@ -348,6 +349,7 @@ impl Editor {
             },
             auth: AuthForm::load(&template.auth),
             options: OptionsForm::load(&template.options),
+            checks: template.checks.clone(),
         }
     }
 
@@ -402,6 +404,7 @@ impl Editor {
         template.auth = self.auth.read();
         template.options = self.options.read()?;
         template.body_type = self.body_type;
+        template.checks.clone_from(&self.checks);
         match self.body_type {
             BodyType::None => template.body = Vec::new(),
             BodyType::Json | BodyType::Plain | BodyType::Text => {

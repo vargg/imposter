@@ -711,3 +711,28 @@ fn yaml_numbers_as_keys_and_versions_read_as_json() {
     assert_eq!(value["responses"]["200"]["description"], "ok");
     assert!(value["openapi"].is_number());
 }
+
+#[test]
+fn operations_check_for_their_lowest_documented_success() {
+    use imposter_core::check::{Check, Op};
+    use imposter_core::select::Selector;
+    let status = |expected: &str| vec![Check::new(Selector::Status, Op::Equals, expected)];
+    let responses = |codes: Value| {
+        single(json!({"/x": {"get": {"responses": codes}}}), json!({}))
+            .0
+            .checks
+    };
+    assert_eq!(
+        responses(json!({"404": {}, "201": {}, "200": {}, "default": {}})),
+        status("200")
+    );
+    assert_eq!(responses(json!({"2XX": {}, "400": {}})), status("2xx"));
+    assert_eq!(responses(json!({"2XX": {}, "204": {}})), status("204"));
+    assert_eq!(
+        responses(json!({"default": {}, "500": {}})),
+        [],
+        "no documented success, no guess"
+    );
+    let (template, _, _) = single(json!({"/x": {"get": {}}}), json!({}));
+    assert_eq!(template.checks, []);
+}

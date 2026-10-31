@@ -4,9 +4,11 @@
 
 use std::collections::HashSet;
 
+use imposter_core::check::{Check, Op};
 use imposter_core::model::{
     BodyType, FormItem, ParamItem, RequestAuth, RequestTemplate, Variables, is_method_token,
 };
+use imposter_core::select::Selector;
 use imposter_core::url;
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
@@ -198,6 +200,25 @@ fn field_text(value: &Value) -> String {
 }
 
 /// `/pets/{petId}` becomes `/pets/{{petId}}`, and the names it contains.
+/// A status check for the lowest documented success code (`2XX` ranges check the class).
+/// Operations that document no success get none: guessing would fail every send.
+fn success_check(responses: Option<&Value>) -> Option<Check> {
+    let codes = responses?.as_object()?.keys();
+    let mut best: Option<(u16, String)> = None;
+    for code in codes {
+        let code = code.trim();
+        let rank = match code.parse::<u16>() {
+            Ok(status) if (200..300).contains(&status) => (status, status.to_string()),
+            _ if code.eq_ignore_ascii_case("2XX") => (299, "2xx".to_owned()),
+            _ => continue,
+        };
+        if best.as_ref().is_none_or(|(status, _)| rank.0 < *status) {
+            best = Some(rank);
+        }
+    }
+    best.map(|(_, expected)| Check::new(Selector::Status, Op::Equals, expected))
+}
+
 fn path_template(path: &str) -> (String, Vec<String>) {
     let mut out = String::with_capacity(path.len() + 8);
     let mut names = Vec::new();
@@ -470,6 +491,9 @@ impl<'a> Walk<'a> {
             .or_else(|| self.root.get("security"));
         self.security(security, &mut request);
         self.body(operation.get("requestBody"), &mut request);
+        request
+            .checks
+            .extend(success_check(operation.get("responses")));
         if operation.get("callbacks").is_some_and(truthy) {
             let location = self.location.clone();
             self.warn(format!("{location}: callbacks are not imported"));

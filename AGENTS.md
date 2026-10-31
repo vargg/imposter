@@ -351,10 +351,28 @@ numbers, so both are excluded. Each logical change is its own commit.
   the icon cannot drift from the theme.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
-- **Compatibility contract: native version 1 keeps `"format": "poster"`; new exports use `.imposter.json`, and imports accept both native extensions without a companion prompt.** Why: it is how users move their
-  collections from the Python app. Python exports must round-trip byte for byte
-  (`imposter-transfer/tests/native_golden.rs`). Bytes are base64 with the URL-safe alphabet and
-  padding, as Pydantic writes them; both alphabets are read.
+- **Native format: version 1 (`"format": "poster"`) is read as the Python app's contract;
+  Imposter writes version 2 (`"format": "imposter"`), which adds request checks.** New exports
+  use `.imposter.json`; imports accept both extensions and both versions without a companion
+  prompt. A document keeps its version when decoded and encoded again, so Python exports still
+  round-trip byte for byte (`imposter-transfer/tests/native_golden.rs`); markers and versions
+  must agree, and a version 1 document with checks is refused rather than half-read. Fields
+  only version 2 has are left out when empty, so its requests otherwise look like version 1.
+  Why: moving from the Python app stays supported, and Imposter-only data travels with the
+  collection instead of being dropped (user's choice); the cost is that the Python app cannot
+  read new exports. Bytes are base64 with the URL-safe alphabet and padding, as Pydantic
+  writes them; both alphabets are read.
+- **Checks are data, not scripts** (`core::check`): a selector (status, a header, a JSONPath,
+  the body, duration, size), an operator and an expected value that may use `{{variables}}`,
+  stored in the request template. The executor evaluates them after every response with the
+  execution's own variable snapshot and keeps the results on the response, so History shows
+  them. A check ends Passed, Failed (with the value read) or Not checked with the reason (a
+  cut or non-JSON body, a bad path or regular expression, an unresolved variable): an
+  undecidable check never passes or fails silently, and it never blocks a send. Strings
+  compare as text and numbers by value (`19.50` equals `19.5`); status also accepts `2xx`.
+  OpenAPI import adds a status check for the lowest documented success code and none when
+  there is no documented success. Postman export lists checks as not exported. Rejected: a
+  JavaScript engine (Postman's `pm.test`), a large dependency with an open-ended surface.
 - **Imports never change existing data and write nothing before review.** The preview computes
   fresh names (`Name (2)`) and global conflicts first; the import is one transaction; existing
   global values win, with a warning. Postman losses that change how a request runs (scripts,
@@ -403,14 +421,15 @@ numbers, so both are excluded. Each logical change is its own commit.
   (`tests/fixtures/python/generate.py`), never against expectations written by hand. Why: a
   port written from reading code copies the reader's misreadings. Change a fixture only by
   regenerating it; a deliberate divergence is asserted in its own test with the reason.
-  Current divergences: no empty `Cookie:` header when every cookie is disabled.
+  Current divergences: no empty `Cookie:` header when every cookie is disabled; converted
+  documents are marked native version 2.
 - **No line-ending conversion** (`.gitattributes`: `* -text`). Why: fixtures, golden exports
   and the pinned schema are compared byte for byte; a CRLF checkout on Windows broke them.
   Enforced by: the Windows CI job, which runs those tests.
 - **Toolchain pinned in `rust-toolchain.toml`, `Cargo.lock` committed, CI uses `--locked`.**
   Why: every machine and CI run builds the same thing.
 
-- **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs.** Docs edits the existing plain-text description through the normal save guard and exports. Why: body editing is the primary workflow; descriptions belong with the request rather than in a separate document. Enforced by `imposter-ui/tests/editing.rs`.
+- **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks. Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document. Enforced by `imposter-ui/tests/editing.rs`.
 
 - **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `imposter-ui/tests/editing.rs`.
 

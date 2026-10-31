@@ -5,7 +5,7 @@ use egui::{Align, Layout, Rect, Sense, Ui, UiBuilder, vec2};
 use imposter_app::core::execution::Outcome;
 use imposter_app::store::executions::ExecutionSummary;
 
-use crate::app::{Action, HISTORY_PAGE, HistoryAction, HistoryTab, ResponseTab, State};
+use crate::app::{Action, HISTORY_PAGE, HistoryAction, HistoryTab, SentTab, State};
 use crate::theme::{PALETTE, Tone};
 use crate::viewer::{self, Language};
 use crate::widgets::{self, name, tone_text};
@@ -223,7 +223,14 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             match history.tab {
                 HistoryTab::Request => sent_request(ui, history),
                 HistoryTab::Response => {
-                    crate::workspace::response_body(ui, &mut history.response, "history", true);
+                    // History responses are not the open request's: no row adds a check.
+                    let _ = crate::workspace::response_body(
+                        ui,
+                        &mut history.response,
+                        "history",
+                        true,
+                        false,
+                    );
                 }
             }
         },
@@ -248,10 +255,7 @@ fn sent_request(ui: &mut Ui, history: &mut crate::app::HistoryScreen) {
     )
     .on_hover_text(request.summary.as_str());
     ui.horizontal(|ui| {
-        for (tab, label) in [
-            (ResponseTab::Body, "Body"),
-            (ResponseTab::Headers, "Headers"),
-        ] {
+        for (tab, label) in [(SentTab::Body, "Body"), (SentTab::Headers, "Headers")] {
             let response = widgets::tab(ui, history.request_tab == tab, label);
             name(&response, &format!("Request {}", label.to_lowercase()));
             if response.clicked() {
@@ -259,13 +263,13 @@ fn sent_request(ui: &mut Ui, history: &mut crate::app::HistoryScreen) {
             }
         }
         match history.request_tab {
-            ResponseTab::Body => widgets::viewer_tools(
+            SentTab::Body => widgets::viewer_tools(
                 ui,
                 &mut history.request_body_view,
                 &request.body,
                 "Copy request body",
             ),
-            ResponseTab::Headers => widgets::viewer_tools(
+            SentTab::Headers => widgets::viewer_tools(
                 ui,
                 &mut history.request_headers_view,
                 &request.headers,
@@ -273,8 +277,8 @@ fn sent_request(ui: &mut Ui, history: &mut crate::app::HistoryScreen) {
             ),
         }
     });
-    match history.request_tab {
-        ResponseTab::Body => widgets::code_viewer(
+    let _ = match history.request_tab {
+        SentTab::Body => widgets::code_viewer(
             ui,
             "request body",
             &mut history.request_body_view,
@@ -282,7 +286,7 @@ fn sent_request(ui: &mut Ui, history: &mut crate::app::HistoryScreen) {
             request.language,
             None,
         ),
-        ResponseTab::Headers => widgets::code_viewer(
+        SentTab::Headers => widgets::code_viewer(
             ui,
             "request headers",
             &mut history.request_headers_view,
@@ -290,5 +294,5 @@ fn sent_request(ui: &mut Ui, history: &mut crate::app::HistoryScreen) {
             Language::Plain,
             None,
         ),
-    }
+    };
 }

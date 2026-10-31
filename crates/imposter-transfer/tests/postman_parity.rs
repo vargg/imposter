@@ -34,8 +34,17 @@ fn normalize(value: &mut Value) {
     }
 }
 
+/// The document as Python would write it. Deliberate divergence: Imposter marks converted
+/// documents as native version 2 (`imposter`), the Python app as version 1 (`poster`); the
+/// content is the same, so the marker is asserted here and then set to Python's.
 fn document_value(document: &NativeDocument) -> Value {
     let mut value: Value = serde_json::from_slice(&encode_native(document)).unwrap();
+    assert_eq!(
+        (&value["format"], &value["version"]),
+        (&Value::from("imposter"), &Value::from(2))
+    );
+    value["format"] = Value::from("poster");
+    value["version"] = Value::from(1);
     normalize(&mut value);
     value
 }

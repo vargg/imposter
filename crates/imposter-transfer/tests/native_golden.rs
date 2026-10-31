@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use imposter_transfer::native::{decode, encode};
+use imposter_transfer::native::{Format, Version, decode, encode};
 use serde_json::Value;
 
 fn fixtures() -> PathBuf {
@@ -43,4 +43,72 @@ fn acceptance_matches_python_and_accepted_documents_encode_alike() {
             assert_eq!(encoded, case["result"], "{name}");
         }
     }
+}
+
+#[test]
+fn version_2_documents_carry_checks_and_round_trip_byte_for_byte() {
+    let original = std::fs::read(fixtures().join("native/checks.imposter.json")).unwrap();
+    let document = decode(&original).unwrap();
+    assert_eq!(
+        (document.format, document.version),
+        (Format::Imposter, Version::V2)
+    );
+    let checks = &document.requests()[0].checks;
+    assert_eq!(checks.len(), 8);
+    assert!(!checks[5].enabled);
+    assert_eq!(checks[6].describe(), "$.email matches ^[^@]+@{{domain}}$");
+    assert_eq!(
+        String::from_utf8(encode(&document)).unwrap(),
+        String::from_utf8(original).unwrap()
+    );
+}
+
+#[test]
+fn markers_and_versions_must_agree_and_version_1_stays_python_shaped() {
+    let minimal = std::fs::read_to_string(fixtures().join("native/minimal.poster.json")).unwrap();
+    let with = |format: &str, version: &str| {
+        minimal
+            .replace("\"poster\"", &format!("\"{format}\""))
+            .replace("\"version\": 1", &format!("\"version\": {version}"))
+    };
+    assert!(decode(with("poster", "1").as_bytes()).is_ok());
+    assert!(decode(with("imposter", "2").as_bytes()).is_ok());
+    for (format, version) in [("poster", "2"), ("imposter", "1"), ("imposter", "3")] {
+        assert!(
+            decode(with(format, version).as_bytes()).is_err(),
+            "{format} {version}"
+        );
+    }
+
+    let checks = std::fs::read_to_string(fixtures().join("native/checks.imposter.json")).unwrap();
+    let as_version_1 = checks
+        .replace("\"imposter\"", "\"poster\"")
+        .replace("\"version\": 2", "\"version\": 1");
+    let error = decode(as_version_1.as_bytes()).unwrap_err().to_string();
+    assert_eq!(
+        error,
+        "Request \"Create user\": checks need format version 2"
+    );
+    let python = std::fs::read(fixtures().join("native/full.poster.json")).unwrap();
+    let document = decode(&python).unwrap();
+    assert_eq!(
+        (document.format, document.version),
+        (Format::Poster, Version::V1),
+        "a document keeps its version"
+    );
+}
+
+#[test]
+fn postman_exports_name_the_checks_they_leave_out() {
+    let original = std::fs::read(fixtures().join("native/checks.imposter.json")).unwrap();
+    let document = decode(&original).unwrap();
+    let (data, warnings) = imposter_transfer::postman::encode(&document).unwrap();
+    assert!(!data.to_string().contains("$.email"));
+    assert!(
+        warnings.contains(
+            &"Create user: checks are not exported to Postman, which runs tests as scripts"
+                .to_owned()
+        ),
+        "{warnings:?}"
+    );
 }

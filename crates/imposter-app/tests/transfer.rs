@@ -88,7 +88,14 @@ async fn a_python_export_imports_and_exports_again_with_the_same_content() {
     let mut expected = json(&original);
     without_order(&mut exported);
     without_order(&mut expected);
-    assert_eq!(exported, expected);
+    assert_eq!(
+        (&exported["format"], &exported["version"]),
+        (&Value::from("imposter"), &Value::from(2)),
+        "Imposter writes version 2"
+    );
+    expected["format"] = Value::from("imposter");
+    expected["version"] = Value::from(2);
+    assert_eq!(exported, expected, "and keeps everything version 1 carried");
 
     // A second trip through a fresh database changes nothing at all.
     let (dir2, store2) = open();

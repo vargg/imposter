@@ -1,6 +1,7 @@
 //! Pure domain types and logic for Imposter. This crate does no IO.
 
 pub mod base64_bytes;
+pub mod check;
 pub mod curl;
 pub mod execution;
 pub mod ids;

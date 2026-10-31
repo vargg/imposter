@@ -178,6 +178,11 @@ pub async fn execute(
         }
     };
     response.elapsed = started.elapsed().as_secs_f64();
+    response.checks = imposter_core::check::evaluate(
+        &request.template.checks,
+        &response,
+        &inputs.snapshot.values(),
+    );
 
     let mut template = request.clone();
     template.collection_variables_snapshot = resolved.collection_variables_snapshot.clone();

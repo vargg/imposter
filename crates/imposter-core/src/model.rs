@@ -366,6 +366,10 @@ pub struct RequestTemplate {
     pub body: Vec<u8>,
     pub body_type: BodyType,
     pub options: Options,
+    /// Expectations checked after every response. Left out when empty, so a request without
+    /// checks keeps the native version 1 shape.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<crate::check::Check>,
 }
 
 impl Default for RequestTemplate {
@@ -385,6 +389,7 @@ impl Default for RequestTemplate {
             body: Vec::new(),
             body_type: BodyType::default(),
             options: Options::default(),
+            checks: Vec::new(),
         }
     }
 }

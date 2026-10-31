@@ -903,6 +903,9 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                 );
             }
             EditorTab::Auth => edited = widgets::auth_form(ui, &mut pane.editor.auth, &mut vars),
+            EditorTab::Tests => {
+                edited = crate::checks::editor(ui, &mut pane.editor.checks, &mut vars);
+            }
             EditorTab::Settings => {
                 edited = widgets::options_form(
                     ui,
@@ -1007,7 +1010,14 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
         }
         ui.horizontal(|ui| runs_picker(ui, response_state, actions));
     }
-    response_body(ui, response_state, "response", false);
+    if let Some(widgets::RowAction::AddCheck { path, value }) =
+        response_body(ui, response_state, "response", false, true)
+    {
+        actions.push(Action::AddCheck(crate::checks::check_for(
+            &path,
+            value.as_deref(),
+        )));
+    }
 }
 
 /// The recorded runs of the open request, to show an earlier response.
@@ -1051,6 +1061,10 @@ fn status_text(ui: &mut Ui, response: &imposter_app::core::execution::Response) 
     if response.outcome == imposter_app::core::execution::Outcome::Response {
         part(ui, tone_text(viewer::size_text(response), Tone::Muted));
     }
+    if !response.checks.is_empty() {
+        let (text, tone) = crate::checks::summary(&response.checks);
+        part(ui, tone_text(text, tone));
+    }
 }
 
 /// Status, time, size and content type of a response, as badges.
@@ -1058,6 +1072,10 @@ fn status_badges(ui: &mut Ui, response: &imposter_app::core::execution::Response
     let status = viewer::status(response);
     widgets::badge(ui, status.text.as_str(), status.tone).on_hover_text(status.detail.as_str());
     widgets::badge(ui, &viewer::format_duration(response.elapsed), Tone::Muted);
+    if !response.checks.is_empty() {
+        let (text, tone) = crate::checks::summary(&response.checks);
+        widgets::badge(ui, &text, tone);
+    }
     if response.outcome == imposter_app::core::execution::Outcome::Response {
         widgets::badge(ui, &viewer::size_text(response), Tone::Muted);
         let content_type = viewer::content_type(&response.headers);
@@ -1069,14 +1087,16 @@ fn status_badges(ui: &mut Ui, response: &imposter_app::core::execution::Response
     }
 }
 
-/// Notice, body and headers of `pane`'s response, with its status line when `status`; `id`
-/// names its viewers.
+/// Notice, body, headers and check results of `pane`'s response, with its status line when
+/// `status`; `id` names its viewers. `add_check` offers "Add check" on JSON rows, whose
+/// choice is returned.
 pub fn response_body(
     ui: &mut Ui,
     response_state: &mut crate::app::ResponsePane,
     id: &str,
     status: bool,
-) {
+    add_check: bool,
+) -> Option<widgets::RowAction> {
     if status && let Some(response) = &response_state.response {
         ui.horizontal_wrapped(|ui| status_badges(ui, response));
     }
@@ -1103,7 +1123,7 @@ pub fn response_body(
                 Tone::Muted,
             ));
         });
-        return;
+        return None;
     };
     let failure = response
         .as_ref()
@@ -1145,6 +1165,7 @@ pub fn response_body(
             outline.map(|outline| widgets::Folding {
                 outline,
                 folded: &mut *folds,
+                add_check: false,
             }),
             |ui| {
                 if filterable
@@ -1156,13 +1177,24 @@ pub fn response_body(
             },
         ),
         ResponseTab::Headers => widgets::viewer_tools(ui, headers_view, headers, copy_headers),
+        ResponseTab::Tests => {}
     };
+    let results = response.as_ref().map_or(&[][..], |r| r.checks.as_slice());
     ui.horizontal(|ui| {
         for (choice, label) in [
             (ResponseTab::Body, "Body"),
             (ResponseTab::Headers, "Headers"),
+            (ResponseTab::Tests, "Tests"),
         ] {
-            if widgets::tab(ui, *tab == choice, label).clicked() {
+            if choice == ResponseTab::Tests && results.is_empty() {
+                continue;
+            }
+            let response = widgets::tab(ui, *tab == choice, label);
+            if choice == ResponseTab::Tests {
+                // The request's Tests tab has the same text.
+                name(&response, "Check results");
+            }
+            if response.clicked() {
                 *tab = choice;
             }
         }
@@ -1197,35 +1229,36 @@ pub fn response_body(
             }
         });
     }
-    match *tab {
-        ResponseTab::Body => {
-            widgets::code_viewer(
-                ui,
-                &format!("{id} body"),
-                body_view,
-                body,
-                if filtered.is_some() {
-                    Language::Json
-                } else {
-                    preview.language
-                },
-                outline.map(|outline| widgets::Folding {
-                    outline,
-                    folded: folds,
-                }),
-            );
+    let action = match *tab {
+        ResponseTab::Body => widgets::code_viewer(
+            ui,
+            &format!("{id} body"),
+            body_view,
+            body,
+            if filtered.is_some() {
+                Language::Json
+            } else {
+                preview.language
+            },
+            outline.map(|outline| widgets::Folding {
+                outline,
+                folded: folds,
+                add_check,
+            }),
+        ),
+        ResponseTab::Headers => widgets::code_viewer(
+            ui,
+            &format!("{id} headers"),
+            headers_view,
+            headers,
+            Language::Plain,
+            None,
+        ),
+        ResponseTab::Tests => {
+            crate::checks::results(ui, results);
+            None
         }
-        ResponseTab::Headers => {
-            widgets::code_viewer(
-                ui,
-                &format!("{id} headers"),
-                headers_view,
-                headers,
-                Language::Plain,
-                None,
-            );
-        }
-    }
+    };
     if close_filter {
         filter.close();
     } else if toggle_filter {
@@ -1235,6 +1268,7 @@ pub fn response_body(
             filter.open();
         }
     }
+    action
 }
 
 /// What the filter bar says about the current query.

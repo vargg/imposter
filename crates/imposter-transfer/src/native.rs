@@ -1,5 +1,7 @@
-//! The native `.poster.json` format, version 1: the full-fidelity contract shared with the
-//! Python app. Strict: unknown fields are rejected at every level and only version 1 is read.
+//! The native format. Version 1 (`"format": "poster"`) is the full-fidelity contract shared
+//! with the Python app; version 2 (`"format": "imposter"`) adds request checks. Strict:
+//! unknown fields are rejected at every level, a version 1 document may not use version 2
+//! data, and a document keeps its version when encoded again.
 
 use std::io::{Read as _, Write as _};
 use std::path::Path;
@@ -33,28 +35,38 @@ impl<'de> Deserialize<'de> for Name {
     }
 }
 
+/// The format marker. `poster` (version 1) is the contract shared with the Python app;
+/// `imposter` (version 2) adds what only Imposter has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
     #[default]
-    #[serde(rename = "poster")]
+    Poster,
     Imposter,
 }
 
-/// Only version 1 exists; anything else is rejected rather than guessed at.
+/// Versions 1 and 2; anything else is rejected rather than guessed at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Version1;
+pub enum Version {
+    #[default]
+    V1,
+    V2,
+}
 
-impl Serialize for Version1 {
+impl Serialize for Version {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(1)
+        serializer.serialize_u8(match self {
+            Self::V1 => 1,
+            Self::V2 => 2,
+        })
     }
 }
 
-impl<'de> Deserialize<'de> for Version1 {
+impl<'de> Deserialize<'de> for Version {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         match u64::deserialize(deserializer)? {
-            1 => Ok(Self),
+            1 => Ok(Self::V1),
+            2 => Ok(Self::V2),
             other => Err(serde::de::Error::custom(format!(
                 "unsupported version {other}"
             ))),
@@ -104,7 +116,7 @@ pub struct NativeDocument {
     #[serde(default)]
     pub format: Format,
     #[serde(default)]
-    pub version: Version1,
+    pub version: Version,
     pub collection: TransferCollection,
     #[serde(default)]
     pub environments: Vec<TransferEnvironment>,
@@ -116,7 +128,7 @@ impl NativeDocument {
     pub fn new(collection: TransferCollection) -> Self {
         Self {
             format: Format::Imposter,
-            version: Version1,
+            version: Version::V2,
             collection,
             environments: Vec::new(),
             globals: Variables::new(),
@@ -149,6 +161,10 @@ pub enum NativeError {
     Method { request: String },
     #[error("Request {request:?}: authentication is missing its configuration")]
     Auth { request: String },
+    #[error("A {format:?} document must be version {expected}")]
+    Marker { format: &'static str, expected: u8 },
+    #[error("Request {request:?}: checks need format version 2")]
+    ChecksInVersion1 { request: String },
     #[error("Request {request:?}: {source}")]
     Body {
         request: String,
@@ -172,6 +188,31 @@ pub fn read_document(path: &Path) -> Result<Vec<u8>, NativeError> {
 /// Decode and validate everything an import needs before any write.
 pub fn decode(data: &[u8]) -> Result<NativeDocument, NativeError> {
     let document: NativeDocument = serde_json::from_slice(data)?;
+    match (document.format, document.version) {
+        (Format::Poster, Version::V1) | (Format::Imposter, Version::V2) => {}
+        (Format::Poster, Version::V2) => {
+            return Err(NativeError::Marker {
+                format: "poster",
+                expected: 1,
+            });
+        }
+        (Format::Imposter, Version::V1) => {
+            return Err(NativeError::Marker {
+                format: "imposter",
+                expected: 2,
+            });
+        }
+    }
+    if document.version == Version::V1
+        && let Some(request) = document
+            .requests()
+            .into_iter()
+            .find(|r| !r.checks.is_empty())
+    {
+        return Err(NativeError::ChecksInVersion1 {
+            request: request.name.clone(),
+        });
+    }
     validate_templates(&document)?;
     Ok(document)
 }

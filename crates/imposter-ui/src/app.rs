@@ -271,6 +271,8 @@ pub enum Action {
     Save,
     Send,
     PickFile(FileRequest),
+    /// Append a check to the open request and show its Tests tab.
+    AddCheck(imposter_app::core::check::Check),
     ShowRun(ExecutionId),
     Screen(Screen),
     /// Open a request from any collection, switching to that collection first.
@@ -404,7 +406,7 @@ pub struct HistoryScreen {
     pub record: Option<ExecutionRecord>,
     /// The selected execution's request as sent.
     pub request: Option<crate::viewer::SentRequest>,
-    pub request_tab: ResponseTab,
+    pub request_tab: SentTab,
     pub request_body_view: ViewerState,
     pub request_headers_view: ViewerState,
     pub response: ResponsePane,
@@ -526,10 +528,11 @@ pub enum EditorTab {
     Cookies,
     Settings,
     Docs,
+    Tests,
 }
 
 impl EditorTab {
-    pub const ALL: [(Self, &'static str); 7] = [
+    pub const ALL: [(Self, &'static str); 8] = [
         (Self::Body, "Body"),
         (Self::Auth, "Auth"),
         (Self::Params, "Query"),
@@ -537,6 +540,7 @@ impl EditorTab {
         (Self::Cookies, "Cookies"),
         (Self::Settings, "Settings"),
         (Self::Docs, "Docs"),
+        (Self::Tests, "Tests"),
     ];
 }
 
@@ -561,11 +565,22 @@ impl EditorPane {
     }
 }
 
+/// The tabs of History's request as sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SentTab {
+    #[default]
+    Body,
+    Headers,
+}
+
+/// The tabs of a response viewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResponseTab {
     #[default]
     Body,
     Headers,
+    /// Results of the request's checks; offered only when the response has some.
+    Tests,
 }
 
 pub struct ResponsePane {
@@ -669,6 +684,9 @@ impl ResponsePane {
         self.notice = Some((crate::viewer::notice(&response, &preview), Tone::Muted))
             .filter(|(n, _)| !n.is_empty());
         self.preview = Some((preview, headers));
+        if self.tab == ResponseTab::Tests && response.checks.is_empty() {
+            self.tab = ResponseTab::Body;
+        }
         self.response = Some(response);
         self.body_folds.clear();
         self.shown = NEXT_SHOWN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1970,6 +1988,7 @@ impl ImposterApp {
             name: kept.name.clone(),
             description: pane.editor.description.clone(),
             position: kept.position,
+            checks: pane.editor.checks.clone(),
             ..parsed.template
         };
         pane.editor = Editor::load(&request);
@@ -2406,6 +2425,13 @@ impl ImposterApp {
                 }
             }
             Action::PasteCurl(command) => self.paste_curl(&command, now),
+            Action::AddCheck(check) => {
+                if let Some(pane) = &mut self.state.editor {
+                    pane.editor.checks.push(check);
+                    pane.tab = EditorTab::Tests;
+                    self.edited(false, false, now);
+                }
+            }
             Action::ToggleSidebar => {
                 self.state.layout.sidebar_visible = !self.state.layout.sidebar_visible;
             }
@@ -3689,6 +3715,28 @@ mod filter_tests {
             pane.filter.shown().unwrap().as_ref().unwrap().text,
             "[\n  2\n]"
         );
+    }
+
+    #[test]
+    fn the_results_tab_gives_way_when_a_response_has_no_checks() {
+        use imposter_app::core::check::{Check, CheckResult, Op, Verdict};
+        let mut pane = ResponsePane::default();
+        let mut checked = json("{}");
+        checked.checks = vec![CheckResult {
+            check: Check::new(
+                imposter_app::core::select::Selector::Status,
+                Op::Equals,
+                "200",
+            ),
+            verdict: Verdict::Passed,
+            actual: Some("200".into()),
+        }];
+        pane.show(checked.clone());
+        pane.tab = ResponseTab::Tests;
+        pane.show(checked);
+        assert_eq!(pane.tab, ResponseTab::Tests);
+        pane.show(json("{}"));
+        assert_eq!(pane.tab, ResponseTab::Body);
     }
 
     #[test]
