@@ -236,7 +236,7 @@ fn captures_set_variables_that_the_next_send_uses() {
         !globals(app).contains_key("missing"),
         "nothing there, nothing set"
     );
-    assert_eq!(app.harness.state().state.status, "Set user_id");
+    app.harness.get_by_label("Set user_id");
     click(&mut app.harness, "Check results");
     app.harness.get_by_label("in Global: 7");
     app.harness

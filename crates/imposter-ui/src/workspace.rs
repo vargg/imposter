@@ -101,9 +101,17 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                 }
                 layout_switch(&mut state.layout, ui);
                 ui.separator();
-                ui.label(tone_text(state.status.as_str(), Tone::Muted).small());
+                let now = ui.input(|i| i.time);
+                if let Some(seconds) = state.sending_for(now) {
+                    ui.add(egui::Spinner::new().size(12.0));
+                    ui.label(tone_text(format!("Sending… {seconds:.1} s"), Tone::Muted).small());
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(100));
+                } else if let Some(line) = state.status_line(now) {
+                    ui.label(tone_text(line.text.as_str(), line.tone).small());
+                }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(tone_text("HTTP / 1.1", Tone::Muted).small().monospace());
+                    status_context(state, ui);
                 });
             });
         });
@@ -607,6 +615,27 @@ fn context_bar(
             }
         });
     });
+}
+
+/// The right end of the status bar: where a send goes and whether mocks are serving.
+fn status_context(state: &State, ui: &mut Ui) {
+    let environment = state
+        .active_environment
+        .and_then(|id| state.environments.iter().find(|e| e.id == id))
+        .map_or("No environment", |e| e.name.as_str());
+    ui.label(tone_text(environment, Tone::Muted).small())
+        .on_hover_text("Active environment");
+    if let Some(address) = state
+        .mocks
+        .run
+        .as_ref()
+        .and_then(|run| run.address.as_deref())
+    {
+        ui.separator();
+        let port = address.rsplit(':').next().unwrap_or(address);
+        ui.label(tone_text(format!("Mocks :{port}"), Tone::Ok).small())
+            .on_hover_text(format!("Mock server running at {address}"));
+    }
 }
 
 fn environment_picker(state: &mut State, ui: &mut Ui) {

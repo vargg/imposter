@@ -167,7 +167,7 @@ fn a_failed_send_explains_itself_without_recording() {
     settle(&mut app.harness);
 
     app.harness
-        .get_by_label("Request failed: Enter an absolute HTTP or HTTPS URL");
+        .get_by_label("Not sent: Enter an absolute HTTP or HTTPS URL");
     assert_eq!(
         app.harness
             .state()

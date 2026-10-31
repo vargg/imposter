@@ -763,6 +763,58 @@ impl ResponsePane {
 
 struct Execution {
     task: TaskId,
+    /// When the status bar first showed it (egui time), for the elapsed time.
+    shown_at: Option<f64>,
+}
+
+/// What the status bar says: the latest action's result, in plain language.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatusLine {
+    pub text: String,
+    pub tone: Tone,
+    lasting: Lasting,
+}
+
+impl StatusLine {
+    /// Whether the message still applies with `generation` and `screen` showing at `now`.
+    fn applies(&mut self, generation: u64, screen: Screen, now: f64) -> bool {
+        match &mut self.lasting {
+            Lasting::While {
+                generation: g,
+                screen: s,
+            } => *g == generation && *s == screen,
+            Lasting::For { seconds, shown_at } => now - *shown_at.get_or_insert(now) < *seconds,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Lasting {
+    /// About the open request: gone once another request or screen is shown.
+    While { generation: u64, screen: Screen },
+    /// Gone this many seconds after it is first drawn.
+    For { seconds: f64, shown_at: Option<f64> },
+}
+
+/// How long a passing status message stays.
+pub const STATUS_SECONDS: f64 = 6.0;
+
+impl State {
+    /// The status bar's message at `now`, dropping it once it no longer applies: another
+    /// request or screen for a message about the request, its time for a passing one.
+    pub fn status_line(&mut self, now: f64) -> Option<&StatusLine> {
+        let (generation, screen) = (self.generation, self.screen);
+        if !self.status.as_mut()?.applies(generation, screen, now) {
+            self.status = None;
+        }
+        self.status.as_ref()
+    }
+
+    /// Seconds since a send started, while one runs.
+    pub fn sending_for(&mut self, now: f64) -> Option<f64> {
+        let execution = self.execution.as_mut()?;
+        Some(now - *execution.shown_at.get_or_insert(now))
+    }
 }
 
 /// A finished filter run.
@@ -787,7 +839,7 @@ pub struct State {
     pub response: ResponsePane,
     pub layout: WorkspaceLayout,
     pub dialog: Option<Dialog>,
-    pub status: String,
+    status: Option<StatusLine>,
     pub screen: Screen,
     pub environments: Vec<Environment>,
     pub active_environment: Option<EnvironmentId>,
@@ -857,7 +909,15 @@ impl ImposterApp {
                 response: ResponsePane::default(),
                 layout: WorkspaceLayout::default(),
                 dialog: None,
-                status: "Starting…".into(),
+                status: Some(StatusLine {
+                    text: "Starting…".into(),
+                    tone: Tone::Muted,
+                    // Until startup finishes and clears it.
+                    lasting: Lasting::For {
+                        seconds: f64::INFINITY,
+                        shown_at: None,
+                    },
+                }),
                 screen: Screen::Requests,
                 environments: Vec::new(),
                 active_environment: None,
@@ -1417,14 +1477,15 @@ impl ImposterApp {
         state.started = true;
         state.settings = startup.settings;
         state.layout = WorkspaceLayout::from_stored(&startup.layout);
-        state.status = "Ready".into();
+        state.status = None;
         state.environments = startup.environments;
         state.active_environment = startup.active_environment;
         state.recent = startup.recent;
         if let Some(draft) = startup.draft {
             self.load_editor(&draft);
-            self.status(
+            self.request_status(
                 "Restored unsaved draft — Send to execute, Save to add to the selected collection",
+                Tone::Muted,
             );
         } else {
             self.state.restore = startup.last.request_id;
@@ -1441,8 +1502,32 @@ impl ImposterApp {
         }
     }
 
+    /// A passing message that fades after [`STATUS_SECONDS`].
     fn status(&mut self, text: &str) {
-        text.clone_into(&mut self.state.status);
+        self.status_for(text, Tone::Muted, STATUS_SECONDS);
+    }
+
+    fn status_for(&mut self, text: &str, tone: Tone, seconds: f64) {
+        self.state.status = Some(StatusLine {
+            text: text.to_owned(),
+            tone,
+            lasting: Lasting::For {
+                seconds,
+                shown_at: None,
+            },
+        });
+    }
+
+    /// A message about the open request, kept while it stays open on this screen.
+    fn request_status(&mut self, text: &str, tone: Tone) {
+        self.state.status = Some(StatusLine {
+            text: text.to_owned(),
+            tone,
+            lasting: Lasting::While {
+                generation: self.state.generation,
+                screen: self.state.screen,
+            },
+        });
     }
 
     fn error(&mut self, title: &str, message: impl Into<String>) {
@@ -1678,7 +1763,7 @@ impl ImposterApp {
                 self.state.generation += 1;
                 self.load_editor(&request);
                 self.state.screen = Screen::Requests;
-                self.status(status);
+                self.request_status(status, Tone::Muted);
             }
         }
     }
@@ -2015,7 +2100,7 @@ impl ImposterApp {
         pane.custom_method = None;
         self.edited(false, false, now);
         self.load_snapshot();
-        self.status("Replaced from curl — not saved yet");
+        self.request_status("Replaced from curl — not saved yet", Tone::Muted);
         if !parsed.warnings.is_empty() {
             self.state.dialog = Some(Dialog::info(
                 "Some curl options were not imported",
@@ -2114,12 +2199,15 @@ impl ImposterApp {
             Message::Executed {
                 generation,
                 result: result.map(Box::new).map_err(|error| match error {
-                    ExecuteError::Invalid(message) => format!("Request failed: {message}"),
-                    ExecuteError::Store(error) => format!("Request failed: {error}"),
+                    ExecuteError::Invalid(message) => format!("Not sent: {message}"),
+                    ExecuteError::Store(error) => format!("Not sent: {error}"),
                 }),
             }
         });
-        self.state.execution = Some(Execution { task });
+        self.state.execution = Some(Execution {
+            task,
+            shown_at: None,
+        });
         let previous = self.state.response.response.is_some();
         self.state.response.pending = true;
         self.state.response.notice = Some((
@@ -2162,24 +2250,19 @@ impl ImposterApp {
         }
         if generation != self.state.generation {
             if let Some(kept) = kept {
-                self.status(&kept);
+                self.status_for(&kept, Tone::Warning, 2.0 * STATUS_SECONDS);
             }
             return;
         }
         match result {
             Ok(executed) => {
                 let response = executed.response;
-                let summary = if response.history_error.is_empty() {
-                    format!(
-                        "{:?} in {}",
-                        response.outcome,
-                        crate::viewer::format_duration(response.elapsed)
-                            .trim_start_matches("Time: ")
-                    )
+                let (summary, tone) = if response.history_error.is_empty() {
+                    crate::viewer::outcome_summary(&response)
                 } else {
-                    response.history_error.clone()
+                    (response.history_error.clone(), Tone::Warning)
                 };
-                self.state.status = summary;
+                self.request_status(&summary, tone);
                 self.state.response.shown_run = executed.record;
                 self.state.response.show(response);
                 if let Some(kept) = kept {
@@ -2190,6 +2273,8 @@ impl ImposterApp {
                 }
             }
             Err(message) => {
+                // The response pane says why; the status bar only that nothing went out.
+                self.request_status("Not sent", Tone::Error);
                 self.state.response.notice = Some((message, Tone::Error));
             }
         }
@@ -3760,6 +3845,44 @@ fn native_export_dialog() -> FileDialog {
         title: "Export collection",
         name: "collection.imposter.json",
         filter: Some(("Native", "json")),
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    fn line(lasting: Lasting) -> StatusLine {
+        StatusLine {
+            text: "x".into(),
+            tone: Tone::Muted,
+            lasting,
+        }
+    }
+
+    #[test]
+    fn passing_messages_fade_from_when_they_are_first_shown() {
+        let mut passing = line(Lasting::For {
+            seconds: STATUS_SECONDS,
+            shown_at: None,
+        });
+        assert!(passing.applies(1, Screen::Requests, 100.0));
+        assert!(
+            passing.applies(9, Screen::History, 105.9),
+            "screens do not matter"
+        );
+        assert!(!passing.applies(9, Screen::History, 106.0));
+    }
+
+    #[test]
+    fn request_messages_last_while_the_request_and_screen_do() {
+        let mut about = line(Lasting::While {
+            generation: 3,
+            screen: Screen::Requests,
+        });
+        assert!(about.applies(3, Screen::Requests, 1e9), "no time limit");
+        assert!(!about.applies(4, Screen::Requests, 0.0), "another request");
+        assert!(!about.applies(3, Screen::Mocks, 0.0), "another screen");
     }
 }
 

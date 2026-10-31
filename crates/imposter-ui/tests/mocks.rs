@@ -97,6 +97,9 @@ fn saved_edits_apply_only_after_restart_and_close_stops_the_listener() {
     start(&mut app);
     let first = address(&app);
     assert!(response(&first).ends_with("\r\n\r\nfirst"));
+    let port = first.rsplit(':').next().unwrap().to_owned();
+    app.harness.run_steps(2);
+    app.harness.get_by_label(&format!("Mocks :{port}"));
     click(&mut app.harness, "Mock route 1");
     type_into(&mut app.harness, "Mock response body", "-edited");
     click(&mut app.harness, "Save mocks");

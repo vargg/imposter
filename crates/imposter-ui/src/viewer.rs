@@ -441,6 +441,48 @@ pub fn local_time(timestamp: imposter_app::core::execution::Timestamp) -> String
     )
 }
 
+/// A short, plain name for a transport failure kind (`Response::error_kind`).
+pub fn failure_title(kind: &str) -> &'static str {
+    match kind {
+        "ConnectError" => "Couldn't connect",
+        "Timeout" => "Timed out",
+        "TlsError" => "Secure connection failed",
+        "TooManyRedirects" => "Too many redirects",
+        "UploadError" => "Upload failed",
+        "DigestError" => "Digest authentication failed",
+        "BodyError" => "Reading the response failed",
+        "ProtocolError" => "The server broke the HTTP protocol",
+        "InvalidUrl" => "Invalid URL",
+        "InvalidHeader" => "Invalid header",
+        "InvalidProxy" => "Invalid proxy",
+        _ => "Request failed",
+    }
+}
+
+/// The status bar's one-line result of a send: "200 OK · 12 ms", "Couldn't connect · 3 ms",
+/// "Cancelled", toned like the status.
+pub fn outcome_summary(response: &Response) -> (String, Tone) {
+    let time = format_duration(response.elapsed)
+        .trim_start_matches("Time: ")
+        .to_owned();
+    match response.outcome {
+        Outcome::Response => {
+            let status = status(response);
+            let line = if response.reason.is_empty() {
+                format!("{} · {time}", response.status)
+            } else {
+                format!("{} {} · {time}", response.status, response.reason)
+            };
+            (line, status.tone)
+        }
+        Outcome::TransportError => (
+            format!("{} · {time}", failure_title(&response.error_kind)),
+            Tone::Error,
+        ),
+        Outcome::Cancelled => ("Send cancelled".to_owned(), Tone::Warning),
+    }
+}
+
 pub fn format_duration(seconds: f64) -> String {
     if seconds < 1.0 {
         format!("Time: {:.0} ms", seconds * 1000.0)
@@ -1096,6 +1138,31 @@ mod tests {
             local_time(imposter_app::core::execution::Timestamp(i64::MAX)),
             imposter_app::core::execution::Timestamp(i64::MAX).to_rfc3339()
         );
+    }
+
+    #[test]
+    fn outcomes_read_in_plain_language() {
+        let mut ok = response(b"", "text/plain");
+        ok.elapsed = 0.012;
+        assert_eq!(
+            outcome_summary(&ok),
+            ("200 OK · 12 ms".to_owned(), Tone::Ok)
+        );
+        let mut missing = ok.clone();
+        missing.status = 404;
+        missing.reason = "Not Found".into();
+        assert_eq!(outcome_summary(&missing).1, Tone::Error);
+        let mut refused = Response::failure(Outcome::TransportError, "ConnectError", "tcp …");
+        refused.elapsed = 0.003;
+        assert_eq!(
+            outcome_summary(&refused),
+            ("Couldn't connect · 3 ms".to_owned(), Tone::Error),
+            "never an internal type name"
+        );
+        assert_eq!(failure_title("Timeout"), "Timed out");
+        assert_eq!(failure_title("Something new"), "Request failed");
+        let cancelled = Response::failure(Outcome::Cancelled, "Cancelled", "Request cancelled");
+        assert_eq!(outcome_summary(&cancelled).0, "Send cancelled");
     }
 
     #[test]

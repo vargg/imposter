@@ -280,6 +280,17 @@ numbers, so both are excluded. Each logical change is its own commit.
   Python app's 1000×650 took more than half a laptop screen), so narrow panes adapt instead:
   status as wrapping text, tabs and tools on separate rows, single-line fields never wrap.
   Why: an automatic choice next to a manual one made the button seem broken.
+- **The status bar tells the latest result, only while it applies** (`app::StatusLine`).
+  - **Request messages:** a message about the open request (a send's result, "Not sent", a
+    restored draft) lasts while that request and screen stay shown.
+  - **Other messages** fade after `STATUS_SECONDS`.
+  - **Wording:** results read plainly ("200 OK · 12 ms", "Couldn't connect · 3 ms", "Send
+    cancelled", `viewer::outcome_summary`), never internal type names.
+  - **During a send** the bar shows "Sending… n s" with a spinner.
+  - **The right end** shows the active environment and, while mocks serve, their port.
+
+  Why: the review found it reporting an earlier request's failure after a blocked send, and
+  "Ready" during a send. A status that outlives its context misleads more than no status.
 - **Every screen saves the same way:** its state in one word and a disk icon at the top right
   (`widgets::save_controls`); Variables adds a revert icon. The header logo is the app icon
   drawing, like the window and Dock icon.
