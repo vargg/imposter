@@ -73,6 +73,21 @@ fn decode(bytes: &[u8], cut: bool) -> String {
 /// never rounded, escapes stay as sent).
 pub fn pretty_json(text: &str) -> Option<String> {
     serde_json::from_str::<serde::de::IgnoredAny>(text).ok()?;
+    Some(reindent(text))
+}
+
+/// [`pretty_json`] for the start of a document cut by the preview limit or at capture: valid
+/// as far as it goes (the parser only ran out of input), so it reads like a whole one rather
+/// than one long minified line.
+pub fn pretty_json_start(text: &str) -> Option<String> {
+    match serde_json::from_str::<serde::de::IgnoredAny>(text) {
+        Ok(_) => Some(reindent(text)),
+        Err(error) if error.is_eof() => Some(reindent(text)),
+        Err(_) => None,
+    }
+}
+
+fn reindent(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + text.len() / 2);
     let mut depth = 0_usize;
     let mut chars = text.chars().peekable();
@@ -121,7 +136,7 @@ pub fn pretty_json(text: &str) -> Option<String> {
             c => out.push(c),
         }
     }
-    Some(out)
+    out
 }
 
 pub fn preview(response: &Response) -> Preview {
@@ -142,6 +157,15 @@ pub fn preview(response: &Response) -> Preview {
             outline = Outline::build(&formatted);
             text = formatted;
         }
+    }
+    let cut = response.body.len() > PREVIEW_LIMIT || response.truncated;
+    if language == Language::Json
+        && cut
+        && outline.is_none()
+        && let Some(formatted) = pretty_json_start(&text)
+    {
+        // Folding needs the whole document, so a cut one has none.
+        formatted[..formatted.floor_char_boundary(PREVIEW_LIMIT)].clone_into(&mut text);
     }
     if response.body.len() > PREVIEW_LIMIT {
         text.push_str("\n… Preview limited to 256 KiB");
@@ -338,6 +362,11 @@ pub fn sent_request(record: &ExecutionRecord) -> SentRequest {
             let cut = bytes.len() > PREVIEW_LIMIT;
             let mut text = decode(&bytes[..bytes.len().min(PREVIEW_LIMIT)], cut);
             if cut {
+                if language == Language::Json
+                    && let Some(formatted) = pretty_json_start(&text)
+                {
+                    formatted[..formatted.floor_char_boundary(PREVIEW_LIMIT)].clone_into(&mut text);
+                }
                 text.push_str("\n… Preview limited to 256 KiB");
                 (text, Language::Plain)
             } else if language == Language::Json
@@ -812,6 +841,17 @@ mod tests {
         );
         assert_eq!(sent.body, "{\n  \"a\": 1\n}");
         assert_eq!(sent.language, Language::Json);
+
+        // Larger than the preview: still laid out as far as it goes.
+        let sent = sent_request(&record(RequestTemplate {
+            method: "POST".into(),
+            url: "http://h/".into(),
+            body: format!("[{}1]", "{\"id\":1},".repeat(30_000)).into_bytes(),
+            body_type: BodyType::Json,
+            ..RequestTemplate::default()
+        }));
+        assert!(sent.body.starts_with("[\n  {\n    \"id\": 1\n  },"));
+        assert!(sent.body.ends_with("… Preview limited to 256 KiB"));
     }
 
     #[test]
@@ -866,6 +906,35 @@ mod tests {
             "{\n  \"a\": [\n    1,\n    2.50,\n    {}\n  ],\n  \"big\": 123456789012345678901234,\n  \"s\": \"x\\\"y\\u00e9\",\n  \"e\": []\n}"
         );
         assert_eq!(pretty_json("{oops"), None);
+    }
+
+    #[test]
+    fn a_cut_json_body_is_still_laid_out() {
+        assert_eq!(pretty_json("{\"a\":[1,"), None, "incomplete");
+        assert_eq!(
+            pretty_json_start("{\"a\":[1,").as_deref(),
+            Some("{\n  \"a\": [\n    1,\n    ")
+        );
+        assert_eq!(
+            pretty_json_start("{oops"),
+            None,
+            "not JSON as far as it goes"
+        );
+
+        let big = format!("[{}1]", "{\"id\":1},".repeat(30_000));
+        let preview = preview(&response(big.as_bytes(), "application/json"));
+        assert!(preview.limited);
+        assert!(
+            preview.text.starts_with("[\n  {\n    \"id\": 1\n  },"),
+            "{}",
+            &preview.text[..40]
+        );
+        assert!(preview.text.len() <= PREVIEW_LIMIT + 40);
+        assert!(preview.text.ends_with("… Preview limited to 256 KiB"));
+        assert_eq!(
+            preview.outline, None,
+            "nothing to fold without the whole document"
+        );
     }
 
     const DOCUMENT: &str =

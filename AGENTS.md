@@ -145,7 +145,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   `transfer::write_file`) and Copy full body, in Requests and History. Why: the limit keeps
   the viewer fast; the old "truncated or preview limited" left no way to the rest. The
   notice is one line, cut if need be, with the two actions as icons at its end: wrapped
-  words and buttons took three rows from the body at 720 points (Q14).
+  words and buttons took three rows from the body at 720 points (Q14). A cut JSON body is
+  still re-indented as far as it goes (`viewer::pretty_json_start`, when the parser only
+  ran out of input), without folding, which needs the whole document: one minified line
+  wrapped mid-token (#26).
 - **Response headers are a table by default** (`widgets::headers_table`): names muted,
   values selectable and wrapping at words, a copy button on the row under the pointer.
   Where values would get under 160 points, each goes under its name: narrow columns broke
