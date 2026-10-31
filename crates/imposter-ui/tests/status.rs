@@ -40,6 +40,12 @@ fn fixture() -> Fixture {
         request(store, api.id, "Slow", &format!("{base}/slow"));
         request(store, api.id, "Broken", &format!("{base}/{{{{missing}}}}"));
         request(store, api.id, "Offline", &format!("http://{closed}/ping"));
+        request(
+            store,
+            api.id,
+            "Long",
+            &format!("{base}/{{{{a_rather_long_customer_identifier}}}}"),
+        );
     });
     Fixture {
         app,
@@ -234,4 +240,23 @@ fn a_connection_failure_reads_plainly_fits_and_can_be_retried() {
         app.harness.query_by_label("Retry").is_none(),
         "History only shows what happened"
     );
+}
+
+#[test]
+fn a_long_define_button_keeps_one_line_in_the_smallest_window() {
+    let mut fixture = fixture();
+    let app = &mut fixture.app;
+    app.harness
+        .set_size(egui::Vec2::from(imposter_ui::layout::MIN_WINDOW));
+    open_and_send(app, "GET Long");
+    let define = app
+        .harness
+        .get_by_label_contains("Define {{a_rather_long_customer_identifier}}")
+        .rect();
+    let open = app.harness.get_by_label("Open Variables").rect();
+    assert!(
+        define.height() <= open.height() + 0.5,
+        "{define:?} is taller than {open:?}: its label wrapped"
+    );
+    assert!(define.right() <= app.harness.ctx.content_rect().right());
 }

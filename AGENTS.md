@@ -342,7 +342,8 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **The layout is a switch, not a mode:** side by side or stacked, changed only by the status
   bar button, never by the window width. The window can shrink to 720×480 (`MIN_WINDOW`; the
   Python app's 1000×650 took more than half a laptop screen), so narrow panes adapt instead
-  of wrapping, and single-line fields never wrap.
+  of wrapping: single-line fields and button labels never wrap (a long label is cut, with
+  the whole text on hover).
   Why: an automatic choice next to a manual one made the button seem broken.
 - **Rows of tabs, tools and status stay one row high; what does not fit goes into a menu.**
   - **Tabs** (`widgets::tab_strip`): tabs that do not fit go under "More"; the selected tab

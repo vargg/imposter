@@ -1175,10 +1175,12 @@ fn blocked_card(
                 .wrap(),
             );
             ui.horizontal_wrapped(|ui| {
-                if ui
-                    .button(format!("Define {{{{{first}}}}} in {scope_name}"))
-                    .clicked()
-                {
+                let label = format!("Define {{{{{first}}}}} in {scope_name}");
+                // One line: a long name is cut, and the hover text has it whole.
+                let define = ui
+                    .add(egui::Button::new(label.as_str()).wrap_mode(egui::TextWrapMode::Truncate))
+                    .on_hover_text(label.as_str());
+                if define.clicked() {
                     act(BlockedAction::Define(first.clone()));
                 }
                 if ui.button("Open Variables").clicked() {
