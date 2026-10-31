@@ -143,7 +143,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   shorter than the body, the pane says so precisely ("Preview shows 256 KB of 584 KB", or
   "Body cut at … when captured") and offers Save body… (written atomically on the bridge,
   `transfer::write_file`) and Copy full body, in Requests and History. Why: the limit keeps
-  the viewer fast; the old "truncated or preview limited" left no way to the rest.
+  the viewer fast; the old "truncated or preview limited" left no way to the rest. The
+  notice is one line, cut if need be, with the two actions as icons at its end: wrapped
+  words and buttons took three rows from the body at 720 points (Q14).
 - **Response headers are a table by default** (`widgets::headers_table`): names muted,
   values selectable and wrapping at words, a copy button on the row under the pointer.
   "Raw" switches to the text viewer with Find and Wrap. Why: a raw block broke values

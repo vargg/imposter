@@ -1615,15 +1615,21 @@ pub fn response_body(
             .as_ref()
             .is_some_and(|r| r.outcome == imposter_app::core::execution::Outcome::Response);
     if let Some((notice, tone)) = &response_state.notice {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(tone_text(notice.as_str(), *tone));
-            if partial && let Some(response) = &response_state.response {
-                save_body = ui.button("Save body…").clicked();
-                if ui.button("Copy full body").clicked() {
-                    ui.ctx()
-                        .copy_text(String::from_utf8_lossy(&response.body).into_owned());
+        // One line, the actions as icons at its end: wrapped words and buttons took three
+        // rows from the body at the smallest size.
+        ui.horizontal(|ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if partial && let Some(response) = &response_state.response {
+                    if icons::button(ui, Icon::Copy, "Copy full body", false).clicked() {
+                        ui.ctx()
+                            .copy_text(String::from_utf8_lossy(&response.body).into_owned());
+                    }
+                    save_body = icons::button(ui, Icon::Save, "Save body…", false).clicked();
                 }
-            }
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.add(egui::Label::new(tone_text(notice.as_str(), *tone)).truncate());
+                });
+            });
         });
     }
     if save_body {

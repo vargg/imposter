@@ -297,7 +297,23 @@ fn a_body_larger_than_the_preview_can_be_saved_whole() {
         Box::leak(format!("[{}]", "1,".repeat(150 * 1024) + "1").into_boxed_str());
     let mut fixture = sent("application/json", big);
     let app = &mut fixture.app;
-    app.harness.get_by_label("Preview shows 256 KB of 300 KB");
+    // One line at the smallest size: the notice, then the actions as icons at its end.
+    app.harness
+        .set_size(egui::Vec2::from(imposter_ui::layout::MIN_WINDOW));
+    app.harness.run_steps(3);
+    let notice = app
+        .harness
+        .get_by_label("Preview shows 256 KB of 300 KB")
+        .rect();
+    let save = app.harness.get_by_label("Save body…").rect();
+    let copy = app.harness.get_by_label("Copy full body").rect();
+    for action in [save, copy] {
+        assert!(
+            (action.center().y - notice.center().y).abs() < 2.0,
+            "{action:?} {notice:?}"
+        );
+    }
+    assert!(notice.right() <= save.left() && save.right() <= copy.left());
     let out = app.dir.path().join("saved.json");
     app.harness
         .state_mut()
