@@ -472,7 +472,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   environments** (`palette.rs`, from Yaak). Requests come from `collections::request_index`,
   read when the palette opens through the generated columns (no template is decoded); actions
   and environments are captured at open. Matching is an in-order fuzzy subsequence that
-  rewards word starts and runs; while typing, the group with the best match comes first so a
+  rewards word starts, the very start and runs, over the best of all placements
+  (`palette::fuzzy_match`; taking the first letters found ranked "Keyboard Shortcuts" above
+  "Order" for "ord"); matched letters are semibold, and rows fill the palette's width
+  with their shortcut at the right; while typing, the group with the best match comes first so a
   strong request match is not buried under a weak action match. Choosing returns an ordinary
   `Action`, so the unsaved-changes guard applies; request rows put the method in its color in
   a column of one width (OPTIONS) with a gap before the name, so DELETE never runs into it; a request in another collection opens

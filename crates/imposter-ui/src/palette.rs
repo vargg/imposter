@@ -273,7 +273,7 @@ impl Palette {
                         group = Some(item.group);
                         ui.label(tone_text(item.group.heading(), Tone::Muted).small());
                     }
-                    let row = row(ui, item, position == self.selected);
+                    let row = row(ui, item, &self.query, position == self.selected);
                     if position == self.selected && (up || down) {
                         row.scroll_to_me(None);
                     }
@@ -304,7 +304,13 @@ const METHOD_GAP: f32 = 8.0;
 
 /// A row's text: the method padded to the longest one (OPTIONS) in its color, a gap, then
 /// the label and its hint.
-fn row_text(item: &Item, mono: egui::FontId, body: egui::FontId) -> egui::text::LayoutJob {
+/// A row's text; the characters of the label that `query` matched are semibold.
+fn row_text(
+    item: &Item,
+    query: &str,
+    mono: egui::FontId,
+    body: &egui::FontId,
+) -> egui::text::LayoutJob {
     let mut text = egui::text::LayoutJob::default();
     let mut gap = 0.0;
     if let Some(method) = &item.method {
@@ -315,29 +321,48 @@ fn row_text(item: &Item, mono: egui::FontId, body: egui::FontId) -> egui::text::
         );
         gap = METHOD_GAP;
     }
-    text.append(
-        &item.label,
-        gap,
-        egui::TextFormat::simple(body.clone(), palette().text),
-    );
-    if let Some(hint) = &item.hint {
+    // Positions in the haystack the items are matched against: the method, a space, then
+    // the label.
+    let offset = item.method.as_ref().map_or(0, |m| m.chars().count() + 1);
+    let haystack = match &item.method {
+        Some(method) => format!("{method} {}", item.label),
+        None => item.label.clone(),
+    };
+    let matched: Vec<usize> = fuzzy_match(query, &haystack)
+        .map(|(_, positions)| positions)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|p| p.checked_sub(offset))
+        .collect();
+    let strong = crate::theme::semibold(body.size);
+    for (i, c) in item.label.chars().enumerate() {
+        let font = if matched.contains(&i) {
+            strong.clone()
+        } else {
+            body.clone()
+        };
         text.append(
-            hint,
-            16.0,
-            egui::TextFormat::simple(body, palette().text_muted),
+            c.encode_utf8(&mut [0; 4]),
+            if i == 0 { gap } else { 0.0 },
+            egui::TextFormat::simple(font, palette().text),
         );
     }
     text
 }
 
-fn row(ui: &mut Ui, item: &Item, selected: bool) -> egui::Response {
+/// A row as wide as the palette; its shortcut, if any, at the right.
+fn row(ui: &mut Ui, item: &Item, query: &str, selected: bool) -> egui::Response {
     let text = row_text(
         item,
+        query,
         egui::TextStyle::Monospace.resolve(ui.style()),
-        egui::TextStyle::Body.resolve(ui.style()),
+        &egui::TextStyle::Body.resolve(ui.style()),
     );
-    let response = ui.add(
-        egui::Button::selectable(selected, text)
+    let hint =
+        egui::RichText::new(item.hint.clone().unwrap_or_default()).color(palette().text_muted);
+    let response = ui.add_sized(
+        [ui.available_width(), ui.spacing().interact_size.y],
+        egui::Button::selectable(selected, (text, egui::Atom::grow(), hint))
             .stroke(egui::Stroke::NONE)
             .truncate(),
     );
@@ -503,30 +528,81 @@ fn fixed_items(state: &State, ctx: &egui::Context) -> Vec<Item> {
 }
 
 /// How well `query` matches `text`, or `None`: its characters must appear in order, case
-/// ignored, spaces in the query skipped. Matches at word starts and runs of adjacent
-/// characters score higher, so "lu" prefers "List users" to "Values".
+/// ignored, spaces in the query skipped. Matches at word starts, at the very start and in
+/// runs of adjacent characters score higher, so "lu" prefers "List users" to "Values".
 pub fn fuzzy_score(query: &str, text: &str) -> Option<i64> {
-    let text: Vec<char> = text.chars().flat_map(char::to_lowercase).collect();
-    let mut score = 0;
-    let mut from = 0;
-    let mut previous: Option<usize> = None;
-    for wanted in query
+    fuzzy_match(query, text).map(|(score, _)| score)
+}
+
+/// [`fuzzy_score`] with the positions (in characters of `text`) of its best alignment:
+/// every placement is considered, not the first, so "ord" finds "Order" rather than
+/// scattered letters in "Keyboard Shortcuts".
+pub fn fuzzy_match(query: &str, text: &str) -> Option<(i64, Vec<usize>)> {
+    let text: Vec<char> = text
+        .chars()
+        .map(|c| c.to_lowercase().next().unwrap_or(c))
+        .collect();
+    let query: Vec<char> = query
         .chars()
         .filter(|c| !c.is_whitespace())
-        .flat_map(char::to_lowercase)
-    {
-        let found = (from..text.len()).find(|&i| text[i] == wanted)?;
-        score += 1;
-        if found == 0 || !text[found - 1].is_alphanumeric() {
+        .map(|c| c.to_lowercase().next().unwrap_or(c))
+        .collect();
+    if query.is_empty() {
+        return Some((0, Vec::new()));
+    }
+    let worth = |i: usize| {
+        let mut score = 1;
+        if i == 0 || !text[i - 1].is_alphanumeric() {
             score += 8;
         }
-        if previous.is_some_and(|p| p + 1 == found) {
-            score += 5;
+        if i == 0 {
+            score += 6;
         }
-        previous = Some(found);
-        from = found + 1;
+        score
+    };
+    // best[j][i]: the best score of query[..=j] with query[j] at text[i], and where
+    // query[j - 1] was.
+    let mut best: Vec<Vec<Option<(i64, usize)>>> = vec![vec![None; text.len()]; query.len()];
+    for (i, c) in text.iter().enumerate() {
+        if *c == query[0] {
+            best[0][i] = Some((worth(i), 0));
+        }
     }
-    Some(score)
+    for j in 1..query.len() {
+        // The best placement of query[j - 1] strictly before i - 1, kept as i grows.
+        let mut earlier: Option<(i64, usize)> = None;
+        for i in 1..text.len() {
+            if i >= 2
+                && let Some((score, _)) = best[j - 1][i - 2]
+                && earlier.is_none_or(|(e, _)| score > e)
+            {
+                earlier = Some((score, i - 2));
+            }
+            if text[i] != query[j] {
+                continue;
+            }
+            let adjacent = best[j - 1][i - 1].map(|(score, _)| (score + 5, i - 1));
+            let candidate = match (adjacent, earlier) {
+                (Some(a), Some(e)) => Some(if a.0 >= e.0 { a } else { e }),
+                (a, e) => a.or(e),
+            };
+            best[j][i] = candidate.map(|(score, from)| (score + worth(i), from));
+        }
+    }
+    let last = query.len() - 1;
+    let (mut at, (score, _)) = best[last]
+        .iter()
+        .enumerate()
+        .filter_map(|(i, cell)| cell.map(|c| (i, c)))
+        .max_by_key(|(i, (score, _))| (*score, std::cmp::Reverse(*i)))?;
+    let mut positions = vec![at];
+    for j in (1..=last).rev() {
+        let (_, from) = best[j][at]?;
+        at = from;
+        positions.push(at);
+    }
+    positions.reverse();
+    Some((score, positions))
 }
 
 /// The collection and request to open for a palette choice; used by tests.
@@ -545,13 +621,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_best_alignment_wins_over_the_first_letters_found() {
+        let order = fuzzy_score("ord", "GET Shop API › Orders › Order {{user_id}}").unwrap();
+        let keyboard = fuzzy_score("ord", "Keyboard Shortcuts").unwrap();
+        assert!(order > keyboard, "{order} vs {keyboard}");
+        assert_eq!(
+            fuzzy_match("ord", "Keyboard Order").unwrap().1,
+            [9, 10, 11],
+            "the run at a word start, not keybOaRD"
+        );
+        assert_eq!(fuzzy_match("lu", "List users").unwrap().1, [0, 5]);
+    }
+
+    #[test]
     fn request_names_start_after_the_method_column_with_a_gap() {
         let mono = egui::FontId::monospace(12.5);
         let body = egui::FontId::proportional(13.0);
         for method in ["GET", "DELETE", "OPTIONS"] {
             let mut item = request_item(&indexed(1, "API", &[], "Users"));
             item.method = Some(method.to_owned());
-            let job = row_text(&item, mono.clone(), body.clone());
+            let job = row_text(&item, "", mono.clone(), &body);
             assert_eq!(&job.text[..7], format!("{method:<7}"), "one column width");
             assert_eq!(job.sections[1].leading_space, METHOD_GAP, "{method}");
             assert_eq!(
@@ -561,7 +650,7 @@ mod tests {
         }
         let mut action = request_item(&indexed(1, "API", &[], "Users"));
         action.method = None;
-        let action = row_text(&action, mono, body);
+        let action = row_text(&action, "", mono, &body);
         assert_eq!(action.sections[0].leading_space, 0.0, "no method, no gap");
     }
 

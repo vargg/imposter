@@ -538,3 +538,19 @@ fn ignored_curl_options_are_listed_after_the_replacement() {
     app.harness
         .get_by_label_contains("is not supported and was ignored");
 }
+
+#[test]
+fn a_word_in_a_request_name_outranks_scattered_letters_in_an_action() {
+    let mut app = start_with(|store| {
+        let shop = collection(store, "Shop API");
+        request(store, shop.id, "Order {{user_id}}", "http://h/orders/1");
+    });
+    settle(&mut app.harness);
+    palette(&mut app, "ord");
+    let first = recent_names(&app).into_iter().next();
+    assert_eq!(
+        first.as_deref(),
+        Some("Shop API › Order {{user_id}}"),
+        "not Keyboard Shortcuts"
+    );
+}
