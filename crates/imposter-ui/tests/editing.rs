@@ -411,6 +411,9 @@ fn response_tools_share_the_tab_row_with_copy_at_the_right() {
     }
 }
 
+/// The smallest pointer target WCAG 2.5.8 (AA) allows.
+const MIN_TARGET: f32 = 24.0;
+
 #[test]
 fn sidebar_icon_stays_in_the_bottom_left_and_supports_the_keyboard() {
     let mut app = start_with(|store| {
@@ -421,7 +424,8 @@ fn sidebar_icon_stays_in_the_bottom_left_and_supports_the_keyboard() {
         app.harness.run_steps(2);
         let visible = app.harness.get_by_label("Hide Collections").rect();
         assert!(visible.left() < 32.0 && visible.bottom() > size.y - 20.0);
-        assert!(visible.width() >= 28.0 && visible.height() >= 28.0);
+        // WCAG 2.5.8: a pointer target is at least 24 by 24 points, in every density.
+        assert!(visible.width() >= MIN_TARGET && visible.height() >= MIN_TARGET);
         app.harness.get_by_label("Hide Collections").focus();
         app.harness.run_steps(2);
         assert!(app.harness.get_by_label("Hide Collections").is_focused());

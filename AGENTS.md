@@ -179,6 +179,16 @@ numbers, so both are excluded. Each logical change is its own commit.
 
   Why: stock egui fonts gave every text the same look and size, and lacked glyphs such as
   "●".
+- **Density is a setting: Compact (default) or Comfortable** (Settings → Appearance, stored
+  with the theme).
+  - **Tokens:** `theme::Spacing` sets list rows (26 / 32), controls (24 / 28), gaps and
+    padding.
+  - **Users:** the tree, History, tabs, icon buttons and the request bar read
+    `theme::spacing()` instead of fixed sizes.
+  - **Target size:** pointer targets never go below 24×24 points (WCAG 2.5.8), which is
+    what Compact uses.
+  - **Checked by** `imposter-ui/tests/appearance.rs`: the row pitch in both densities, and
+    at least 10 tree rows at the minimum window in Compact (7 before).
 - **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
   256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
   dependency.

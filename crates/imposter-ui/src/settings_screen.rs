@@ -91,6 +91,27 @@ fn group(ui: &mut Ui, title: &str, contents: impl FnOnce(&mut Ui)) {
 }
 
 /// A labelled field row; returns whether the value changed.
+/// A drop-down over `options`, showing the label of `value`.
+fn choice<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    id: &str,
+    value: &mut T,
+    options: &[(T, &'static str)],
+) -> egui::Response {
+    let selected = options
+        .iter()
+        .find(|(option, _)| option == value)
+        .map_or("", |(_, label)| *label);
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(selected)
+        .show_ui(ui, |ui| {
+            for (option, label) in options {
+                ui.selectable_value(value, *option, *label);
+            }
+        })
+        .response
+}
+
 fn row(ui: &mut Ui, label: &str, field: impl FnOnce(&mut Ui) -> egui::Response) -> bool {
     let caption = ui.label(label);
     let response = field(ui).labelled_by(caption.id);
@@ -152,26 +173,27 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             ui.set_max_width(760.0);
             // Appearance applies at once and is remembered apart from Save: it is how this
             // app looks, not an application setting.
-            let mut theme = state.appearance.theme;
+            let mut appearance = state.appearance;
             group(ui, "Appearance", |ui| {
                 row(ui, "Theme", |ui| {
-                    let combo = egui::ComboBox::from_id_salt("theme")
-                        .selected_text(
-                            crate::theme::ThemeChoice::ALL
-                                .iter()
-                                .find(|(choice, _)| *choice == theme)
-                                .map_or("", |(_, label)| *label),
-                        )
-                        .show_ui(ui, |ui| {
-                            for (choice, label) in crate::theme::ThemeChoice::ALL {
-                                ui.selectable_value(&mut theme, choice, label);
-                            }
-                        });
-                    combo.response
+                    choice(
+                        ui,
+                        "theme",
+                        &mut appearance.theme,
+                        &crate::theme::ThemeChoice::ALL,
+                    )
+                });
+                row(ui, "Density", |ui| {
+                    choice(
+                        ui,
+                        "density",
+                        &mut appearance.density,
+                        &crate::theme::Density::ALL,
+                    )
                 });
             });
-            if theme != state.appearance.theme {
-                state.actions.push(Action::SetTheme(theme));
+            if appearance != state.appearance {
+                state.actions.push(Action::SetAppearance(appearance));
             }
             ui.add_space(8.0);
             ui.add_enabled_ui(loaded, |ui| {

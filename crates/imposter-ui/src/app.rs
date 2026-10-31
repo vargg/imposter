@@ -53,6 +53,7 @@ const APPEARANCE_KEY: &str = "appearance";
 #[serde(default)]
 pub struct Appearance {
     pub theme: theme::ThemeChoice,
+    pub density: theme::Density,
 }
 const LAYOUT_KEY: &str = "workspace_layout";
 const DRAFT_KEY: &str = "draft";
@@ -300,8 +301,8 @@ pub enum Action {
     ToggleSidebar,
     /// Switch between side by side and stacked.
     ToggleLayout,
-    /// Choose and remember the theme.
-    SetTheme(theme::ThemeChoice),
+    /// Choose and remember the theme and density.
+    SetAppearance(Appearance),
     /// A curl command pasted over the whole URL: it replaces the open request's contents.
     PasteCurl(String),
     /// Switch the active execution environment (`None`: globals only).
@@ -937,7 +938,11 @@ pub struct ImposterApp {
 impl ImposterApp {
     pub fn new(ctx: &egui::Context, store: Store) -> std::io::Result<Self> {
         ctx.set_fonts(theme::fonts());
-        theme::apply(ctx, theme::ThemeChoice::default());
+        theme::apply(
+            ctx,
+            theme::ThemeChoice::default(),
+            theme::Density::default(),
+        );
         let repaint = ctx.clone();
         let bridge = Bridge::new(move || repaint.request_repaint())?;
         let db = store.handle();
@@ -2624,9 +2629,9 @@ impl ImposterApp {
             Action::ToggleSidebar => {
                 self.state.layout.sidebar_visible = !self.state.layout.sidebar_visible;
             }
-            Action::SetTheme(choice) => {
-                self.state.appearance.theme = choice;
-                let stored = serde_json::to_value(self.state.appearance).unwrap_or(Value::Null);
+            Action::SetAppearance(appearance) => {
+                self.state.appearance = appearance;
+                let stored = serde_json::to_value(appearance).unwrap_or(Value::Null);
                 self.write_ui_state(APPEARANCE_KEY, stored);
             }
             Action::ToggleLayout => {
@@ -3903,7 +3908,11 @@ impl eframe::App for ImposterApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if self.applied != Some(self.state.appearance) {
-            theme::apply(ui.ctx(), self.state.appearance.theme);
+            theme::apply(
+                ui.ctx(),
+                self.state.appearance.theme,
+                self.state.appearance.density,
+            );
             self.applied = Some(self.state.appearance);
         }
         theme::begin_frame(ui.ctx());

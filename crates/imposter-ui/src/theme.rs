@@ -103,6 +103,60 @@ pub const LIGHT: Palette = Palette {
 thread_local! {
     /// egui draws a frame on one thread; each frame starts by setting this from its theme.
     static CURRENT: Cell<&'static Palette> = const { Cell::new(&DARK) };
+    /// Set by [`apply`] from the density.
+    static SPACING: Cell<Spacing> = const { Cell::new(Density::Compact.spacing()) };
+}
+
+/// How tightly lists and controls are packed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Density {
+    /// More rows on screen: the default for a tool used all day.
+    #[default]
+    Compact,
+    Comfortable,
+}
+
+/// The sizes a density sets, in points.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Spacing {
+    /// A list row: tree, History, palette.
+    pub row: f32,
+    /// A control: button, field, tab.
+    pub control: f32,
+    /// Between stacked items.
+    pub gap: f32,
+    /// Inside a control, left and right of its text.
+    pub pad: f32,
+}
+
+impl Density {
+    pub const ALL: [(Self, &'static str); 2] = [
+        (Self::Compact, "Compact"),
+        (Self::Comfortable, "Comfortable"),
+    ];
+
+    pub const fn spacing(self) -> Spacing {
+        match self {
+            Self::Compact => Spacing {
+                row: 26.0,
+                control: 24.0,
+                gap: 4.0,
+                pad: 8.0,
+            },
+            Self::Comfortable => Spacing {
+                row: 32.0,
+                control: 28.0,
+                gap: 6.0,
+                pad: 10.0,
+            },
+        }
+    }
+}
+
+/// The current density's sizes.
+pub fn spacing() -> Spacing {
+    SPACING.with(Cell::get)
 }
 
 /// The palette of the theme the current frame draws in.
@@ -306,13 +360,16 @@ pub fn fonts() -> egui::FontDefinitions {
 
 /// Install both themes and choose `choice`. Each frame then draws in one of them
 /// ([`begin_frame`]).
-pub fn apply(ctx: &egui::Context, choice: ThemeChoice) {
+pub fn apply(ctx: &egui::Context, choice: ThemeChoice, density: Density) {
+    let sizes = density.spacing();
+    SPACING.with(|current| current.set(sizes));
     for theme in [Theme::Dark, Theme::Light] {
         ctx.set_visuals_of(theme, visuals(of(theme), theme));
         ctx.style_mut_of(theme, |style| {
-            style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-            style.spacing.button_padding = egui::vec2(10.0, 5.0);
-            style.spacing.interact_size.y = 28.0;
+            style.spacing.item_spacing = egui::vec2(8.0, sizes.gap);
+            // 13-point text is about 16 points tall; the rest is padding.
+            style.spacing.button_padding = egui::vec2(sizes.pad, (sizes.control - 16.0) / 2.0);
+            style.spacing.interact_size.y = sizes.control;
             style.spacing.window_margin = egui::Margin::same(16);
             // The type scale: 12 for meta, 13 for the interface, 15 semibold for titles.
             for (text_style, font) in [
@@ -460,7 +517,7 @@ mod tests {
     #[test]
     fn apply_installs_both_themes_and_the_choice() {
         let ctx = egui::Context::default();
-        apply(&ctx, ThemeChoice::Dark);
+        apply(&ctx, ThemeChoice::Dark, Density::Compact);
         assert_eq!(
             ctx.style_of(Theme::Dark).visuals.panel_fill,
             DARK.background
@@ -483,7 +540,7 @@ mod tests {
             "controls get the readable edge"
         );
 
-        apply(&ctx, ThemeChoice::Light);
+        apply(&ctx, ThemeChoice::Light, Density::Compact);
         assert_eq!(ctx.theme(), Theme::Light);
         assert_eq!(palette(), &LIGHT, "the next frame draws in light");
         assert_eq!(
@@ -491,7 +548,9 @@ mod tests {
             Some(LIGHT.text)
         );
 
-        apply(&ctx, ThemeChoice::System);
+        apply(&ctx, ThemeChoice::System, Density::Comfortable);
+        assert_eq!(spacing(), Density::Comfortable.spacing());
+        assert_eq!(ctx.style_of(Theme::Dark).spacing.interact_size.y, 28.0);
         assert_eq!(ctx.options(|o| o.theme_preference), ThemePreference::System);
         CURRENT.with(|current| current.set(&DARK));
     }

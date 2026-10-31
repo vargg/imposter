@@ -10,7 +10,6 @@ use crate::theme::{Tone, palette};
 use crate::viewer::{self, Language};
 use crate::widgets::{self, name, tone_text};
 
-const ROW_HEIGHT: f32 = 26.0;
 const SEPARATOR: f32 = 6.0;
 
 fn outcome_text(row: &ExecutionSummary) -> (String, Tone) {
@@ -150,57 +149,67 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             });
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
-                .show_rows(ui, ROW_HEIGHT, history.rows.len(), |ui, range| {
-                    for index in range {
-                        let row = &history.rows[index];
-                        let selected = history.selected == Some(row.id);
-                        let (rect, response) =
-                            ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
-                        let when = viewer::local_time(row.timestamp);
-                        name(
-                            &response,
-                            &format!("History {} {} {}", row.method, row.url, when),
-                        );
-                        let fill = if selected {
-                            palette().selected
-                        } else if response.hovered() {
-                            palette().hover
-                        } else {
-                            egui::Color32::TRANSPARENT
-                        };
-                        ui.painter().rect_filled(rect, 4.0, fill);
-                        let (outcome, tone) = outcome_text(row);
-                        let cells = [
-                            (when, palette().text),
-                            (row.method.clone(), palette().text),
-                            (row.url.clone(), palette().text),
-                            (outcome, palette().tone(tone)),
-                            (row.environment.clone(), palette().text_muted),
-                        ];
-                        let mut x = rect.left() + 4.0;
-                        for ((text, color), column) in cells.into_iter().zip(columns) {
-                            let cell = Rect::from_min_size(
-                                egui::pos2(x, rect.top()),
-                                vec2(column - 8.0, ROW_HEIGHT),
+                .show_rows(
+                    ui,
+                    crate::theme::spacing().row,
+                    history.rows.len(),
+                    |ui, range| {
+                        for index in range {
+                            let row = &history.rows[index];
+                            let selected = history.selected == Some(row.id);
+                            let (rect, response) = ui.allocate_exact_size(
+                                vec2(width, crate::theme::spacing().row),
+                                Sense::click(),
                             );
-                            let galley = ui.painter().layout(
-                                text,
-                                egui::FontId::proportional(13.0),
-                                color,
-                                f32::INFINITY,
+                            let when = viewer::local_time(row.timestamp);
+                            name(
+                                &response,
+                                &format!("History {} {} {}", row.method, row.url, when),
                             );
-                            ui.painter().with_clip_rect(cell).galley(
-                                egui::pos2(cell.left(), cell.center().y - galley.size().y / 2.0),
-                                galley,
-                                color,
-                            );
-                            x += column;
+                            let fill = if selected {
+                                palette().selected
+                            } else if response.hovered() {
+                                palette().hover
+                            } else {
+                                egui::Color32::TRANSPARENT
+                            };
+                            ui.painter().rect_filled(rect, 4.0, fill);
+                            let (outcome, tone) = outcome_text(row);
+                            let cells = [
+                                (when, palette().text),
+                                (row.method.clone(), palette().text),
+                                (row.url.clone(), palette().text),
+                                (outcome, palette().tone(tone)),
+                                (row.environment.clone(), palette().text_muted),
+                            ];
+                            let mut x = rect.left() + 4.0;
+                            for ((text, color), column) in cells.into_iter().zip(columns) {
+                                let cell = Rect::from_min_size(
+                                    egui::pos2(x, rect.top()),
+                                    vec2(column - 8.0, crate::theme::spacing().row),
+                                );
+                                let galley = ui.painter().layout(
+                                    text,
+                                    egui::FontId::proportional(13.0),
+                                    color,
+                                    f32::INFINITY,
+                                );
+                                ui.painter().with_clip_rect(cell).galley(
+                                    egui::pos2(
+                                        cell.left(),
+                                        cell.center().y - galley.size().y / 2.0,
+                                    ),
+                                    galley,
+                                    color,
+                                );
+                                x += column;
+                            }
+                            if response.clicked() {
+                                actions.push(Action::History(HistoryAction::Select(row.id)));
+                            }
                         }
-                        if response.clicked() {
-                            actions.push(Action::History(HistoryAction::Select(row.id)));
-                        }
-                    }
-                });
+                    },
+                );
         },
     );
 

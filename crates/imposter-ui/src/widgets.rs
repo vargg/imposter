@@ -36,7 +36,9 @@ pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
     } else {
         palette().text_muted
     });
-    let response = ui.add(egui::Button::selectable(selected, text).min_size(egui::vec2(0.0, 30.0)));
+    let height = crate::theme::spacing().control + 6.0;
+    let response =
+        ui.add(egui::Button::selectable(selected, text).min_size(egui::vec2(0.0, height)));
     if selected {
         let rect = response.rect;
         ui.painter().line_segment(
@@ -1127,7 +1129,7 @@ pub fn viewer_tools_with(
 ) {
     // Fold buttons are a shortcut for the markers on each line, so they are the first to go
     // when the row is too narrow for every tool.
-    let room_for_all = ui.available_width() >= 6.0 * (28.0 + ui.spacing().item_spacing.x);
+    let room_for_all = ui.available_width() >= 6.0 * (icons::size() + ui.spacing().item_spacing.x);
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if icons::button(ui, Icon::Copy, copy_label, false).clicked() {
             ui.ctx().copy_text(text.to_owned());

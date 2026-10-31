@@ -31,6 +31,11 @@ pub enum Icon {
     Filter,
 }
 
+/// The side of an icon button: as tall as the other controls, so they line up in a row.
+pub fn size() -> f32 {
+    crate::theme::spacing().control
+}
+
 /// Native buttons keep keyboard and AccessKit behavior even when their label is only a tooltip.
 pub fn button(ui: &mut Ui, icon: Icon, label: &str, selected: bool) -> Response {
     button_with_hint(ui, icon, label, label, selected)
@@ -45,7 +50,7 @@ pub fn button_with_hint(
     selected: bool,
 ) -> Response {
     let response = ui.add_sized(
-        [28.0, 28.0],
+        [size(), size()],
         egui::Button::new("")
             .selected(selected)
             .frame_when_inactive(selected),

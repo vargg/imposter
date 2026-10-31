@@ -256,7 +256,8 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
         .find(|c| Some(c.id) == state.collection)
         .map(|c| (c.id, c.name.clone()));
     ui.horizontal(|ui| {
-        let picker_width = ui.available_width() - 2.0 * (28.0 + ui.spacing().item_spacing.x);
+        let picker_width =
+            ui.available_width() - 2.0 * (icons::size() + ui.spacing().item_spacing.x);
         ui.add_enabled_ui(!state.collections.is_empty(), |ui| {
             ui.set_width(picker_width);
             let picker = egui::ComboBox::from_id_salt("collection")
@@ -353,6 +354,9 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                 destinations: &destinations,
                 filtering,
             };
+            // Rows as tall as the density says, with a hairline between them.
+            ui.spacing_mut().interact_size.y = crate::theme::spacing().row;
+            ui.spacing_mut().item_spacing.y = 2.0;
             nodes(ui, &roots, &view, &mut actions);
             if egui::DragAndDrop::has_payload_of_type::<NodeId>(ui.ctx()) {
                 let (_, dropped) =
@@ -501,6 +505,11 @@ fn sidebar_filter(state: &mut State, ui: &mut Ui) {
     });
 }
 
+/// The method, URL and Send row: the main control, a little taller than the others.
+fn request_bar_height() -> f32 {
+    crate::theme::spacing().control + 8.0
+}
+
 fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Action>) {
     let NodesView {
         selected,
@@ -575,7 +584,7 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
                     },
                 );
                 let response = ui.add_sized(
-                    [ui.available_width(), 32.0],
+                    [ui.available_width(), crate::theme::spacing().row],
                     egui::Button::selectable(selected == Some(id), (text, egui::Atom::grow()))
                         .truncate()
                         .sense(Sense::click_and_drag()),
@@ -724,7 +733,7 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
         .inner_margin(8)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().interact_size.y = 36.0;
+                ui.spacing_mut().interact_size.y = request_bar_height();
                 edited |=
                     widgets::method_picker(ui, &mut pane.editor.method, &mut pane.custom_method);
                 let send_width = 96.0;
@@ -756,7 +765,7 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                     ("Send", palette().accent)
                 };
                 let send = ui.add_sized(
-                    vec2(send_width, 36.0),
+                    vec2(send_width, request_bar_height()),
                     egui::Button::new(RichText::new(label).color(palette().on_accent).strong())
                         .fill(fill),
                 );
