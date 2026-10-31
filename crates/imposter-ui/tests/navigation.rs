@@ -5,7 +5,7 @@
 mod support;
 
 use egui::{Key, Modifiers};
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::model::Variables;
 use imposter_app::core::settings::AppSettings;
 use imposter_app::store::{environments, kv};
@@ -413,13 +413,38 @@ fn find_over_the_sidebar_focuses_the_filter_and_escape_clears_it() {
     assert_eq!(app.harness.state().state.sidebar_filter, "");
 }
 
+/// The "5 of 9 requests" line, if shown.
+fn match_count(app: &support::App) -> Option<String> {
+    app.harness
+        .query_all_by_label_contains(" requests")
+        .filter_map(|node| {
+            let node = node.accesskit_node();
+            node.label().or_else(|| node.value())
+        })
+        .find(|label| label.starts_with(|c: char| c.is_ascii_digit()))
+}
+
 #[test]
-fn a_typed_filter_does_not_widen_the_sidebar() {
+fn a_typed_filter_keeps_the_field_and_sidebar_widths_and_counts_matches() {
     let mut app = foldered();
     let before = app.harness.state().state.layout.sidebar_width;
+    let field = app.harness.get_by_label("Filter requests").rect();
+    assert_eq!(match_count(&app), None, "only while filtering");
     filter(&mut app, "method:POST");
     app.harness.run_steps(20);
     assert_eq!(app.harness.state().state.layout.sidebar_width, before);
+    assert_eq!(app.harness.get_by_label("Filter requests").rect(), field);
+    let clear = app.harness.get_by_label("Clear the filter").rect();
+    assert!(field.contains_rect(clear), "{clear:?} inside {field:?}");
+    let count = match_count(&app).unwrap();
+    let numbers: Vec<usize> = count
+        .split_whitespace()
+        .filter_map(|word| word.parse().ok())
+        .collect();
+    assert!(
+        matches!(numbers.as_slice(), [shown, total] if 0 < *shown && shown < total),
+        "{count:?}"
+    );
 }
 
 /// Request "Old" open, with autosave off so the paste stays unsaved.

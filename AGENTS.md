@@ -448,7 +448,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   folders are drawn open under their own collapse ids, so clearing the filter restores the
   folders the user closed. The tree reads `url` through a virtual generated column
   (migration V3), like `name` and `method`. Cmd/Ctrl+F over the sidebar focuses the filter,
-  as Find elsewhere applies to what is under the pointer.
+  as Find elsewhere applies to what is under the pointer. The clear button sits inside the
+  field's right padding, so typing never changes the field's or the sidebar's width (the
+  review's #52), and "5 of 9 requests" shows under it while filtering.
 - **A curl command pasted over the whole URL field replaces the open request** (after Yaak):
   method, URL, headers, cookies, auth, body and options come from the command; identity,
   name, description and place stay; the result is an ordinary unsaved edit (autosave or Save

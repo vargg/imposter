@@ -470,39 +470,46 @@ struct NodesView<'a> {
 }
 
 /// The filter field above the tree. Cmd/Ctrl+F over the sidebar focuses it; Esc or × clear.
+/// The × sits inside the field's right padding, so the field never changes width; while
+/// filtering, "5 of 9 requests" shows under it.
 fn sidebar_filter(state: &mut State, ui: &mut Ui) {
     let over_sidebar = ui.rect_contains_pointer(ui.max_rect());
     let find = over_sidebar && ui.input_mut(|i| i.consume_shortcut(&crate::shortcuts::FIND));
-    ui.horizontal(|ui| {
-        // Exactly the room left by the clear button: wider content would widen the panel.
-        let clear_width = if state.sidebar_filter.is_empty() {
-            0.0
-        } else {
-            24.0 + ui.spacing().item_spacing.x
-        };
-        let field = ui.add(
-            egui::TextEdit::singleline(&mut state.sidebar_filter)
-                .hint_text("Filter: text, method:POST, url:…")
-                .desired_width(ui.available_width() - clear_width),
-        );
-        name(&field, "Filter requests");
-        if find {
-            field.request_focus();
-        }
-        // Esc also ends the field's focus, possibly in this same frame.
-        if (field.has_focus() || field.lost_focus())
-            && ui.input(|i| i.key_pressed(egui::Key::Escape))
-        {
+    let field = ui.add(
+        egui::TextEdit::singleline(&mut state.sidebar_filter)
+            .hint_text("Filter: text, method:POST, url:…")
+            .margin(egui::Margin {
+                left: 4,
+                right: 26,
+                top: 2,
+                bottom: 2,
+            })
+            .desired_width(f32::INFINITY),
+    );
+    name(&field, "Filter requests");
+    if find {
+        field.request_focus();
+    }
+    // Esc also ends the field's focus, possibly in this same frame.
+    if (field.has_focus() || field.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        state.sidebar_filter.clear();
+    }
+    if !state.sidebar_filter.is_empty() {
+        // A square as tall as the field at its right end: a full-size target inside it.
+        let side = field.rect.height();
+        let spot = Rect::from_min_size(field.rect.right_top() - vec2(side, 0.0), vec2(side, side));
+        let clear = ui.put(spot, egui::Button::new("×").frame(false));
+        name(&clear, "Clear the filter");
+        if clear.clicked() {
             state.sidebar_filter.clear();
         }
-        if !state.sidebar_filter.is_empty() {
-            let clear = ui.add_sized([24.0, 24.0], egui::Button::new("×").frame(false));
-            name(&clear, "Clear the filter");
-            if clear.clicked() {
-                state.sidebar_filter.clear();
-            }
-        }
-    });
+    }
+    let query = crate::filter::Query::parse(&state.sidebar_filter);
+    if let Some(tree) = state.tree.as_ref().filter(|_| !query.is_all()) {
+        let shown = crate::tree::request_count(&tree.filtered(&query));
+        let total = crate::tree::request_count(&tree.roots);
+        ui.label(tone_text(format!("{shown} of {total} requests"), Tone::Muted).small());
+    }
 }
 
 /// The method, URL and Send row: the main control, a little taller than the others.

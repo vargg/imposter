@@ -20,6 +20,17 @@ pub enum Node {
     Request(RequestSummary),
 }
 
+/// How many requests `nodes` hold, folders included.
+pub fn request_count(nodes: &[Node]) -> usize {
+    nodes
+        .iter()
+        .map(|node| match node {
+            Node::Folder { children, .. } => request_count(children),
+            Node::Request(_) => 1,
+        })
+        .sum()
+}
+
 impl Node {
     pub fn id(&self) -> NodeId {
         match self {
@@ -242,6 +253,14 @@ mod tests {
                 request(3, None, "late", 2),
             ],
         })
+    }
+
+    #[test]
+    fn requests_are_counted_inside_folders() {
+        let view = view();
+        assert_eq!(request_count(&view.roots), 3);
+        let query = Query::parse("nothing-matches-this");
+        assert_eq!(request_count(&view.filtered(&query)), 0);
     }
 
     #[test]
