@@ -235,7 +235,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   screen reader needs has an accessible name, set with `widgets::name` when no visible label
   exists. Only characters present in egui's bundled fonts are used; kittest fails on a missing
   glyph, which would otherwise render as a box. `cargo run -p imposter-ui --example screenshot --
-  <dir>` renders the app offscreen (wgpu) for looking at layouts.
+  <dir>` renders the app offscreen (wgpu) for looking at layouts; `--example tour` renders
+  every primary task step by step and the states a design review needs (first start,
+  loading, errors, dialogs) at the minimum and a wide size. Design reviews follow the
+  `design-ux` procedure: a reviewer that did not build the screens scores the tour.
 - **Variables in the editor:** fields mark `{{name}}` tokens with the Python app's highlight
   pattern (`\{\{([^{}\n]+)\}\}`, stricter than the resolution pattern): defined names and
   generated values in the accent color, unknown ones in the error color. Typing `{{` suggests names with their scope and
