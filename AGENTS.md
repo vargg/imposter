@@ -172,7 +172,9 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Bundled fonts: Inter (Regular, SemiBold) for the interface, JetBrains Mono for data.**
   - **Files:** in `crates/imposter-ui/assets/fonts`, with their SIL OFL licenses (shipped in
     every package as resources) and pinned hashes; egui's own fonts stay as fallbacks.
-  - **Type scale:** 12 meta, 13 interface, 15 SemiBold titles (`theme::semibold`).
+  - **Type scale:** 12 meta, 13 interface, 15 SemiBold titles (`theme::semibold`): dialog
+    titles, Settings groups and the request's name in the breadcrumb, whose place is
+    muted.
     Single-line variable fields (URL, headers, paths, values) are monospace.
   - **Size:** together the fonts add about 1.1 MiB to the release binary; Inter Medium was
     left out for that reason.

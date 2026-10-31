@@ -609,6 +609,33 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
 
 // ---- context and command bars -------------------------------------------------------------
 
+/// "Shop API / Users / List users" as a title: the place muted, the name in semibold.
+fn breadcrumb(path: &str) -> egui::text::LayoutJob {
+    let (place, name) = path
+        .rsplit_once(" / ")
+        .map_or(("", path), |(place, name)| (place, name));
+    let mut job = egui::text::LayoutJob::default();
+    let format = |font, color| egui::TextFormat {
+        font_id: font,
+        color,
+        valign: Align::Center,
+        ..Default::default()
+    };
+    if !place.is_empty() {
+        job.append(
+            &format!("{place} / "),
+            0.0,
+            format(egui::FontId::proportional(15.0), palette().text_muted),
+        );
+    }
+    job.append(
+        name,
+        0.0,
+        format(crate::theme::semibold(15.0), palette().text),
+    );
+    job
+}
+
 fn context_bar(
     state: &mut State,
     ui: &mut Ui,
@@ -634,7 +661,7 @@ fn context_bar(
                     .unwrap_or_else(|| pane.editor.name().to_owned()),
             },
         };
-        ui.add(egui::Label::new(RichText::new(&path).strong().size(14.0)).truncate())
+        ui.add(egui::Label::new(breadcrumb(&path)).truncate())
             .on_hover_text(&path);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if let Some(save) = save {

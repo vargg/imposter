@@ -80,7 +80,7 @@ fn group(ui: &mut Ui, title: &str, contents: impl FnOnce(&mut Ui)) {
         .inner_margin(12)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(egui::RichText::new(title).strong());
+            ui.label(egui::RichText::new(title).font(crate::theme::semibold(15.0)));
             ui.add_space(6.0);
             Grid::new(title)
                 .num_columns(2)

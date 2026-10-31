@@ -141,3 +141,51 @@ fn hovering_a_tab_previews_its_underline_without_a_button_frame() {
         "an underline: {shapes:?}"
     );
 }
+
+/// The font of `needle` in the text `whole` painted last frame.
+fn font_of(app: &support::App, whole: &str, needle: &str) -> egui::FontId {
+    for clipped in &app.harness.output().shapes {
+        if let egui::Shape::Text(text) = &clipped.shape {
+            let job = &text.galley.job;
+            if job.text != whole {
+                continue;
+            }
+            if let Some(at) = job.text.find(needle) {
+                let section = job
+                    .sections
+                    .iter()
+                    .find(|s| s.byte_range.contains(&egui::text::ByteIndex(at)))
+                    .unwrap();
+                return section.format.font_id.clone();
+            }
+        }
+    }
+    panic!("{needle:?} was not painted");
+}
+
+#[test]
+fn titles_use_the_title_style() {
+    let mut app = many_requests();
+    click(&mut app.harness, "GET Request 03");
+    settle(&mut app.harness);
+    app.harness.run_steps(1);
+    let title = imposter_ui::theme::semibold(15.0);
+    assert_eq!(
+        font_of(&app, "API / Request 03", "Request 03"),
+        title,
+        "the request's name"
+    );
+    assert_eq!(
+        font_of(&app, "API / Request 03", "API").family,
+        egui::FontFamily::Proportional,
+        "its place stays regular"
+    );
+    click(&mut app.harness, "Settings");
+    settle(&mut app.harness);
+    app.harness.run_steps(1);
+    assert_eq!(
+        font_of(&app, "Appearance", "Appearance"),
+        title,
+        "Settings group headings"
+    );
+}
