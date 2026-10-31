@@ -249,3 +249,24 @@ fn only_json_responses_offer_a_filter() {
     assert!(app.harness.query_by_label("Filter with JSONPath").is_none());
     assert!(app.harness.query_by_label("Collapse all").is_none());
 }
+
+#[test]
+fn a_body_larger_than_the_preview_can_be_saved_whole() {
+    let big: &'static str =
+        Box::leak(format!("[{}]", "1,".repeat(150 * 1024) + "1").into_boxed_str());
+    let mut fixture = sent("application/json", big);
+    let app = &mut fixture.app;
+    app.harness.get_by_label("Preview shows 256 KB of 300 KB");
+    let out = app.dir.path().join("saved.json");
+    app.harness
+        .state_mut()
+        .script_file_dialogs([Some(out.clone())]);
+    click(&mut app.harness, "Save body…");
+    settle(&mut app.harness);
+    assert_eq!(
+        std::fs::read(&out).unwrap(),
+        big.as_bytes(),
+        "the whole body"
+    );
+    app.harness.get_by_label("Saved the body to saved.json");
+}

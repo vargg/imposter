@@ -458,6 +458,14 @@ pub async fn export_native(
     Ok(())
 }
 
+/// Write `bytes` to `path` atomically (a response body the user saves), off the async
+/// threads. A failure leaves no partial file.
+pub async fn write_file(path: PathBuf, bytes: Vec<u8>) -> std::io::Result<()> {
+    tokio::task::spawn_blocking(move || native::atomic_write(&path, &bytes))
+        .await
+        .map_err(std::io::Error::other)?
+}
+
 /// The Postman export of `scope` and its warnings, for review before writing.
 pub async fn postman_export(
     store: &StoreHandle,

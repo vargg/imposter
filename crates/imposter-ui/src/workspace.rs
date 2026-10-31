@@ -1208,7 +1208,18 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
             actions.push(Action::AddCapture(crate::checks::capture_for(&path)));
         }
         Some(PaneAction::Retry) => actions.push(Action::Send),
+        Some(PaneAction::SaveBody) => actions.push(save_body_action(response_state)),
         None => {}
+    }
+}
+
+/// Save the body of `pane`'s response.
+pub fn save_body_action(pane: &crate::app::ResponsePane) -> Action {
+    let response = pane.response.as_ref();
+    Action::SaveBody {
+        bytes: response.map(|r| r.body.clone()).unwrap_or_default(),
+        name: response.map_or("response.txt", viewer::body_file_name),
+        cut: response.is_some_and(|r| r.truncated),
     }
 }
 
@@ -1218,6 +1229,8 @@ pub enum PaneAction {
     Row(widgets::RowAction),
     /// Send the request again after a failure.
     Retry,
+    /// Save the whole body to a file: it is larger than the preview, or was cut.
+    SaveBody,
 }
 
 enum BlockedAction {
@@ -1500,8 +1513,30 @@ pub fn response_body(
     {
         response_state.tab = ResponseTab::Tests;
     }
+    let mut save_body = false;
+    // The preview holds part of the body: the whole of it can still be saved or copied.
+    let partial = response_state
+        .preview
+        .as_ref()
+        .is_some_and(|(preview, _)| preview.limited)
+        && response_state
+            .response
+            .as_ref()
+            .is_some_and(|r| r.outcome == imposter_app::core::execution::Outcome::Response);
     if let Some((notice, tone)) = &response_state.notice {
-        ui.label(tone_text(notice.as_str(), *tone));
+        ui.horizontal_wrapped(|ui| {
+            ui.label(tone_text(notice.as_str(), *tone));
+            if partial && let Some(response) = &response_state.response {
+                save_body = ui.button("Save body…").clicked();
+                if ui.button("Copy full body").clicked() {
+                    ui.ctx()
+                        .copy_text(String::from_utf8_lossy(&response.body).into_owned());
+                }
+            }
+        });
+    }
+    if save_body {
+        return Some(PaneAction::SaveBody);
     }
     let filter_status = filter_status(&response_state.filter);
     let crate::app::ResponsePane {

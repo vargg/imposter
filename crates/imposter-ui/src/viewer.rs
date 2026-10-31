@@ -553,17 +553,37 @@ pub fn size_text(response: &Response) -> String {
 
 /// The notice under the status line, joining what the user should know.
 pub fn notice(response: &Response, preview: &Preview) -> String {
-    let mut parts: Vec<&str> = Vec::new();
+    let mut parts: Vec<String> = Vec::new();
     match response.outcome {
-        Outcome::Cancelled => parts.push("Execution cancelled"),
-        Outcome::Response if response.body.is_empty() => parts.push("Response body is empty"),
-        Outcome::Response if preview.limited => parts.push("Response truncated or preview limited"),
+        Outcome::Cancelled => parts.push("Execution cancelled".to_owned()),
+        Outcome::Response if response.body.is_empty() => {
+            parts.push("Response body is empty".to_owned());
+        }
+        Outcome::Response if response.truncated => parts.push(format!(
+            "Body cut at {} when captured",
+            format_size(response.body.len())
+        )),
+        Outcome::Response if preview.limited => parts.push(format!(
+            "Preview shows {} of {}",
+            format_size(PREVIEW_LIMIT),
+            format_size(response.body.len())
+        )),
         _ => {}
     }
     if !response.history_error.is_empty() {
-        parts.push(&response.history_error);
+        parts.push(response.history_error.clone());
     }
     parts.join(" · ")
+}
+
+/// The file name offered when saving `response`'s body, by its content type.
+pub fn body_file_name(response: &Response) -> &'static str {
+    match language(content_type(&response.headers)) {
+        Language::Json => "response.json",
+        Language::Xml => "response.xml",
+        Language::Html => "response.html",
+        Language::Plain => "response.txt",
+    }
 }
 
 /// Whether the response says its body is JSON, whatever its size.
@@ -1180,8 +1200,16 @@ mod tests {
         };
         assert_eq!(
             notice(&truncated, &preview(&truncated)),
-            "Response truncated or preview limited"
+            "Body cut at 1 B when captured"
         );
+        let large = response(&vec![b'x'; PREVIEW_LIMIT + 1024], "text/plain");
+        assert_eq!(
+            notice(&large, &preview(&large)),
+            "Preview shows 256 KB of 257 KB"
+        );
+        assert_eq!(body_file_name(&large), "response.txt");
+        let json = response(b"{}", "application/json");
+        assert_eq!(body_file_name(&json), "response.json");
         assert_eq!(size_text(&truncated), "1 B, cut");
         assert_eq!(format_duration(0.1234), "123 ms");
         assert_eq!(format_duration(2.5), "2.50 s");

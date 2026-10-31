@@ -274,13 +274,17 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 HistoryTab::Request => sent_request(ui, history),
                 HistoryTab::Response => {
                     // History responses are not the open request's: no row adds a check.
-                    let _ = crate::workspace::response_body(
-                        ui,
-                        &mut history.response,
-                        "history",
-                        true,
-                        false,
-                    );
+                    if let Some(crate::workspace::PaneAction::SaveBody) =
+                        crate::workspace::response_body(
+                            ui,
+                            &mut history.response,
+                            "history",
+                            true,
+                            false,
+                        )
+                    {
+                        actions.push(crate::workspace::save_body_action(&history.response));
+                    }
                 }
             }
         },

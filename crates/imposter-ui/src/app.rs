@@ -233,6 +233,16 @@ pub enum Message {
         scope: Box<ExportScope>,
         path: Option<PathBuf>,
     },
+    /// Where to save a response body, if the user chose a place.
+    BodySavePicked {
+        path: Option<PathBuf>,
+        bytes: Vec<u8>,
+        cut: bool,
+    },
+    BodySaved {
+        result: Result<PathBuf, String>,
+        cut: bool,
+    },
     PostmanReady(Result<Box<PostmanExport>, Failure>),
     PostmanExportPicked(Option<PathBuf>),
     Exported(Result<PathBuf, Failure>),
@@ -287,6 +297,12 @@ pub enum Action {
     Save,
     Send,
     PickFile(FileRequest),
+    /// Save a response body to a file the user picks; `cut` when it was cut at capture.
+    SaveBody {
+        bytes: Vec<u8>,
+        name: &'static str,
+        cut: bool,
+    },
     /// Append a check to the open request and show its Tests tab.
     AddCheck(imposter_app::core::check::Check),
     /// Append a capture to the open request and show its Tests tab.
@@ -1442,6 +1458,28 @@ impl ImposterApp {
                 self.error("Import failed", error);
             }
             Message::Imported(Ok(id)) => self.imported(id),
+            Message::BodySavePicked { path, bytes, cut } => {
+                if let Some(path) = path {
+                    self.bridge.spawn(move |_| async move {
+                        let result = transfer::write_file(path.clone(), bytes).await;
+                        Message::BodySaved {
+                            result: result.map(|()| path).map_err(|error| error.to_string()),
+                            cut,
+                        }
+                    });
+                }
+            }
+            Message::BodySaved { result, cut } => match result {
+                Ok(path) => {
+                    let file = path.file_name().map_or_else(
+                        || path.display().to_string(),
+                        |name| name.to_string_lossy().into_owned(),
+                    );
+                    let cut = if cut { " (cut when captured)" } else { "" };
+                    self.status(&format!("Saved the body to {file}{cut}"));
+                }
+                Err(error) => self.error("Couldn't save the body", error),
+            },
             Message::NativeExportPicked { scope, path } => {
                 if let Some(path) = path {
                     let db = self.db.clone();
@@ -2667,6 +2705,18 @@ impl ImposterApp {
                 |paths| Message::ImportPicked(paths.into_iter().next()),
             ),
             Action::Export => self.prompt_export(),
+            Action::SaveBody { bytes, name, cut } => self.pick(
+                FileDialog::Save {
+                    title: "Save response body",
+                    name,
+                    filter: None,
+                },
+                move |paths| Message::BodySavePicked {
+                    path: paths.into_iter().next(),
+                    bytes,
+                    cut,
+                },
+            ),
             Action::ShowRun(id) => self.show_run(id),
             Action::Edited { url, params } => self.edited(url, params, now),
             Action::Screen(screen) => {

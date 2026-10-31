@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use imposter_app::transfer::{
     ExportScope, ImportKind, TransferError, detect, export_native, import, postman_export,
-    read_preview, write_postman,
+    read_preview, write_file, write_postman,
 };
 use imposter_core::model::{BodyType, Request, RequestTemplate, Variables};
 use imposter_core::prepare::{PreparedBody, prepare};
@@ -639,4 +639,21 @@ async fn saved_values_travel_with_their_scopes_and_existing_globals_keep_theirs(
         ["eu", "us"],
         "new globals bring theirs"
     );
+}
+
+#[tokio::test]
+async fn a_saved_body_is_written_whole_or_not_at_all() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("response.json");
+    let body = vec![b'x'; 300 * 1024];
+    write_file(path.clone(), body.clone()).await.unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), body);
+    write_file(path.clone(), b"{}".to_vec()).await.unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"{}", "replaced");
+
+    let missing = dir.path().join("no such directory").join("response.json");
+    assert!(write_file(missing.clone(), body).await.is_err());
+    assert!(!missing.exists());
+    let left: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+    assert_eq!(left.len(), 1, "no temporary files: {left:?}");
 }

@@ -139,6 +139,11 @@ numbers, so both are excluded. Each logical change is its own commit.
   out (`ScrollArea::show_rows`, monospace, wrap by column count). Why: a 5 MiB read-only
   `TextEdit` costs about 730 ms per frame; virtualized rows cost about 0.1 ms, highlighted or
   not. Measured by `cargo run --release -p imposter-ui --example text_perf` (M-series Mac).
+- **The preview stays at 256 KiB; the whole body is one click away.** When the preview is
+  shorter than the body, the pane says so precisely ("Preview shows 256 KB of 584 KB", or
+  "Body cut at … when captured") and offers Save body… (written atomically on the bridge,
+  `transfer::write_file`) and Copy full body, in Requests and History. Why: the limit keeps
+  the viewer fast; the old "truncated or preview limited" left no way to the rest.
 - **JSON navigation keeps the virtualized rows.** Folding hides row ranges computed from an
   outline of the formatted text (`viewer::Outline`: path, depth and closing line for every
   line), so nothing is laid out that is not visible. A row with a fold marker is exactly as
