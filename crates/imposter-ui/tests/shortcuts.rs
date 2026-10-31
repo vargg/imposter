@@ -276,6 +276,16 @@ fn sidebar_settings_and_the_shortcut_sheet() {
     // Keys as keyboards print them, one cap each; never egui's "Slash".
     app.harness.get_by_label("Ctrl Shift /");
     assert!(app.harness.query_by_label_contains("Slash").is_none());
+    // The widest keys (two alternatives) do not push their description out of line.
+    let send = app
+        .harness
+        .get_by_label("Send (or cancel the running request)")
+        .rect();
+    let settings = app.harness.get_by_label("Open Settings").rect();
+    assert!(
+        (send.left() - settings.left()).abs() < 0.5,
+        "{send:?} {settings:?}"
+    );
     let navigate = app.harness.get_by_label("Navigate").rect();
     let view = app.harness.get_by_label("View").rect();
     assert!(navigate.top() < view.top());

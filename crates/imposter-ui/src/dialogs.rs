@@ -412,9 +412,14 @@ impl Dialog {
                         .max_height((max_height - 96.0).max(120.0))
                         .show(ui, |ui| {
                             // Clear of the scroll bar; descriptions wrap in what is left
-                            // after the keys (about 180 points).
+                            // after the keys, whose column fits the widest row in every
+                            // group, so all descriptions line up.
                             let width = ui.available_width() - SCROLL_BAR_ROOM;
                             ui.set_max_width(width);
+                            let keys_column = crate::shortcuts::ALL
+                                .iter()
+                                .map(|s| crate::widgets::key_caps_width(ui, s.keys))
+                                .fold(KEYS_COLUMN, f32::max);
                             for (group, title) in crate::shortcuts::Group::ALL {
                                 ui.add_space(6.0);
                                 ui.label(
@@ -425,8 +430,8 @@ impl Dialog {
                                 egui::Grid::new(("shortcuts", title))
                                     .num_columns(2)
                                     .spacing([24.0, 6.0])
-                                    .min_col_width(KEYS_COLUMN)
-                                    .max_col_width((width - KEYS_COLUMN - 24.0).max(160.0))
+                                    .min_col_width(keys_column)
+                                    .max_col_width((width - keys_column - 24.0).max(160.0))
                                     .show(ui, |ui| {
                                         for shortcut in crate::shortcuts::ALL
                                             .iter()

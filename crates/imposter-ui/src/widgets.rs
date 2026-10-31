@@ -483,7 +483,7 @@ pub const GRIP_LENGTH: f32 = 32.0;
 /// Shortcuts drawn as key caps, with "or" between alternatives.
 pub fn key_caps(ui: &mut Ui, keys: &[egui::KeyboardShortcut]) {
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.spacing_mut().item_spacing.x = KEY_CAPS_SPACING;
         for (i, key) in keys.iter().enumerate() {
             if i > 0 {
                 ui.label(tone_text("or", Tone::Muted).small());
@@ -496,6 +496,21 @@ pub fn key_caps(ui: &mut Ui, keys: &[egui::KeyboardShortcut]) {
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
         }
     });
+}
+
+const KEY_CAPS_SPACING: f32 = 6.0;
+
+/// The width [`key_caps`] takes for `keys`.
+pub fn key_caps_width(ui: &Ui, keys: &[egui::KeyboardShortcut]) -> f32 {
+    let or = text_width(ui, RichText::new("or").small());
+    let mut width = 0.0;
+    for (i, key) in keys.iter().enumerate() {
+        if i > 0 {
+            width += 2.0 * KEY_CAPS_SPACING + or;
+        }
+        width += caps_size(ui, &crate::shortcuts::keys(ui.ctx(), key)).x;
+    }
+    width
 }
 
 /// The space between two keys of a chord and inside a key.
