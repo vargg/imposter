@@ -89,7 +89,9 @@ pub const LIGHT: Palette = Palette {
     on_accent: Color32::from_rgb(0xff, 0xff, 0xff),
     ok: Color32::from_rgb(0x15, 0x70, 0x2f),
     warning: Color32::from_rgb(0x87, 0x5a, 0x00),
-    error: Color32::from_rgb(0xc6, 0x28, 0x28),
+    // As bright as the accent, and ≥4.5:1 on its own tint after rendering rounds the blend
+    // (#c62828 measured 4.47:1 there).
+    error: Color32::from_rgb(0xbf, 0x24, 0x24),
     syntax: Syntax {
         key: Color32::from_rgb(0x0b, 0x57, 0xa4),
         // Strings are green, away from the accent that marks `{{variables}}` inside them.
@@ -531,6 +533,12 @@ mod tests {
     }
 
     /// `color` at `amount` over `under`, as a tinted fill looks.
+    /// `color` with every channel moved by `levels`.
+    fn nudged(color: Color32, levels: i16) -> Color32 {
+        let channel = |value: u8| u8::try_from((i16::from(value) + levels).clamp(0, 255)).unwrap();
+        Color32::from_rgb(channel(color.r()), channel(color.g()), channel(color.b()))
+    }
+
     fn tinted(color: Color32, amount: f32, under: Color32) -> Color32 {
         let mix = |top: u8, bottom: u8| {
             let blended = f32::from(bottom) * (1.0 - amount) + f32::from(top) * amount;
@@ -566,9 +574,13 @@ mod tests {
         for (name, palette) in BOTH {
             for under in [palette.input, palette.surface] {
                 let fill = tinted(palette.error, crate::widgets::ERROR_TINT, under);
-                for text in [palette.error, palette.text] {
-                    let ratio = contrast(text, fill);
-                    assert!(ratio >= AA, "{name} {text:?} on {fill:?}: {ratio:.2}");
+                // Rendering rounds a blend by a level either way: a computed 4.52:1 was
+                // measured at 4.47:1 in a screenshot.
+                for fill in [fill, nudged(fill, -1), nudged(fill, 1)] {
+                    for text in [palette.error, palette.text] {
+                        let ratio = contrast(text, fill);
+                        assert!(ratio >= AA, "{name} {text:?} on {fill:?}: {ratio:.2}");
+                    }
                 }
             }
         }

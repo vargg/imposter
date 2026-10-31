@@ -182,7 +182,9 @@ numbers, so both are excluded. Each logical change is its own commit.
     - control edges (`field_border`, used for fields and buttons) and the selection marker
       are ≥3:1, per WCAG 1.4.11;
     - tinted fills (status pills at 12%, the red tint of unknown variables and failed
-      checks at 12%) keep their text ≥4.5:1; 18% red fell to 4.08:1 in light;
+      checks at 12%) keep their text ≥4.5:1, even with the blend rounded a level either
+      way as rendering does; 18% red fell to 4.08:1 in light, and the light red is
+      #bf2424 because #c62828 measured 4.47:1 on its tint;
     - every syntax color stays clearly apart from the accent (RGB distance ≥80), because
       `{{variables}}` inside a body are marked in the accent; light strings are green.
   - **Light accent:** the light theme's accent is a darker orange (#b83b0a), because
