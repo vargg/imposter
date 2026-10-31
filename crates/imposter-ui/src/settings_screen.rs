@@ -242,7 +242,10 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                         text(ui, &mut form.password, "", true)
                     });
                 });
-                ui.label("Host client certificates");
+                ui.label(
+                    egui::RichText::new("Host client certificates")
+                        .font(crate::theme::semibold(15.0)),
+                );
                 let mut remove = None;
                 for (index, identity) in form.host_identities.iter_mut().enumerate() {
                     ui.push_id(index, |ui| {

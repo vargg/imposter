@@ -188,6 +188,11 @@ fn titles_use_the_title_style() {
         title,
         "Settings group headings"
     );
+    assert_eq!(
+        font_of(&app, "Host client certificates", "Host client certificates"),
+        title,
+        "and the heading of the host certificates"
+    );
 }
 
 #[test]
