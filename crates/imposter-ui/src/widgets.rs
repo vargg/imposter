@@ -40,19 +40,32 @@ fn tab_text(label: &str, selected: bool) -> RichText {
     }
 }
 
-fn tab_height() -> f32 {
+/// The height of tabs and of menu buttons in their rows.
+pub fn tab_height() -> f32 {
     crate::theme::spacing().control + 6.0
+}
+
+/// The width of `text` on one line.
+pub fn text_width(ui: &Ui, text: RichText) -> f32 {
+    egui::WidgetText::from(text)
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::TextStyle::Button,
+        )
+        .size()
+        .x
 }
 
 /// The width `text` takes on a button, padding included.
 fn button_width(ui: &Ui, text: RichText) -> f32 {
-    let galley = egui::WidgetText::from(text).into_galley(
-        ui,
-        Some(egui::TextWrapMode::Extend),
-        f32::INFINITY,
-        egui::TextStyle::Button,
-    );
-    galley.size().x + 2.0 * ui.spacing().button_padding.x
+    text_width(ui, text) + 2.0 * ui.spacing().button_padding.x
+}
+
+/// The width of a [`menu_text_button`] showing `text`.
+pub fn menu_text_button_width(ui: &Ui, text: &str) -> f32 {
+    button_width(ui, RichText::new(text)) + CHEVRON
 }
 
 /// A tab: muted text, or semibold accent text with an underline when selected; no fill.
@@ -63,11 +76,14 @@ pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
             .min_size(egui::vec2(0.0, tab_height())),
     );
     if selected {
-        let rect = response.rect;
+        // Under the text, which sits inside the button's padding.
+        let rect = response
+            .rect
+            .shrink2(egui::vec2(ui.spacing().button_padding.x, 0.0));
         ui.painter().line_segment(
             [
-                rect.left_bottom() + egui::vec2(8.0, -1.0),
-                rect.right_bottom() + egui::vec2(-8.0, -1.0),
+                rect.left_bottom() + egui::vec2(0.0, -1.0),
+                rect.right_bottom() + egui::vec2(0.0, -1.0),
             ],
             egui::Stroke::new(2.0, palette().accent),
         );
@@ -134,9 +150,9 @@ fn shown_tabs(
 
 const CHEVRON: f32 = 12.0;
 
-/// The button that opens the tabs left out of a row: "More" and a chevron.
-fn more_tabs_button(ui: &mut Ui) -> egui::Response {
-    let galley = egui::WidgetText::from(RichText::new("More").color(palette().text_muted))
+/// A frameless button showing `text` and a chevron, named `label`, that opens a menu.
+pub fn menu_text_button(ui: &mut Ui, text: &str, label: &str) -> egui::Response {
+    let galley = egui::WidgetText::from(RichText::new(text).color(palette().text_muted))
         .into_galley(
             ui,
             Some(egui::TextWrapMode::Extend),
@@ -147,7 +163,7 @@ fn more_tabs_button(ui: &mut Ui) -> egui::Response {
     let size = egui::vec2(galley.size().x + 2.0 * pad + CHEVRON, tab_height());
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let enabled = ui.is_enabled();
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, "More tabs"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         if response.hovered() || response.has_focus() {
@@ -179,12 +195,31 @@ fn more_tabs_button(ui: &mut Ui) -> egui::Response {
 
 /// One row of tabs in a horizontal `ui`. Tabs that do not fit, leaving `reserve` points for
 /// what follows on the row, go into a "More" menu; the selected tab always stays in the row.
-/// Returns whether the user chose a tab.
+/// `more` names the menu button for screen readers. Returns whether the user chose a tab.
 pub fn tab_strip<T: Copy + PartialEq>(
     ui: &mut Ui,
     tabs: &[TabSpec<'_, T>],
     selected: &mut T,
     reserve: f32,
+    more: &str,
+) -> bool {
+    ui.scope(|ui| {
+        // Frameless tabs need less padding than buttons: their labels stay 14 points apart.
+        ui.spacing_mut().button_padding.x = TAB_PADDING;
+        ui.spacing_mut().item_spacing.x = 2.0;
+        tab_row(ui, tabs, selected, reserve, more)
+    })
+    .inner
+}
+
+const TAB_PADDING: f32 = 6.0;
+
+fn tab_row<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    tabs: &[TabSpec<'_, T>],
+    selected: &mut T,
+    reserve: f32,
+    more: &str,
 ) -> bool {
     let current = tabs.iter().position(|tab| tab.value == *selected);
     let widths: Vec<f32> = tabs
@@ -192,9 +227,15 @@ pub fn tab_strip<T: Copy + PartialEq>(
         .enumerate()
         .map(|(i, tab)| button_width(ui, tab_text(tab.label, Some(i) == current)))
         .collect();
-    let more = button_width(ui, RichText::new("More")) + CHEVRON;
+    let more_width = menu_text_button_width(ui, "More");
     let gap = ui.spacing().item_spacing.x;
-    let shown = shown_tabs(&widths, current, ui.available_width() - reserve, more, gap);
+    let shown = shown_tabs(
+        &widths,
+        current,
+        ui.available_width() - reserve,
+        more_width,
+        gap,
+    );
     let mut chosen = None;
     for &i in &shown {
         let spec = &tabs[i];
@@ -207,7 +248,7 @@ pub fn tab_strip<T: Copy + PartialEq>(
         }
     }
     if shown.len() < tabs.len() {
-        let button = more_tabs_button(ui);
+        let button = menu_text_button(ui, "More", more);
         egui::Popup::menu(&button).show(|ui| {
             for (i, spec) in tabs.iter().enumerate() {
                 if shown.contains(&i) {
@@ -1300,46 +1341,111 @@ impl ViewerState {
     }
 }
 
-/// Right-aligned tools, leaving room for the caller's tabs on the same row.
-/// Narrower than this, a viewer's tabs and its tools get a row each instead of sharing one.
-pub const TAB_ROW_MIN: f32 = 280.0;
-
+/// A viewer's tools at the right of a row: wrap, find and copy.
 pub fn viewer_tools(ui: &mut Ui, state: &mut ViewerState, text: &str, copy_label: &str) {
-    viewer_tools_with(ui, state, text, copy_label, None, |_| {});
+    viewer_tools_with(ui, state, text, copy_label, None, None);
 }
 
-/// [`viewer_tools`] with fold buttons for `folding`, and `more` drawn left of Wrap.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tool {
+    Copy,
+    Find,
+    Filter,
+    Wrap,
+    Collapse,
+    Expand,
+}
+
+/// The tools a viewer offers, right to left as drawn: the first are the last to move into
+/// the "More tools" menu. Fold buttons go first, since every line has its own marker.
+fn viewer_tool_list(filter: bool, folding: bool) -> Vec<Tool> {
+    let mut tools = vec![Tool::Copy, Tool::Find];
+    if filter {
+        tools.push(Tool::Filter);
+    }
+    tools.push(Tool::Wrap);
+    if folding {
+        tools.extend([Tool::Collapse, Tool::Expand]);
+    }
+    tools
+}
+
+/// How many of `count` tools show as icons in `available` points; the rest need a menu
+/// button, which takes a place too.
+fn tools_shown(count: usize, available: f32, slot: f32, gap: f32) -> usize {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a small count ≥ 0
+    let fit = ((available + gap) / slot).floor().max(0.0) as usize;
+    if fit >= count {
+        count
+    } else {
+        fit.saturating_sub(1)
+    }
+}
+
+/// [`viewer_tools`] with fold buttons for `folding` and, for `filter` (whether the filter is
+/// open, and where to report a click), the JSONPath filter. Tools that do not fit the row
+/// move into a "More tools" menu.
 pub fn viewer_tools_with(
     ui: &mut Ui,
     state: &mut ViewerState,
     text: &str,
     copy_label: &str,
     folding: Option<Folding<'_>>,
-    more: impl FnOnce(&mut Ui),
+    filter: Option<(bool, &mut bool)>,
 ) {
-    // Fold buttons are a shortcut for the markers on each line, so they are the first to go
-    // when the row is too narrow for every tool.
-    let room_for_all = ui.available_width() >= 6.0 * (icons::size() + ui.spacing().item_spacing.x);
+    let filter_open = filter.as_ref().is_some_and(|(open, _)| *open);
+    let tools = viewer_tool_list(filter.is_some(), folding.is_some());
+    let gap = ui.spacing().item_spacing.x;
+    let shown = tools_shown(tools.len(), ui.available_width(), icons::size() + gap, gap);
+    let describe = |tool: Tool| match tool {
+        Tool::Copy => (Icon::Copy, copy_label, false),
+        Tool::Find => (Icon::Search, "Find", false),
+        Tool::Filter => (Icon::Filter, "Filter with JSONPath", filter_open),
+        Tool::Wrap => (Icon::Wrap, "Wrap", state.wrap),
+        Tool::Collapse => (Icon::Collapse, "Collapse all", false),
+        Tool::Expand => (Icon::Expand, "Expand all", false),
+    };
+    let mut chosen = None;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        if icons::button(ui, Icon::Copy, copy_label, false).clicked() {
-            ui.ctx().copy_text(text.to_owned());
-        }
-        if icons::button(ui, Icon::Search, "Find", false).clicked() {
-            state.open_find();
-        }
-        if icons::button(ui, Icon::Wrap, "Wrap", state.wrap).clicked() {
-            state.wrap = !state.wrap;
-        }
-        if let Some(folding) = folding.filter(|_| room_for_all) {
-            if icons::button(ui, Icon::Expand, "Expand all", false).clicked() {
-                folding.folded.clear();
+        for &tool in &tools[..shown] {
+            let (icon, label, selected) = describe(tool);
+            if icons::button(ui, icon, label, selected).clicked() {
+                chosen = Some(tool);
             }
-            if icons::button(ui, Icon::Collapse, "Collapse all", false).clicked() {
+        }
+        if shown < tools.len() {
+            icons::menu(ui, Icon::More, "More tools", |ui| {
+                for &tool in &tools[shown..] {
+                    let (_, label, selected) = describe(tool);
+                    if ui.selectable_label(selected, label).clicked() {
+                        chosen = Some(tool);
+                        ui.close();
+                    }
+                }
+            });
+        }
+    });
+    match chosen {
+        Some(Tool::Copy) => ui.ctx().copy_text(text.to_owned()),
+        Some(Tool::Find) => state.open_find(),
+        Some(Tool::Filter) => {
+            if let Some((_, clicked)) = filter {
+                *clicked = true;
+            }
+        }
+        Some(Tool::Wrap) => state.wrap = !state.wrap,
+        Some(Tool::Collapse) => {
+            if let Some(folding) = folding {
                 *folding.folded = folding.outline.collapse_all();
             }
         }
-        more(ui);
-    });
+        Some(Tool::Expand) => {
+            if let Some(folding) = folding {
+                folding.folded.clear();
+            }
+        }
+        None => {}
+    }
 }
 
 /// Folding and the row menu of a viewer showing formatted JSON.

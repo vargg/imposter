@@ -55,7 +55,7 @@ fn executions_are_listed_with_their_request_and_response() {
     app.harness.get_by_label("No headers");
     app.harness.state_mut().state.history.tab = HistoryTab::Response;
     app.harness.run_steps(2);
-    app.harness.get_by_label("Status: 201");
+    app.harness.get_by_label("201 Created");
     app.harness.get_by_label_contains("made it");
 }
 

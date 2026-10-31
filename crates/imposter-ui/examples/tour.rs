@@ -70,6 +70,18 @@ impl Tour {
         }
     }
 
+    /// Open the request tab `label`, from "More" when it did not fit the row.
+    fn open_tab(&mut self, label: &str) {
+        if self
+            .harness
+            .query_by_role_and_label(egui::accesskit::Role::Button, label)
+            .is_none()
+        {
+            self.click("More request tabs");
+        }
+        self.click(label);
+    }
+
     fn keys(&mut self, modifiers: egui::Modifiers, key: egui::Key) {
         self.harness.key_press_modifiers(modifiers, key);
         self.harness.run_steps(2);
@@ -351,7 +363,7 @@ fn main() {
         tour.click("POST Create user");
         tour.settle();
         tour.shot("2-02-json-body");
-        tour.click("Auth");
+        tour.open_tab("Auth");
         tour.shot("2-03-auth");
         tour.click("GET Slow report");
         tour.settle();
@@ -428,7 +440,7 @@ fn main() {
         // Task 4: checks and captured variables.
         tour.click("Requests");
         tour.settle();
-        tour.click("Tests");
+        tour.open_tab("Tests");
         tour.click("Send");
         tour.settle();
         tour.click("Check results");

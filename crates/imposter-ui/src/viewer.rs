@@ -417,7 +417,11 @@ pub fn status(response: &Response) -> Status {
             }
         }
         Outcome::Response => Status {
-            text: format!("Status: {}", response.status),
+            text: if response.reason.is_empty() {
+                response.status.to_string()
+            } else {
+                format!("{} {}", response.status, response.reason)
+            },
             tone: match response.status {
                 200..=299 => Tone::Ok,
                 300..=399 => Tone::Warning,
@@ -482,17 +486,11 @@ pub fn failure_hint(kind: &str) -> Option<&'static str> {
 /// The status bar's one-line result of a send: "200 OK · 12 ms", "Couldn't connect · 3 ms",
 /// "Cancelled", toned like the status.
 pub fn outcome_summary(response: &Response) -> (String, Tone) {
-    let time = format_duration(response.elapsed)
-        .trim_start_matches("Time: ")
-        .to_owned();
+    let time = format_duration(response.elapsed);
     match response.outcome {
         Outcome::Response => {
             let status = status(response);
-            let line = if response.reason.is_empty() {
-                format!("{} · {time}", response.status)
-            } else {
-                format!("{} {} · {time}", response.status, response.reason)
-            };
+            let line = format!("{} · {time}", status.text);
             let failed = response
                 .checks
                 .iter()
@@ -512,19 +510,44 @@ pub fn outcome_summary(response: &Response) -> (String, Tone) {
     }
 }
 
+/// "123 ms", "2.50 s".
 pub fn format_duration(seconds: f64) -> String {
     if seconds < 1.0 {
-        format!("Time: {:.0} ms", seconds * 1000.0)
+        format!("{:.0} ms", seconds * 1000.0)
     } else {
-        format!("Time: {seconds:.2}s")
+        format!("{seconds:.2} s")
     }
 }
 
-pub fn size_text(response: &Response) -> String {
-    if response.truncated {
-        format!("Captured: {} bytes (truncated)", response.body.len())
+/// "512 B", "1.5 KB", "584 KB", "12 MB", counting 1024 bytes to the kilobyte.
+#[allow(clippy::cast_precision_loss)] // a display value; sizes stay far below 2^52
+pub fn format_size(bytes: usize) -> String {
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit = "KB";
+    for larger in ["MB", "GB"] {
+        if value < 1024.0 {
+            break;
+        }
+        value /= 1024.0;
+        unit = larger;
+    }
+    if value < 10.0 {
+        format!("{value:.1} {unit}")
     } else {
-        format!("Size: {} bytes", response.body.len())
+        format!("{value:.0} {unit}")
+    }
+}
+
+/// The body's size; a body cut at the capture limit says so.
+pub fn size_text(response: &Response) -> String {
+    let size = format_size(response.body.len());
+    if response.truncated {
+        format!("{size}, cut")
+    } else {
+        size
     }
 }
 
@@ -1110,7 +1133,7 @@ mod tests {
         assert_eq!(
             status(&ok),
             Status {
-                text: "Status: 200".into(),
+                text: "200 OK".into(),
                 tone: Tone::Ok,
                 detail: "200 OK".into()
             }
@@ -1159,9 +1182,20 @@ mod tests {
             notice(&truncated, &preview(&truncated)),
             "Response truncated or preview limited"
         );
-        assert_eq!(size_text(&truncated), "Captured: 1 bytes (truncated)");
-        assert_eq!(format_duration(0.1234), "Time: 123 ms");
-        assert_eq!(format_duration(2.5), "Time: 2.50s");
+        assert_eq!(size_text(&truncated), "1 B, cut");
+        assert_eq!(format_duration(0.1234), "123 ms");
+        assert_eq!(format_duration(2.5), "2.50 s");
+        assert_eq!(format_size(1023), "1023 B");
+        assert_eq!(format_size(1536), "1.5 KB");
+        assert_eq!(format_size(584 * 1024 + 100), "584 KB");
+        assert_eq!(format_size(12 * 1024 * 1024), "12 MB");
+        assert_eq!(format_size(3 << 40), "3072 GB");
+        let unnamed = Response {
+            status: 599,
+            reason: String::new(),
+            ..response(b"", "text/plain")
+        };
+        assert_eq!(status(&unnamed).text, "599");
         assert_eq!(headers_text(&response(b"", "a/b")), "content-type: a/b");
     }
 

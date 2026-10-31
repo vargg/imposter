@@ -141,7 +141,7 @@ fn sending_shows_the_response_and_records_a_run() {
     click(&mut app.harness, "Send");
     settle(&mut app.harness);
 
-    app.harness.get_by_label("Status: 200");
+    app.harness.get_by_label("200 OK");
     app.harness.get_by_label_contains("\"ok\": true");
     app.harness.get_by_label("Recorded runs");
     assert_eq!(server.requests().len(), 1);
@@ -429,7 +429,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
         "Copy as curl",
         "Settings",
         // Request tabs that do not fit are under More (tests/fit.rs).
-        "More tabs",
+        "More request tabs",
         "Add query",
     ] {
         assert!(

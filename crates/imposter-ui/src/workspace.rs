@@ -916,7 +916,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
             spec
         }
     });
-    ui.horizontal(|ui| widgets::tab_strip(ui, &tabs, &mut pane.tab, 0.0));
+    ui.horizontal(|ui| widgets::tab_strip(ui, &tabs, &mut pane.tab, 0.0, "More request tabs"));
     ui.separator();
     let mut edited = false;
     let mut params = false;
@@ -1052,9 +1052,6 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
     }
 }
 
-/// Below this width the response's status line and run picker get a row each.
-const RESPONSE_HEADER_ROW: f32 = 640.0;
-
 fn response_pane(state: &mut State, ui: &mut Ui) {
     let now = ui.input(|i| i.time);
     if let Some(seconds) = state.sending_for(now) {
@@ -1080,7 +1077,11 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
                 (crate::vars::Scope::Environment(e.id), e.name.clone())
             });
         if !state.response.runs.is_empty() {
-            ui.horizontal(|ui| runs_picker(ui, &state.response, &mut state.actions));
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    runs_menu(ui, &state.response, &mut state.actions);
+                });
+            });
         }
         blocked_card(ui, &blocked, &target.1, |action| {
             state.actions.push(match action {
@@ -1092,23 +1093,23 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
     }
     let response_state = &mut state.response;
     let actions = &mut state.actions;
-    // The status line takes the place of a "Response" heading.
-    if ui.available_width() >= RESPONSE_HEADER_ROW {
+    // The status line takes the place of a "Response" heading; the runs menu ends it.
+    if response_state.response.is_some() || !response_state.runs.is_empty() {
         ui.horizontal(|ui| {
+            // As tall as the runs button, so the status centres on it.
+            ui.set_min_height(widgets::tab_height());
+            let runs = if response_state.runs.is_empty() {
+                0.0
+            } else {
+                widgets::menu_text_button_width(ui, RUNS)
+            };
             if let Some(response) = &response_state.response {
-                status_badges(ui, response);
+                status_line(ui, response, runs);
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                runs_picker(ui, response_state, actions);
+                runs_menu(ui, response_state, actions);
             });
         });
-    } else {
-        if let Some(response) = &response_state.response {
-            ui.horizontal_wrapped(|ui| status_text(ui, response));
-        }
-        if !response_state.runs.is_empty() {
-            ui.horizontal(|ui| runs_picker(ui, response_state, actions));
-        }
     }
     match response_body(ui, response_state, "response", false, true) {
         Some(PaneAction::Row(widgets::RowAction::AddCheck { path, value })) => actions.push(
@@ -1244,70 +1245,93 @@ fn failure_card(
     retry
 }
 
+const RUNS: &str = "Runs";
+
 /// The recorded runs of the open request, to show an earlier response.
-fn runs_picker(ui: &mut Ui, response_state: &crate::app::ResponsePane, actions: &mut Vec<Action>) {
+fn runs_menu(ui: &mut Ui, response_state: &crate::app::ResponsePane, actions: &mut Vec<Action>) {
     if response_state.runs.is_empty() {
         return;
     }
     let shown = response_state.shown_run;
-    let label = response_state
+    let hint = response_state
         .runs
         .iter()
         .find(|run| Some(run.id) == shown)
-        .map_or_else(|| "Recorded runs".to_owned(), run_label);
-    let combo = egui::ComboBox::from_id_salt("runs")
-        .width(220.0_f32.min(ui.available_width()))
-        .truncate()
-        .selected_text(label)
-        .show_ui(ui, |ui| {
-            for run in &response_state.runs {
-                if ui
-                    .selectable_label(Some(run.id) == shown, run_label(run))
-                    .clicked()
-                {
-                    actions.push(Action::ShowRun(run.id));
-                }
+        .map_or_else(
+            || "Show an earlier run".to_owned(),
+            |run| format!("Showing {}", run_label(run)),
+        );
+    let button = widgets::menu_text_button(ui, RUNS, "Recorded runs").on_hover_text(hint);
+    egui::Popup::menu(&button).show(|ui| {
+        for run in &response_state.runs {
+            if ui
+                .selectable_label(Some(run.id) == shown, run_label(run))
+                .clicked()
+            {
+                actions.push(Action::ShowRun(run.id));
+                ui.close();
             }
-        });
-    name(&combo.response, "Recorded runs");
+        }
+    });
 }
 
-/// The status line as plain text, which wraps in a narrow pane where badges cannot.
-fn status_text(ui: &mut Ui, response: &imposter_app::core::execution::Response) {
+/// One line about a response: its status, then what fits of the checks, time, size and
+/// content type, dropped in reverse order of importance. The status's hover text has them
+/// all. `reserve` keeps room at the end of the row.
+fn status_line(ui: &mut Ui, response: &imposter_app::core::execution::Response, reserve: f32) {
     let status = viewer::status(response);
-    let part = |ui: &mut Ui, text: RichText| ui.add(egui::Label::new(text).extend());
-    part(ui, tone_text(status.text.as_str(), status.tone).strong())
-        .on_hover_text(status.detail.as_str());
-    part(
-        ui,
+    // (importance, text); shown in this order.
+    let mut parts: Vec<(u8, RichText)> = vec![(
+        0,
+        tone_text(status.text.as_str(), status.tone).font(crate::theme::semibold(13.0)),
+    )];
+    parts.push((
+        2,
         tone_text(viewer::format_duration(response.elapsed), Tone::Muted),
-    );
-    if response.outcome == imposter_app::core::execution::Outcome::Response {
-        part(ui, tone_text(viewer::size_text(response), Tone::Muted));
+    ));
+    let delivered = response.outcome == imposter_app::core::execution::Outcome::Response;
+    if delivered {
+        parts.push((3, tone_text(viewer::size_text(response), Tone::Muted)));
     }
     if !response.checks.is_empty() {
         let (text, tone) = crate::checks::summary(&response.checks);
-        part(ui, tone_text(text, tone));
+        parts.push((1, tone_text(text, tone)));
     }
-}
-
-/// Status, time, size and content type of a response, as badges.
-fn status_badges(ui: &mut Ui, response: &imposter_app::core::execution::Response) {
-    let status = viewer::status(response);
-    widgets::badge(ui, status.text.as_str(), status.tone).on_hover_text(status.detail.as_str());
-    widgets::badge(ui, &viewer::format_duration(response.elapsed), Tone::Muted);
-    if !response.checks.is_empty() {
-        let (text, tone) = crate::checks::summary(&response.checks);
-        widgets::badge(ui, &text, tone);
+    let content_type = viewer::content_type(&response.headers);
+    let kind = content_type.split(';').next().unwrap_or_default().trim();
+    if delivered && !kind.is_empty() {
+        parts.push((4, tone_text(kind, Tone::Muted)));
     }
-    if response.outcome == imposter_app::core::execution::Outcome::Response {
-        widgets::badge(ui, &viewer::size_text(response), Tone::Muted);
-        let content_type = viewer::content_type(&response.headers);
-        ui.label(tone_text(
-            content_type.split(';').next().unwrap_or_default(),
-            Tone::Muted,
-        ))
-        .on_hover_text(content_type);
+    let mut hover = vec![status.detail.clone()];
+    hover.extend(parts.iter().skip(1).map(|(_, text)| text.text().to_owned()));
+    let gap = 10.0;
+    let available = ui.available_width() - reserve;
+    let widths: Vec<f32> = parts
+        .iter()
+        .map(|(_, text)| widgets::text_width(ui, text.clone()) + gap)
+        .collect();
+    let mut total: f32 = widths.iter().sum();
+    let mut kept = vec![true; parts.len()];
+    for importance in (1..=4).rev() {
+        if total <= available {
+            break;
+        }
+        for (i, (part, _)) in parts.iter().enumerate() {
+            if *part == importance && kept[i] {
+                kept[i] = false;
+                total -= widths[i];
+            }
+        }
+    }
+    for (i, (importance, text)) in parts.into_iter().enumerate() {
+        if !kept[i] {
+            continue;
+        }
+        let label = ui.add(egui::Label::new(text).truncate());
+        if importance == 0 {
+            label.on_hover_text(hover.join(" · "));
+        }
+        ui.add_space(gap - ui.spacing().item_spacing.x);
     }
 }
 
@@ -1322,7 +1346,7 @@ pub fn response_body(
     live: bool,
 ) -> Option<PaneAction> {
     if status && let Some(response) = &response_state.response {
-        ui.horizontal_wrapped(|ui| status_badges(ui, response));
+        ui.horizontal(|ui| status_line(ui, response, 0.0));
     }
     if let Some((notice, tone)) = &response_state.notice {
         ui.label(tone_text(notice.as_str(), *tone));
@@ -1380,7 +1404,6 @@ pub fn response_body(
     } else {
         "Copy headers"
     };
-    let narrow = ui.available_width() < widgets::TAB_ROW_MIN;
     let mut toggle_filter = false;
     let mut tools = |ui: &mut Ui, shown: ResponseTab| match shown {
         ResponseTab::Body => widgets::viewer_tools_with(
@@ -1393,45 +1416,27 @@ pub fn response_body(
                 folded: &mut *folds,
                 add_check: false,
             }),
-            |ui| {
-                if filterable
-                    && icons::button(ui, Icon::Filter, "Filter with JSONPath", filter.open)
-                        .clicked()
-                {
-                    toggle_filter = true;
-                }
-            },
+            filterable.then_some((filter.open, &mut toggle_filter)),
         ),
         ResponseTab::Headers => widgets::viewer_tools(ui, headers_view, headers, copy_headers),
         ResponseTab::Tests => {}
     };
     let results = response.as_ref().map_or(&[][..], |r| r.checks.as_slice());
     let captured = response.as_ref().map_or(&[][..], |r| r.captures.as_slice());
-    ui.horizontal(|ui| {
-        for (choice, label) in [
-            (ResponseTab::Body, "Body"),
-            (ResponseTab::Headers, "Headers"),
-            (ResponseTab::Tests, "Tests"),
-        ] {
-            if choice == ResponseTab::Tests && results.is_empty() && captured.is_empty() {
-                continue;
-            }
-            let response = widgets::tab(ui, *tab == choice, label);
-            if choice == ResponseTab::Tests {
-                // The request's Tests tab has the same text.
-                name(&response, "Check results");
-            }
-            if response.clicked() {
-                *tab = choice;
-            }
-        }
-        if !narrow {
-            tools(ui, *tab);
-        }
-    });
-    if narrow {
-        ui.horizontal(|ui| tools(ui, *tab));
+    let mut tabs = vec![
+        widgets::TabSpec::new(ResponseTab::Body, "Body"),
+        widgets::TabSpec::new(ResponseTab::Headers, "Headers"),
+    ];
+    if !results.is_empty() || !captured.is_empty() {
+        // The request's Tests tab has the same text.
+        tabs.push(widgets::TabSpec::new(ResponseTab::Tests, "Tests").named("Check results"));
     }
+    ui.horizontal(|ui| {
+        // At least the tools' menu button stays on the row.
+        let reserve = icons::size() + ui.spacing().item_spacing.x;
+        widgets::tab_strip(ui, &tabs, tab, reserve, "More response tabs");
+        tools(ui, *tab);
+    });
     let mut close_filter = false;
     if *tab == ResponseTab::Body && filterable && filter.open {
         ui.horizontal_wrapped(|ui| {

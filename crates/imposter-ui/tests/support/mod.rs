@@ -78,7 +78,7 @@ pub fn open_tab(harness: &mut Harness<'_, ImposterApp>, label: &str) {
         .query_by_role_and_label(egui::accesskit::Role::Button, label)
         .is_none()
     {
-        click_button(harness, "More tabs");
+        click_button(harness, "More request tabs");
     }
     click_button(harness, label);
 }

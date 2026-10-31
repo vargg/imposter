@@ -50,7 +50,7 @@ fn request_tabs_keep_one_row_and_the_rest_are_under_more() {
         "one row: {tops:?}"
     );
     app.harness
-        .get_by_role_and_label(Role::Button, "More tabs")
+        .get_by_role_and_label(Role::Button, "More request tabs")
         .click();
     app.harness.run_steps(2);
     click(&mut app.harness, "Tests");
@@ -80,5 +80,45 @@ fn a_wide_window_shows_every_request_tab() {
     app.harness.set_size(egui::vec2(1500.0, 850.0));
     app.harness.run_steps(3);
     assert_eq!(editor_tab_tops(&app).len(), 8);
-    assert!(app.harness.query_by_label("More tabs").is_none());
+    assert!(app.harness.query_by_label("More request tabs").is_none());
+}
+
+#[test]
+fn the_status_and_runs_share_one_row_and_an_earlier_run_can_be_shown() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let sent = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let server = runtime.block_on(imposter_testkit::Server::start(move |_, _| {
+        let n = sent.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let status = if n == 0 {
+            "201 Created"
+        } else {
+            "404 Not Found"
+        };
+        imposter_testkit::response(status, &[("Content-Type", "application/json")], b"{}")
+    }));
+    let url = format!("{}/items", server.url);
+    let mut app = start_with(move |store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Items", &url);
+    });
+    app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
+    click(&mut app.harness, "GET Items");
+    settle(&mut app.harness);
+    for _ in 0..2 {
+        click(&mut app.harness, "Send");
+        settle(&mut app.harness);
+    }
+    let status = app.harness.get_by_label("404 Not Found").rect();
+    let runs = app.harness.get_by_label("Recorded runs").rect();
+    assert!(
+        (status.center().y - runs.center().y).abs() < 2.0,
+        "{status:?} and {runs:?} share a row"
+    );
+    assert!(runs.right() <= app.harness.ctx.content_rect().right());
+    click(&mut app.harness, "Recorded runs");
+    app.harness.get_by_label_contains("· 201").click();
+    app.harness.run_steps(2);
+    settle(&mut app.harness);
+    app.harness.get_by_label("201 Created");
+    assert!(app.harness.query_by_label("404 Not Found").is_none());
 }

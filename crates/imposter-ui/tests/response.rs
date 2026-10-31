@@ -98,23 +98,37 @@ fn rows_with_fold_markers_keep_the_plain_row_height() {
 }
 
 #[test]
-fn the_tools_fit_the_minimum_window() {
+fn the_tools_share_the_tab_row_and_the_rest_wait_under_more_tools() {
     let mut fixture = sent("application/json", BODY);
     let app = &mut fixture.app;
     app.harness
         .set_size(egui::Vec2::from(imposter_ui::layout::MIN_WINDOW));
     app.harness.run_steps(3);
-    let pane = app.harness.get_by_label("Status: 200").rect();
-    let filter = app.harness.get_by_label("Filter with JSONPath").rect();
-    assert!(
-        filter.left() >= pane.left(),
-        "{filter:?} starts left of {pane:?}"
-    );
+    // The response's Body tab: the request's is further left.
+    let body = app
+        .harness
+        .query_all_by_role_and_label(egui::accesskit::Role::Button, "Body")
+        .map(|node| node.rect())
+        .max_by(|a, b| a.left().total_cmp(&b.left()))
+        .unwrap();
+    let copy = app.harness.get_by_label("Copy body").rect();
+    let more = app.harness.get_by_label("More tools").rect();
+    for tool in [copy, more] {
+        assert!(
+            (tool.center().y - body.center().y).abs() < 1.0,
+            "{tool:?} is on the tab row"
+        );
+        assert!(tool.right() <= app.harness.ctx.content_rect().right());
+    }
     assert!(
         app.harness.query_by_label("Collapse all").is_none(),
         "fold buttons give way first"
     );
     app.harness.get_by_label("Fold $.data");
+    click(&mut app.harness, "More tools");
+    click(&mut app.harness, "Filter with JSONPath");
+    app.harness.run_steps(2);
+    text_input(&app.harness, "Filter the response with JSONPath");
 }
 
 #[test]

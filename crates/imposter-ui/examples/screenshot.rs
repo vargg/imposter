@@ -15,6 +15,16 @@ use imposter_app::paths::open_store;
 use imposter_app::store::collections;
 use imposter_ui::app::{ImposterApp, ResponseTab};
 
+/// Click `label`, opening the menu `more` first when it is not on its row.
+fn open_from(harness: &mut Harness<'_, ImposterApp>, more: &str, label: &str) {
+    if harness.query_by_label(label).is_none() {
+        harness.get_by_label(more).click();
+        harness.run_steps(2);
+    }
+    harness.get_by_label(label).click();
+    harness.run_steps(2);
+}
+
 fn main() {
     let out = std::path::PathBuf::from(std::env::args().nth(1).expect("output directory"));
     std::fs::create_dir_all(&out).unwrap();
@@ -134,8 +144,8 @@ fn main() {
         let path = out.join(format!("{label}.png"));
         image.save(&path).unwrap();
         println!("{}", path.display());
-        harness.get_by_label("Tests").click();
-        harness.get_by_label("Check results").click();
+        open_from(&mut harness, "More request tabs", "Tests");
+        open_from(&mut harness, "More response tabs", "Check results");
         settle(&mut harness);
         harness
             .render()
@@ -151,7 +161,7 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-folded.png")))
             .unwrap();
-        harness.get_by_label("Filter with JSONPath").click();
+        open_from(&mut harness, "More tools", "Filter with JSONPath");
         settle(&mut harness);
         harness
             .get_by_label("Filter the response with JSONPath")
