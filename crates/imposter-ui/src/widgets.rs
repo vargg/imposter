@@ -492,10 +492,13 @@ fn var_edit_with(
         };
         ui.fonts_mut(|fonts| fonts.layout_job(job))
     };
+    // A body fills what its pane shows, keeping a line for the footer under it.
+    let fill = (ui.clip_rect().bottom() - ui.cursor().top() - BODY_FOOTER).max(MIN_BODY_HEIGHT);
     let mut edit = match multiline {
         Some((_, hint)) => egui::TextEdit::multiline(text)
             .code_editor()
-            .desired_rows(10)
+            .desired_rows(4)
+            .min_size(egui::vec2(0.0, fill))
             .hint_text(hint),
         None => egui::TextEdit::singleline(text),
     }
@@ -1285,6 +1288,11 @@ pub fn method_picker(ui: &mut Ui, method: &mut String, custom: &mut Option<Strin
 }
 
 /// A multiline body editor; JSON bodies are highlighted while small enough.
+/// Room under a body editor for its footer ("Valid JSON" or the parse error).
+const BODY_FOOTER: f32 = 24.0;
+/// A body editor is never shorter than about four lines, even in a small pane.
+const MIN_BODY_HEIGHT: f32 = 96.0;
+
 pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi) -> bool {
     let width = ui.available_width();
     let response = var_edit_with(

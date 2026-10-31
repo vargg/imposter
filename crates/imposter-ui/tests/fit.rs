@@ -179,3 +179,26 @@ fn a_stacked_pane_keeps_its_minimum_and_follows_the_drag_back_at_once() {
         "the drag back moves the pane at once: {lowest} -> {back}"
     );
 }
+
+#[test]
+fn the_body_editor_fills_its_pane_with_its_footer_below() {
+    let mut app = small();
+    for size in [egui::vec2(1500.0, 850.0), egui::Vec2::from(MIN_WINDOW)] {
+        app.harness.set_size(size);
+        {
+            let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+            pane.editor.body_type = imposter_app::core::model::BodyType::Json;
+            pane.editor.body_text = "{\"a\": 1}".into();
+            pane.tab = EditorTab::Body;
+        }
+        app.harness.run_steps(3);
+        let footer = app.harness.get_by_label("Valid JSON").rect();
+        let status_bar = app.harness.get_by_label("Hide Collections").rect().top();
+        // The pane ends above the status bar, inside its frame and padding.
+        let gap = status_bar - footer.bottom();
+        assert!(
+            (0.0..60.0).contains(&gap),
+            "{size:?}: the footer ends {gap} above the status bar"
+        );
+    }
+}

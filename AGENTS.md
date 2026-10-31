@@ -208,6 +208,9 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
   256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
   dependency.
+- **The body editor fills its pane**, above a one-line footer ("Valid JSON" or the parse
+  error with its line), and is never shorter than about four lines. Why: a fixed ten rows
+  left most of a large pane empty (the review's #20).
 - **Body editor: egui `TextEdit`; `{{var}}`/JSON highlighting only up to 64 KiB.** Why: per
   interactive frame the editor costs about 4 ms at 64 KiB, 24 ms at 256 KiB and 130 ms at 1 MiB
   (plain), and highlighting adds about 30%. Larger bodies stay editable but slow; a custom
