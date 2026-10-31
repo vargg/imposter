@@ -1,11 +1,13 @@
 //! What the response viewer shows: the bounded preview text, its status line, display rows
 //! and search. Pure functions; the widget only draws their results.
 
+use std::collections::BTreeSet;
 use std::ops::Range;
 
 use imposter_app::core::execution::{ExecutionRecord, Outcome, Response};
 use imposter_app::core::model::FormKind;
 use imposter_app::core::prepare::{self, PreparedAuth, PreparedBody};
+use imposter_app::core::select;
 
 use crate::theme::Tone;
 
@@ -26,6 +28,8 @@ pub struct Preview {
     pub language: Language,
     /// The body was truncated at capture, or the preview is shorter than the body.
     pub limited: bool,
+    /// Paths and folds of formatted JSON, when the whole body is shown formatted.
+    pub outline: Option<Outline>,
 }
 
 pub fn content_type(headers: &[(String, String)]) -> &str {
@@ -126,6 +130,7 @@ pub fn preview(response: &Response) -> Preview {
     let shown = &response.body[..response.body.len().min(PREVIEW_LIMIT)];
     let mut text = decode(shown, response.body.len() > PREVIEW_LIMIT);
     let mut limited = response.truncated;
+    let mut outline = None;
     if language == Language::Json
         && response.body.len() <= PREVIEW_LIMIT
         && let Some(formatted) = pretty_json(&text)
@@ -134,6 +139,7 @@ pub fn preview(response: &Response) -> Preview {
             limited = true;
             text = formatted[..formatted.floor_char_boundary(PREVIEW_LIMIT)].to_owned();
         } else {
+            outline = Outline::build(&formatted);
             text = formatted;
         }
     }
@@ -146,7 +152,151 @@ pub fn preview(response: &Response) -> Preview {
         text,
         language,
         limited,
+        outline,
     }
+}
+
+/// Where each line of formatted JSON sits in its document.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Outline {
+    pub lines: Vec<OutlineLine>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutlineLine {
+    /// JSONPath of the value that starts on this line; on a closing line, of the container
+    /// it closes.
+    pub path: String,
+    pub depth: usize,
+    /// On a line that opens a non-empty object or array: the line that closes it.
+    pub close: Option<usize>,
+    /// Byte range of the value starting on this line, through its closing line, without the
+    /// separating comma. `None` on closing lines.
+    pub value: Option<Range<usize>>,
+}
+
+struct Open {
+    line: usize,
+    path: String,
+    object: bool,
+    next: usize,
+}
+
+impl Outline {
+    /// The outline of `text` as [`pretty_json`] writes it; `None` for anything else.
+    pub fn build(text: &str) -> Option<Self> {
+        Self::build_with(text, select::ROOT, None)
+    }
+
+    /// The outline of formatted filter results: a top-level array whose elements are
+    /// `paths` in the filtered document. Its first line is named by `query`.
+    pub fn of_results(text: &str, query: &str, paths: &[String]) -> Option<Self> {
+        Self::build_with(text, query, Some(paths))
+    }
+
+    fn build_with(text: &str, root: &str, roots: Option<&[String]>) -> Option<Self> {
+        let mut lines: Vec<OutlineLine> = Vec::new();
+        let mut stack: Vec<Open> = Vec::new();
+        let mut start = 0;
+        for (index, line) in text.split('\n').enumerate() {
+            let end = start + line.len();
+            let content = line.trim_start();
+            let lead = start + line.len() - content.len();
+            let value_end = end - usize::from(content.ends_with(','));
+            if content.starts_with(['}', ']']) {
+                let open = stack.pop()?;
+                let opener = &mut lines[open.line];
+                opener.close = Some(index);
+                opener.value = opener.value.as_ref().map(|v| v.start..value_end);
+                lines.push(OutlineLine {
+                    path: open.path,
+                    depth: stack.len(),
+                    close: None,
+                    value: None,
+                });
+            } else {
+                let depth = stack.len();
+                let (path, value_start) = match stack.last_mut() {
+                    None if index == 0 => (root.to_owned(), lead),
+                    None => return None,
+                    Some(parent) if parent.object => {
+                        let key_len = string_token_len(content)?;
+                        let key: String = serde_json::from_str(&content[..key_len]).ok()?;
+                        if !content[key_len..].starts_with(": ") {
+                            return None;
+                        }
+                        (select::member(&parent.path, &key), lead + key_len + 2)
+                    }
+                    Some(parent) => {
+                        let element = parent.next;
+                        parent.next += 1;
+                        let path = match roots {
+                            Some(roots) if depth == 1 => roots.get(element)?.clone(),
+                            _ => select::element_path(&parent.path, element),
+                        };
+                        (path, lead)
+                    }
+                };
+                let rest = &text[value_start..value_end];
+                if rest == "{" || rest == "[" {
+                    stack.push(Open {
+                        line: index,
+                        path: path.clone(),
+                        object: rest == "{",
+                        next: 0,
+                    });
+                }
+                lines.push(OutlineLine {
+                    path,
+                    depth: stack.len() - usize::from(rest == "{" || rest == "["),
+                    close: None,
+                    value: Some(value_start..value_end),
+                });
+            }
+            start = end + 1;
+        }
+        stack.is_empty().then_some(Self { lines })
+    }
+
+    /// The value starting on `line` for the clipboard: strings unquoted, everything else as
+    /// shown.
+    pub fn copy_value(&self, text: &str, line: usize) -> Option<String> {
+        let range = self.lines.get(line)?.value.clone()?;
+        let raw = &text[range];
+        Some(if raw.starts_with('"') {
+            serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.to_owned())
+        } else {
+            raw.to_owned()
+        })
+    }
+
+    /// Fold every non-empty container below the top level.
+    pub fn collapse_all(&self) -> BTreeSet<usize> {
+        self.lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.close.is_some() && line.depth > 0)
+            .map(|(index, _)| index)
+            .collect()
+    }
+}
+
+/// The length of the JSON string token at the start of `text`.
+fn string_token_len(text: &str) -> Option<usize> {
+    let mut chars = text.char_indices();
+    if chars.next()?.1 != '"' {
+        return None;
+    }
+    while let Some((offset, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '"' => return Some(offset + 1),
+            _ => {}
+        }
+    }
+    None
 }
 
 /// A recorded request as it went on the wire: `METHOD URL`, its headers and its body.
@@ -322,29 +472,139 @@ pub fn notice(response: &Response, preview: &Preview) -> String {
     parts.join(" · ")
 }
 
+/// Whether the response says its body is JSON, whatever its size.
+pub fn is_json(response: &Response) -> bool {
+    response.outcome == Outcome::Response
+        && language(content_type(&response.headers)) == Language::Json
+}
+
+/// The results of a JSONPath filter, formatted for the viewer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Filtered {
+    pub text: String,
+    pub count: usize,
+    pub outline: Option<Outline>,
+    /// The formatted results were longer than the preview limit and are cut.
+    pub limited: bool,
+}
+
+/// The parsed body a filter runs on, kept so later queries do not parse it again.
+pub type Document = std::sync::Arc<Result<serde_json::Value, select::SelectError>>;
+
+/// Run `query` over `document`. Results are re-serialized, so integers up to 64 bits and
+/// floats keep their value but not their exact spelling (`1.50` becomes `1.5`).
+pub fn filter(document: &Document, query: &str) -> Result<Filtered, String> {
+    let document = document.as_ref().as_ref().map_err(ToString::to_string)?;
+    let path = select::parse_path(query).map_err(|error| error.to_string())?;
+    let found = select::query(document, &path);
+    let count = found.len();
+    let paths: Vec<String> = found.iter().map(|f| f.path.clone()).collect();
+    let values = serde_json::Value::Array(found.into_iter().map(|f| f.value).collect());
+    let text = serde_json::to_string_pretty(&values).map_err(|error| error.to_string())?;
+    Ok(if text.len() > PREVIEW_LIMIT {
+        let mut cut = text[..text.floor_char_boundary(PREVIEW_LIMIT)].to_owned();
+        cut.push_str("\n… Preview limited to 256 KiB");
+        Filtered {
+            text: cut,
+            count,
+            outline: None,
+            limited: true,
+        }
+    } else {
+        Filtered {
+            outline: Outline::of_results(&text, query.trim(), &paths),
+            text,
+            count,
+            limited: false,
+        }
+    })
+}
+
+/// What a background filter run starts from.
+pub enum FilterSource {
+    Parsed(Document),
+    Body { bytes: Vec<u8>, truncated: bool },
+}
+
+impl FilterSource {
+    /// Parse when needed, then filter. Runs off the UI thread.
+    pub fn run(self, query: &str) -> (Document, Result<Filtered, String>) {
+        let document = match self {
+            Self::Parsed(document) => document,
+            Self::Body { bytes, truncated } => {
+                std::sync::Arc::new(select::parse_body(&bytes, truncated))
+            }
+        };
+        let result = filter(&document, query);
+        (document, result)
+    }
+}
+
+/// One display row: a byte range of the text and the line it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row {
+    pub range: Range<usize>,
+    pub line: usize,
+}
+
 /// Display rows: each line, split into chunks of at most `columns` characters. Without wrapping,
 /// very long lines are still chunked so a single row never costs a whole-body layout.
-pub fn rows(text: &str, columns: Option<usize>) -> Vec<Range<usize>> {
+pub fn rows(text: &str, columns: Option<usize>) -> Vec<Row> {
     const UNWRAPPED_CHUNK: usize = 4096;
     let width = columns.unwrap_or(UNWRAPPED_CHUNK).max(1);
     let mut out = Vec::new();
     let mut start = 0;
-    for line in text.split('\n') {
-        let end = start + line.len();
+    for (line, content) in text.split('\n').enumerate() {
+        let end = start + content.len();
         let mut chunk_start = start;
         let mut count = 0;
-        for (offset, _) in line.char_indices() {
+        for (offset, _) in content.char_indices() {
             if count == width {
-                out.push(chunk_start..start + offset);
+                out.push(Row {
+                    range: chunk_start..start + offset,
+                    line,
+                });
                 chunk_start = start + offset;
                 count = 0;
             }
             count += 1;
         }
-        out.push(chunk_start..end);
+        out.push(Row {
+            range: chunk_start..end,
+            line,
+        });
         start = end + 1;
     }
     out
+}
+
+/// The rows left when the lines inside each folded container are hidden. The folded line
+/// itself stays; its closing line is hidden with the contents.
+pub fn unfolded(rows: Vec<Row>, outline: &Outline, folded: &BTreeSet<usize>) -> Vec<Row> {
+    if folded.is_empty() {
+        return rows;
+    }
+    // The folded line and the last line it hides.
+    let mut hiding: Option<(usize, usize)> = None;
+    rows.into_iter()
+        .filter(|row| {
+            if let Some((opener, close)) = hiding {
+                if row.line == opener {
+                    return true;
+                }
+                if row.line <= close {
+                    return false;
+                }
+                hiding = None;
+            }
+            if folded.contains(&row.line)
+                && let Some(close) = outline.lines.get(row.line).and_then(|l| l.close)
+            {
+                hiding = Some((row.line, close));
+            }
+            true
+        })
+        .collect()
 }
 
 /// Case-insensitive, non-overlapping matches of `needle` in `haystack`, as byte ranges.
@@ -494,6 +754,236 @@ mod tests {
         assert_eq!(pretty_json("{oops"), None);
     }
 
+    const DOCUMENT: &str =
+        r#"{"data":{"items":[{"id":7,"name":"a \"b\""},{"id":8,"tags":[]}],"a b":null},"n":1.50}"#;
+
+    #[test]
+    fn outlines_name_every_line_and_fold_containers() {
+        let text = pretty_json(DOCUMENT).unwrap();
+        let outline = Outline::build(&text).unwrap();
+        let lines: Vec<&str> = text.split('\n').collect();
+        let shown: Vec<(&str, &str, usize, Option<usize>)> = outline
+            .lines
+            .iter()
+            .zip(&lines)
+            .map(|(l, text)| (text.trim(), l.path.as_str(), l.depth, l.close))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("{", "$", 0, Some(15)),
+                ("\"data\": {", "$.data", 1, Some(13)),
+                ("\"items\": [", "$.data.items", 2, Some(11)),
+                ("{", "$.data.items[0]", 3, Some(6)),
+                ("\"id\": 7,", "$.data.items[0].id", 4, None),
+                ("\"name\": \"a \\\"b\\\"\"", "$.data.items[0].name", 4, None),
+                ("},", "$.data.items[0]", 3, None),
+                ("{", "$.data.items[1]", 3, Some(10)),
+                ("\"id\": 8,", "$.data.items[1].id", 4, None),
+                ("\"tags\": []", "$.data.items[1].tags", 4, None),
+                ("}", "$.data.items[1]", 3, None),
+                ("],", "$.data.items", 2, None),
+                ("\"a b\": null", "$.data['a b']", 2, None),
+                ("},", "$.data", 1, None),
+                ("\"n\": 1.50", "$.n", 1, None),
+                ("}", "$", 0, None),
+            ]
+        );
+        assert_eq!(outline.copy_value(&text, 4).as_deref(), Some("7"));
+        assert_eq!(
+            outline.copy_value(&text, 5).as_deref(),
+            Some("a \"b\""),
+            "strings are copied unquoted"
+        );
+        assert_eq!(
+            outline.copy_value(&text, 3).as_deref(),
+            Some("{\n        \"id\": 7,\n        \"name\": \"a \\\"b\\\"\"\n      }"),
+            "containers are copied as shown, without the separating comma"
+        );
+        assert_eq!(
+            outline.copy_value(&text, 6),
+            None,
+            "closing lines have no value"
+        );
+        assert_eq!(outline.copy_value(&text, 14).as_deref(), Some("1.50"));
+        assert_eq!(
+            outline.collapse_all(),
+            BTreeSet::from([1, 2, 3, 7]),
+            "everything below the top level"
+        );
+    }
+
+    #[test]
+    fn every_outlined_path_selects_its_value() {
+        let text = pretty_json(DOCUMENT).unwrap();
+        let outline = Outline::build(&text).unwrap();
+        let document = select::parse_body(DOCUMENT.as_bytes(), false).unwrap();
+        for (index, line) in outline.lines.iter().enumerate() {
+            let Some(range) = line.value.clone() else {
+                continue;
+            };
+            let found = select::query(&document, &select::parse_path(&line.path).unwrap());
+            assert_eq!(found.len(), 1, "{}", line.path);
+            let shown: serde_json::Value = serde_json::from_str(&text[range]).unwrap();
+            assert_eq!(found[0].value, shown, "line {index}: {}", line.path);
+        }
+    }
+
+    #[test]
+    fn outlines_of_results_use_the_paths_in_the_filtered_document() {
+        let text = "[\n  {\n    \"id\": 7\n  },\n  8\n]";
+        let paths = [
+            "$.data.items[0]".to_owned(),
+            "$.data.items[1].id".to_owned(),
+        ];
+        let outline = Outline::of_results(text, "$..items[*]", &paths).unwrap();
+        let named: Vec<&str> = outline.lines.iter().map(|l| l.path.as_str()).collect();
+        assert_eq!(
+            named,
+            [
+                "$..items[*]",
+                "$.data.items[0]",
+                "$.data.items[0].id",
+                "$.data.items[0]",
+                "$.data.items[1].id",
+                "$..items[*]"
+            ]
+        );
+        assert_eq!(Outline::of_results(text, "$", &paths[..1]), None);
+    }
+
+    #[test]
+    fn only_complete_formatted_json_has_an_outline() {
+        assert_eq!(Outline::build("{\n  \"a\": 1"), None, "cut");
+        assert_eq!(Outline::build("}"), None);
+        assert_eq!(Outline::build("1\n2"), None, "two documents");
+        assert_eq!(Outline::build("{\n  oops\n}"), None);
+        assert_eq!(Outline::build("{\n  \"a\" 1\n}"), None);
+        assert_eq!(
+            Outline::build("\"unterminated"),
+            Some(Outline {
+                lines: vec![OutlineLine {
+                    path: "$".into(),
+                    depth: 0,
+                    close: None,
+                    value: Some(0..13),
+                }],
+            }),
+            "a scalar line is taken as shown"
+        );
+        let json = response(DOCUMENT.as_bytes(), "application/json");
+        assert!(preview(&json).outline.is_some());
+        assert_eq!(
+            preview(&response(b"{oops", "application/json")).outline,
+            None
+        );
+        assert_eq!(preview(&response(b"{}", "text/plain")).outline, None);
+    }
+
+    #[test]
+    fn filters_format_results_with_their_paths_and_explain_failures() {
+        let source = FilterSource::Body {
+            bytes: DOCUMENT.as_bytes().to_vec(),
+            truncated: false,
+        };
+        let (document, result) = source.run(" $.data.items[*].id ");
+        let found = result.unwrap();
+        assert_eq!((found.text.as_str(), found.count), ("[\n  7,\n  8\n]", 2));
+        let paths: Vec<&str> = found
+            .outline
+            .as_ref()
+            .unwrap()
+            .lines
+            .iter()
+            .map(|l| l.path.as_str())
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                "$.data.items[*].id",
+                "$.data.items[0].id",
+                "$.data.items[1].id",
+                "$.data.items[*].id"
+            ]
+        );
+        let (_, numbers) = FilterSource::Parsed(document.clone()).run("$.n");
+        assert_eq!(numbers.unwrap().text, "[\n  1.5\n]", "re-serialized");
+        let (_, none) = FilterSource::Parsed(document.clone()).run("$.nothing");
+        assert_eq!(none.unwrap().count, 0);
+        let (_, bad) = FilterSource::Parsed(document).run("data");
+        assert!(bad.unwrap_err().starts_with("Invalid JSONPath"));
+
+        let (_, cut) = FilterSource::Body {
+            bytes: b"{}".to_vec(),
+            truncated: true,
+        }
+        .run("$");
+        assert!(cut.unwrap_err().contains("capture limit"));
+        let (_, html) = FilterSource::Body {
+            bytes: b"<html>".to_vec(),
+            truncated: false,
+        }
+        .run("$");
+        assert!(html.unwrap_err().starts_with("The body is not JSON"));
+
+        let many = format!("[{}]", vec!["\"xxxxxxxxxx\""; 30_000].join(","));
+        let (_, large) = FilterSource::Body {
+            bytes: many.into_bytes(),
+            truncated: false,
+        }
+        .run("$[*]");
+        let large = large.unwrap();
+        assert!(large.limited && large.outline.is_none() && large.count == 30_000);
+        assert!(large.text.ends_with("Preview limited to 256 KiB"));
+    }
+
+    #[test]
+    fn only_json_responses_can_be_filtered() {
+        assert!(is_json(&response(b"", "application/problem+json")));
+        assert!(!is_json(&response(b"{}", "text/plain")));
+        let mut failed = response(b"", "application/json");
+        failed.outcome = Outcome::TransportError;
+        assert!(!is_json(&failed));
+    }
+
+    #[test]
+    fn folded_containers_hide_their_lines_through_the_closing_one() {
+        let text = pretty_json(DOCUMENT).unwrap();
+        let outline = Outline::build(&text).unwrap();
+        let lines = |folded: &[usize]| -> Vec<usize> {
+            let mut kept: Vec<usize> = unfolded(
+                rows(&text, None),
+                &outline,
+                &folded.iter().copied().collect(),
+            )
+            .into_iter()
+            .map(|row| row.line)
+            .collect();
+            kept.dedup();
+            kept
+        };
+        assert_eq!(lines(&[]).len(), 16);
+        assert_eq!(lines(&[2]), [0, 1, 2, 12, 13, 14, 15]);
+        assert_eq!(
+            lines(&[2, 3]),
+            [0, 1, 2, 12, 13, 14, 15],
+            "nested folds inside"
+        );
+        assert_eq!(lines(&[3, 7]), [0, 1, 2, 3, 7, 11, 12, 13, 14, 15]);
+        assert_eq!(lines(&[0]), [0]);
+        assert_eq!(
+            lines(&[4]).len(),
+            16,
+            "a line that opens nothing does not fold"
+        );
+        let wrapped = unfolded(rows(&text, Some(4)), &outline, &BTreeSet::from([1]));
+        assert!(wrapped.iter().all(|row| row.line <= 1 || row.line > 13));
+        assert!(
+            wrapped.iter().filter(|row| row.line == 1).count() > 1,
+            "the folded line wraps"
+        );
+    }
+
     #[test]
     fn previews_format_json_and_bound_large_bodies() {
         let small = preview(&response(br#"{"k":1}"#, "application/json; charset=utf-8"));
@@ -611,12 +1101,18 @@ mod tests {
     #[test]
     fn rows_split_lines_and_long_lines() {
         let text = "ab\ncdefg\n\nh";
-        let slices: Vec<&str> = rows(text, Some(2)).into_iter().map(|r| &text[r]).collect();
-        assert_eq!(slices, ["ab", "cd", "ef", "g", "", "h"]);
+        let slices: Vec<(&str, usize)> = rows(text, Some(2))
+            .into_iter()
+            .map(|r| (&text[r.range], r.line))
+            .collect();
+        assert_eq!(
+            slices,
+            [("ab", 0), ("cd", 1), ("ef", 1), ("g", 1), ("", 2), ("h", 3)]
+        );
         let unicode = "ééé";
         let chunks: Vec<&str> = rows(unicode, Some(2))
             .into_iter()
-            .map(|r| &unicode[r])
+            .map(|r| &unicode[r.range])
             .collect();
         assert_eq!(chunks, ["éé", "é"]);
         let long = "x".repeat(10_000);

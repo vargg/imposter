@@ -280,6 +280,7 @@ fn sent_request(ui: &mut Ui, history: &mut crate::app::HistoryScreen) {
             &mut history.request_body_view,
             &request.body,
             request.language,
+            None,
         ),
         ResponseTab::Headers => widgets::code_viewer(
             ui,
@@ -287,6 +288,7 @@ fn sent_request(ui: &mut Ui, history: &mut crate::app::HistoryScreen) {
             &mut history.request_headers_view,
             &request.headers,
             Language::Plain,
+            None,
         ),
     }
 }

@@ -13,7 +13,7 @@ use crate::layout::{Orientation, SIDEBAR_WIDTH, WorkspaceLayout};
 use crate::theme::{PALETTE, Tone, method_color};
 use crate::tree::{Node, NodeId};
 use crate::viewer::{self, Language};
-use crate::widgets::{self, FileRequest, VarUi, ViewerState, name, tone_text};
+use crate::widgets::{self, FileRequest, VarUi, name, tone_text};
 
 const SEPARATOR: f32 = 12.0;
 
@@ -1083,7 +1083,18 @@ pub fn response_body(
     if let Some((notice, tone)) = &response_state.notice {
         ui.label(tone_text(notice.as_str(), *tone));
     }
-    let Some((preview, headers)) = &response_state.preview else {
+    let filter_status = filter_status(&response_state.filter);
+    let crate::app::ResponsePane {
+        response,
+        preview,
+        body_folds,
+        filter,
+        body_view,
+        headers_view,
+        tab,
+        ..
+    } = response_state;
+    let Some((preview, headers)) = preview.as_ref() else {
         ui.add_space(20.0);
         ui.vertical_centered(|ui| {
             ui.label(RichText::new("Your response will appear here").strong());
@@ -1094,14 +1105,26 @@ pub fn response_body(
         });
         return;
     };
-    let body = response_state
-        .response
+    let failure = response
         .as_ref()
-        .filter(|response| {
-            response.outcome == imposter_app::core::execution::Outcome::TransportError
-        })
-        .map_or(preview.text.as_str(), |response| response.reason.as_str());
-    let copy_body = if preview.limited {
+        .filter(|r| r.outcome == imposter_app::core::execution::Outcome::TransportError);
+    let filterable = response.as_ref().is_some_and(viewer::is_json);
+    let filtered = (filterable && filter.open && !filter.query.trim().is_empty())
+        .then_some(filter.result.as_ref())
+        .flatten()
+        .and_then(|(_, result)| result.as_ref().ok());
+    let (body, outline, folds) = match (failure, filtered) {
+        (Some(failure), _) => (failure.reason.as_str(), None, body_folds),
+        (None, Some(found)) => (
+            found.text.as_str(),
+            found.outline.as_ref(),
+            &mut filter.folds,
+        ),
+        (None, None) => (preview.text.as_str(), preview.outline.as_ref(), body_folds),
+    };
+    let copy_body = if filtered.is_some() {
+        "Copy filtered result"
+    } else if preview.limited {
         "Copy displayed body"
     } else {
         "Copy body"
@@ -1112,63 +1135,134 @@ pub fn response_body(
         "Copy headers"
     };
     let narrow = ui.available_width() < widgets::TAB_ROW_MIN;
-    let tools = |ui: &mut Ui,
-                 tab: ResponseTab,
-                 body_view: &mut ViewerState,
-                 headers_view: &mut ViewerState| match tab {
-        ResponseTab::Body => widgets::viewer_tools(ui, body_view, body, copy_body),
+    let mut toggle_filter = false;
+    let mut tools = |ui: &mut Ui, shown: ResponseTab| match shown {
+        ResponseTab::Body => widgets::viewer_tools_with(
+            ui,
+            body_view,
+            body,
+            copy_body,
+            outline.map(|outline| widgets::Folding {
+                outline,
+                folded: &mut *folds,
+            }),
+            |ui| {
+                if filterable
+                    && icons::button(ui, Icon::Filter, "Filter with JSONPath", filter.open)
+                        .clicked()
+                {
+                    toggle_filter = true;
+                }
+            },
+        ),
         ResponseTab::Headers => widgets::viewer_tools(ui, headers_view, headers, copy_headers),
     };
     ui.horizontal(|ui| {
-        for (tab, label) in [
+        for (choice, label) in [
             (ResponseTab::Body, "Body"),
             (ResponseTab::Headers, "Headers"),
         ] {
-            if widgets::tab(ui, response_state.tab == tab, label).clicked() {
-                response_state.tab = tab;
+            if widgets::tab(ui, *tab == choice, label).clicked() {
+                *tab = choice;
             }
         }
         if !narrow {
-            let tab = response_state.tab;
-            tools(
-                ui,
-                tab,
-                &mut response_state.body_view,
-                &mut response_state.headers_view,
-            );
+            tools(ui, *tab);
         }
     });
     if narrow {
-        let tab = response_state.tab;
-        ui.horizontal(|ui| {
-            tools(
-                ui,
-                tab,
-                &mut response_state.body_view,
-                &mut response_state.headers_view,
+        ui.horizontal(|ui| tools(ui, *tab));
+    }
+    let mut close_filter = false;
+    if *tab == ResponseTab::Body && filterable && filter.open {
+        ui.horizontal_wrapped(|ui| {
+            let field = ui.add(
+                egui::TextEdit::singleline(&mut filter.query)
+                    .hint_text("$.items[*].id")
+                    .desired_width(260.0_f32.min(ui.available_width() - 60.0)),
             );
+            name(&field, "Filter the response with JSONPath");
+            if filter.focus {
+                field.request_focus();
+                filter.focus = false;
+            }
+            if field.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                close_filter = true;
+            }
+            if ui.button("Close").clicked() {
+                close_filter = true;
+            }
+            if let Some((text, tone)) = &filter_status {
+                ui.label(tone_text(text.as_str(), *tone));
+            }
         });
     }
-    match response_state.tab {
+    match *tab {
         ResponseTab::Body => {
             widgets::code_viewer(
                 ui,
                 &format!("{id} body"),
-                &mut response_state.body_view,
+                body_view,
                 body,
-                preview.language,
+                if filtered.is_some() {
+                    Language::Json
+                } else {
+                    preview.language
+                },
+                outline.map(|outline| widgets::Folding {
+                    outline,
+                    folded: folds,
+                }),
             );
         }
         ResponseTab::Headers => {
             widgets::code_viewer(
                 ui,
                 &format!("{id} headers"),
-                &mut response_state.headers_view,
+                headers_view,
                 headers,
                 Language::Plain,
+                None,
             );
         }
     }
+    if close_filter {
+        filter.close();
+    } else if toggle_filter {
+        if filter.open {
+            filter.close();
+        } else {
+            filter.open();
+        }
+    }
+}
+
+/// What the filter bar says about the current query.
+fn filter_status(filter: &crate::app::ResponseFilter) -> Option<(String, Tone)> {
+    if filter.query.trim().is_empty() {
+        return None;
+    }
+    if filter.stale() {
+        return Some(("Filtering…".to_owned(), Tone::Muted));
+    }
+    Some(match &filter.result.as_ref()?.1 {
+        Ok(found) => {
+            let count = match found.count {
+                0 => "No matches".to_owned(),
+                1 => "1 match".to_owned(),
+                n => format!("{n} matches"),
+            };
+            if found.limited {
+                (
+                    format!("{count} · preview limited to 256 KiB"),
+                    Tone::Warning,
+                )
+            } else {
+                (count, Tone::Muted)
+            }
+        }
+        Err(error) => (error.clone(), Tone::Error),
+    })
 }
 
 fn run_label(run: &imposter_app::store::executions::ExecutionSummary) -> String {

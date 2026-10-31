@@ -239,6 +239,16 @@ impl<M> Drop for Bridge<M> {
     }
 }
 
+/// Run CPU-bound `op` on the blocking pool, so a long computation never holds a runtime
+/// worker. A panic in `op` becomes an error message.
+pub async fn compute<T: Send + 'static>(
+    op: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(op)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -272,6 +282,22 @@ mod tests {
         assert_eq!(wakes.load(Ordering::SeqCst), 1);
         assert!(!bridge.is_running(id));
         assert_eq!(bridge.drain(), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn computations_run_off_the_runtime_and_report_panics() {
+        let (bridge, _) = bridge();
+        bridge.spawn(|_| async {
+            match (
+                compute(|| 6 * 7).await,
+                compute(|| -> u8 { panic!("boom") }).await,
+            ) {
+                (Ok(42), Err(message)) if message.contains("panicked") => "ok",
+                _ => "wrong",
+            }
+        });
+        assert!(bridge.wait_idle(WAIT));
+        assert_eq!(bridge.drain(), ["ok"]);
     }
 
     #[test]

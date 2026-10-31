@@ -4,7 +4,7 @@ use egui::{Color32, Pos2, Rect, Response, Stroke, Ui, vec2};
 
 use crate::theme::PALETTE;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Icon {
     Sidebar,
     /// Two panes next to each other.
@@ -23,6 +23,12 @@ pub enum Icon {
     Trash,
     /// A shell prompt, for curl commands.
     Terminal,
+    /// Chevrons pointing together: fold everything.
+    Collapse,
+    /// Chevrons pointing apart: unfold everything.
+    Expand,
+    /// A funnel.
+    Filter,
 }
 
 /// Native buttons keep keyboard and AccessKit behavior even when their label is only a tooltip.
@@ -213,6 +219,33 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
             ));
             line((6.5, 7.0), (6.5, 11.5));
             line((9.5, 7.0), (9.5, 11.5));
+        }
+        Icon::Collapse | Icon::Expand => {
+            // Each chevron as (y of its ends, y of its tip).
+            let chevrons = if icon == Icon::Collapse {
+                [(2.0, 6.0), (14.0, 10.0)]
+            } else {
+                [(6.0, 2.0), (10.0, 14.0)]
+            };
+            for (ends, tip) in chevrons {
+                painter.add(egui::Shape::line(
+                    vec![point(4.0, ends), point(8.0, tip), point(12.0, ends)],
+                    stroke,
+                ));
+            }
+        }
+        Icon::Filter => {
+            painter.add(egui::Shape::closed_line(
+                vec![
+                    point(2.0, 3.0),
+                    point(14.0, 3.0),
+                    point(9.5, 8.5),
+                    point(9.5, 13.5),
+                    point(6.5, 12.0),
+                    point(6.5, 8.5),
+                ],
+                stroke,
+            ));
         }
     }
 }

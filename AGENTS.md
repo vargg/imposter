@@ -139,6 +139,20 @@ numbers, so both are excluded. Each logical change is its own commit.
   out (`ScrollArea::show_rows`, monospace, wrap by column count). Why: a 5 MiB read-only
   `TextEdit` costs about 730 ms per frame; virtualized rows cost about 0.1 ms, highlighted or
   not. Measured by `cargo run --release -p imposter-ui --example text_perf` (M-series Mac).
+- **JSON navigation keeps the virtualized rows.** Folding hides row ranges computed from an
+  outline of the formatted text (`viewer::Outline`: path, depth and closing line for every
+  line), so nothing is laid out that is not visible. A row with a fold marker is exactly as
+  tall as a plain row, because the scroll area places rows by a fixed height. Paths are
+  RFC 9535 JSONPath, written one way everywhere (`select::member`: `.name` when the shorthand
+  allows it, `['name']` otherwise), so a copied path works in a filter, and later in checks
+  and extraction. JSONPath comes from `serde_json_path` (pure Rust); a hand-written subset
+  would differ from what users read in the RFC.
+- **The response filter runs over the whole captured body in the background**, parsed once
+  per response and kept for later queries; one run is in flight at a time and the newest query
+  follows. A late result for a replaced response is dropped. Results are re-serialized, so
+  numbers keep their value but not their spelling (`1.50` becomes `1.5`); the formatted body,
+  "Copy value" and the preview keep tokens exactly as received. A truncated body is refused
+  rather than reported as invalid JSON.
 - **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
   256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
   dependency.

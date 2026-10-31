@@ -3,6 +3,7 @@
 # settings are repeated here. Tests and examples drive the app from outside its event loop
 # and allow these lints at their top.
 allow-unwrap-in-tests = true
+doc-valid-idents = ["OpenAPI", "JSONPath", ".."]
 
 disallowed-methods = [
     { path = "imposter_store::StoreHandle::call_blocking", reason = "blocks the UI thread; run database work with ImposterApp::task" },

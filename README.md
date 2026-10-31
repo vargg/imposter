@@ -38,6 +38,11 @@ Python/PyQt6 version, and preserves its native collection format. New exports us
 - Status, time, size and content type at a glance.
 - JSON, XML and HTML highlighting, formatted JSON, find, wrap and copy. Large bodies stay
   responsive (the viewer only lays out what is visible; previews stop at 256 KiB).
+- Fold formatted JSON by object or array, or collapse everything below the top level.
+  Right-click a line to copy its JSONPath (`$.data.items[3].id`) or its value.
+- Filter a JSON response with JSONPath (RFC 9535), for example `$.items[?@.active == true].id`.
+  The filter reads the whole captured body, not just the preview, and stays set when you send
+  again. Copying the path of a result gives its path in the full body.
 - Earlier runs of the same request stay one click away.
 
 **History**

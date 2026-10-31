@@ -5,7 +5,7 @@
 //! drained at the start of each frame. Results carry the selection generation they were
 //! started under, so a late result never replaces another request's state.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -108,6 +108,7 @@ struct SmokeTest {
 #[derive(Debug)]
 pub enum Message {
     Started(Result<Box<Startup>, Failure>),
+    Filtered(PaneKind, Box<Filtered>),
     MocksLoaded(Result<imposter_app::core::mock::MockConfig, Failure>),
     MocksSaved {
         config: imposter_app::core::mock::MockConfig,
@@ -578,7 +579,69 @@ pub struct ResponsePane {
     pub headers_view: ViewerState,
     /// The formatted preview of `response`, computed once per response.
     pub preview: Option<(crate::viewer::Preview, String)>,
+    /// Folded lines of the formatted body.
+    pub body_folds: BTreeSet<usize>,
+    pub filter: ResponseFilter,
+    /// Identifies the shown response, so a late filter result for another one is dropped.
+    shown: u64,
 }
+
+/// The JSONPath filter of a response viewer. One run is in flight at a time; when it ends,
+/// the newest query runs if it changed meanwhile.
+#[derive(Debug, Default)]
+pub struct ResponseFilter {
+    pub open: bool,
+    pub query: String,
+    pub focus: bool,
+    /// The query whose result `result` is, with that result.
+    pub result: Option<(String, Result<crate::viewer::Filtered, String>)>,
+    pub folds: BTreeSet<usize>,
+    document: Option<crate::viewer::Document>,
+    running: bool,
+}
+
+impl ResponseFilter {
+    pub fn open(&mut self) {
+        self.open = true;
+        self.focus = true;
+    }
+
+    pub fn close(&mut self) {
+        self.open = false;
+        self.query.clear();
+    }
+
+    /// The result to show instead of the body: the last finished one while a filter is set.
+    pub fn shown(&self) -> Option<&Result<crate::viewer::Filtered, String>> {
+        (self.open && !self.query.trim().is_empty())
+            .then_some(self.result.as_ref())
+            .flatten()
+            .map(|(_, result)| result)
+    }
+
+    /// Whether the shown result is for an older query.
+    pub fn stale(&self) -> bool {
+        self.result
+            .as_ref()
+            .is_none_or(|(query, _)| query != self.query.trim())
+    }
+}
+
+/// Which response viewer a background result belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneKind {
+    Request,
+    History,
+}
+
+/// A filter run to start in the background.
+pub struct FilterJob {
+    shown: u64,
+    query: String,
+    source: crate::viewer::FilterSource,
+}
+
+static NEXT_SHOWN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Default for ResponsePane {
     fn default() -> Self {
@@ -592,6 +655,9 @@ impl Default for ResponsePane {
             body_view: ViewerState::new(),
             headers_view: ViewerState::new(),
             preview: None,
+            body_folds: BTreeSet::new(),
+            filter: ResponseFilter::default(),
+            shown: 0,
         }
     }
 }
@@ -604,6 +670,55 @@ impl ResponsePane {
             .filter(|(n, _)| !n.is_empty());
         self.preview = Some((preview, headers));
         self.response = Some(response);
+        self.body_folds.clear();
+        self.shown = NEXT_SHOWN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // The filter stays open with its query and runs again on the new body.
+        let filter = &mut self.filter;
+        filter.result = None;
+        filter.document = None;
+        filter.running = false;
+        filter.folds.clear();
+    }
+
+    /// The filter run this pane needs now, if any; marks it as running.
+    pub fn filter_job(&mut self) -> Option<FilterJob> {
+        let response = self.response.as_ref()?;
+        let filter = &mut self.filter;
+        let query = filter.query.trim();
+        if !filter.open
+            || query.is_empty()
+            || filter.running
+            || !filter.stale()
+            || !crate::viewer::is_json(response)
+        {
+            return None;
+        }
+        filter.running = true;
+        let source = match &filter.document {
+            Some(document) => crate::viewer::FilterSource::Parsed(Arc::clone(document)),
+            None => crate::viewer::FilterSource::Body {
+                bytes: response.body.clone(),
+                truncated: response.truncated,
+            },
+        };
+        Some(FilterJob {
+            shown: self.shown,
+            query: query.to_owned(),
+            source,
+        })
+    }
+
+    fn filtered(&mut self, done: Filtered) {
+        if done.shown != self.shown {
+            return;
+        }
+        let filter = &mut self.filter;
+        filter.running = false;
+        if done.document.is_some() {
+            filter.document = done.document;
+        }
+        filter.result = Some((done.query, done.result));
+        filter.folds.clear();
     }
 
     fn clear(&mut self, notice: &str) {
@@ -616,6 +731,16 @@ impl ResponsePane {
 
 struct Execution {
     task: TaskId,
+}
+
+/// A finished filter run.
+#[derive(Debug)]
+pub struct Filtered {
+    shown: u64,
+    query: String,
+    /// `None` when the run failed before parsing finished.
+    document: Option<crate::viewer::Document>,
+    result: Result<crate::viewer::Filtered, String>,
 }
 
 /// All UI state. Kept apart from the bridge and store so drawing can borrow it freely.
@@ -921,6 +1046,7 @@ impl ImposterApp {
 
     fn apply(&mut self, message: Message) {
         match message {
+            Message::Filtered(pane, done) => self.pane(pane).filtered(*done),
             Message::MocksLoaded(result) => self.mocks_loaded(result),
             Message::MocksSaved { config, result } => self.mocks_saved(config, result),
             Message::MockListening {
@@ -3413,6 +3539,48 @@ impl ImposterApp {
     }
 }
 
+impl ImposterApp {
+    fn pane(&mut self, kind: PaneKind) -> &mut ResponsePane {
+        match kind {
+            PaneKind::Request => &mut self.state.response,
+            PaneKind::History => &mut self.state.history.response,
+        }
+    }
+
+    /// Start the filter runs the response viewers need; parsing large bodies stays off the UI
+    /// thread.
+    fn start_filters(&mut self) {
+        for kind in [PaneKind::Request, PaneKind::History] {
+            let Some(job) = self.pane(kind).filter_job() else {
+                continue;
+            };
+            self.bridge.spawn(move |_| async move {
+                let FilterJob {
+                    shown,
+                    query,
+                    source,
+                } = job;
+                let asked = query.clone();
+                let done = match imposter_app::runtime::compute(move || source.run(&query)).await {
+                    Ok((document, result)) => Filtered {
+                        shown,
+                        query: asked,
+                        document: Some(document),
+                        result,
+                    },
+                    Err(error) => Filtered {
+                        shown,
+                        query: asked,
+                        document: None,
+                        result: Err(format!("Filtering failed: {error}")),
+                    },
+                };
+                Message::Filtered(kind, Box::new(done))
+            });
+        }
+    }
+}
+
 impl eframe::App for ImposterApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         for message in self.bridge.drain() {
@@ -3433,6 +3601,7 @@ impl eframe::App for ImposterApp {
         for action in std::mem::take(&mut self.state.actions) {
             self.handle(action, now);
         }
+        self.start_filters();
         if let Some(dialog) = &mut self.state.dialog {
             let outcome = dialog.show(ui.ctx());
             self.dialog_outcome(outcome);
@@ -3462,6 +3631,113 @@ fn native_export_dialog() -> FileDialog {
         title: "Export collection",
         name: "collection.imposter.json",
         filter: Some(("Native", "json")),
+    }
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+
+    fn json(body: &str) -> Response {
+        Response {
+            status: 200,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: body.as_bytes().to_vec(),
+            ..Response::default()
+        }
+    }
+
+    fn finish(job: FilterJob) -> Filtered {
+        let (document, result) = job.source.run(&job.query);
+        Filtered {
+            shown: job.shown,
+            query: job.query,
+            document: Some(document),
+            result,
+        }
+    }
+
+    #[test]
+    fn one_run_at_a_time_and_the_newest_query_follows() {
+        let mut pane = ResponsePane::default();
+        pane.show(json(r#"{"a":1,"b":2}"#));
+        assert!(pane.filter_job().is_none(), "closed");
+        pane.filter.open();
+        assert!(pane.filter_job().is_none(), "no query yet");
+        pane.filter.query = "$.a".into();
+        let first = pane.filter_job().unwrap();
+        assert!(matches!(
+            first.source,
+            crate::viewer::FilterSource::Body { .. }
+        ));
+        pane.filter.query = "$.b".into();
+        assert!(pane.filter_job().is_none(), "one run in flight");
+        assert!(pane.filter.stale());
+
+        pane.filtered(finish(first));
+        assert_eq!(pane.filter.result.as_ref().unwrap().0, "$.a");
+        let second = pane.filter_job().unwrap();
+        assert_eq!(second.query, "$.b");
+        assert!(
+            matches!(second.source, crate::viewer::FilterSource::Parsed(_)),
+            "the body is parsed once"
+        );
+        pane.filtered(finish(second));
+        assert!(!pane.filter.stale());
+        assert!(pane.filter_job().is_none(), "nothing left to do");
+        assert_eq!(
+            pane.filter.shown().unwrap().as_ref().unwrap().text,
+            "[\n  2\n]"
+        );
+    }
+
+    #[test]
+    fn a_result_for_an_earlier_response_is_dropped() {
+        let mut pane = ResponsePane::default();
+        pane.show(json(r#"{"a":1}"#));
+        pane.filter.open();
+        pane.filter.query = "$.a".into();
+        let old = pane.filter_job().unwrap();
+        pane.show(json(r#"{"a":2}"#));
+        let current = pane.filter_job().unwrap();
+        pane.filtered(finish(old));
+        assert!(
+            pane.filter.result.is_none(),
+            "the old body's result is ignored"
+        );
+        pane.filtered(finish(current));
+        assert_eq!(
+            pane.filter.shown().unwrap().as_ref().unwrap().text,
+            "[\n  2\n]"
+        );
+
+        pane.filter.close();
+        assert!(pane.filter.shown().is_none());
+        assert!(pane.filter_job().is_none());
+    }
+
+    #[test]
+    fn a_failed_run_keeps_its_query_and_parses_again_next_time() {
+        let mut pane = ResponsePane::default();
+        pane.show(json(r#"{"a":1}"#));
+        pane.filter.open();
+        pane.filter.query = "$.a".into();
+        let job = pane.filter_job().unwrap();
+        pane.filtered(Filtered {
+            shown: job.shown,
+            query: job.query,
+            document: None,
+            result: Err("Filtering failed: boom".into()),
+        });
+        assert!(
+            pane.filter_job().is_none(),
+            "the same query is not retried in a loop"
+        );
+        pane.filter.query = "$".into();
+        assert!(matches!(
+            pane.filter_job().unwrap().source,
+            crate::viewer::FilterSource::Body { .. }
+        ));
     }
 }
 

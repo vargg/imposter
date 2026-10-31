@@ -1091,6 +1091,21 @@ impl ViewerState {
 pub const TAB_ROW_MIN: f32 = 280.0;
 
 pub fn viewer_tools(ui: &mut Ui, state: &mut ViewerState, text: &str, copy_label: &str) {
+    viewer_tools_with(ui, state, text, copy_label, None, |_| {});
+}
+
+/// [`viewer_tools`] with fold buttons for `folding`, and `more` drawn left of Wrap.
+pub fn viewer_tools_with(
+    ui: &mut Ui,
+    state: &mut ViewerState,
+    text: &str,
+    copy_label: &str,
+    folding: Option<Folding<'_>>,
+    more: impl FnOnce(&mut Ui),
+) {
+    // Fold buttons are a shortcut for the markers on each line, so they are the first to go
+    // when the row is too narrow for every tool.
+    let room_for_all = ui.available_width() >= 6.0 * (28.0 + ui.spacing().item_spacing.x);
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if icons::button(ui, Icon::Copy, copy_label, false).clicked() {
             ui.ctx().copy_text(text.to_owned());
@@ -1101,11 +1116,101 @@ pub fn viewer_tools(ui: &mut Ui, state: &mut ViewerState, text: &str, copy_label
         if icons::button(ui, Icon::Wrap, "Wrap", state.wrap).clicked() {
             state.wrap = !state.wrap;
         }
+        if let Some(folding) = folding.filter(|_| room_for_all) {
+            if icons::button(ui, Icon::Expand, "Expand all", false).clicked() {
+                folding.folded.clear();
+            }
+            if icons::button(ui, Icon::Collapse, "Collapse all", false).clicked() {
+                *folding.folded = folding.outline.collapse_all();
+            }
+        }
+        more(ui);
     });
 }
 
+/// Folding and the row menu of a viewer showing formatted JSON.
+pub struct Folding<'a> {
+    pub outline: &'a viewer::Outline,
+    /// Lines whose containers are folded.
+    pub folded: &'a mut std::collections::BTreeSet<usize>,
+}
+
+const GUTTER: f32 = 12.0;
+
+/// The fold marker of `line`, or the same space without one.
+fn fold_marker(ui: &mut Ui, folding: &mut Folding<'_>, line: usize, first: bool, height: f32) {
+    let foldable = first
+        && folding
+            .outline
+            .lines
+            .get(line)
+            .is_some_and(|l| l.close.is_some());
+    if !foldable {
+        ui.allocate_space(egui::vec2(GUTTER, height));
+        return;
+    }
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(GUTTER, height), egui::Sense::click());
+    let open = !folding.folded.contains(&line);
+    let path = &folding.outline.lines[line].path;
+    name(
+        &response,
+        &format!("{} {path}", if open { "Fold" } else { "Unfold" }),
+    );
+    if response.clicked() && !folding.folded.remove(&line) {
+        folding.folded.insert(line);
+    }
+    let color = if response.hovered() {
+        PALETTE.accent
+    } else {
+        PALETTE.text_muted
+    };
+    let c = rect.center();
+    let points = if open {
+        vec![
+            c + egui::vec2(-4.0, -2.0),
+            c + egui::vec2(4.0, -2.0),
+            c + egui::vec2(0.0, 3.0),
+        ]
+    } else {
+        vec![
+            c + egui::vec2(-2.0, -4.0),
+            c + egui::vec2(3.0, 0.0),
+            c + egui::vec2(-2.0, 4.0),
+        ]
+    };
+    ui.painter().add(egui::Shape::convex_polygon(
+        points,
+        color,
+        egui::Stroke::NONE,
+    ));
+}
+
+/// Copy path and Copy value for the line under a row.
+fn row_menu(ui: &mut Ui, outline: &viewer::Outline, text: &str, line: usize) {
+    let Some(entry) = outline.lines.get(line) else {
+        return;
+    };
+    if ui.button("Copy path").clicked() {
+        ui.ctx().copy_text(entry.path.clone());
+        ui.close();
+    }
+    if let Some(value) = outline.copy_value(text, line)
+        && ui.button("Copy value").clicked()
+    {
+        ui.ctx().copy_text(value);
+        ui.close();
+    }
+}
+
 /// A read-only viewer over bounded text: only visible rows are laid out.
-pub fn code_viewer(ui: &mut Ui, id: &str, state: &mut ViewerState, text: &str, language: Language) {
+pub fn code_viewer(
+    ui: &mut Ui,
+    id: &str,
+    state: &mut ViewerState,
+    text: &str,
+    language: Language,
+    mut folding: Option<Folding<'_>>,
+) {
     let area = ui.max_rect();
     if ui.rect_contains_pointer(area)
         && ui.input_mut(|i| i.consume_shortcut(&crate::shortcuts::FIND))
@@ -1152,15 +1257,26 @@ pub fn code_viewer(ui: &mut Ui, id: &str, state: &mut ViewerState, text: &str, l
             let font = FontId::monospace(12.5);
             let char_width = ui.fonts_mut(|fonts| fonts.glyph_width(&font, 'M')).max(1.0);
             let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font));
+            let gutter = if folding.is_some() {
+                GUTTER + ui.spacing().item_spacing.x
+            } else {
+                0.0
+            };
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             // a positive count of columns
             let columns = state
                 .wrap
-                .then(|| ((ui.available_width() - 16.0) / char_width).max(20.0) as usize);
-            let rows = viewer::rows(text, columns);
+                .then(|| ((ui.available_width() - 16.0 - gutter) / char_width).max(20.0) as usize);
+            let mut rows = viewer::rows(text, columns);
+            if let Some(folding) = &mut folding {
+                if let Some(offset) = state.scroll_to {
+                    unfold_around(folding, offset, text);
+                }
+                rows = viewer::unfolded(rows, folding.outline, folding.folded);
+            }
             let target_row = state.scroll_to.take().and_then(|offset| {
                 rows.iter()
-                    .position(|r| r.end >= offset && r.start <= offset)
+                    .position(|r| r.range.end >= offset && r.range.start <= offset)
             });
             let mut scroll = egui::ScrollArea::both()
                 .id_salt(id)
@@ -1173,10 +1289,17 @@ pub fn code_viewer(ui: &mut Ui, id: &str, state: &mut ViewerState, text: &str, l
             }
             let current = state.matches.get(state.current).cloned();
             scroll.show_rows(ui, row_height, rows.len(), |ui, visible| {
-                for range in &rows[visible] {
+                // A row with a fold marker must stay exactly as tall as a plain row: the
+                // scroll area places rows by a fixed height.
+                ui.spacing_mut().interact_size.y = row_height;
+                for index in visible {
+                    let row = &rows[index];
+                    let range = &row.range;
                     let line = &text[range.clone()];
                     let mut job =
                         spans_job(line, &highlight::line(language, line), &font, f32::INFINITY);
+                    let first = index == 0 || rows[index - 1].line != row.line;
+                    let last = rows.get(index + 1).is_none_or(|next| next.line != row.line);
                     for found in &state.matches {
                         if found.start < range.end && found.end > range.start {
                             let start = found.start.max(range.start) - range.start;
@@ -1193,14 +1316,44 @@ pub fn code_viewer(ui: &mut Ui, id: &str, state: &mut ViewerState, text: &str, l
                             );
                         }
                     }
-                    ui.add(
+                    let label = |job| {
                         egui::Label::new(job)
                             .selectable(true)
-                            .wrap_mode(egui::TextWrapMode::Extend),
-                    );
+                            .wrap_mode(egui::TextWrapMode::Extend)
+                    };
+                    let Some(folding) = &mut folding else {
+                        ui.add(label(job));
+                        continue;
+                    };
+                    if last
+                        && folding.folded.contains(&row.line)
+                        && let Some(close) = folding.outline.lines[row.line].close
+                    {
+                        let closing = text.split('\n').nth(close).unwrap_or_default().trim();
+                        job.append(
+                            &format!(" … {closing}"),
+                            0.0,
+                            TextFormat::simple(font.clone(), PALETTE.text_muted),
+                        );
+                    }
+                    ui.horizontal(|ui| {
+                        fold_marker(ui, folding, row.line, first, row_height);
+                        let response = ui.add(label(job));
+                        response.context_menu(|ui| row_menu(ui, folding.outline, text, row.line));
+                    });
                 }
             });
         });
+}
+
+/// Unfold every container that hides the text at byte `offset`, so Find can show it.
+fn unfold_around(folding: &mut Folding<'_>, offset: usize, text: &str) {
+    let line = text[..offset.min(text.len())].matches('\n').count();
+    folding.folded.retain(|&opener| {
+        folding.outline.lines[opener]
+            .close
+            .is_none_or(|close| !(opener < line && line <= close))
+    });
 }
 
 /// Give a byte range of a laid-out job a background, splitting sections as needed.

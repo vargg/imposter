@@ -121,6 +121,26 @@ fn main() {
         let path = out.join(format!("{label}.png"));
         image.save(&path).unwrap();
         println!("{}", path.display());
+        harness.get_by_label("Fold $.users[0]").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-folded.png")))
+            .unwrap();
+        harness.get_by_label("Filter with JSONPath").click();
+        settle(&mut harness);
+        harness
+            .get_by_label("Filter the response with JSONPath")
+            .type_text("$.users[?@.admin == false].name");
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-json-filter.png")))
+            .unwrap();
+        harness.get_by_label("Close").click();
+        settle(&mut harness);
         harness.get_by_label("New").click();
         settle(&mut harness);
         harness

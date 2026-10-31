@@ -51,6 +51,8 @@ jiff = "0.2.38"
 indexmap = { version = "2.14.2", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
+# RFC 9535 JSONPath for response filters, checks and extraction; pure Rust.
+serde_json_path = "0.7.2"
 # YAML for OpenAPI imports: pure Rust, panic-free, with limits against alias bombs.
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
 sha1 = "0.11.0"
