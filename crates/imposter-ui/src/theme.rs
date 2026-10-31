@@ -92,8 +92,9 @@ pub const LIGHT: Palette = Palette {
     error: Color32::from_rgb(0xc6, 0x28, 0x28),
     syntax: Syntax {
         key: Color32::from_rgb(0x0b, 0x57, 0xa4),
-        string: Color32::from_rgb(0xa1, 0x35, 0x0f),
-        number: Color32::from_rgb(0x1a, 0x6b, 0x2e),
+        // Strings are green, away from the accent that marks `{{variables}}` inside them.
+        string: Color32::from_rgb(0x1a, 0x6b, 0x2e),
+        number: Color32::from_rgb(0x9b, 0x1f, 0x6a),
         keyword: Color32::from_rgb(0x6f, 0x3f, 0xb5),
         tag: Color32::from_rgb(0x0f, 0x6b, 0x5c),
         comment: Color32::from_rgb(0x5f, 0x6b, 0x6d),
@@ -503,6 +504,30 @@ mod tests {
             }
         }
         CURRENT.with(|current| current.set(&DARK));
+    }
+
+    /// Variables are marked in the accent on top of syntax colors, so no syntax color may
+    /// look like it. Distance in RGB; the dark string (salmon) is the closest at about 89.
+    #[test]
+    fn variables_stand_out_from_every_syntax_color() {
+        let distance = |a: Color32, b: Color32| {
+            let d = |x: u8, y: u8| (f32::from(x) - f32::from(y)).powi(2);
+            (d(a.r(), b.r()) + d(a.g(), b.g()) + d(a.b(), b.b())).sqrt()
+        };
+        for (name, palette) in BOTH {
+            let s = &palette.syntax;
+            for (role, color) in [
+                ("key", s.key),
+                ("string", s.string),
+                ("number", s.number),
+                ("keyword", s.keyword),
+                ("tag", s.tag),
+                ("comment", s.comment),
+            ] {
+                let apart = distance(palette.accent, color);
+                assert!(apart >= 80.0, "{name} {role}: {apart:.0} from the accent");
+            }
+        }
     }
 
     #[test]

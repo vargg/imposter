@@ -331,7 +331,8 @@ fn char_to_byte(text: &str, chars: usize) -> usize {
 }
 
 /// Overlay `{{tokens}}` on highlighted spans: defined names in the accent color, unknown ones
-/// in the error color, both underlined. Only colors change, never the text.
+/// in the error color on a red tint, both underlined. The tint tells them apart without
+/// relying on hue: the two colors are equally bright. Only colors change, never the text.
 pub fn variable_job(
     text: &str,
     spans: &Spans,
@@ -350,9 +351,17 @@ pub fn variable_job(
         restyle(&mut job, token.range, |format| {
             format.color = color;
             format.underline = egui::Stroke::new(1.0, color);
+            if !defined {
+                format.background = unknown_tint();
+            }
         });
     }
     job
+}
+
+/// The background of an unknown `{{variable}}`.
+pub fn unknown_tint() -> Color32 {
+    palette().error.gamma_multiply(0.18)
 }
 
 /// A text field that marks `{{variables}}`, suggests names after `{{` and opens the inspector
@@ -1747,6 +1756,30 @@ fn restyle(job: &mut LayoutJob, range: std::ops::Range<usize>, change: impl Fn(&
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unknown_variable_is_tinted_and_a_known_one_is_not() {
+        let text = "{{$uuid}} {{missing}}";
+        let job = variable_job(
+            text,
+            &vec![(0..text.len(), highlight::Token::Plain)],
+            &FontId::monospace(12.0),
+            f32::INFINITY,
+            None,
+        );
+        let background = |at: usize| {
+            job.sections
+                .iter()
+                .find(|section| section.byte_range.contains(&egui::text::ByteIndex(at)))
+                .map(|section| section.format.background)
+        };
+        assert_eq!(
+            background(2),
+            Some(Color32::TRANSPARENT),
+            "generated, so known"
+        );
+        assert_eq!(background(12), Some(unknown_tint()));
+    }
 
     #[test]
     fn tabs_that_do_not_fit_leave_the_row_but_the_selected_one_stays() {

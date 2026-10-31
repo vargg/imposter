@@ -164,7 +164,9 @@ numbers, so both are excluded. Each logical change is its own commit.
     - text, tones, accent, syntax and method colors are ≥4.5:1 on every background they
       appear on;
     - control edges (`field_border`, used for fields and buttons) and the selection marker
-      are ≥3:1, per WCAG 1.4.11.
+      are ≥3:1, per WCAG 1.4.11;
+    - every syntax color stays clearly apart from the accent (RGB distance ≥80), because
+      `{{variables}}` inside a body are marked in the accent; light strings are green.
   - **Light accent:** the light theme's accent is a darker orange (#b83b0a), because
     #ff6c37 on white is below 3:1.
 - **Bundled fonts: Inter (Regular, SemiBold) for the interface, JetBrains Mono for data.**
@@ -301,7 +303,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   `design-ux` procedure: a reviewer that did not build the screens scores the tour.
 - **Variables in the editor:** fields mark `{{name}}` tokens with the Python app's highlight
   pattern (`\{\{([^{}\n]+)\}\}`, stricter than the resolution pattern): defined names and
-  generated values in the accent color, unknown ones in the error color. Typing `{{` suggests names with their scope and
+  generated values in the accent color, unknown ones in the error color on a red tint
+  (the two colors are equally bright, so hue alone failed colour-blind users). Typing `{{` suggests names with their scope and
   source, never values; the list opens only from typing in an unfinished token (clicking into
   a token only inspects it) and can be chosen by keyboard or pointer. Values appear only in the inspector, opened explicitly (click on a token
   or Alt+Enter); from a password field they stay masked until "Reveal". The inspector and
