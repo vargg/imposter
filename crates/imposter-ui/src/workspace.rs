@@ -95,10 +95,12 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                 } else {
                     "Show Collections"
                 };
-                if icons::button(ui, Icon::Sidebar, toggle, state.layout.sidebar_visible).clicked()
-                {
+                // An action named by what it does, never drawn selected, and set apart from
+                // the layout pair: beside it, selected the same way, it read as a third layout.
+                if icons::button(ui, Icon::Sidebar, toggle, false).clicked() {
                     state.layout.sidebar_visible = !state.layout.sidebar_visible;
                 }
+                ui.separator();
                 layout_switch(&mut state.layout, ui);
                 ui.separator();
                 let now = ui.input(|i| i.time);

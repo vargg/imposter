@@ -103,8 +103,12 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
     };
     match icon {
         Icon::Sidebar => {
+            // A window with a list down its left side, unlike the two layout icons.
             rectangle((1.0, 2.0), (15.0, 14.0));
-            line((6.0, 2.0), (6.0, 14.0));
+            line((6.5, 2.0), (6.5, 14.0));
+            for y in [5.5, 8.0, 10.5] {
+                line((3.0, y), (4.5, y));
+            }
         }
         Icon::Columns => {
             rectangle((1.0, 2.0), (15.0, 14.0));

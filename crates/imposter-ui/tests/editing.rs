@@ -318,8 +318,25 @@ fn the_layout_switch_and_the_sidebar_toggle() {
         Orientation::SideBySide
     );
 
+    // The sidebar toggle is an action, never selected, and a line sets it apart from the
+    // layouts: drawn selected beside them, it read as a third layout.
+    assert_eq!(selected(&app, "Hide Collections"), Some(false));
+    let toggle = app.harness.get_by_label("Hide Collections").rect();
+    let layouts = app
+        .harness
+        .get_by_label("Put request and response side by side")
+        .rect();
+    let divided = app.harness.output().shapes.iter().any(|clipped| {
+        matches!(&clipped.shape, egui::Shape::LineSegment { points: [a, b], .. }
+            if (a.x - b.x).abs() < 0.5
+                && a.x > toggle.right()
+                && a.x < layouts.left()
+                && (a.y - b.y).abs() > toggle.height() / 2.0)
+    });
+    assert!(divided, "a separator between the toggle and the layouts");
     click(&mut app.harness, "Hide Collections");
     assert!(!app.harness.state().state.layout.sidebar_visible);
+    assert_eq!(selected(&app, "Show Collections"), Some(false));
     click(&mut app.harness, "Show Collections");
     assert!(app.harness.state().state.layout.sidebar_visible);
 }

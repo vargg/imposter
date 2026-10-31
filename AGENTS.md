@@ -376,7 +376,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   Python app's 1000×650 took more than half a laptop screen), so narrow panes adapt instead
   of wrapping: single-line fields and button labels never wrap (a long label is cut, with
   the whole text on hover).
-  Why: an automatic choice next to a manual one made the button seem broken.
+  Why: an automatic choice next to a manual one made the button seem broken. The sidebar
+  toggle beside them is an action named by what it does (Hide or Show Collections), never
+  drawn selected, with its own glyph and a separator: selected like the layouts, it read
+  as a third layout (Q4).
 - **Split panes keep a minimum in points** (`layout::split`): request and response 220 wide
   or 160 tall, the History list 110 and its details 160; when both minimums do not fit,
   they share in proportion. A drag starts from the size as drawn, not the stored ratio, so
