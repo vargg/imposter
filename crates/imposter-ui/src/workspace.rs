@@ -243,6 +243,10 @@ fn new_menu(state: &mut State, ui: &mut Ui) {
                 NamePurpose::NewRequest { folder: parent },
             )));
         }
+        if state.collection.is_none() {
+            // Said where it shows, not only on hover: greyed items alone gave no reason.
+            ui.label(tone_text(why, Tone::Muted).small());
+        }
         ui.separator();
         if ui.button("Import Collection…").clicked() {
             state.actions.push(Action::Import);

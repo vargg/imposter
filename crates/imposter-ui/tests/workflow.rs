@@ -531,6 +531,11 @@ fn the_first_run_offers_a_way_in_and_says_it_once() {
     for label in ["Import Collection…", "Paste curl…"] {
         app.harness.get_by_label(label);
     }
+    // The New menu says why its folder and request items are greyed, without a hover.
+    click(&mut app.harness, "New");
+    app.harness.get_by_label("Create a collection first");
+    app.harness.key_press(egui::Key::Escape);
+    app.harness.run_steps(2);
     click(&mut app.harness, "New Collection");
     app.harness.get_by_label("Name");
     assert!(app.harness.state().state.dialog.is_some());
