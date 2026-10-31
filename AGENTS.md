@@ -148,6 +148,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   words and buttons took three rows from the body at 720 points (Q14).
 - **Response headers are a table by default** (`widgets::headers_table`): names muted,
   values selectable and wrapping at words, a copy button on the row under the pointer.
+  Where values would get under 160 points, each goes under its name: narrow columns broke
+  "content-length" and "application/json" mid-word (Q9).
   "Raw" switches to the text viewer with Find and Wrap. Why: a raw block broke values
   mid-word in a narrow pane (the review's #13, #27). Raw is a framed toggle at the right
   end of the tab row, and the tabs leave room for it: drawn after the tabs in their style

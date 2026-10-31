@@ -395,6 +395,32 @@ fn headers_show_as_a_table_with_a_copy_per_row_and_raw_on_request() {
         (name.top() - value.top()).abs() < 1.0 && name.right() < value.left(),
         "one row, two columns"
     );
+    // Too narrow for two columns, the value goes under its name, whole.
+    app.harness
+        .set_size(egui::Vec2::from(imposter_ui::layout::MIN_WINDOW));
+    app.harness.run_steps(3);
+    let table_value = |app: &support::App| {
+        app.harness
+            .query_all_by_label("application/json")
+            .map(|node| node.rect())
+            .max_by(|a, b| a.top().total_cmp(&b.top()))
+            .unwrap()
+    };
+    let narrow_name = app.harness.get_by_label("content-type").rect();
+    let narrow_value = table_value(app);
+    assert!(
+        narrow_value.top() >= narrow_name.bottom() - 0.5
+            && (narrow_value.left() - narrow_name.left()).abs() < 1.0,
+        "{narrow_name:?} above {narrow_value:?}"
+    );
+    let line = app.harness.ctx.global_style().text_styles[&egui::TextStyle::Monospace].size;
+    assert!(
+        narrow_value.height() < 2.0 * line,
+        "on one line: {narrow_value:?}"
+    );
+    app.harness.set_size(egui::vec2(1500.0, 850.0));
+    app.harness.run_steps(3);
+    let value = table_value(app);
     app.harness.hover_at(value.center());
     app.harness.run_steps(2);
     app.harness.get_by_label("Copy content-type").click();

@@ -1792,30 +1792,55 @@ pub fn headers_table(ui: &mut Ui, id: &str, headers: &[(String, String)]) {
         .show(ui, |ui| {
             let gap = ui.spacing().item_spacing.x;
             let width = ui.available_width();
-            let names = (width * 0.35).clamp(90.0, 240.0);
+            let font = egui::TextStyle::Monospace.resolve(ui.style());
+            let widest = headers
+                .iter()
+                .map(|(name, _)| {
+                    ui.fonts_mut(|fonts| {
+                        fonts
+                            .layout_no_wrap(name.clone(), font.clone(), Color32::PLACEHOLDER)
+                            .size()
+                            .x
+                    })
+                })
+                .fold(0.0, f32::max);
+            let names = widest.min(MAX_NAME_COLUMN);
             let copy = icons::size();
-            let values = (width - names - copy - 2.0 * gap).max(60.0);
+            let values = width - names - copy - 2.0 * gap;
+            // Too narrow for two columns, each value goes under its name: narrow columns
+            // broke "content-length" and "application/json" mid-word.
+            let stacked = values < MIN_VALUE_COLUMN;
+            let text = if stacked { width - copy - gap } else { values };
             let pointer = ui.input(|i| i.pointer.hover_pos());
+            let name_label = |name: &str| {
+                egui::Label::new(RichText::new(name).monospace().color(palette().text_muted)).wrap()
+            };
+            let value_label = |value: &str| {
+                egui::Label::new(RichText::new(value).monospace())
+                    .selectable(true)
+                    .wrap()
+            };
             for (name, value) in headers {
                 ui.horizontal_top(|ui| {
                     let top = ui.cursor().top();
-                    ui.allocate_ui(egui::vec2(names, 0.0), |ui| {
-                        ui.set_width(names);
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(name).monospace().color(palette().text_muted),
-                            )
-                            .wrap(),
-                        );
-                    });
-                    ui.allocate_ui(egui::vec2(values, 0.0), |ui| {
-                        ui.set_width(values);
-                        ui.add(
-                            egui::Label::new(RichText::new(value).monospace())
-                                .selectable(true)
-                                .wrap(),
-                        );
-                    });
+                    if stacked {
+                        ui.allocate_ui(egui::vec2(text, 0.0), |ui| {
+                            ui.set_width(text);
+                            ui.vertical(|ui| {
+                                ui.add(name_label(name));
+                                ui.add(value_label(value));
+                            });
+                        });
+                    } else {
+                        ui.allocate_ui(egui::vec2(names, 0.0), |ui| {
+                            ui.set_width(names);
+                            ui.add(name_label(name));
+                        });
+                        ui.allocate_ui(egui::vec2(text, 0.0), |ui| {
+                            ui.set_width(text);
+                            ui.add(value_label(value));
+                        });
+                    }
                     let bottom = ui.min_rect().bottom();
                     let hovered = pointer.is_some_and(|p| {
                         ui.max_rect().x_range().contains(p.x) && (top..=bottom).contains(&p.y)
@@ -1829,9 +1854,17 @@ pub fn headers_table(ui: &mut Ui, id: &str, headers: &[(String, String)]) {
                         ui.allocate_space(egui::vec2(copy, copy));
                     }
                 });
+                if stacked {
+                    ui.add_space(4.0);
+                }
             }
         });
 }
+
+/// The widest the names' column gets; longer names wrap.
+const MAX_NAME_COLUMN: f32 = 240.0;
+/// Below this, values go under their names instead of beside them.
+const MIN_VALUE_COLUMN: f32 = 160.0;
 
 /// Folding and the row menu of a viewer showing formatted JSON.
 pub struct Folding<'a> {
