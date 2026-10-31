@@ -162,8 +162,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   would differ from what users read in the RFC.
 - **JSON rows offer their actions without a right-click.** The line under the pointer is
   highlighted with a "⋯" at the viewer's right that opens the row menu (Add check, Set
-  variable, Copy path, Copy value), headed by the row's path; both stay while the menu is
-  open. Right-click opens the same menu. Why: the actions were found only by accident (the
+  variable, Copy path, Copy value), headed by the row's path, under the line so it stays
+  in view; both stay while the menu is open. Right-click opens the same menu. Wrapped
+  lines stop short of the "⋯", which sits on the row's fill where a line still reaches
+  it (Q10, #30). Why: the actions were found only by accident (the
   review's #30).
 - **The response filter runs over the whole captured body in the background**, parsed once
   per response and kept for later queries; one run is in flight at a time and the newest query

@@ -1979,6 +1979,8 @@ fn row_actions(
         row.max,
     );
     let button = ui.interact(spot, id, egui::Sense::click());
+    // An unwrapped line can still reach the edge: the "⋯" sits on the row's own fill.
+    ui.painter().rect_filled(spot, 2.0, palette().hover);
     let label = format!("Row actions {}", entry.path);
     button.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
     let color = if button.hovered() || open {
@@ -1990,7 +1992,10 @@ fn row_actions(
         ui.painter()
             .circle_filled(spot.center() + egui::vec2(dx, 0.0), 1.5, color);
     }
-    egui::Popup::menu(&button).show(|ui| row_menu(ui, folding, text, line, action));
+    // Under the row, so the line acted on stays in view.
+    egui::Popup::menu(&button)
+        .align(egui::RectAlign::BOTTOM_END)
+        .show(|ui| row_menu(ui, folding, text, line, action));
 }
 
 const ROW_ACTIONS_WIDTH: f32 = 24.0;
@@ -2051,8 +2056,10 @@ pub fn code_viewer(
             let font = FontId::monospace(12.5);
             let char_width = ui.fonts_mut(|fonts| fonts.glyph_width(&font, 'M')).max(1.0);
             let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font));
+            // Fold markers on the left; on the right the row actions' "⋯", which wrapped
+            // lines must not run under.
             let gutter = if folding.is_some() {
-                GUTTER + ui.spacing().item_spacing.x
+                GUTTER + ui.spacing().item_spacing.x + ROW_ACTIONS_WIDTH
             } else {
                 0.0
             };

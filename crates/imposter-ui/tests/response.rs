@@ -224,12 +224,57 @@ fn the_line_under_the_pointer_offers_its_actions_without_a_right_click() {
         "on the line: {button:?} {line:?}"
     );
     click(&mut app.harness, "Row actions $.data.items[1].name");
-    // The menu says what it acts on, and stays while the pointer moves into it.
-    app.harness.get_by_label("$.data.items[1].name");
+    // The menu says what it acts on, opens under the line so it stays in view, and stays
+    // while the pointer moves into it.
+    let header = app.harness.get_by_label("$.data.items[1].name").rect();
+    assert!(header.top() >= line.bottom(), "{header:?} under {line:?}");
     let item = app.harness.get_by_label("Copy path").rect();
     app.harness.hover_at(item.center());
     app.harness.run_steps(2);
     assert_eq!(copy(app, "Copy path"), ["$.data.items[1].name"]);
+}
+
+#[test]
+fn wrapped_lines_stop_short_of_the_row_actions() {
+    let long: &'static str =
+        Box::leak(format!(r#"{{"note":"{}"}}"#, "word ".repeat(80)).into_boxed_str());
+    let mut fixture = sent("application/json", long);
+    let app = &mut fixture.app;
+    let line = app.harness.get_by_label_contains("\"note\"").rect();
+    app.harness.hover_at(line.center());
+    app.harness.run_steps(2);
+    let button = app.harness.get_by_label("Row actions $.note").rect();
+    let line = app.harness.get_by_label_contains("\"note\"").rect();
+    assert!(
+        line.right() <= button.left(),
+        "{line:?} runs under {button:?}"
+    );
+
+    // Too narrow for the wrap's 20 columns, the line reaches the edge: the "⋯" is drawn
+    // on a fill over it.
+    app.harness
+        .set_size(egui::Vec2::from(imposter_ui::layout::MIN_WINDOW));
+    app.harness.run_steps(3);
+    let line = app.harness.get_by_label_contains("\"note\"").rect();
+    app.harness.hover_at(line.center());
+    app.harness.run_steps(2);
+    let button = app.harness.get_by_label("Row actions $.note").rect();
+    let shapes = &app.harness.output().shapes;
+    let text = shapes
+        .iter()
+        .rposition(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Text(text)
+                if text.galley.job.text.contains("\"note\"") && text.pos.y < button.bottom())
+        })
+        .unwrap();
+    let fill = shapes
+        .iter()
+        .rposition(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Rect(rect)
+                if rect.rect == button && rect.fill == imposter_ui::theme::palette().hover)
+        })
+        .unwrap();
+    assert!(fill > text, "the fill is drawn over the line");
 }
 
 #[test]

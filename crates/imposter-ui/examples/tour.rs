@@ -470,8 +470,17 @@ fn main() {
             node.scroll_to_me();
             tour.harness.run_steps(12);
         }
-        if let Some(node) = tour.harness.query_by_label_contains("\"name\": \"Ann\"") {
-            node.click_secondary();
+        // From the line's "⋯", which opens the menu under the line.
+        if let Some(line) = tour
+            .harness
+            .query_by_label_contains("\"name\": \"Ann\"")
+            .map(|node| node.rect())
+        {
+            tour.harness.hover_at(line.center());
+            tour.harness.run_steps(2);
+        }
+        if let Some(node) = tour.harness.query_by_label_contains("Row actions") {
+            node.click();
         }
         tour.harness.run_steps(2);
         tour.shot("4-02-row-menu");
