@@ -1751,6 +1751,13 @@ fn row_menu(
     let Some(entry) = outline.lines.get(line) else {
         return;
     };
+    // What the actions act on.
+    ui.label(
+        RichText::new(&entry.path)
+            .monospace()
+            .color(palette().text_muted),
+    );
+    ui.separator();
     if folding.add_check && ui.button("Add check").clicked() {
         *action = Some(RowAction::AddCheck {
             path: entry.path.clone(),
@@ -1775,6 +1782,55 @@ fn row_menu(
         ui.close();
     }
 }
+
+/// The line under the pointer is highlighted and offers its row menu from a "⋯" at the
+/// right of the viewer, so the actions are found without right-clicking. Both stay while
+/// the menu is open.
+fn row_actions(
+    ui: &mut Ui,
+    background: egui::layers::ShapeIdx,
+    folding: &Folding<'_>,
+    text: &str,
+    line: usize,
+    action: &mut Option<RowAction>,
+) {
+    let Some(entry) = folding.outline.lines.get(line) else {
+        return;
+    };
+    let clip = ui.clip_rect();
+    let row = egui::Rect::from_x_y_ranges(clip.x_range(), ui.min_rect().y_range());
+    let id = ui.make_persistent_id(("row actions", line));
+    let open = egui::Popup::is_id_open(ui.ctx(), id.with("popup"));
+    let hovered = ui
+        .input(|i| i.pointer.hover_pos())
+        .is_some_and(|pointer| row.contains(pointer));
+    if !(hovered || open) {
+        return;
+    }
+    ui.painter().set(
+        background,
+        egui::Shape::rect_filled(row, 2.0, palette().hover),
+    );
+    let spot = egui::Rect::from_min_max(
+        egui::pos2(row.right() - ROW_ACTIONS_WIDTH, row.top()),
+        row.max,
+    );
+    let button = ui.interact(spot, id, egui::Sense::click());
+    let label = format!("Row actions {}", entry.path);
+    button.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+    let color = if button.hovered() || open {
+        palette().text
+    } else {
+        palette().text_muted
+    };
+    for dx in [-5.0, 0.0, 5.0] {
+        ui.painter()
+            .circle_filled(spot.center() + egui::vec2(dx, 0.0), 1.5, color);
+    }
+    egui::Popup::menu(&button).show(|ui| row_menu(ui, folding, text, line, action));
+}
+
+const ROW_ACTIONS_WIDTH: f32 = 24.0;
 
 /// A read-only viewer over bounded text: only visible rows are laid out.
 pub fn code_viewer(
@@ -1912,11 +1968,16 @@ pub fn code_viewer(
                         );
                     }
                     ui.horizontal(|ui| {
+                        // Filled in below once the row's extent is known.
+                        let background = ui.painter().add(egui::Shape::Noop);
                         fold_marker(ui, folding, row.line, first, row_height);
                         let response = ui.add(label(job));
                         response.context_menu(|ui| {
                             row_menu(ui, folding, text, row.line, &mut action);
                         });
+                        if first {
+                            row_actions(ui, background, folding, text, row.line, &mut action);
+                        }
                     });
                 }
             });

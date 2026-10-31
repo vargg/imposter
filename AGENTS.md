@@ -156,6 +156,11 @@ numbers, so both are excluded. Each logical change is its own commit.
   allows it, `['name']` otherwise), so a copied path works in a filter, and later in checks
   and extraction. JSONPath comes from `serde_json_path` (pure Rust); a hand-written subset
   would differ from what users read in the RFC.
+- **JSON rows offer their actions without a right-click.** The line under the pointer is
+  highlighted with a "⋯" at the viewer's right that opens the row menu (Add check, Set
+  variable, Copy path, Copy value), headed by the row's path; both stay while the menu is
+  open. Right-click opens the same menu. Why: the actions were found only by accident (the
+  review's #30).
 - **The response filter runs over the whole captured body in the background**, parsed once
   per response and kept for later queries; one run is in flight at a time and the newest query
   follows. A late result for a replaced response is dropped. Results are re-serialized, so

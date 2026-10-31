@@ -192,6 +192,38 @@ fn rows_copy_their_path_and_value() {
 }
 
 #[test]
+fn the_line_under_the_pointer_offers_its_actions_without_a_right_click() {
+    let mut fixture = sent("application/json", BODY);
+    let app = &mut fixture.app;
+    assert!(
+        app.harness
+            .query_by_label("Row actions $.data.items[1].name")
+            .is_none()
+    );
+    let line = app
+        .harness
+        .get_by_label_contains("\"name\": \"eight\"")
+        .rect();
+    app.harness.hover_at(line.center());
+    app.harness.run_steps(2);
+    let button = app
+        .harness
+        .get_by_label("Row actions $.data.items[1].name")
+        .rect();
+    assert!(
+        (button.center().y - line.center().y).abs() < 4.0,
+        "on the line: {button:?} {line:?}"
+    );
+    click(&mut app.harness, "Row actions $.data.items[1].name");
+    // The menu says what it acts on, and stays while the pointer moves into it.
+    app.harness.get_by_label("$.data.items[1].name");
+    let item = app.harness.get_by_label("Copy path").rect();
+    app.harness.hover_at(item.center());
+    app.harness.run_steps(2);
+    assert_eq!(copy(app, "Copy path"), ["$.data.items[1].name"]);
+}
+
+#[test]
 fn a_jsonpath_filter_shows_matches_with_their_real_paths() {
     let mut fixture = sent("application/json", BODY);
     let app = &mut fixture.app;
