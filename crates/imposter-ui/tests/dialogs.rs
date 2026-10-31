@@ -110,6 +110,24 @@ fn a_tall_dialog_keeps_its_button_inside_the_smallest_window() {
     // The sheet is centred: its content ends as far from the right as the title starts
     // from the left. Text stays clear of the scroll bar inside that edge.
     let content_right = window.width() - title.left();
+    // The scroll bar (tall and thin) runs along that edge, not inside the list.
+    let bars: Vec<egui::Rect> = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) if rect.rect.width() < 12.0 && rect.rect.height() > 40.0 => {
+                Some(rect.rect)
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(
+        bars.iter()
+            .any(|bar| (bar.right() - content_right).abs() <= 6.0),
+        "a scroll bar at {content_right}: {bars:?}"
+    );
     for shortcut in imposter_ui::shortcuts::ALL {
         if let Some(node) = app.harness.query_by_label(shortcut.description) {
             let rect = node.rect();

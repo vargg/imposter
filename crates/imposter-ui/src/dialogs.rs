@@ -403,7 +403,9 @@ impl Dialog {
                     ui.heading("Keyboard shortcuts");
                     ui.add_space(4.0);
                     // The button row stays visible; the list scrolls in what is left.
+                    // Full width, so its scroll bar runs along the sheet's edge.
                     egui::ScrollArea::vertical()
+                        .auto_shrink([false, true])
                         .max_height((max_height - 96.0).max(120.0))
                         .show(ui, |ui| {
                             // Clear of the scroll bar; descriptions wrap in what is left
