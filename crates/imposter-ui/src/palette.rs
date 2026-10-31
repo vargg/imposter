@@ -518,20 +518,22 @@ fn fixed_items(state: &State) -> Vec<Item> {
     };
     if state.active_environment.is_some() {
         environment(
-            "Environment: Global (no environment)".to_owned(),
+            // The group's heading says these are environments.
+            "Global (no environment)".to_owned(),
             Action::SetEnvironment(None),
         );
     }
     for env in &state.environments {
         if state.active_environment != Some(env.id) {
-            environment(
-                format!("Environment: {}", env.name),
-                Action::SetEnvironment(Some(env.id)),
-            );
+            environment(env.name.clone(), Action::SetEnvironment(Some(env.id)));
         }
     }
     items
 }
+
+/// The least a match must score per query character; a letter alone, at no word start and
+/// in no run, scores 1.
+const MIN_PER_CHARACTER: i64 = 2;
 
 /// How well `query` matches `text`, or `None`: its characters must appear in order, case
 /// ignored, spaces in the query skipped. Matches at word starts, at the very start and in
@@ -542,7 +544,10 @@ pub fn fuzzy_score(query: &str, text: &str) -> Option<i64> {
 
 /// [`fuzzy_score`] with the positions (in characters of `text`) of its best alignment:
 /// every placement is considered, not the first, so "ord" finds "Order" rather than
-/// scattered letters in "Keyboard Shortcuts".
+/// scattered letters in "Keyboard Shortcuts". Of equal placements the last wins, since a
+/// label ends with its own name ("Orders › Order"). A match averaging under
+/// [`MIN_PER_CHARACTER`] is no match: letters scattered without word starts or runs (the
+/// "o", "r" and "d" of "Shop › Broken endpoint") listed noise beside the real one.
 pub fn fuzzy_match(query: &str, text: &str) -> Option<(i64, Vec<usize>)> {
     let text: Vec<char> = text
         .chars()
@@ -600,7 +605,10 @@ pub fn fuzzy_match(query: &str, text: &str) -> Option<(i64, Vec<usize>)> {
         .iter()
         .enumerate()
         .filter_map(|(i, cell)| cell.map(|c| (i, c)))
-        .max_by_key(|(i, (score, _))| (*score, std::cmp::Reverse(*i)))?;
+        .max_by_key(|(i, (score, _))| (*score, *i))?;
+    if score < MIN_PER_CHARACTER * i64::try_from(query.len()).unwrap_or(i64::MAX) {
+        return None;
+    }
     let mut positions = vec![at];
     for j in (1..=last).rev() {
         let (_, from) = best[j][at]?;
@@ -637,6 +645,15 @@ mod tests {
             "the run at a word start, not keybOaRD"
         );
         assert_eq!(fuzzy_match("lu", "List users").unwrap().1, [0, 5]);
+        assert_eq!(
+            fuzzy_match("ord", "Shop › Orders › Order").unwrap().1,
+            [16, 17, 18],
+            "a tie goes to the name at the end, not the folder"
+        );
+        assert!(
+            fuzzy_match("ord", "GET Shop API › Broken endpoint").is_none(),
+            "scattered letters are no match"
+        );
     }
 
     #[test]

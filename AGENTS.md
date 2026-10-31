@@ -497,7 +497,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   and environments are captured at open. Matching is an in-order fuzzy subsequence that
   rewards word starts, the very start and runs, over the best of all placements
   (`palette::fuzzy_match`; taking the first letters found ranked "Keyboard Shortcuts" above
-  "Order" for "ord"); matched letters are semibold, and rows fill the palette's width
+  "Order" for "ord"). Of equal placements the last wins, so the request's name is marked
+  rather than a folder before it, and a match averaging under 2 points a letter
+  (scattered letters, no word start or run) is dropped as noise (Q13). Environment rows
+  are named alone under their heading. Matched letters are semibold, and rows fill the palette's width
   with their shortcut at the right; while typing, the group with the best match comes first so a
   strong request match is not buried under a weak action match. Choosing returns an ordinary
   `Action`, so the unsaved-changes guard applies; request rows put the method in its color in

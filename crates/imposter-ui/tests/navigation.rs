@@ -118,6 +118,8 @@ fn the_palette_runs_actions_and_switches_environments() {
     assert_eq!(app.harness.state().state.screen, Screen::History);
 
     palette(&mut app, "dev");
+    // Under the Environments heading, by name alone.
+    assert_eq!(recent_names(&app), ["Dev"]);
     enter(&mut app);
     let state = &app.harness.state().state;
     let dev = state.environments.iter().find(|e| e.name == "Dev").unwrap();
