@@ -72,12 +72,17 @@ impl Tour {
 
     /// Open the request tab `label`, from "More" when it did not fit the row.
     fn open_tab(&mut self, label: &str) {
+        self.open_from("More request tabs", label);
+    }
+
+    /// Click `label`, opening the menu `more` first when it is not on its row.
+    fn open_from(&mut self, more: &str, label: &str) {
         if self
             .harness
             .query_by_role_and_label(egui::accesskit::Role::Button, label)
             .is_none()
         {
-            self.click("More request tabs");
+            self.click(more);
         }
         self.click(label);
     }
@@ -443,11 +448,16 @@ fn main() {
         tour.open_tab("Tests");
         tour.click("Send");
         tour.settle();
-        tour.click("Check results");
+        tour.open_from("More response tabs", "Check results");
         tour.settle();
         tour.shot("4-01-checks-and-results");
         tour.harness.state_mut().state.response.tab = ResponseTab::Body;
         tour.settle();
+        if let Some(node) = tour.harness.query_by_label_contains("\"name\": \"Ann\"") {
+            // Below the fold of a small pane: scroll to it first, as `click` does.
+            node.scroll_to_me();
+            tour.harness.run_steps(12);
+        }
         if let Some(node) = tour.harness.query_by_label_contains("\"name\": \"Ann\"") {
             node.click_secondary();
         }
