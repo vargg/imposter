@@ -105,40 +105,75 @@ pub fn enforce_retention(
 }
 
 /// Newest first, optionally for one request.
+const SUMMARY_COLUMNS: &str = "id, request_id, timestamp, name, method, url, status, outcome, elapsed, environment, truncated";
+
+fn summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExecutionSummary> {
+    Ok(ExecutionSummary {
+        id: ExecutionId(row.get(0)?),
+        request_id: row.get::<_, Option<i64>>(1)?.map(RequestId),
+        timestamp: Timestamp(row.get(2)?),
+        name: row.get(3)?,
+        method: row.get(4)?,
+        url: row.get(5)?,
+        status: row.get(6)?,
+        outcome: outcome_from(&row.get::<_, String>(7)?),
+        elapsed: row.get(8)?,
+        environment: row.get(9)?,
+        truncated: row.get(10)?,
+    })
+}
+
 pub fn page(
     db: &Connection,
     request: Option<RequestId>,
     offset: u64,
     limit: u64,
 ) -> Result<Vec<ExecutionSummary>, StoreError> {
-    let mut statement = db.prepare(
-        "SELECT id, request_id, timestamp, name, method, url, status, outcome, elapsed, environment, truncated
-         FROM executions WHERE (?1 IS NULL OR request_id = ?1)
-         ORDER BY id DESC LIMIT ?2 OFFSET ?3",
-    )?;
+    let mut statement = db.prepare(&format!(
+        "SELECT {SUMMARY_COLUMNS} FROM executions WHERE (?1 IS NULL OR request_id = ?1)
+         ORDER BY id DESC LIMIT ?2 OFFSET ?3"
+    ))?;
     let rows = statement.query_map(
         params![
             request.map(|id| id.0),
             i64::try_from(limit).unwrap_or(i64::MAX),
             i64::try_from(offset).unwrap_or(i64::MAX)
         ],
-        |row| {
-            Ok(ExecutionSummary {
-                id: ExecutionId(row.get(0)?),
-                request_id: row.get::<_, Option<i64>>(1)?.map(RequestId),
-                timestamp: Timestamp(row.get(2)?),
-                name: row.get(3)?,
-                method: row.get(4)?,
-                url: row.get(5)?,
-                status: row.get(6)?,
-                outcome: outcome_from(&row.get::<_, String>(7)?),
-                elapsed: row.get(8)?,
-                environment: row.get(9)?,
-                truncated: row.get(10)?,
-            })
-        },
+        summary,
     )?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// A page of the summaries `matches` accepts, newest first, skipping the first `offset`
+/// matches. Reads summary columns only, never payloads, and stops once the page is full.
+pub fn search(
+    db: &Connection,
+    request: Option<RequestId>,
+    matches: impl Fn(&ExecutionSummary) -> bool,
+    offset: u64,
+    limit: u64,
+) -> Result<Vec<ExecutionSummary>, StoreError> {
+    let mut statement = db.prepare(&format!(
+        "SELECT {SUMMARY_COLUMNS} FROM executions WHERE (?1 IS NULL OR request_id = ?1)
+         ORDER BY id DESC"
+    ))?;
+    let mut found = Vec::new();
+    let mut skipped = 0;
+    for row in statement.query_map(params![request.map(|id| id.0)], summary)? {
+        let row = row?;
+        if !matches(&row) {
+            continue;
+        }
+        if skipped < offset {
+            skipped += 1;
+            continue;
+        }
+        found.push(row);
+        if found.len() as u64 == limit {
+            break;
+        }
+    }
+    Ok(found)
 }
 
 pub fn execution(db: &Connection, id: ExecutionId) -> Result<Option<ExecutionRecord>, StoreError> {

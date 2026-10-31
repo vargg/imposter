@@ -71,6 +71,9 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 **History**
 - Every execution with its environment, the request exactly as it was sent, and the full
   response.
+- Search it with the sidebar's filter language plus `status:404`, `status:4xx`,
+  `status:failed` and `env:Dev`; words match the request name and URL (bodies are not
+  searched).
 - Restore an execution as an unsaved draft, or copy it as a curl command.
 - Retention by number of entries and total size.
 

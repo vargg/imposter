@@ -384,6 +384,8 @@ impl SettingsScreen {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryAction {
     Refresh,
+    /// The filter text changed: start again from the newest match.
+    Filtered,
     Newer,
     Older,
     OnlyCurrent(bool),
@@ -407,6 +409,8 @@ pub const HISTORY_PAGE: u64 = 50;
 #[derive(Default)]
 pub struct HistoryScreen {
     pub only_current: bool,
+    /// The filter language of the sidebar, with `status:` and `env:`.
+    pub filter: String,
     pub offset: u64,
     pub rows: Vec<ExecutionSummary>,
     pub selected: Option<ExecutionId>,
@@ -3438,8 +3442,16 @@ impl ImposterApp {
             None
         };
         history.status = Some(("Loading history…".into(), Tone::Muted));
+        let query =
+            crate::filter::Query::parse_with(&history.filter, crate::filter::HISTORY_FIELDS);
         self.task(
-            move |db| executions::page(db, filter, offset, HISTORY_PAGE),
+            move |db| {
+                if query.is_all() {
+                    executions::page(db, filter, offset, HISTORY_PAGE)
+                } else {
+                    executions::search(db, filter, |row| query.matches(row), offset, HISTORY_PAGE)
+                }
+            },
             move |result| Message::HistoryPage {
                 generation,
                 result: result.map_err(failure),
@@ -3458,12 +3470,16 @@ impl ImposterApp {
         }
         match result {
             Ok(rows) => {
-                history.status = Some(if rows.is_empty() {
+                let filtered = !history.filter.trim().is_empty();
+                history.status = Some(if rows.is_empty() && filtered {
+                    ("No matching executions".to_owned(), Tone::Muted)
+                } else if rows.is_empty() {
                     ("No executions yet".to_owned(), Tone::Muted)
                 } else {
                     (
                         format!(
-                            "Executions {}-{}",
+                            "{} {}-{}",
+                            if filtered { "Matches" } else { "Executions" },
                             history.offset + 1,
                             history.offset + rows.len() as u64
                         ),
@@ -3490,7 +3506,7 @@ impl ImposterApp {
 
     fn history_action(&mut self, action: HistoryAction) {
         match action {
-            HistoryAction::Refresh => {
+            HistoryAction::Refresh | HistoryAction::Filtered => {
                 self.state.history.offset = 0;
                 self.load_history();
             }

@@ -193,3 +193,57 @@ fn pages_move_between_newer_and_older() {
     settle(&mut app.harness);
     app.harness.get_by_label("Executions 1-50");
 }
+
+#[test]
+fn the_filter_finds_runs_by_status_method_and_text() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime.block_on(Server::start(|index, _| {
+        let status = ["200 OK", "404 Not Found", "500 Internal Server Error"][index % 3];
+        response(status, &[], b"")
+    }));
+    let users = format!("{}/users", server.url);
+    let orders = format!("{}/orders", server.url);
+    let mut app = start_with(move |store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Users", &users);
+        request(store, api.id, "Orders", &orders);
+    });
+    for name in ["GET Users", "GET Users", "GET Orders"] {
+        click(&mut app.harness, name);
+        settle(&mut app.harness);
+        click(&mut app.harness, "Send");
+        settle(&mut app.harness);
+    }
+    open_history(&mut app);
+    app.harness.get_by_label("Executions 1-3");
+
+    let shown = |app: &support::App| -> Vec<String> {
+        app.harness
+            .state()
+            .state
+            .history
+            .rows
+            .iter()
+            .map(|r| format!("{} {}", r.name, r.status))
+            .collect()
+    };
+    type_into(&mut app.harness, "Filter history", "status:4xx");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Matches 1-1");
+    assert_eq!(shown(&app), ["Users 404"]);
+
+    type_into(&mut app.harness, "Filter history", " OR orders");
+    settle(&mut app.harness);
+    assert_eq!(shown(&app), ["Orders 500", "Users 404"]);
+
+    app.harness.state_mut().state.history.filter = "status:2xx -users".into();
+    app.harness
+        .state_mut()
+        .state
+        .actions
+        .push(imposter_ui::app::Action::History(
+            imposter_ui::app::HistoryAction::Filtered,
+        ));
+    settle(&mut app.harness);
+    app.harness.get_by_label("No matching executions");
+}

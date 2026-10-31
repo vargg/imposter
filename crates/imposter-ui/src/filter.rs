@@ -1,16 +1,45 @@
-//! The sidebar filter: a small query language over requests, after Yaak's.
+//! The filter language of the sidebar and History, after Yaak's.
 //!
 //! Words are combined with AND (written or not); `OR`, `NOT` or `-word`, `"phrases"` and
-//! parentheses work as usual. `method:`, `url:` and `name:` look at one field; other words
-//! look at the request's folder path, name and URL. Matching ignores case and looks for the
-//! text anywhere, except `method:`, which must be the whole method. Text that does not parse
-//! is searched as typed, so the filter never errors.
+//! parentheses work as usual. `field:value` looks at one field (which fields depends on the
+//! list); other words look at the list's main text. Matching ignores case and looks for the
+//! text anywhere, except `method:`, which must be the whole method, and `status:`. Text that
+//! does not parse is searched as typed, so the filter never errors.
+
+use imposter_app::core::execution::Outcome;
+use imposter_app::store::executions::ExecutionSummary;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
     Method,
     Url,
     Name,
+    /// `404`, `4xx`, `failed` or `cancelled`.
+    Status,
+    Environment,
+}
+
+/// The fields the sidebar knows.
+pub const REQUEST_FIELDS: &[(&str, Field)] = &[
+    ("method", Field::Method),
+    ("url", Field::Url),
+    ("name", Field::Name),
+];
+
+/// The fields History knows.
+pub const HISTORY_FIELDS: &[(&str, Field)] = &[
+    ("method", Field::Method),
+    ("url", Field::Url),
+    ("name", Field::Name),
+    ("status", Field::Status),
+    ("env", Field::Environment),
+];
+
+/// What a list item offers to the filter.
+pub trait Searchable {
+    /// Whether plain text matches the item's main text.
+    fn has_text(&self, text: &str) -> bool;
+    fn has_field(&self, field: Field, value: &str) -> bool;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +54,7 @@ pub enum Query {
     Or(Box<Query>, Box<Query>),
 }
 
-/// What a request offers to the filter.
+/// What a sidebar request offers to the filter.
 #[derive(Debug, Clone, Copy)]
 pub struct Candidate<'a> {
     /// Folder names and the request name, `Folder / Sub / Name`.
@@ -39,8 +68,65 @@ fn contains(haystack: &str, needle: &str) -> bool {
     haystack.to_lowercase().contains(&needle.to_lowercase())
 }
 
+impl Searchable for Candidate<'_> {
+    /// The folder path and name, then the URL.
+    fn has_text(&self, text: &str) -> bool {
+        contains(self.path, text) || contains(self.url, text)
+    }
+
+    fn has_field(&self, field: Field, value: &str) -> bool {
+        match field {
+            Field::Method => self.method.eq_ignore_ascii_case(value),
+            Field::Url => contains(self.url, value),
+            Field::Name => contains(self.name, value),
+            Field::Status | Field::Environment => false,
+        }
+    }
+}
+
+impl Searchable for ExecutionSummary {
+    /// The request name, then the URL as sent.
+    fn has_text(&self, text: &str) -> bool {
+        contains(&self.name, text) || contains(&self.url, text)
+    }
+
+    fn has_field(&self, field: Field, value: &str) -> bool {
+        match field {
+            Field::Method => self.method.eq_ignore_ascii_case(value),
+            Field::Url => contains(&self.url, value),
+            Field::Name => contains(&self.name, value),
+            Field::Environment => contains(&self.environment, value),
+            Field::Status => status_matches(self.outcome, self.status, value),
+        }
+    }
+}
+
+/// `404` is that status; `4xx` its class; `failed` and `cancelled` the outcomes without one.
+fn status_matches(outcome: Outcome, status: u16, value: &str) -> bool {
+    let value = value.trim().to_ascii_lowercase();
+    match value.as_str() {
+        "failed" | "error" => return outcome == Outcome::TransportError,
+        "cancelled" | "canceled" => return outcome == Outcome::Cancelled,
+        _ => {}
+    }
+    if outcome != Outcome::Response {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    if bytes.len() == 3 && bytes[0].is_ascii_digit() && &bytes[1..] == b"xx" {
+        return u16::from(bytes[0] - b'0') == status / 100;
+    }
+    value.parse::<u16>() == Ok(status)
+}
+
 impl Query {
+    /// A sidebar query.
     pub fn parse(text: &str) -> Self {
+        Self::parse_with(text, REQUEST_FIELDS)
+    }
+
+    /// A query that knows `fields`; other `name:` words are text.
+    pub fn parse_with(text: &str, fields: &'static [(&'static str, Field)]) -> Self {
         let tokens = tokenize(text);
         if tokens.is_empty() {
             return Self::All;
@@ -48,6 +134,7 @@ impl Query {
         let mut parser = Parser {
             tokens: &tokens,
             at: 0,
+            fields,
         };
         match parser.or() {
             Some(query) if parser.at == tokens.len() => query,
@@ -59,13 +146,11 @@ impl Query {
         *self == Self::All
     }
 
-    pub fn matches(&self, item: &Candidate<'_>) -> bool {
+    pub fn matches(&self, item: &impl Searchable) -> bool {
         match self {
             Self::All => true,
-            Self::Text(text) => contains(item.path, text) || contains(item.url, text),
-            Self::Field(Field::Method, method) => item.method.eq_ignore_ascii_case(method),
-            Self::Field(Field::Url, text) => contains(item.url, text),
-            Self::Field(Field::Name, text) => contains(item.name, text),
+            Self::Text(text) => item.has_text(text),
+            Self::Field(field, value) => item.has_field(*field, value),
             Self::Not(query) => !query.matches(item),
             Self::And(a, b) => a.matches(item) && b.matches(item),
             Self::Or(a, b) => a.matches(item) || b.matches(item),
@@ -149,6 +234,7 @@ fn tokenize(text: &str) -> Vec<Token> {
 struct Parser<'t> {
     tokens: &'t [Token],
     at: usize,
+    fields: &'static [(&'static str, Field)],
 }
 
 impl Parser<'_> {
@@ -199,12 +285,13 @@ impl Parser<'_> {
             }
             Token::Close | Token::Minus => return None,
             Token::Word(word) | Token::Phrase(word) => Query::Text(word),
-            Token::Field(field, value) => match field.to_lowercase().as_str() {
-                "method" => Query::Field(Field::Method, value),
-                "url" => Query::Field(Field::Url, value),
-                "name" => Query::Field(Field::Name, value),
-                _ => Query::Text(format!("{field}:{value}")),
-            },
+            Token::Field(field, value) => {
+                let lower = field.to_lowercase();
+                match self.fields.iter().find(|(name, _)| *name == lower) {
+                    Some((_, known)) => Query::Field(*known, value),
+                    None => Query::Text(format!("{field}:{value}")),
+                }
+            }
         })
     }
 }
@@ -232,7 +319,7 @@ mod tests {
         let query = Query::parse(query);
         items
             .iter()
-            .filter(|i| query.matches(i))
+            .filter(|i| query.matches(*i))
             .map(|i| i.name)
             .collect()
     }
@@ -271,5 +358,103 @@ mod tests {
         );
         assert_eq!(Query::parse("\"open"), Query::Text("open".into()));
         assert_eq!(hits("-"), Vec::<&str>::new());
+        assert_eq!(
+            Query::parse("status:404"),
+            Query::Text("status:404".into()),
+            "the sidebar has no status"
+        );
+    }
+
+    fn run(
+        name: &str,
+        method: &str,
+        url: &str,
+        status: u16,
+        outcome: Outcome,
+        environment: &str,
+    ) -> ExecutionSummary {
+        ExecutionSummary {
+            id: imposter_app::core::ids::ExecutionId(0),
+            request_id: None,
+            timestamp: imposter_app::core::execution::Timestamp(0),
+            name: name.into(),
+            method: method.into(),
+            url: url.into(),
+            status,
+            outcome,
+            elapsed: 0.0,
+            environment: environment.into(),
+            truncated: false,
+        }
+    }
+
+    #[test]
+    fn history_knows_status_and_environment() {
+        let runs = [
+            run(
+                "List users",
+                "GET",
+                "https://api/users",
+                200,
+                Outcome::Response,
+                "Dev",
+            ),
+            run(
+                "Create user",
+                "POST",
+                "https://api/users",
+                422,
+                Outcome::Response,
+                "Prod",
+            ),
+            run(
+                "Health",
+                "GET",
+                "https://api/health",
+                0,
+                Outcome::TransportError,
+                "Dev",
+            ),
+            run(
+                "Slow",
+                "GET",
+                "https://api/slow",
+                0,
+                Outcome::Cancelled,
+                "Global",
+            ),
+            run(
+                "Gone",
+                "DELETE",
+                "https://api/users/7",
+                404,
+                Outcome::Response,
+                "Dev",
+            ),
+        ];
+        let hits = |query: &str| -> Vec<&str> {
+            let query = Query::parse_with(query, HISTORY_FIELDS);
+            runs.iter()
+                .filter(|r| query.matches(*r))
+                .map(|r| r.name.as_str())
+                .collect()
+        };
+        assert_eq!(hits("users"), ["List users", "Create user", "Gone"]);
+        assert_eq!(hits("status:404"), ["Gone"]);
+        assert_eq!(hits("status:4xx"), ["Create user", "Gone"]);
+        assert_eq!(hits("status:2XX"), ["List users"]);
+        assert_eq!(hits("status:failed"), ["Health"]);
+        assert_eq!(hits("status:cancelled"), ["Slow"]);
+        assert_eq!(hits("-status:2xx env:dev"), ["Health", "Gone"]);
+        assert_eq!(hits("method:get -env:global"), ["List users", "Health"]);
+        assert_eq!(
+            hits("status:0"),
+            Vec::<&str>::new(),
+            "no response, no status"
+        );
+        assert_eq!(
+            hits("name:\"create user\" OR url:health"),
+            ["Create user", "Health"]
+        );
     }
 }

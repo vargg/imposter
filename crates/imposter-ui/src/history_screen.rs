@@ -83,6 +83,19 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         });
     });
     ui.horizontal(|ui| {
+        let field = ui.add(
+            egui::TextEdit::singleline(&mut history.filter)
+                .hint_text("Filter: text, status:4xx, method:POST, env:…")
+                .desired_width(260.0_f32.min(ui.available_width() * 0.5)),
+        );
+        name(&field, "Filter history");
+        let field = field.on_hover_text(
+            "Words match the request name and URL. status:404, status:4xx, status:failed, \
+             method:, url:, name:, env:, OR, NOT, -word and \"phrases\". Bodies are not searched.",
+        );
+        if field.changed() {
+            actions.push(Action::History(HistoryAction::Filtered));
+        }
         if let Some((status, tone)) = &history.status {
             ui.label(tone_text(status.as_str(), *tone));
         }

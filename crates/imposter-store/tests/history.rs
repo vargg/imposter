@@ -143,6 +143,32 @@ fn pages_are_newest_first_and_filter_by_request() {
 }
 
 #[test]
+fn searches_page_through_matches_only() {
+    let (_dir, store) = store();
+    store
+        .call_blocking(|db| {
+            for i in 0..10 {
+                let request = (i % 3 == 0).then_some(RequestId(1));
+                record_execution(db, &record(request, 1, i))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let even = |offset, limit, request| {
+        store
+            .call_blocking(move |db| search(db, request, |s| s.timestamp.0 % 2 == 0, offset, limit))
+            .unwrap()
+            .into_iter()
+            .map(|s| s.timestamp.0)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(even(0, 3, None), [8, 6, 4]);
+    assert_eq!(even(3, 3, None), [2, 0]);
+    assert_eq!(even(5, 3, None), Vec::<i64>::new());
+    assert_eq!(even(0, 10, Some(RequestId(1))), [6, 0]);
+}
+
+#[test]
 fn retention_drops_the_oldest_beyond_the_entry_limit() {
     let (_dir, store) = store();
     store

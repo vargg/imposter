@@ -259,6 +259,14 @@ numbers, so both are excluded. Each logical change is its own commit.
   out. Rejected: linked rows switched together (Paw's environment domains; the
   user swaps values independently), a send-time prompt (Insomnia; keeps nothing), and one
   environment per value (Postman; multiplies environments).
+- **History search uses the sidebar's filter language** (`filter.rs`, with `status:` and
+  `env:` added for History: `404`, `4xx`, `failed`, `cancelled`). Words match the request
+  name and the URL as sent; bodies are not searched, because that would decode every
+  payload. The database thread scans the summary columns newest first, keeps matches and
+  stops when the page is full (`executions::search`), so retention of up to a million entries
+  never loads them all into the UI; without a filter, paging stays in SQL. Each list declares
+  the fields it knows, and an unknown `name:` is text, so `status:` in the sidebar stays a
+  word.
 - **History shows times in the system time zone** (via `jiff`, display only); records store UTC
   milliseconds. The request of an execution is shown as sent (`viewer::sent_request`, built
   with the executor's own `prepare`): `METHOD URL`, then Body and Headers tabs like the
