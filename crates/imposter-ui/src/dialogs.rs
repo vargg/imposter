@@ -147,6 +147,9 @@ enum Kind {
     Plain,
 }
 
+/// The width of the shortcut sheet's key column.
+const KEYS_COLUMN: f32 = 180.0;
+
 /// Space kept free at the right of a scrolling list for its scroll bar.
 const SCROLL_BAR_ROOM: f32 = 16.0;
 
@@ -412,24 +415,29 @@ impl Dialog {
                             // after the keys (about 180 points).
                             let width = ui.available_width() - SCROLL_BAR_ROOM;
                             ui.set_max_width(width);
-                            egui::Grid::new("shortcuts")
-                                .num_columns(2)
-                                .spacing([24.0, 6.0])
-                                .max_col_width((width - 204.0).max(160.0))
-                                .show(ui, |ui| {
-                                    for shortcut in crate::shortcuts::ALL {
-                                        let keys: Vec<String> = shortcut
-                                            .keys
+                            for (group, title) in crate::shortcuts::Group::ALL {
+                                ui.add_space(6.0);
+                                ui.label(
+                                    RichText::new(title)
+                                        .font(crate::theme::semibold(13.0))
+                                        .color(crate::theme::palette().text_muted),
+                                );
+                                egui::Grid::new(("shortcuts", title))
+                                    .num_columns(2)
+                                    .spacing([24.0, 6.0])
+                                    .min_col_width(KEYS_COLUMN)
+                                    .max_col_width((width - KEYS_COLUMN - 24.0).max(160.0))
+                                    .show(ui, |ui| {
+                                        for shortcut in crate::shortcuts::ALL
                                             .iter()
-                                            .map(|k| ui.ctx().format_shortcut(k))
-                                            .collect();
-                                        ui.label(
-                                            RichText::new(keys.join("  ")).monospace().strong(),
-                                        );
-                                        ui.add(egui::Label::new(shortcut.description).wrap());
-                                        ui.end_row();
-                                    }
-                                });
+                                            .filter(|s| s.group == group)
+                                        {
+                                            crate::widgets::key_caps(ui, shortcut.keys);
+                                            ui.add(egui::Label::new(shortcut.description).wrap());
+                                            ui.end_row();
+                                        }
+                                    });
+                            }
                         });
                     if buttons(ui, &[("Close", Kind::Plain, true)], true).is_some() {
                         outcome = Outcome::Closed;

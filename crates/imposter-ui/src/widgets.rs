@@ -399,6 +399,26 @@ pub fn split_grip(ui: &Ui, handle: egui::Rect, vertical_split: bool, active: boo
 /// The length of a split's grip.
 pub const GRIP_LENGTH: f32 = 32.0;
 
+/// Shortcuts drawn as key caps, with "or" between alternatives.
+pub fn key_caps(ui: &mut Ui, keys: &[egui::KeyboardShortcut]) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        for (i, key) in keys.iter().enumerate() {
+            if i > 0 {
+                ui.label(tone_text("or", Tone::Muted).small());
+            }
+            egui::Frame::new()
+                .fill(palette().input)
+                .stroke(egui::Stroke::new(1.0, palette().field_border))
+                .corner_radius(4)
+                .inner_margin(egui::Margin::symmetric(5, 1))
+                .show(ui, |ui| {
+                    ui.label(RichText::new(ui.ctx().format_shortcut(key)).monospace());
+                });
+        }
+    });
+}
+
 /// The marker beside a selected row: a bar on its left edge.
 pub fn selection_bar(ui: &Ui, rect: egui::Rect) {
     let bar = egui::Rect::from_min_size(

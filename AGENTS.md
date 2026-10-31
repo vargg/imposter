@@ -461,7 +461,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   limits the History screen shows are already true.
 - **Shortcuts are one table, `shortcuts::ALL`, handled in one place before widgets draw**
   (`shortcuts::handle`) and doing nothing while a dialog is open. The same table drives the
-  shortcut sheet (Cmd/Ctrl+Shift+/), and a test checks that the README table equals it.
+  shortcut sheet (Cmd/Ctrl+Shift+/: grouped as Navigate, Send, Edit and View, keys drawn as
+  caps with "or" between alternatives, which side by side read as a chord), and a test
+  checks that the README table equals it.
   Cmd/Ctrl+R sends (the Python app's Run); F2 renames, with Ctrl+Shift+R because F2 needs Fn
   on Mac keyboards (Yaak's choice). egui ignores extra Shift/Alt when matching, so the
   handler consumes the most specific combinations first. Find, Alt+Enter and Esc are listed

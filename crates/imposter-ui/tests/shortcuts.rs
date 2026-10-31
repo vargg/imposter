@@ -266,6 +266,16 @@ fn sidebar_settings_and_the_shortcut_sheet() {
     app.harness.get_by_label("Keyboard shortcuts");
     app.harness
         .get_by_label("Show or hide the collections sidebar");
+    // Grouped, with alternatives joined by "or" (Send and Rename have two each).
+    for group in ["Navigate", "Send", "Edit", "View"] {
+        // By role: "Send" also names the Send button.
+        app.harness
+            .get_by_role_and_label(egui::accesskit::Role::Label, group);
+    }
+    assert_eq!(app.harness.query_all_by_label("or").count(), 2);
+    let navigate = app.harness.get_by_label("Navigate").rect();
+    let view = app.harness.get_by_label("View").rect();
+    assert!(navigate.top() < view.top());
     press(&mut app, Key::B);
     assert!(
         app.harness.state().state.layout.sidebar_visible,

@@ -70,11 +70,30 @@ impl Command {
     }
 }
 
+/// Where a shortcut is listed on the shortcut sheet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Group {
+    Navigate,
+    Send,
+    Edit,
+    View,
+}
+
+impl Group {
+    pub const ALL: [(Self, &'static str); 4] = [
+        (Self::Navigate, "Navigate"),
+        (Self::Send, "Send"),
+        (Self::Edit, "Edit"),
+        (Self::View, "View"),
+    ];
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Shortcut {
     pub keys: &'static [KeyboardShortcut],
     pub command: Command,
     pub description: &'static str,
+    pub group: Group,
 }
 
 pub const ALL: &[Shortcut] = &[
@@ -82,81 +101,97 @@ pub const ALL: &[Shortcut] = &[
         keys: &[PALETTE],
         command: Command::Palette,
         description: "Command palette: actions, requests and environments",
+        group: Group::Navigate,
     },
     Shortcut {
         keys: &[RECENT],
         command: Command::Recent,
         description: "Find a request, recent ones first",
+        group: Group::Navigate,
     },
     Shortcut {
         keys: &[SWITCH_BACK],
         command: Command::SwitchBack,
         description: "Back to the previous request; hold Ctrl and press Tab to go further",
+        group: Group::Navigate,
     },
     Shortcut {
         keys: &[SWITCH_FORWARD],
         command: Command::SwitchForward,
         description: "Step through recent requests from the oldest",
+        group: Group::Navigate,
     },
     Shortcut {
         keys: &[SEND, SEND_ALT],
         command: Command::Send,
         description: "Send (or cancel the running request)",
+        group: Group::Send,
     },
     Shortcut {
         keys: &[SAVE],
         command: Command::Save,
         description: "Save the current screen: request, variables or settings",
+        group: Group::Edit,
     },
     Shortcut {
         keys: &[NEW],
         command: Command::New,
         description: "New request (a new collection when there is none)",
+        group: Group::Edit,
     },
     Shortcut {
         keys: &[DUPLICATE],
         command: Command::Duplicate,
         description: "Duplicate the open request",
+        group: Group::Edit,
     },
     Shortcut {
         keys: &[RENAME, RENAME_ALT],
         command: Command::Rename,
         description: "Rename the open request",
+        group: Group::Edit,
     },
     Shortcut {
         keys: &[FOCUS_URL],
         command: Command::FocusUrl,
         description: "Select the request URL",
+        group: Group::Edit,
     },
     Shortcut {
         keys: &[SIDEBAR],
         command: Command::ToggleSidebar,
         description: "Show or hide the collections sidebar",
+        group: Group::View,
     },
     Shortcut {
         keys: &[SETTINGS],
         command: Command::Settings,
         description: "Open Settings",
+        group: Group::Navigate,
     },
     Shortcut {
         keys: &[SHORTCUTS],
         command: Command::Shortcuts,
         description: "Show keyboard shortcuts",
+        group: Group::View,
     },
     Shortcut {
         keys: &[FIND],
         command: Command::Find,
         description: "Find in the viewer under the pointer",
+        group: Group::View,
     },
     Shortcut {
         keys: &[INSPECT],
         command: Command::Inspect,
         description: "Inspect the variable at the cursor",
+        group: Group::Edit,
     },
     Shortcut {
         keys: &[ESCAPE],
         command: Command::Close,
         description: "Close the inspector, find bar or suggestions",
+        group: Group::View,
     },
 ];
 
