@@ -79,14 +79,17 @@ fn save_shortcut_saves_the_request() {
 fn new_shortcut_creates_a_request_or_first_a_collection() {
     let mut app = start();
     press(&mut app, Key::N);
-    app.harness.get_by_label("New Collection");
+    // The dialog's title; the empty pane also has a New Collection button.
+    app.harness
+        .get_by_role_and_label(egui::accesskit::Role::Label, "New Collection");
     click(&mut app.harness, "Cancel");
 
     let mut app = start_with(|store| {
         collection(store, "API");
     });
     press(&mut app, Key::N);
-    app.harness.get_by_label("New Request");
+    app.harness
+        .get_by_role_and_label(egui::accesskit::Role::Label, "New Request");
 }
 
 #[test]

@@ -214,8 +214,10 @@ fn new_menu(state: &mut State, ui: &mut Ui) {
             )));
         }
         let parent = selected_folder(state);
+        let why = "Create a collection first";
         if ui
             .add_enabled(state.collection.is_some(), egui::Button::new("New Folder"))
+            .on_disabled_hover_text(why)
             .clicked()
         {
             state.actions.push(Action::Prompt(Dialog::name(
@@ -227,6 +229,7 @@ fn new_menu(state: &mut State, ui: &mut Ui) {
         }
         if ui
             .add_enabled(state.collection.is_some(), egui::Button::new("New Request"))
+            .on_disabled_hover_text(why)
             .clicked()
         {
             state.actions.push(Action::Prompt(Dialog::name(
@@ -240,7 +243,7 @@ fn new_menu(state: &mut State, ui: &mut Ui) {
         if ui.button("Import Collection…").clicked() {
             state.actions.push(Action::Import);
         }
-        if ui.button("Import from curl…").clicked() {
+        if ui.button(PASTE_CURL).clicked() {
             state.actions.push(Action::Prompt(Dialog::Curl {
                 text: String::new(),
             }));
@@ -315,11 +318,8 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
             });
         }
     });
+    // An empty sidebar says nothing: the request pane offers what to do.
     if state.collections.is_empty() {
-        ui.label(tone_text(
-            "No collections yet. Create or import one with +.",
-            Tone::Muted,
-        ));
         return;
     }
     ui.add_space(6.0);
@@ -336,12 +336,6 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                 ui.label(tone_text("Loading…", Tone::Muted));
                 return;
             };
-            if tree.roots.is_empty() {
-                ui.label(tone_text(
-                    "This collection is empty. Add a request with +.",
-                    Tone::Muted,
-                ));
-            }
             let mut actions = Vec::new();
             let filtering = !query.is_all();
             let roots = tree.filtered(&query);
@@ -653,7 +647,8 @@ fn context_bar(
 ) {
     ui.horizontal(|ui| {
         let path = match &state.editor {
-            None => "Select a request".to_owned(),
+            // The request pane says what to do.
+            None => String::new(),
             Some(pane) => match pane.editor.id() {
                 None => format!(
                     "Unsaved draft / {}",
@@ -964,7 +959,71 @@ fn editor_badge(
     }
 }
 
+/// The request pane with no request open: what to do next, as buttons. On first run
+/// that is a collection to create, import or start from curl.
+fn empty_request_pane(state: &mut State, ui: &mut Ui) {
+    ui.add_space((ui.available_height() * 0.2).min(80.0));
+    let first_run = state.collections.is_empty();
+    let empty = state
+        .tree
+        .as_ref()
+        .is_some_and(|tree| tree.roots.is_empty());
+    let (title, text) = if first_run {
+        (
+            "Start with a collection",
+            "Create one, import a Postman, OpenAPI or Imposter file, or paste a curl command.",
+        )
+    } else if empty {
+        (
+            "This collection is empty",
+            "Add a request, or paste a curl command.",
+        )
+    } else {
+        (
+            "Select a request",
+            "Choose one in the sidebar, or start a new one.",
+        )
+    };
+    ui.vertical_centered(|ui| {
+        ui.label(RichText::new(title).font(crate::theme::semibold(15.0)));
+        ui.add_space(4.0);
+        ui.add(egui::Label::new(tone_text(text, Tone::Muted)).wrap());
+        ui.add_space(10.0);
+    });
+    let mut chosen = Vec::new();
+    ui.horizontal_wrapped(|ui| {
+        if first_run {
+            if ui.button("New Collection").clicked() {
+                chosen.push(Action::Prompt(Dialog::name(
+                    "New Collection",
+                    "Name:",
+                    "",
+                    NamePurpose::NewCollection,
+                )));
+            }
+            if ui.button("Import Collection…").clicked() {
+                chosen.push(Action::Import);
+            }
+        } else if state.collection.is_some() && ui.button("New Request").clicked() {
+            chosen.push(Action::Prompt(crate::shortcuts::new_dialog(state)));
+        }
+        if ui.button(PASTE_CURL).clicked() {
+            chosen.push(Action::Prompt(Dialog::Curl {
+                text: String::new(),
+            }));
+        }
+    });
+    state.actions.extend(chosen);
+}
+
+/// The one name of starting a request from a curl command.
+pub const PASTE_CURL: &str = "Paste curl…";
+
 fn request_pane(state: &mut State, ui: &mut Ui) {
+    if state.editor.is_none() {
+        empty_request_pane(state, ui);
+        return;
+    }
     let State {
         editor,
         snapshot,
@@ -980,21 +1039,6 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         .as_ref()
         .is_some_and(|r| crate::checks::Tally::of(&r.checks).failed > 0);
     let Some(pane) = editor else {
-        ui.add_space((ui.available_height() * 0.25).min(100.0));
-        ui.vertical_centered(|ui| {
-            ui.label(
-                RichText::new(">_")
-                    .monospace()
-                    .size(32.0)
-                    .color(palette().accent),
-            );
-            ui.heading("Start with a request");
-            ui.add_space(4.0);
-            ui.label(tone_text(
-                "Select a request in the sidebar, or create one with +.",
-                Tone::Muted,
-            ));
-        });
         return;
     };
     let mut vars = VarUi {
@@ -1147,6 +1191,10 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
 }
 
 fn response_pane(state: &mut State, ui: &mut Ui) {
+    // Without a request there is nothing to send: the request pane says what to do.
+    if state.editor.is_none() {
+        return;
+    }
     let now = ui.input(|i| i.time);
     if let Some(seconds) = state.sending_for(now) {
         let sending = format!("Sending… {seconds:.1} s");

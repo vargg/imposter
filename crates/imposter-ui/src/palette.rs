@@ -415,7 +415,7 @@ fn fixed_items(state: &State, ctx: &egui::Context) -> Vec<Item> {
     );
     action("Import Collection…", None, Action::Import);
     action(
-        "Paste curl Command…",
+        crate::workspace::PASTE_CURL,
         None,
         Action::Prompt(Dialog::Curl {
             text: String::new(),

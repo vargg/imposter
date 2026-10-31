@@ -15,8 +15,7 @@ use support::{answer_name, click, collection, request, settle, start, start_with
 fn an_empty_database_offers_to_create_a_collection() {
     let mut app = start();
 
-    app.harness
-        .get_by_label("No collections yet. Create or import one with +.");
+    app.harness.get_by_label("Start with a collection");
     assert!(
         app.harness
             .get_by_label("Collection")
@@ -48,11 +47,10 @@ fn an_empty_database_offers_to_create_a_collection() {
             .accesskit_node()
             .is_disabled()
     );
-    click(&mut app.harness, "New Collection");
+    support::click_menu_item(&mut app.harness, "New Collection");
     answer_name(&mut app.harness, "My API");
 
-    app.harness
-        .get_by_label("This collection is empty. Add a request with +.");
+    app.harness.get_by_label("This collection is empty");
     assert!(
         !app.harness
             .get_by_label("Collection actions")
@@ -78,7 +76,7 @@ fn new_requests_open_in_the_editor_and_autosave_edits() {
     });
 
     click(&mut app.harness, "New");
-    click(&mut app.harness, "New Request");
+    support::click_menu_item(&mut app.harness, "New Request");
     answer_name(&mut app.harness, "Health");
     app.harness.get_by_label("API / Health");
 
@@ -376,7 +374,7 @@ fn deleting_the_open_request_clears_the_editor() {
     support::click_button(&mut app.harness, "Delete");
     settle(&mut app.harness);
 
-    app.harness.get_by_label("Select a request");
+    app.harness.get_by_label("This collection is empty");
     assert!(
         app.harness
             .state()
@@ -518,4 +516,22 @@ fn brand_and_header_controls_fit_both_layouts_and_keep_the_full_accessible_name(
             }
         }
     }
+}
+
+#[test]
+fn the_first_run_offers_a_way_in_and_says_it_once() {
+    let mut app = start();
+    app.harness.get_by_label("Start with a collection");
+    assert!(
+        app.harness
+            .query_by_label("Your response will appear here")
+            .is_none(),
+        "nothing to send yet, so no invitation to"
+    );
+    for label in ["Import Collection…", "Paste curl…"] {
+        app.harness.get_by_label(label);
+    }
+    click(&mut app.harness, "New Collection");
+    app.harness.get_by_label("Name");
+    assert!(app.harness.state().state.dialog.is_some());
 }

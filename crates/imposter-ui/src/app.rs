@@ -795,11 +795,10 @@ impl ResponsePane {
         filter.folds.clear();
     }
 
-    fn clear(&mut self, notice: &str) {
-        *self = Self {
-            notice: Some((notice.to_owned(), Tone::Muted)),
-            ..Self::default()
-        };
+    /// Back to no response. Nothing is said here: the request pane says whether a request
+    /// is open, and this pane invites a send.
+    fn clear(&mut self) {
+        *self = Self::default();
     }
 }
 
@@ -1023,7 +1022,7 @@ impl ImposterApp {
             smoke: None,
             applied: None,
         };
-        app.state.response.clear("No request selected");
+        app.state.response.clear();
         app.task(
             |db| {
                 Ok(Startup {
@@ -1685,11 +1684,7 @@ impl ImposterApp {
         self.state.selected = editor.id().map(NodeId::Request);
         let id = editor.id();
         self.state.editor = Some(EditorPane::new(editor));
-        self.state.response.clear(if id.is_some() {
-            "No response yet"
-        } else {
-            "Unsaved draft"
-        });
+        self.state.response.clear();
         self.state.inspect = None;
         self.load_snapshot();
         if let Some(id) = id {
@@ -1714,7 +1709,7 @@ impl ImposterApp {
         self.state.editor = None;
         self.state.selected = None;
         self.state.generation += 1;
-        self.state.response.clear("No request selected");
+        self.state.response.clear();
         self.remember_selection();
     }
 
@@ -1947,7 +1942,7 @@ impl ImposterApp {
             }
         } else {
             self.state.editor = None;
-            self.state.response.clear("No request selected");
+            self.state.response.clear();
         }
         self.state.autosave_due = None;
     }

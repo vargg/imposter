@@ -418,6 +418,13 @@ numbers, so both are excluded. Each logical change is its own commit.
 
   Why: the review found it reporting an earlier request's failure after a blocked send, and
   "Ready" during a send. A status that outlives its context misleads more than no status.
+- **Each pane says what to do once, as buttons.** With no request open, the request pane
+  offers the next step: New Collection, Import Collection… and Paste curl… on first run;
+  New Request in an empty collection; otherwise "Select a request". The sidebar,
+  breadcrumb and response pane stay quiet meanwhile (they repeated it two or three times,
+  the review's #16, #17). Disabled menu items say why ("Create a collection first"); the
+  curl entry is "Paste curl…" everywhere; the import review says what it creates
+  ("Creates Pet Store: 7 requests in 2 folders").
 - **Every problem in the response pane says what happened and what to do next.**
   - **Transport failure:** a plain headline per error kind and a hint (`viewer::failure_title`,
     `failure_hint`); the raw library text sits under a collapsed Details; Retry appears in the
@@ -498,7 +505,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   whole field (empty, or all of it selected, as after Cmd/Ctrl+L) and that parses as curl
   is taken (`widgets::take_whole_paste`, before the field draws); any other paste is text.
   Why: updating a request from a browser's "Copy as cURL" is one paste, while pasting into
-  part of a URL can never replace a request by surprise. + → Paste curl still opens a draft.
+  part of a URL can never replace a request by surprise. + → Paste curl… still opens a draft.
 - **Packaging: cargo-packager** (`.app`/`.dmg`, `.deb`/`.AppImage`, NSIS per-user installer),
   configured in `crates/imposter/Cargo.toml`. Releases are drafts built from `v*` tags. The macOS
   bundle is always signed, ad-hoc unless the Developer ID secrets exist (`docs/release.md`);

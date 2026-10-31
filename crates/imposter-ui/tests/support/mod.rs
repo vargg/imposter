@@ -83,6 +83,13 @@ pub fn open_tab(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     click_button(harness, label);
 }
 
+/// Click the menu item `label` of the menu just opened; the empty request pane may offer
+/// a button with the same text.
+pub fn click_menu_item(harness: &mut Harness<'_, ImposterApp>, label: &str) {
+    harness.get_all_by_label(label).next_back().unwrap().click();
+    harness.run_steps(2);
+}
+
 /// Click the button named `label` when the same text also appears elsewhere (a title).
 pub fn click_button(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     harness

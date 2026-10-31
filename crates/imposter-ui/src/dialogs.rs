@@ -532,11 +532,26 @@ fn curl(ui: &mut egui::Ui, text: &mut String) -> Outcome {
     outcome
 }
 
+/// "1 request", "7 requests".
+fn counted(count: usize, noun: &str) -> String {
+    if count == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{count} {noun}s")
+    }
+}
+
 fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outcome {
     let mut outcome = Outcome::Open;
     ui.set_min_width(520.0);
     ui.heading("Review collection import");
-    ui.label(format!("New collection: {}", preview.collection_name));
+    let collection = &preview.document.collection;
+    ui.label(format!(
+        "Creates {}: {} in {}",
+        preview.collection_name,
+        counted(collection.requests.len(), "request"),
+        counted(collection.folders.len(), "folder"),
+    ));
     let environments = if preview.environment_names.is_empty() {
         "None".to_owned()
     } else {

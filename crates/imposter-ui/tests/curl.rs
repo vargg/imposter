@@ -49,7 +49,13 @@ fn globals(pairs: &[(&str, &str)]) -> Variables {
 
 fn open_curl_dialog(app: &mut support::App) {
     click(&mut app.harness, "New");
-    click(&mut app.harness, "Import from curl…");
+    // The menu's item; the empty request pane offers the same.
+    app.harness
+        .get_all_by_label("Paste curl…")
+        .next_back()
+        .unwrap()
+        .click();
+    app.harness.run_steps(2);
     settle(&mut app.harness);
 }
 

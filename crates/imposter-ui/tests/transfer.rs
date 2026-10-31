@@ -22,7 +22,13 @@ fn fixtures() -> PathBuf {
 fn import(app: &mut support::App, answers: Vec<Option<PathBuf>>) {
     app.harness.state_mut().script_file_dialogs(answers);
     click(&mut app.harness, "New");
-    click(&mut app.harness, "Import Collection…");
+    // The menu's item; the first-run pane offers the same.
+    app.harness
+        .get_all_by_label("Import Collection…")
+        .next_back()
+        .unwrap()
+        .click();
+    app.harness.run_steps(2);
     settle(&mut app.harness);
 }
 
@@ -53,7 +59,8 @@ fn a_native_file_is_reviewed_then_imported_and_shown() {
     );
 
     app.harness.get_by_label("Review collection import");
-    app.harness.get_by_label("New collection: Full collection");
+    app.harness
+        .get_by_label("Creates Full collection: 4 requests in 2 folders");
     app.harness.get_by_label("New environments: Dev, Empty env");
     assert_eq!(
         collection_names(&app),
@@ -149,7 +156,7 @@ fn an_openapi_yaml_file_skips_companions_and_opens_as_requests() {
         "only Postman files have companions"
     );
     app.harness.get_by_label("Review collection import");
-    app.harness.get_by_label("New collection: Pet Store");
+    app.harness.get_by_label_contains("Creates Pet Store: ");
     app.harness.get_by_label(
         "Path parameters without an example need collection variables before sending: ownerId",
     );
@@ -193,7 +200,7 @@ fn a_cancelled_review_or_picker_writes_nothing() {
     import(&mut app, vec![Some(fixtures().join("postman-v2.1.json"))]);
     click(&mut app.harness, "No");
     settle(&mut app.harness);
-    app.harness.get_by_label("New collection: Local API");
+    app.harness.get_by_label_contains("Creates Local API: ");
     click(&mut app.harness, "Cancel");
     settle(&mut app.harness);
     assert_eq!(collection_names(&app), Vec::<String>::new());

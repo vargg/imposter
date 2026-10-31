@@ -345,7 +345,7 @@ fn main() {
         tour.harness
             .state_mut()
             .script_file_dialogs([Some(petstore)]);
-        tour.click("New");
+        // From the first-run pane, as a new user would.
         tour.click("Import Collection…");
         tour.settle();
         tour.shot("1-03-import-review");
