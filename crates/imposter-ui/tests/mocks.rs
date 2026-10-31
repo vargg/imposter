@@ -7,7 +7,7 @@ mod support;
 use std::io::{Read as _, Write as _};
 use std::time::{Duration, Instant};
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::mock::{MockConfig, MockRoute};
 use imposter_app::store::kv::{self, Table};
 use imposter_ui::app::CloseState;
@@ -213,7 +213,7 @@ fn route_editing_validation_two_click_removal_and_save_shortcut() {
             .error
             .as_ref()
             .unwrap()
-            .contains("already has this method")
+            .contains("already answers")
     );
     type_into(&mut app.harness, "Mock path", "new");
     type_into(&mut app.harness, "Mock response body", "response");
@@ -294,4 +294,32 @@ fn pending_reload_disables_fields_until_the_database_reply_arrives() {
             .accesskit_node()
             .is_disabled()
     );
+}
+
+#[test]
+fn route_problems_show_beside_their_fields_while_typing() {
+    let mut app = opened(0);
+    click(&mut app.harness, "Mock route 1");
+    type_into(&mut app.harness, "Mock path", "orders bad path");
+    app.harness
+        .get_by_label("Paths can't contain spaces; write %20");
+    assert_eq!(
+        app.harness.state().state.mocks.form.routes[0].path,
+        "/orders bad path"
+    );
+
+    click(&mut app.harness, "Save mocks");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Save failed");
+    let start = app.harness.get_by_label("Start mock server");
+    assert!(start.accesskit_node().is_disabled());
+    start.hover();
+    app.harness.run_steps(60);
+    app.harness
+        .get_by_label("Fix route 1 first: Paths can't contain spaces; write %20");
+
+    click(&mut app.harness, "Add mock route");
+    click(&mut app.harness, "Add mock route");
+    app.harness
+        .get_by_label("Another enabled route already answers GET /");
 }

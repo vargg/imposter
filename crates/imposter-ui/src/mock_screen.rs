@@ -1,12 +1,12 @@
 //! Editing and controlling the local static mock server.
 
 use egui::{Align, Layout, Ui};
-use imposter_app::core::mock::{MockConfig, MockRoute};
+use imposter_app::core::mock::{MockConfig, MockRoute, RouteField, RouteProblem};
 use imposter_app::core::model::ParamItem;
 use imposter_app::runtime::TaskId;
 
 use crate::app::{Action, State};
-use crate::theme::Tone;
+use crate::theme::{PALETTE, Tone};
 use crate::widgets::{self, SaveStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,14 +57,46 @@ impl MockScreen {
 }
 
 fn text(ui: &mut Ui, label: &str, value: &mut String, width: f32) -> bool {
-    let response = ui.add(egui::TextEdit::singleline(value).desired_width(width));
-    widgets::name(&response, label);
-    response.changed()
+    checked_text(ui, label, value, width, false)
+}
+
+/// A field outlined in the error color while `invalid`.
+fn checked_text(ui: &mut Ui, label: &str, value: &mut String, width: f32, invalid: bool) -> bool {
+    ui.scope(|ui| {
+        if invalid {
+            let stroke = egui::Stroke::new(1.0, PALETTE.error);
+            let widgets = &mut ui.visuals_mut().widgets;
+            for state in [
+                &mut widgets.inactive,
+                &mut widgets.hovered,
+                &mut widgets.active,
+            ] {
+                state.bg_stroke = stroke;
+            }
+            ui.visuals_mut().selection.stroke = stroke;
+        }
+        let response = ui.add(egui::TextEdit::singleline(value).desired_width(width));
+        widgets::name(&response, label);
+        response.changed()
+    })
+    .inner
+}
+
+/// The reasons `problems` give for `field` of route `route`, one line each.
+fn problem_lines(ui: &mut Ui, problems: &[RouteProblem], route: usize, field: RouteField) {
+    for problem in problems
+        .iter()
+        .filter(|p| p.route == route && p.field == field)
+    {
+        ui.label(widgets::tone_text(problem.reason.as_str(), Tone::Error).small());
+    }
 }
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let screen = &mut state.mocks;
     let mut edited = false;
+    // Checked every frame, so a problem shows while it is typed, not only on Save.
+    let problems = screen.form.problems();
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let status = SaveStatus {
@@ -129,10 +161,19 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             }
         } else if ui
             .add_enabled(
-                screen.loaded() && !screen.dirty() && !screen.saving && !screen.loading,
+                screen.loaded()
+                    && !screen.dirty()
+                    && !screen.saving
+                    && !screen.loading
+                    && problems.is_empty(),
                 egui::Button::new("Start mock server"),
             )
-            .on_disabled_hover_text("Save changes before starting")
+            .on_disabled_hover_text(match problems.first() {
+                Some(problem) => {
+                    format!("Fix route {} first: {}", problem.route + 1, problem.reason)
+                }
+                None => "Save changes before starting".to_owned(),
+            })
             .clicked()
         {
             state.actions.push(Action::Mock(MockAction::Start));
@@ -157,17 +198,19 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 for (index, route) in screen.form.routes.iter().enumerate() {
+                    let text = format!(
+                        "{} {}{}",
+                        route.method,
+                        route.path,
+                        if route.enabled { "" } else { " (disabled)" }
+                    );
+                    let text = if problems.iter().any(|p| p.route == index) {
+                        widgets::tone_text(text, Tone::Error)
+                    } else {
+                        egui::RichText::new(text)
+                    };
                     let response = ui.add(
-                        egui::Button::selectable(
-                            screen.selected == Some(index),
-                            format!(
-                                "{} {}{}",
-                                route.method,
-                                route.path,
-                                if route.enabled { "" } else { " (disabled)" }
-                            ),
-                        )
-                        .truncate(),
+                        egui::Button::selectable(screen.selected == Some(index), text).truncate(),
                     );
                     widgets::name(&response, &format!("Mock route {}", index + 1));
                     if response.clicked() {
@@ -194,6 +237,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     let response = ui.add(egui::DragValue::new(&mut route.status).range(200..=599));
                     widgets::name(&response, "Mock response status");
                     edited |= response.changed();
+                    problem_lines(ui, &problems, index, RouteField::Status);
                     remove = widgets::remove_button(
                         ui,
                         ui.scope_id().with(("route", index)),
@@ -201,10 +245,30 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                         24.0,
                     );
                 });
+                let invalid = |field| {
+                    problems
+                        .iter()
+                        .any(|p| p.route == index && p.field == field)
+                };
                 ui.horizontal(|ui| {
-                    edited |= text(ui, "Mock method", &mut route.method, 85.0);
-                    edited |= text(ui, "Mock path", &mut route.path, ui.available_width());
+                    edited |= checked_text(
+                        ui,
+                        "Mock method",
+                        &mut route.method,
+                        85.0,
+                        invalid(RouteField::Method),
+                    );
+                    edited |= checked_text(
+                        ui,
+                        "Mock path",
+                        &mut route.path,
+                        ui.available_width(),
+                        invalid(RouteField::Path) || invalid(RouteField::Route),
+                    );
                 });
+                for field in [RouteField::Method, RouteField::Path, RouteField::Route] {
+                    problem_lines(ui, &problems, index, field);
+                }
                 ui.label("Response headers");
                 let mut remove_header = None;
                 ui.push_id(("mock headers", index), |ui| {
@@ -238,6 +302,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                                     remove_header = Some(row);
                                 }
                             });
+                            problem_lines(ui, &problems, index, RouteField::Header(row));
                         });
                     }
                 });
