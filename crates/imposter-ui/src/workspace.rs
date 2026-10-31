@@ -931,7 +931,7 @@ fn split(state: &mut State, ui: &mut Ui) {
 /// "3" in `tone`, or nothing for none.
 fn count_badge(count: usize, tone: Tone) -> Option<widgets::TabBadge> {
     (count > 0).then(|| widgets::TabBadge {
-        text: count.to_string(),
+        mark: widgets::Mark::Count(count),
         tone,
         description: format!("{count} in use"),
     })
@@ -953,9 +953,10 @@ fn editor_badge(
             };
             count_badge(count, tone)
         }
+        // Green, as API clients mark a tab that holds something.
         crate::editor::Badge::Dot => Some(widgets::TabBadge {
-            text: "•".to_owned(),
-            tone: Tone::Muted,
+            mark: widgets::Mark::Dot,
+            tone: Tone::Ok,
             description: "Set".to_owned(),
         }),
     }

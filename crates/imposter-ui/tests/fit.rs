@@ -288,3 +288,73 @@ fn the_check_marks_keep_their_place_in_the_smallest_window() {
     let runs = app.harness.get_by_label("Recorded runs").rect();
     assert!(checks.right() <= runs.left(), "{checks:?} before {runs:?}");
 }
+
+/// The text painted inside `area`, with the format of each part.
+fn painted(app: &support::App, area: egui::Rect) -> Vec<(String, egui::TextFormat)> {
+    app.harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) if area.contains(text.pos) => Some(text.galley.job.clone()),
+            _ => None,
+        })
+        .flat_map(|job| {
+            job.sections
+                .iter()
+                .map(|section| {
+                    let range = section.byte_range.start.0..section.byte_range.end.0;
+                    (job.text[range].to_owned(), section.format.clone())
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+#[test]
+fn a_set_tab_has_a_raised_green_dot_and_more_counts_what_it_hides() {
+    let mut app = small();
+    {
+        let editor = &mut app
+            .harness
+            .state_mut()
+            .state
+            .editor
+            .as_mut()
+            .unwrap()
+            .editor;
+        editor.body_type = imposter_app::core::model::BodyType::Json;
+        editor.body_text = "{}".into();
+    }
+    app.harness.run_steps(3);
+
+    // A muted "•" at mid-height read as a separator between tabs.
+    let body = app
+        .harness
+        .get_by_role_and_label(Role::Button, "Body")
+        .rect();
+    let marks: Vec<egui::TextFormat> = painted(&app, body)
+        .into_iter()
+        .filter(|(text, _)| text == "●")
+        .map(|(_, format)| format)
+        .collect();
+    assert_eq!(marks.len(), 1, "one dot on Body");
+    assert_eq!(marks[0].valign, egui::Align::TOP);
+    assert_eq!(marks[0].color, imposter_ui::theme::palette().ok);
+
+    // "+n", unlike the tools' "⋯" that can sit beside it.
+    let shown = editor_tab_tops(&app).len();
+    let more = app
+        .harness
+        .get_by_role_and_label(Role::Button, "More request tabs")
+        .rect();
+    let hidden = EDITOR_TABS.len() + 1 - shown;
+    assert!(hidden > 0);
+    assert!(
+        painted(&app, more)
+            .iter()
+            .any(|(text, _)| *text == format!("+{hidden}")),
+        "{:?}",
+        painted(&app, more)
+    );
+}

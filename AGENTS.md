@@ -391,11 +391,14 @@ numbers, so both are excluded. Each logical change is its own commit.
     wider than a target needs; the selected tab always stays, in place of the last one that
     fitted. Tabs come before tools.
   - **Badges** say what a tab holds without opening it (`Editor::badge`): Query, Headers,
-    Cookies and Tests count rows in use (enabled and named); Auth, Body and Docs show a dot
-    when set. The Tests count is red after a run with a failed check; the response's
-    Headers and Tests are counted too. Screen readers hear the count as the tab's
-    description, so its name stays the label. "More" shows a dot when a tab it hides holds
-    something, and names those tabs in its description.
+    Cookies and Tests count rows in use (enabled and named); Auth, Body and Docs show a
+    small green dot raised to the top of the line when set (a muted "•" at mid-height read
+    as a separator, Q2). The Tests count is red after a run with a failed check; the
+    response's Headers and Tests are counted too. Screen readers hear the count as the
+    tab's description, so its name stays the label. "More" shows how many tabs it hides
+    ("+2", so it does not read as the tools' "⋯" beside it; dropped only when even the
+    selected tab leaves no room) and the dot when one of them holds something, and names
+    those tabs in its description.
   - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
     first, then Wrap, the filter, Find and Copy.
   - **The response's status** is one line whose parts show in order of importance while

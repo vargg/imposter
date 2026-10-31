@@ -30,14 +30,50 @@ pub fn tone_text(text: impl Into<String>, tone: Tone) -> RichText {
     RichText::new(text.into()).color(palette().tone(tone))
 }
 
-/// What a tab shows beside its name: "3", "•".
+/// What a tab shows beside its name: "3", or a raised dot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TabBadge {
-    pub text: String,
+    pub mark: Mark,
     pub tone: Tone,
     /// What it means, for screen readers: "3 in use".
     pub description: String,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mark {
+    Count(usize),
+    /// The tab holds something.
+    Dot,
+}
+
+/// Append `mark` to a tab's text. The dot is small and raised to the top of the line: a
+/// muted "•" at mid-height read as a separator between tabs.
+fn append_mark(job: &mut LayoutJob, mark: Mark, color: Color32) {
+    match mark {
+        Mark::Count(count) => job.append(
+            &count.to_string(),
+            4.0,
+            TextFormat {
+                font_id: FontId::proportional(12.0),
+                color,
+                valign: egui::Align::Center,
+                ..Default::default()
+            },
+        ),
+        Mark::Dot => job.append(
+            "●",
+            2.0,
+            TextFormat {
+                font_id: FontId::proportional(DOT_SIZE),
+                color,
+                valign: egui::Align::TOP,
+                ..Default::default()
+            },
+        ),
+    }
+}
+
+const DOT_SIZE: f32 = 7.0;
 
 /// A tab's text: its name, muted or semibold accent when selected, then its badge, smaller.
 fn tab_job(ui: &Ui, label: &str, selected: bool, badge: Option<&TabBadge>) -> LayoutJob {
@@ -61,16 +97,30 @@ fn tab_job(ui: &Ui, label: &str, selected: bool, badge: Option<&TabBadge>) -> La
         },
     );
     if let Some(badge) = badge {
+        append_mark(&mut job, badge.mark, palette().tone(badge.tone));
+    }
+    job
+}
+
+/// The "More" button's text: how many tabs it hides ("+2"), and a dot when one of them
+/// holds something. A count, so it does not read as the tools' "⋯" beside it; without
+/// one (`hidden` is `None` where it does not fit) only the dot and the chevron.
+fn more_job(ui: &Ui, hidden: Option<usize>, held: Option<Tone>) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    if let Some(hidden) = hidden {
         job.append(
-            &badge.text,
-            4.0,
+            &format!("+{hidden}"),
+            0.0,
             TextFormat {
-                font_id: FontId::proportional(12.0),
-                color: palette().tone(badge.tone),
+                font_id: egui::TextStyle::Button.resolve(ui.style()),
+                color: palette().text_muted,
                 valign: egui::Align::Center,
                 ..Default::default()
             },
         );
+    }
+    if let Some(tone) = held {
+        append_mark(&mut job, Mark::Dot, palette().tone(tone));
     }
     job
 }
@@ -99,8 +149,14 @@ pub fn button_width(ui: &Ui, text: RichText) -> f32 {
 }
 
 /// The width of a [`menu_text_button`] showing `text`.
-pub fn menu_text_button_width(ui: &Ui, text: &str) -> f32 {
-    button_width(ui, RichText::new(text)) + CHEVRON
+pub fn menu_text_button_width(ui: &Ui, text: impl Into<egui::WidgetText>) -> f32 {
+    let galley = text.into().into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::TextStyle::Button,
+    );
+    galley.size().x + 2.0 * ui.spacing().button_padding.x + CHEVRON
 }
 
 /// A tab: muted text, or semibold accent text with an underline when selected; no fill.
@@ -231,14 +287,18 @@ fn shown_tabs(
 const CHEVRON: f32 = 12.0;
 
 /// A frameless button showing `text` and a chevron, named `label`, that opens a menu.
-pub fn menu_text_button(ui: &mut Ui, text: &str, label: &str) -> egui::Response {
-    let galley = egui::WidgetText::from(RichText::new(text).color(palette().text_muted))
-        .into_galley(
-            ui,
-            Some(egui::TextWrapMode::Extend),
-            f32::INFINITY,
-            egui::TextStyle::Button,
-        );
+pub fn menu_text_button(
+    ui: &mut Ui,
+    text: impl Into<egui::WidgetText>,
+    label: &str,
+) -> egui::Response {
+    // Plain text takes the painter's muted color below; a job keeps its own colors.
+    let galley = text.into().into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::TextStyle::Button,
+    );
     let pad = ui.spacing().button_padding.x;
     let size = egui::vec2(galley.size().x + 2.0 * pad + CHEVRON, tab_height());
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -306,17 +366,18 @@ fn tab_row<T: Copy + PartialEq>(
                 + 2.0 * ui.spacing().button_padding.x
         })
         .collect();
-    // Only a chevron, so it costs a row less than a tab; measured with its dot, which shows
-    // when a hidden tab holds something.
-    let more_width = menu_text_button_width(ui, "•");
+    // Measured at its widest: a one-digit count (rows have at most 9 tabs) and the dot.
+    let wide = menu_text_button_width(ui, more_job(ui, Some(9), Some(Tone::Ok)));
     let gap = ui.spacing().item_spacing.x;
-    let shown = shown_tabs(
-        &widths,
-        current,
-        ui.available_width() - reserve,
-        more_width,
-        gap,
-    );
+    let available = ui.available_width() - reserve;
+    let mut shown = shown_tabs(&widths, current, available, wide, gap);
+    let used: f32 = shown.iter().map(|&i| widths[i] + gap).sum();
+    // When even the selected tab leaves no room for the count, More drops it.
+    let counted = shown.len() == tabs.len() || used + wide <= available;
+    if !counted {
+        let narrow = menu_text_button_width(ui, more_job(ui, None, Some(Tone::Ok)));
+        shown = shown_tabs(&widths, current, available, narrow, gap);
+    }
     let mut chosen = None;
     for &i in &shown {
         let spec = &tabs[i];
@@ -330,16 +391,24 @@ fn tab_row<T: Copy + PartialEq>(
     }
     if shown.len() < tabs.len() {
         // Hidden tabs that hold something: the button says so, and names them.
-        let held: Vec<String> = tabs
+        let hidden: Vec<&TabSpec<'_, T>> = tabs
             .iter()
             .enumerate()
             .filter(|(i, _)| !shown.contains(i))
-            .filter_map(|(_, spec)| {
+            .map(|(_, spec)| spec)
+            .collect();
+        let held: Vec<String> = hidden
+            .iter()
+            .filter_map(|spec| {
                 let badge = spec.badge.as_ref()?;
                 Some(format!("{}: {}", spec.label, badge.description))
             })
             .collect();
-        let text = if held.is_empty() { "" } else { "•" };
+        let text = more_job(
+            ui,
+            counted.then_some(hidden.len()),
+            (!held.is_empty()).then_some(Tone::Ok),
+        );
         // The hover text is also what screen readers hear as its description.
         let hint = if held.is_empty() {
             "More tabs".to_owned()
