@@ -8,7 +8,7 @@ use egui_kittest::kittest::Queryable;
 use imposter_app::core::execution::{ExecutionRecord, Response, Timestamp};
 use imposter_app::core::model::{Request, RequestTemplate};
 use imposter_app::core::settings::AppSettings;
-use imposter_app::store::{executions, kv};
+use imposter_app::store::{collections, executions, kv};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::{HistoryTab, Screen};
 use support::{click, click_button, collection, request, settle, start_with, type_into};
@@ -246,4 +246,62 @@ fn the_filter_finds_runs_by_status_method_and_text() {
         ));
     settle(&mut app.harness);
     app.harness.get_by_label("No matching executions");
+}
+
+#[test]
+fn leaving_a_restored_draft_offers_to_keep_it_as_a_new_request() {
+    let (mut app, _server, _runtime) = sent_app();
+    open_history(&mut app);
+    app.harness.get_by_label_contains("History GET").click();
+    app.harness.run_steps(1);
+    settle(&mut app.harness);
+    click(&mut app.harness, "Restore as draft");
+    settle(&mut app.harness);
+
+    click(&mut app.harness, "GET Other");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Keep this draft?");
+    app.harness.get_by_label(
+        "\"Create\" is not saved yet. Save it as a new request in \"API\", discard it, or stay.",
+    );
+    click_button(&mut app.harness, "Stay");
+    settle(&mut app.harness);
+    assert!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .is_draft(),
+        "staying keeps the draft"
+    );
+
+    click(&mut app.harness, "GET Other");
+    settle(&mut app.harness);
+    click_button(&mut app.harness, "Save as new request");
+    settle(&mut app.harness);
+    // Saving a draft asks for its name, prefilled.
+    click(&mut app.harness, "OK");
+    settle(&mut app.harness);
+    let names: Vec<String> = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| {
+            let api = collections::collections(db)?[0].id;
+            collections::tree(db, api)
+        })
+        .unwrap()
+        .unwrap()
+        .requests
+        .into_iter()
+        .map(|r| r.name)
+        .collect();
+    assert_eq!(
+        names.iter().filter(|n| n.starts_with("Create")).count(),
+        2,
+        "the draft became a new request beside the original: {names:?}"
+    );
 }

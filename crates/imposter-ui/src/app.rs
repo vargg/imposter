@@ -1704,12 +1704,28 @@ impl ImposterApp {
                     next,
                     stage: GuardStage::Asking,
                 });
+                let draft = self.guard_draft();
                 self.state.dialog = Some(Dialog::Guard {
                     request,
+                    draft,
                     failed: None,
                 });
             }
         }
+    }
+
+    /// For a draft in the editor: the collection Save would add it to.
+    fn guard_draft(&self) -> Option<String> {
+        self.state
+            .editor
+            .as_ref()
+            .filter(|pane| pane.editor.is_draft())?;
+        Some(
+            self.state
+                .collection
+                .and_then(|id| self.state.collections.iter().find(|c| c.id == id))
+                .map_or_else(|| "the selected collection".to_owned(), |c| c.name.clone()),
+        )
     }
 
     fn perform(&mut self, next: Navigation) {
@@ -1874,8 +1890,10 @@ impl ImposterApp {
                 .editor
                 .as_ref()
                 .map_or_else(String::new, |p| p.editor.name().to_owned());
+            let draft = self.guard_draft();
             self.state.dialog = Some(Dialog::Guard {
                 request,
+                draft,
                 failed: Some(error),
             });
         } else {

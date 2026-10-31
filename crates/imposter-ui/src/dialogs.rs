@@ -57,6 +57,8 @@ pub enum Dialog {
     /// Unsaved changes before navigating; `failed` after an autosave or save attempt failed.
     Guard {
         request: String,
+        /// For an unsaved draft: the collection Save adds it to.
+        draft: Option<String>,
         failed: Option<String>,
     },
     /// Unsaved rows on the Variables screen.
@@ -214,29 +216,42 @@ impl Dialog {
                         }
                     });
                 }
-                Self::Guard { request, failed } => {
+                Self::Guard {
+                    request,
+                    draft,
+                    failed,
+                } => {
                     if let Some(error) = failed {
                         ui.heading("Request could not be saved");
                         ui.label(
                             "Retry saving this request, discard its changes, or keep editing.",
                         );
                         ui.label(tone_text(error.as_str(), Tone::Error));
+                    } else if let Some(collection) = draft {
+                        // A draft has no saved version: saving creates a request.
+                        ui.heading("Keep this draft?");
+                        ui.label(format!(
+                            "\"{request}\" is not saved yet. Save it as a new request in \"{collection}\", discard it, or stay."
+                        ));
                     } else {
                         ui.heading("Unsaved request changes");
                         ui.label(format!("Save changes to \"{request}\" before continuing?"));
                     }
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if ui
-                            .button(if failed.is_some() { "Retry" } else { "Save" })
-                            .clicked()
-                        {
+                        let save = match (&failed, &draft) {
+                            (Some(_), _) => "Retry",
+                            (None, Some(_)) => "Save as new request",
+                            (None, None) => "Save",
+                        };
+                        if ui.button(save).clicked() {
                             outcome = Outcome::Guard(GuardChoice::Save);
                         }
                         if ui.button("Discard").clicked() {
                             outcome = Outcome::Guard(GuardChoice::Discard);
                         }
-                        if ui.button("Cancel").clicked() {
+                        let stay = if draft.is_some() { "Stay" } else { "Cancel" };
+                        if ui.button(stay).clicked() {
                             outcome = Outcome::Guard(GuardChoice::Cancel);
                         }
                     });

@@ -227,7 +227,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   drawing stays free of IO, and the workflow (guard, saves, close) is testable as state.
 - **Every navigation that replaces the editor goes through one guard**: clean → proceed; saved
   request with autosave on → save first (failure asks Retry/Discard/Cancel); otherwise ask
-  Save/Discard/Cancel. Closing uses the same guard after background work drained, then writes
+  Save/Discard/Cancel. For an unsaved draft the guard asks "Keep this draft?" and names the collection
+  Save adds it to (Save as new request / Discard / Stay), because "Save changes to …" read as
+  overwriting the request the draft came from. Closing uses the same guard after background work drained, then writes
   UI state (layout, last selection, window) and closes; any failure keeps the window open.
 - **The tree is refreshed after a save that changed a request's method or name** (the Python app
   left it stale).
