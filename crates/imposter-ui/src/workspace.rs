@@ -924,6 +924,39 @@ fn split(state: &mut State, ui: &mut Ui) {
     ui.allocate_rect(area, Sense::hover());
 }
 
+/// "3" in `tone`, or nothing for none.
+fn count_badge(count: usize, tone: Tone) -> Option<widgets::TabBadge> {
+    (count > 0).then(|| widgets::TabBadge {
+        text: count.to_string(),
+        tone,
+        description: format!("{count} in use"),
+    })
+}
+
+/// A request tab's badge: rows in use, or a dot when it holds something; the Tests count
+/// is red when the last run `failed` a check.
+fn editor_badge(
+    editor: &crate::editor::Editor,
+    tab: EditorTab,
+    failed: bool,
+) -> Option<widgets::TabBadge> {
+    match editor.badge(tab)? {
+        crate::editor::Badge::Count(count) => {
+            let tone = if tab == EditorTab::Tests && failed {
+                Tone::Error
+            } else {
+                Tone::Muted
+            };
+            count_badge(count, tone)
+        }
+        crate::editor::Badge::Dot => Some(widgets::TabBadge {
+            text: "•".to_owned(),
+            tone: Tone::Muted,
+            description: "Set".to_owned(),
+        }),
+    }
+}
+
 fn request_pane(state: &mut State, ui: &mut Ui) {
     let State {
         editor,
@@ -931,8 +964,14 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         inspect,
         settings,
         actions,
+        response,
         ..
     } = state;
+    // The last run failed a check: the Tests count turns red.
+    let failed = response
+        .response
+        .as_ref()
+        .is_some_and(|r| crate::checks::Tally::of(&r.checks).failed > 0);
     let Some(pane) = editor else {
         ui.add_space((ui.available_height() * 0.25).min(100.0));
         ui.vertical_centered(|ui| {
@@ -956,7 +995,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         inspect,
     };
     let tabs = EditorTab::ALL.map(|(tab, label)| {
-        let spec = widgets::TabSpec::new(tab, label);
+        let spec = widgets::TabSpec::new(tab, label).badge(editor_badge(&pane.editor, tab, failed));
         if tab == EditorTab::Settings {
             // The Settings screen tab has the same text; screen readers need them apart.
             spec.named("Request settings")
@@ -1536,13 +1575,20 @@ pub fn response_body(
     };
     let results = response.as_ref().map_or(&[][..], |r| r.checks.as_slice());
     let captured = response.as_ref().map_or(&[][..], |r| r.captures.as_slice());
+    let headers_count = response.as_ref().map_or(0, |r| r.headers.len());
     let mut tabs = vec![
         widgets::TabSpec::new(ResponseTab::Body, "Body"),
-        widgets::TabSpec::new(ResponseTab::Headers, "Headers"),
+        widgets::TabSpec::new(ResponseTab::Headers, "Headers")
+            .badge(count_badge(headers_count, Tone::Muted)),
     ];
     if !results.is_empty() || !captured.is_empty() {
+        let tone = crate::checks::Tally::of(results).tone();
         // The request's Tests tab has the same text.
-        tabs.push(widgets::TabSpec::new(ResponseTab::Tests, "Tests").named("Check results"));
+        tabs.push(
+            widgets::TabSpec::new(ResponseTab::Tests, "Tests")
+                .named("Check results")
+                .badge(count_badge(results.len() + captured.len(), tone)),
+        );
     }
     ui.horizontal(|ui| {
         // At least the tools' menu button stays on the row.

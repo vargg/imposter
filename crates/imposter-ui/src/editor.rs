@@ -310,7 +310,51 @@ fn named<T: Clone>(rows: &[T], name: impl Fn(&T) -> &str) -> Vec<T> {
         .collect()
 }
 
+/// What a request tab shows beside its name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Badge {
+    /// Rows in use: enabled and named.
+    Count(usize),
+    /// The tab holds something.
+    Dot,
+}
+
+fn in_use(rows: &[ParamItem]) -> usize {
+    rows.iter()
+        .filter(|row| row.is_enabled && !row.name.trim().is_empty())
+        .count()
+}
+
 impl Editor {
+    /// The badge of `tab`, if it has something to show: counts for rows, a dot for a
+    /// configured auth, a body or a description.
+    pub fn badge(&self, tab: crate::app::EditorTab) -> Option<Badge> {
+        use crate::app::EditorTab;
+        let count = |n: usize| (n > 0).then_some(Badge::Count(n));
+        let dot = |yes: bool| yes.then_some(Badge::Dot);
+        match tab {
+            EditorTab::Params => count(in_use(&self.queries)),
+            EditorTab::Headers => count(in_use(&self.headers)),
+            EditorTab::Cookies => count(in_use(&self.cookies)),
+            EditorTab::Tests => count(self.checks.len() + self.captures.len()),
+            EditorTab::Auth => dot(self.auth.kind.is_some()),
+            EditorTab::Docs => dot(!self.description.trim().is_empty()),
+            EditorTab::Body => dot(match self.body_type {
+                BodyType::None => false,
+                BodyType::Json | BodyType::Plain | BodyType::Text => {
+                    !self.body_text.trim().is_empty()
+                }
+                BodyType::Urlencoded | BodyType::FormData => in_use(&self.form) > 0,
+                BodyType::Multipart => self
+                    .multipart
+                    .iter()
+                    .any(|row| row.is_enabled && !row.name.trim().is_empty()),
+                BodyType::Binary => !self.binary_path.trim().is_empty(),
+            }),
+            EditorTab::Settings => None,
+        }
+    }
+
     pub fn load(request: &Request) -> Self {
         let template = &request.template;
         let body_type = match template.body_type {
@@ -475,6 +519,31 @@ mod tests {
             template,
             ..Request::default()
         }
+    }
+
+    #[test]
+    fn badges_count_rows_in_use_and_mark_what_is_set() {
+        use crate::app::EditorTab;
+        let mut editor = Editor::load(&request(RequestTemplate::default()));
+        for (tab, _) in EditorTab::ALL {
+            assert_eq!(editor.badge(tab), None, "{tab:?} of an empty request");
+        }
+        editor.headers = vec![
+            ParamItem::new("A", "1"),
+            ParamItem::new("", "unnamed"),
+            ParamItem {
+                is_enabled: false,
+                ..ParamItem::new("Off", "x")
+            },
+        ];
+        editor.auth.kind = Some(AuthKind::BearerToken);
+        editor.body_type = BodyType::Json;
+        editor.body_text = "{}".into();
+        editor.description = "  ".into();
+        assert_eq!(editor.badge(EditorTab::Headers), Some(Badge::Count(1)));
+        assert_eq!(editor.badge(EditorTab::Auth), Some(Badge::Dot));
+        assert_eq!(editor.badge(EditorTab::Body), Some(Badge::Dot));
+        assert_eq!(editor.badge(EditorTab::Docs), None, "blank is nothing");
     }
 
     #[test]

@@ -364,6 +364,11 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Rows of tabs, tools and status stay one row high; what does not fit goes into a menu.**
   - **Tabs** (`widgets::tab_strip`): tabs that do not fit go under "More"; the selected tab
     always stays, in place of the last one that fitted. Tabs come before tools.
+  - **Badges** say what a tab holds without opening it (`Editor::badge`): Query, Headers,
+    Cookies and Tests count rows in use (enabled and named); Auth, Body and Docs show a dot
+    when set. The Tests count is red after a run with a failed check; the response's
+    Headers and Tests are counted too. Screen readers hear the count as the tab's
+    description, so its name stays the label.
   - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
     first, then Wrap, the filter, Find and Copy.
   - **The response's status** is one line that drops its least important parts first: the

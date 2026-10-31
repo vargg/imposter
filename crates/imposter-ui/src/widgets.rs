@@ -30,14 +30,49 @@ pub fn tone_text(text: impl Into<String>, tone: Tone) -> RichText {
     RichText::new(text.into()).color(palette().tone(tone))
 }
 
-fn tab_text(label: &str, selected: bool) -> RichText {
-    if selected {
-        RichText::new(label)
-            .color(palette().accent)
-            .font(crate::theme::semibold(13.0))
+/// What a tab shows beside its name: "3", "•".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TabBadge {
+    pub text: String,
+    pub tone: Tone,
+    /// What it means, for screen readers: "3 in use".
+    pub description: String,
+}
+
+/// A tab's text: its name, muted or semibold accent when selected, then its badge, smaller.
+fn tab_job(ui: &Ui, label: &str, selected: bool, badge: Option<&TabBadge>) -> LayoutJob {
+    let (font, color) = if selected {
+        (crate::theme::semibold(13.0), palette().accent)
     } else {
-        RichText::new(label).color(palette().text_muted)
+        (
+            egui::TextStyle::Button.resolve(ui.style()),
+            palette().text_muted,
+        )
+    };
+    let mut job = LayoutJob::default();
+    job.append(
+        label,
+        0.0,
+        TextFormat {
+            font_id: font,
+            color,
+            valign: egui::Align::Center,
+            ..Default::default()
+        },
+    );
+    if let Some(badge) = badge {
+        job.append(
+            &badge.text,
+            4.0,
+            TextFormat {
+                font_id: FontId::proportional(12.0),
+                color: palette().tone(badge.tone),
+                valign: egui::Align::Center,
+                ..Default::default()
+            },
+        );
     }
+    job
 }
 
 /// The height of tabs and of menu buttons in their rows.
@@ -71,11 +106,24 @@ pub fn menu_text_button_width(ui: &Ui, text: &str) -> f32 {
 /// A tab: muted text, or semibold accent text with an underline when selected; no fill.
 /// Hovering previews the underline in a neutral color; keyboard focus outlines the tab.
 pub fn tab(ui: &mut Ui, selected: bool, label: &str) -> egui::Response {
+    tab_with(ui, selected, label, None)
+}
+
+/// A [`tab`] with a badge after its name. Its accessible name stays the label; the badge
+/// is its description.
+fn tab_with(ui: &mut Ui, selected: bool, label: &str, badge: Option<&TabBadge>) -> egui::Response {
     let response = ui.add(
-        egui::Button::new(tab_text(label, selected))
+        egui::Button::new(tab_job(ui, label, selected, badge))
             .frame(false)
             .min_size(egui::vec2(0.0, tab_height())),
     );
+    if let Some(badge) = badge {
+        name(&response, label);
+        let description = badge.description.clone();
+        response
+            .ctx
+            .accesskit_node_builder(response.id, |node| node.set_description(description));
+    }
     let underline = if selected {
         Some(palette().accent)
     } else if response.hovered() {
@@ -118,6 +166,7 @@ pub struct TabSpec<'a, T> {
     pub label: &'a str,
     /// The accessible name, when the label alone is ambiguous (another tab has the same text).
     pub name: Option<&'a str>,
+    pub badge: Option<TabBadge>,
 }
 
 impl<'a, T> TabSpec<'a, T> {
@@ -126,7 +175,14 @@ impl<'a, T> TabSpec<'a, T> {
             value,
             label,
             name: None,
+            badge: None,
         }
+    }
+
+    #[must_use]
+    pub fn badge(mut self, badge: Option<TabBadge>) -> Self {
+        self.badge = badge;
+        self
     }
 
     #[must_use]
@@ -241,7 +297,11 @@ fn tab_row<T: Copy + PartialEq>(
     let widths: Vec<f32> = tabs
         .iter()
         .enumerate()
-        .map(|(i, tab)| button_width(ui, tab_text(tab.label, Some(i) == current)))
+        .map(|(i, tab)| {
+            let job = tab_job(ui, tab.label, Some(i) == current, tab.badge.as_ref());
+            ui.fonts_mut(|fonts| fonts.layout_job(job)).size().x
+                + 2.0 * ui.spacing().button_padding.x
+        })
         .collect();
     let more_width = menu_text_button_width(ui, "More");
     let gap = ui.spacing().item_spacing.x;
@@ -255,7 +315,7 @@ fn tab_row<T: Copy + PartialEq>(
     let mut chosen = None;
     for &i in &shown {
         let spec = &tabs[i];
-        let response = tab(ui, Some(i) == current, spec.label);
+        let response = tab_with(ui, Some(i) == current, spec.label, spec.badge.as_ref());
         if let Some(label) = spec.name {
             name(&response, label);
         }
@@ -270,10 +330,8 @@ fn tab_row<T: Copy + PartialEq>(
                 if shown.contains(&i) {
                     continue;
                 }
-                let item = ui.button(spec.label);
-                if let Some(label) = spec.name {
-                    name(&item, label);
-                }
+                let item = ui.button(tab_job(ui, spec.label, false, spec.badge.as_ref()));
+                name(&item, spec.name.unwrap_or(spec.label));
                 if item.clicked() {
                     chosen = Some(spec.value);
                     ui.close();

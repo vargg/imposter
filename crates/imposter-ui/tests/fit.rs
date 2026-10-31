@@ -202,3 +202,24 @@ fn the_body_editor_fills_its_pane_with_its_footer_below() {
         );
     }
 }
+
+#[test]
+fn request_tabs_count_what_they_hold() {
+    let mut app = small();
+    app.harness.set_size(egui::vec2(1500.0, 850.0));
+    {
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.editor.headers = vec![
+            imposter_app::core::model::ParamItem::new("Accept", "*/*"),
+            imposter_app::core::model::ParamItem::new("X-Trace", "1"),
+        ];
+    }
+    app.harness.run_steps(3);
+    let headers = app.harness.get_by_role_and_label(Role::Button, "Headers");
+    assert_eq!(
+        headers.accesskit_node().description().as_deref(),
+        Some("2 in use")
+    );
+    let auth = app.harness.get_by_role_and_label(Role::Button, "Auth");
+    assert_eq!(auth.accesskit_node().description(), None, "nothing set");
+}
