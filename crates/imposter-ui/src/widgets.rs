@@ -1690,7 +1690,15 @@ pub fn viewer_tools_with(
             icons::menu(ui, Icon::More, "More tools", |ui| {
                 for &tool in &tools[shown..] {
                     let (_, label, selected) = describe(tool);
-                    if option(ui, selected, label).clicked() {
+                    // Wrap and the filter are on or off: a check box, since a filled row
+                    // read as the one under the pointer.
+                    let clicked = if matches!(tool, Tool::Wrap | Tool::Filter) {
+                        let mut on = selected;
+                        ui.checkbox(&mut on, label).clicked()
+                    } else {
+                        option(ui, false, label).clicked()
+                    };
+                    if clicked {
                         chosen = Some(tool);
                         ui.close();
                     }

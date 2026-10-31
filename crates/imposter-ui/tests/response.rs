@@ -126,6 +126,14 @@ fn the_tools_share_the_tab_row_and_the_rest_wait_under_more_tools() {
         "fold buttons give way first"
     );
     app.harness.get_by_label("Fold $.data");
+    // Toggles in the menu are check boxes showing their state.
+    click(&mut app.harness, "More tools");
+    let wrap = app
+        .harness
+        .get_by_role_and_label(egui::accesskit::Role::CheckBox, "Wrap");
+    assert_eq!(wrap.accesskit_node().toggled(), Some(Toggled::True));
+    click(&mut app.harness, "Wrap");
+    assert!(!app.harness.state().state.response.body_view.wrap);
     click(&mut app.harness, "More tools");
     click(&mut app.harness, "Filter with JSONPath");
     app.harness.run_steps(2);

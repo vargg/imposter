@@ -405,7 +405,8 @@ numbers, so both are excluded. Each logical change is its own commit.
     Mocks) has the same dot in the amber of the word "Unsaved", described as "Unsaved
     changes": one muted "•" for both meant two things a few centimetres apart (Q16).
   - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
-    first, then Wrap, the filter, Find and Copy.
+    first, then Wrap, the filter, Find and Copy. In the menu, Wrap and the filter are
+    check boxes: a filled row for "on" read as the row under the pointer (Q11).
   - **The response's status** is one line whose parts show in order of importance while
     they fit what the row has left (measured as drawn: fitting them all up front
     overestimated and dropped the checks with room to spare): the
