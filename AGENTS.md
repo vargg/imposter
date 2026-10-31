@@ -554,6 +554,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Order:** the choices and Cancel come first; the main action comes last, filled with
     the accent (or red when destructive) and labelled with a verb (Create, Rename, Save,
     Delete, Import).
+  - **Fill:** only the main action is filled. A destructive choice before it (the guard's
+    Discard) is a neutral button with red text, because filled red beside filled orange
+    differ only in hue (1.02:1); a disabled button is neutral, so its label stays readable.
   - **Keys:** Enter presses it unless the dialog edits multi-line text (curl); a name field
     reads Enter before drawing, because a single-line field consumes it. Escape cancels.
   - **Captions** have no trailing colons.

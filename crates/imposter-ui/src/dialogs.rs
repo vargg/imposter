@@ -147,6 +147,28 @@ enum Kind {
     Plain,
 }
 
+/// How a dialog button is drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Look {
+    Accent,
+    Red,
+    /// Neutral, with red text.
+    RedText,
+    Neutral,
+}
+
+/// Only the main action, last in the row, is filled: red when destructive. A destructive
+/// choice before it keeps red text, so "discard" never looks like "keep". A disabled
+/// button is neutral, so its label stays readable.
+fn look(kind: Kind, enabled: bool, last: bool) -> Look {
+    match (kind, enabled, last) {
+        (_, false, _) | (Kind::Plain, _, _) => Look::Neutral,
+        (Kind::Primary, true, _) => Look::Accent,
+        (Kind::Danger, true, true) => Look::Red,
+        (Kind::Danger, true, false) => Look::RedText,
+    }
+}
+
 /// The button row every dialog ends with, laid out left to right as given: choices and
 /// Cancel first, the main or destructive action last. Enter presses the
 /// last button when `enter` and it is enabled; Escape closes the dialog (the modal does that).
@@ -158,12 +180,13 @@ fn buttons(ui: &mut egui::Ui, row: &[(&str, Kind, bool)], enter: bool) -> Option
     ui.horizontal(|ui| {
         for (index, (label, kind, enabled)) in row.iter().enumerate() {
             let palette = crate::theme::palette();
-            let button = match kind {
-                Kind::Primary => egui::Button::new(RichText::new(*label).color(palette.on_accent))
-                    .fill(palette.accent),
-                Kind::Danger => egui::Button::new(RichText::new(*label).color(palette.on_accent))
+            let button = match look(*kind, *enabled, index + 1 == row.len()) {
+                Look::Red => egui::Button::new(RichText::new(*label).color(palette.on_accent))
                     .fill(palette.error),
-                Kind::Plain => egui::Button::new(*label),
+                Look::Accent => egui::Button::new(RichText::new(*label).color(palette.on_accent))
+                    .fill(palette.accent),
+                Look::RedText => egui::Button::new(RichText::new(*label).color(palette.error)),
+                Look::Neutral => egui::Button::new(*label),
             };
             if ui.add_enabled(*enabled, button).clicked() {
                 pressed = Some(index);
@@ -585,4 +608,23 @@ fn export(
         None => {}
     }
     outcome
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_main_action_is_filled_and_disabled_buttons_are_neutral() {
+        assert_eq!(look(Kind::Primary, true, true), Look::Accent);
+        assert_eq!(look(Kind::Danger, true, true), Look::Red);
+        assert_eq!(
+            look(Kind::Danger, true, false),
+            Look::RedText,
+            "Discard before Save must not look like it"
+        );
+        assert_eq!(look(Kind::Primary, false, true), Look::Neutral);
+        assert_eq!(look(Kind::Danger, false, true), Look::Neutral);
+        assert_eq!(look(Kind::Plain, true, true), Look::Neutral);
+    }
 }
