@@ -420,7 +420,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   and environments are captured at open. Matching is an in-order fuzzy subsequence that
   rewards word starts and runs; while typing, the group with the best match comes first so a
   strong request match is not buried under a weak action match. Choosing returns an ordinary
-  `Action`, so the unsaved-changes guard applies; a request in another collection opens
+  `Action`, so the unsaved-changes guard applies; request rows put the method in its color in
+  a column of one width (OPTIONS) with a gap before the name, so DELETE never runs into it; a request in another collection opens
   through `Navigation::OpenIn` (switch collection, then `restore`). The palette is pinned to
   the top: centred, it moved as its list shrank while typing, and clicks landed on the
   backdrop.

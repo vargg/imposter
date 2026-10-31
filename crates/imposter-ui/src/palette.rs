@@ -299,20 +299,25 @@ impl Palette {
     }
 }
 
-fn row(ui: &mut Ui, item: &Item, selected: bool) -> egui::Response {
+/// The gap between a request's method column and its name.
+const METHOD_GAP: f32 = 8.0;
+
+/// A row's text: the method padded to the longest one (OPTIONS) in its color, a gap, then
+/// the label and its hint.
+fn row_text(item: &Item, mono: egui::FontId, body: egui::FontId) -> egui::text::LayoutJob {
     let mut text = egui::text::LayoutJob::default();
-    let mono = egui::TextStyle::Monospace.resolve(ui.style());
-    let body = egui::TextStyle::Body.resolve(ui.style());
+    let mut gap = 0.0;
     if let Some(method) = &item.method {
         text.append(
             &format!("{method:<7}"),
             0.0,
-            egui::TextFormat::simple(mono, palette().accent),
+            egui::TextFormat::simple(mono, crate::theme::method_color(method)),
         );
+        gap = METHOD_GAP;
     }
     text.append(
         &item.label,
-        0.0,
+        gap,
         egui::TextFormat::simple(body.clone(), palette().text),
     );
     if let Some(hint) = &item.hint {
@@ -322,6 +327,15 @@ fn row(ui: &mut Ui, item: &Item, selected: bool) -> egui::Response {
             egui::TextFormat::simple(body, palette().text_muted),
         );
     }
+    text
+}
+
+fn row(ui: &mut Ui, item: &Item, selected: bool) -> egui::Response {
+    let text = row_text(
+        item,
+        egui::TextStyle::Monospace.resolve(ui.style()),
+        egui::TextStyle::Body.resolve(ui.style()),
+    );
     let response = ui.add(egui::Button::selectable(selected, text).truncate());
     if selected {
         crate::widgets::selection_bar(ui, response.rect);
@@ -525,6 +539,27 @@ pub fn open_target(action: &Action) -> Option<(CollectionId, RequestId)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_names_start_after_the_method_column_with_a_gap() {
+        let mono = egui::FontId::monospace(12.5);
+        let body = egui::FontId::proportional(13.0);
+        for method in ["GET", "DELETE", "OPTIONS"] {
+            let mut item = request_item(&indexed(1, "API", &[], "Users"));
+            item.method = Some(method.to_owned());
+            let job = row_text(&item, mono.clone(), body.clone());
+            assert_eq!(&job.text[..7], format!("{method:<7}"), "one column width");
+            assert_eq!(job.sections[1].leading_space, METHOD_GAP, "{method}");
+            assert_eq!(
+                job.sections[0].format.color,
+                crate::theme::method_color(method)
+            );
+        }
+        let mut action = request_item(&indexed(1, "API", &[], "Users"));
+        action.method = None;
+        let action = row_text(&action, mono, body);
+        assert_eq!(action.sections[0].leading_space, 0.0, "no method, no gap");
+    }
 
     #[test]
     fn fuzzy_matches_in_order_and_prefers_word_starts() {
