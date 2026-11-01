@@ -206,6 +206,21 @@ pub fn tab_with(
     response
 }
 
+/// A small dot in `tone` over the top right corner of `response` (a tab), drawn over it
+/// rather than in its text, so nothing after it moves; screen readers hear `description`.
+pub fn corner_dot(ui: &Ui, response: &egui::Response, tone: Tone, description: &str) {
+    let center = egui::pos2(
+        response.rect.right() - ui.spacing().button_padding.x + 3.0,
+        response.rect.top() + 6.0,
+    );
+    ui.painter()
+        .circle_filled(center, DOT_SIZE / 2.0, palette().tone(tone));
+    let description = description.to_owned();
+    response
+        .ctx
+        .accesskit_node_builder(response.id, |node| node.set_description(description));
+}
+
 /// A tab's underline in `color`, under its text, and the outline of keyboard focus.
 fn tab_marks(ui: &Ui, response: &egui::Response, underline: Option<Color32>) {
     if let Some(color) = underline {

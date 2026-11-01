@@ -311,7 +311,18 @@ fn splits_show_a_grip_that_can_be_found() {
     settle(&mut app.harness);
     app.harness.hover_at(egui::pos2(5.0, 5.0));
     app.harness.run_steps(2);
-    assert_eq!(grips(&app), 1, "request and response");
+    assert_eq!(
+        grips(&app),
+        2,
+        "request and response, and the sidebar's edge"
+    );
+    let sidebar = app.harness.state().state.layout.sidebar_width;
+    let edge = imposter_ui::theme::palette().field_border;
+    let on_edge = app.harness.output().shapes.iter().any(|clipped| {
+        matches!(&clipped.shape, egui::Shape::Rect(rect)
+            if rect.fill == edge && (rect.rect.center().x - sidebar).abs() < 2.0)
+    });
+    assert!(on_edge, "a grip on the sidebar's edge at {sidebar}");
     click(&mut app.harness, "History");
     settle(&mut app.harness);
     app.harness.hover_at(egui::pos2(5.0, 5.0));

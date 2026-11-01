@@ -132,7 +132,8 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
             .description()
     };
     assert_eq!(marked(&app).as_deref(), Some("Unsaved changes"));
-    // Amber, as the word "Unsaved": a request tab's green dot means it holds something.
+    // Amber, as the word "Unsaved": a request tab's green dot means it holds something. It is
+    // painted over the tab's corner, not written into its text.
     let tab = app.harness.get_by_label("Mocks").rect();
     let dots: Vec<egui::Color32> = app
         .harness
@@ -140,17 +141,8 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
         .shapes
         .iter()
         .filter_map(|clipped| match &clipped.shape {
-            egui::Shape::Text(text) if tab.contains(text.pos) => Some(text.galley.job.clone()),
+            egui::Shape::Circle(dot) if tab.contains(dot.center) => Some(dot.fill),
             _ => None,
-        })
-        .flat_map(|job| {
-            job.sections
-                .iter()
-                .filter(|section| {
-                    &job.text[section.byte_range.start.0..section.byte_range.end.0] == "●"
-                })
-                .map(|section| section.format.color)
-                .collect::<Vec<_>>()
         })
         .collect();
     assert_eq!(dots, [imposter_ui::theme::palette().warning]);

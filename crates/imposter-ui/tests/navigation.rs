@@ -556,3 +556,68 @@ fn a_word_in_a_request_name_outranks_scattered_letters_in_an_action() {
         "not Keyboard Shortcuts"
     );
 }
+
+#[test]
+fn the_sidebar_marks_variables_in_names_and_widens_from_its_edge() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Order {{user_id}}", "http://h");
+    });
+    let accent = imposter_ui::theme::palette().accent;
+    let marked = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .any(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => text.galley.job.sections.iter().any(|section| {
+                section.format.color == accent
+                    && &text.galley.job.text[section.byte_range.start.0..section.byte_range.end.0]
+                        == "{{user_id}}"
+            }),
+            _ => false,
+        });
+    assert!(marked, "the variable in the name is in the accent");
+
+    let before = app.harness.state().state.layout.sidebar_width;
+    // Over the edge, then step by step, as a pointer moves.
+    let edge = egui::pos2(before, 300.0);
+    app.harness.hover_at(edge);
+    app.harness.run_steps(1);
+    app.harness.drag_at(edge);
+    app.harness.run_steps(1);
+    for step in 1..=10_u8 {
+        app.harness
+            .hover_at(edge + egui::vec2(8.0 * f32::from(step), 0.0));
+        app.harness.run_steps(1);
+    }
+    app.harness.drop_at(edge + egui::vec2(80.0, 0.0));
+    app.harness.run_steps(2);
+    let after = app.harness.state().state.layout.sidebar_width;
+    assert!(after > before + 40.0, "{before} -> {after}");
+}
+
+#[test]
+fn an_unsaved_screen_does_not_move_the_tabs_after_it() {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                environments::set_globals(
+                    db,
+                    &[("a".to_owned(), "1".to_owned())].into_iter().collect(),
+                )
+            })
+            .unwrap();
+    });
+    click(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    let history = |app: &support::App| {
+        app.harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, "History")
+            .rect()
+    };
+    let before = history(&app);
+    type_into(&mut app.harness, "Variable 1 value", "2");
+    assert!(app.harness.state().state.variables.dirty());
+    assert_eq!(history(&app), before);
+}

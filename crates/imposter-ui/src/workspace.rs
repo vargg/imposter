@@ -68,13 +68,11 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                     };
                     // In the tone of the "Unsaved" state, so it differs from the green dot
                     // of a request tab that holds something.
-                    let unsaved = dirty.then(|| widgets::TabBadge {
-                        mark: widgets::Mark::Dot,
-                        tone: Tone::Warning,
-                        description: "Unsaved changes".to_owned(),
-                    });
-                    let tab =
-                        widgets::tab_with(ui, state.screen == screen, label, unsaved.as_ref());
+                    let tab = widgets::tab_with(ui, state.screen == screen, label, None);
+                    if dirty {
+                        // Over the tab's corner, so the tabs after it do not move.
+                        widgets::corner_dot(ui, &tab, Tone::Warning, "Unsaved changes");
+                    }
                     if tab.clicked() {
                         state.actions.push(Action::Screen(screen));
                     }
@@ -172,6 +170,17 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
             .width()
             .clamp(SIDEBAR_WIDTH.0, SIDEBAR_WIDTH.1)
             .round();
+        // A grip on the edge says the sidebar can be dragged wider, as the splits' do.
+        let edge = panel.response.rect;
+        let near = ui
+            .ctx()
+            .pointer_hover_pos()
+            .is_some_and(|p| (p.x - edge.right()).abs() < 6.0 && edge.y_range().contains(p.y));
+        let handle = Rect::from_center_size(
+            egui::pos2(edge.right(), edge.center().y),
+            vec2(6.0, edge.height()),
+        );
+        widgets::split_grip(ui, handle, true, near);
     }
     egui::CentralPanel::default()
         .frame(
@@ -665,15 +674,30 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
                         ..Default::default()
                     },
                 );
-                text.append(
-                    &request.name,
-                    4.0,
-                    egui::TextFormat {
-                        font_id: egui::FontId::proportional(13.0),
-                        color: palette().text,
-                        ..Default::default()
-                    },
-                );
+                // `{{variables}}` in a name are marked as in the editor.
+                let font = egui::FontId::proportional(13.0);
+                let mut at = 0;
+                let mut gap = 4.0;
+                let mut part = |text: &mut egui::text::LayoutJob, piece: &str, color| {
+                    if !piece.is_empty() {
+                        text.append(piece, gap, egui::TextFormat::simple(font.clone(), color));
+                        gap = 0.0;
+                    }
+                };
+                for token in crate::vars::tokens(&request.name) {
+                    part(
+                        &mut text,
+                        &request.name[at..token.range.start],
+                        palette().text,
+                    );
+                    part(
+                        &mut text,
+                        &request.name[token.range.clone()],
+                        palette().accent,
+                    );
+                    at = token.range.end;
+                }
+                part(&mut text, &request.name[at..], palette().text);
                 let response = ui.add_sized(
                     [ui.available_width(), crate::theme::spacing().row],
                     egui::Button::selectable(selected == Some(id), (text, egui::Atom::grow()))

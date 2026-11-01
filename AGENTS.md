@@ -500,8 +500,10 @@ numbers, so both are excluded. Each logical change is its own commit.
     ("+2", so it does not read as the tools' "⋯" beside it; dropped only when even the
     selected tab leaves no room) and the dot when one of them holds something, and names
     those tabs in its description. A screen with unsaved edits (Variables, Settings,
-    Mocks) has the same dot in the amber of the word "Unsaved", described as "Unsaved
-    changes": one muted "•" for both meant two things a few centimetres apart (Q16).
+    Mocks) has a dot in the amber of the word "Unsaved", described as "Unsaved
+    changes": one muted "•" for both meant two things a few centimetres apart (Q16). It is
+    painted over the tab's corner (`widgets::corner_dot`), not written into its text, so the
+    tabs after it do not move (the review's #54).
   - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
     first, then Wrap, the filter, Find and Copy. In the menu, Wrap and the filter are
     check boxes: a filled row for "on" read as the row under the pointer (Q11).
@@ -792,7 +794,7 @@ numbers, so both are excluded. Each logical change is its own commit.
 
 - **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks. Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document. Enforced by `imposter-ui/tests/editing.rs`.
 
-- **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `imposter-ui/tests/editing.rs`.
+- **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `imposter-ui/tests/editing.rs`. `{{variables}}` in a name are drawn in the accent, as in the editor, and the sidebar's edge has a grip like the splits', since it can be dragged wider (200–400 points, remembered) and nothing said so (the review's #59).
 
 - **Duplicate creates a fresh saved sibling, including current editor content when open, through the navigation guard.** Name allocation and insertion are one transaction; history stays with the original. Why: copying must neither lose edits nor overwrite an existing request. Enforced by app operation tests and `imposter-ui/tests/editing.rs`.
 
