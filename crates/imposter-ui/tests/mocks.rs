@@ -160,7 +160,7 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
         app.harness.state().state.mocks.form.routes[0].body,
         "first-kept"
     );
-    click(&mut app.harness, "Reload mocks");
+    click(&mut app.harness, "Revert to saved mocks");
     app.harness.get_by_label("Unsaved mocks");
     click(&mut app.harness, "Cancel");
     assert!(app.harness.state().state.mocks.dirty());
@@ -176,7 +176,7 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
     assert_eq!(app.harness.state().close_state(), CloseState::Open);
     assert!(app.harness.state().state.mocks.dirty());
     app.harness.get_by_label("Save failed");
-    click(&mut app.harness, "Reload mocks");
+    click(&mut app.harness, "Revert to saved mocks");
     click(&mut app.harness, "Discard");
     settle(&mut app.harness);
     assert_eq!(app.harness.state().state.mocks.form.routes[0].body, "first");
@@ -217,8 +217,8 @@ fn occupied_ports_report_an_error_and_mock_controls_fit_the_minimum_window() {
             "Save mocks",
             "Mock port",
             "Start mock server",
-            "Reload mocks",
-            "Mock method",
+            "Revert to saved mocks",
+            "HTTP method",
             "Mock path",
         ] {
             assert!(
@@ -276,7 +276,7 @@ fn route_editing_validation_two_click_removal_and_save_shortcut() {
     assert_eq!(app.harness.state().state.mocks.form.routes.len(), 2);
     click(&mut app.harness, "Click again to remove mock route");
     assert_eq!(app.harness.state().state.mocks.form.routes.len(), 1);
-    click(&mut app.harness, "Reload mocks");
+    click(&mut app.harness, "Revert to saved mocks");
     click(&mut app.harness, "Save");
     settle(&mut app.harness);
     assert!(!app.harness.state().state.mocks.dirty());
@@ -301,7 +301,7 @@ fn pending_reload_disables_fields_until_the_database_reply_arrives() {
             .unwrap();
     });
     entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    click(&mut app.harness, "Reload mocks");
+    click(&mut app.harness, "Revert to saved mocks");
     let port_disabled = app
         .harness
         .get_by_label("Mock port")
@@ -353,4 +353,84 @@ fn route_problems_show_beside_their_fields_while_typing() {
     click(&mut app.harness, "Add mock route");
     app.harness
         .get_by_label("Another enabled route already answers GET /");
+}
+
+#[test]
+fn the_server_state_reads_in_words_and_its_controls_stay_put() {
+    let mut app = opened(0);
+    // Port 0 picks a free port: it reads "auto".
+    assert_eq!(
+        app.harness
+            .get_by_label("Mock port")
+            .accesskit_node()
+            .value()
+            .as_deref(),
+        Some("auto")
+    );
+    app.harness.get_by_label("Stopped");
+    let start_at = app.harness.get_by_label("Start mock server").rect();
+    start(&mut app);
+    let url = address(&app);
+    app.harness.get_by_label(&format!("Running at {url}"));
+    let stop_at = app.harness.get_by_label("Stop mock server").rect();
+    assert!(
+        (stop_at.left() - start_at.left()).abs() < 0.5,
+        "Start and Stop share a place: {start_at:?} {stop_at:?}"
+    );
+    app.harness.get_by_label("Copy mock server URL").click();
+    app.harness.step();
+    let copied: Vec<String> = app
+        .harness
+        .output()
+        .platform_output
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(copied, [url]);
+    click(&mut app.harness, "Stop mock server");
+    wait_for(&mut app, |app| app.state.mocks.run.is_none());
+}
+
+#[test]
+fn routes_are_a_list_beside_the_selected_routes_editor() {
+    let mut app = opened(0);
+    let row = app.harness.get_by_label("Mock route 1").rect();
+    // The first route is open without a click.
+    let path = support::text_input(&app.harness, "Mock path").rect();
+    assert!(path.left() > row.right(), "the editor is beside the list");
+    // The method is picked from the list, as in the request bar.
+    click(&mut app.harness, "HTTP method");
+    click(&mut app.harness, "POST");
+    assert_eq!(
+        app.harness.state().state.mocks.form.routes[0].method,
+        "POST"
+    );
+    // A route with a problem is marked in the list, and screen readers hear why.
+    type_into(&mut app.harness, "Mock path", " bad");
+    let marked = app.harness.output().shapes.iter().any(|clipped| {
+        matches!(&clipped.shape, egui::Shape::Text(text) if text.galley.job.text.contains('⚠'))
+    });
+    assert!(marked, "a broken route is marked");
+    let description = app
+        .harness
+        .get_by_label("Mock route 1")
+        .accesskit_node()
+        .description();
+    assert!(
+        description
+            .as_deref()
+            .is_some_and(|d| d.contains("problem")),
+        "{description:?}"
+    );
+    // Deleting takes two clicks.
+    click(&mut app.harness, "Remove mock route");
+    assert_eq!(app.harness.state().state.mocks.form.routes.len(), 1);
+    click(&mut app.harness, "Click again to remove mock route");
+    assert_eq!(app.harness.state().state.mocks.form.routes.len(), 0);
+    app.harness
+        .get_by_label("Add a route to answer requests with a fixed response.");
 }

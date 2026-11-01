@@ -42,6 +42,8 @@ pub struct MockScreen {
     pub run: Option<Run>,
     pub(crate) generation: u64,
     selected: Option<usize>,
+    /// A custom method being typed for the selected route.
+    custom_method: Option<String>,
 }
 
 impl MockScreen {
@@ -92,12 +94,114 @@ fn problem_lines(ui: &mut Ui, problems: &[RouteProblem], route: usize, field: Ro
     }
 }
 
+/// The routes list's width beside the selected route's editor.
+const LIST_WIDTH: f32 = 260.0;
+
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let screen = &mut state.mocks;
     let mut edited = false;
     // Checked every frame, so a problem shows while it is typed, not only on Save.
     let problems = screen.form.problems();
+    let mut actions = Vec::new();
+    header(ui, screen, &problems, &mut edited, &mut actions);
+    if let Some(notice) = &screen.notice {
+        ui.label(notice);
+    }
+    ui.add_space(6.0);
+    let loaded = screen.loaded() && !screen.loading;
+    ui.add_enabled_ui(loaded, |ui| {
+        let area = ui.available_rect_before_wrap();
+        let list_width = LIST_WIDTH.min(area.width() * 0.4);
+        let list = egui::Rect::from_min_size(area.min, egui::vec2(list_width, area.height()));
+        let editor =
+            egui::Rect::from_min_max(egui::pos2(list.right() + 12.0, area.top()), area.max);
+        ui.scope_builder(
+            egui::UiBuilder::new().max_rect(list).id_salt("mock routes"),
+            |ui| {
+                edited |= routes(ui, screen, &problems);
+            },
+        );
+        ui.painter().vline(
+            list.right() + 6.0,
+            area.y_range(),
+            egui::Stroke::new(1.0, palette().border),
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(editor)
+                .id_salt("mock route"),
+            |ui| {
+                edited |= route_editor(ui, screen, &problems);
+            },
+        );
+        ui.allocate_rect(area, egui::Sense::hover());
+    });
+    if edited {
+        actions.push(Action::Mock(MockAction::Edited));
+    }
+    state.actions.extend(actions);
+}
+
+/// The server's controls first, so they never move, then its state in words: "● Stopped",
+/// or "● Running at `http://127.0.0.1:62543`" with a copy button. Revert and Save at the right.
+fn header(
+    ui: &mut Ui,
+    screen: &mut MockScreen,
+    problems: &[RouteProblem],
+    edited: &mut bool,
+    actions: &mut Vec<Action>,
+) {
     ui.horizontal(|ui| {
+        ui.label(widgets::tone_text("Port", Tone::Muted));
+        let editable = screen.loaded() && !screen.loading;
+        let port = ui
+            .add_enabled(
+                editable,
+                egui::DragValue::new(&mut screen.form.port)
+                    .range(0..=65535)
+                    .custom_formatter(|port, _| {
+                        if port == 0.0 {
+                            "auto".to_owned()
+                        } else {
+                            format!("{port}")
+                        }
+                    }),
+            )
+            .on_hover_text("auto: a free port chosen when the server starts");
+        widgets::name(&port, "Mock port");
+        *edited |= port.changed();
+        if let Some(run) = &screen.run {
+            if ui
+                .add_enabled(!run.stopping, egui::Button::new("Stop mock server"))
+                .clicked()
+            {
+                actions.push(Action::Mock(MockAction::Stop));
+            }
+        } else {
+            let start = ui
+                .add_enabled(
+                    screen.loaded()
+                        && !screen.dirty()
+                        && !screen.saving
+                        && !screen.loading
+                        && problems.is_empty(),
+                    egui::Button::new(
+                        egui::RichText::new("Start mock server").color(palette().on_accent),
+                    )
+                    .fill(palette().accent),
+                )
+                .on_disabled_hover_text(match problems.first() {
+                    Some(problem) => {
+                        format!("Fix route {} first: {}", problem.route + 1, problem.reason)
+                    }
+                    None => "Save changes before starting".to_owned(),
+                });
+            if start.clicked() {
+                actions.push(Action::Mock(MockAction::Start));
+            }
+        }
+        ui.add_space(8.0);
+        server_state(ui, screen);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let status = SaveStatus {
                 text: if screen.saving {
@@ -125,212 +229,268 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 enabled: screen.loaded() && screen.dirty() && !screen.saving && !screen.loading,
             };
             if widgets::save_controls(ui, &status, "Save mocks") {
-                state.actions.push(Action::Save);
+                actions.push(Action::Save);
+            }
+            let revert = ui
+                .add_enabled_ui(!screen.saving && !screen.loading, |ui| {
+                    crate::icons::button(
+                        ui,
+                        crate::icons::Icon::Revert,
+                        "Revert to saved mocks",
+                        false,
+                    )
+                })
+                .inner;
+            if revert.clicked() {
+                actions.push(Action::Mock(MockAction::Reload));
             }
         });
     });
-    ui.horizontal_wrapped(|ui| {
-        ui.label("127.0.0.1");
-        let editable = screen.loaded() && !screen.loading;
-        let port = ui.add_enabled(
-            editable,
-            egui::DragValue::new(&mut screen.form.port)
-                .range(0..=65535)
-                .prefix("Port "),
-        );
-        widgets::name(&port, "Mock port");
-        edited |= port.changed();
-        if let Some(run) = &screen.run {
-            if ui
-                .add_enabled(!run.stopping, egui::Button::new("Stop mock server"))
-                .clicked()
-            {
-                state.actions.push(Action::Mock(MockAction::Stop));
-            }
-            ui.label(if run.stopping {
-                "Stopping…"
-            } else {
-                run.address.as_deref().unwrap_or("Starting…")
-            });
-            if screen
-                .baseline
-                .as_ref()
-                .is_some_and(|base| *base != run.config)
-            {
-                ui.label("Restart to apply");
-            }
-        } else if ui
-            .add_enabled(
-                screen.loaded()
-                    && !screen.dirty()
-                    && !screen.saving
-                    && !screen.loading
-                    && problems.is_empty(),
-                egui::Button::new("Start mock server"),
-            )
-            .on_disabled_hover_text(match problems.first() {
-                Some(problem) => {
-                    format!("Fix route {} first: {}", problem.route + 1, problem.reason)
-                }
-                None => "Save changes before starting".to_owned(),
-            })
+}
+
+/// Whether the server runs, where, and whether it serves what is saved.
+fn server_state(ui: &mut Ui, screen: &MockScreen) {
+    let (dot, text) = match &screen.run {
+        None => (palette().text_muted, "Stopped".to_owned()),
+        Some(run) if run.stopping => (palette().warning, "Stopping…".to_owned()),
+        Some(run) => match &run.address {
+            Some(address) => (palette().ok, format!("Running at {address}")),
+            None => (palette().warning, "Starting…".to_owned()),
+        },
+    };
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+    ui.painter().circle_filled(rect.center(), 4.0, dot);
+    ui.add(egui::Label::new(text).truncate());
+    if let Some(address) = screen.run.as_ref().and_then(|run| run.address.as_deref())
+        && crate::icons::button(ui, crate::icons::Icon::Copy, "Copy mock server URL", false)
             .clicked()
-        {
-            state.actions.push(Action::Mock(MockAction::Start));
-        }
-        if ui
-            .add_enabled(
-                !screen.saving && !screen.loading,
-                egui::Button::new("Reload mocks"),
-            )
-            .clicked()
-        {
-            state.actions.push(Action::Mock(MockAction::Reload));
-        }
-    });
-    if let Some(notice) = &screen.notice {
-        ui.label(notice);
+    {
+        ui.ctx().copy_text(address.to_owned());
     }
-    ui.separator();
-    let loaded = screen.loaded() && !screen.loading;
-    ui.add_enabled_ui(loaded, |ui| {
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for (index, route) in screen.form.routes.iter().enumerate() {
-                    let text = format!(
-                        "{} {}{}",
-                        route.method,
-                        route.path,
-                        if route.enabled { "" } else { " (disabled)" }
-                    );
-                    let text = if problems.iter().any(|p| p.route == index) {
-                        widgets::tone_text(text, Tone::Error)
-                    } else {
-                        egui::RichText::new(text)
-                    };
-                    let response = ui.add(
-                        egui::Button::selectable(screen.selected == Some(index), text).truncate(),
-                    );
-                    widgets::name(&response, &format!("Mock route {}", index + 1));
-                    if response.clicked() {
-                        screen.selected = Some(index);
-                    }
-                }
-                if ui.button("Add mock route").clicked() {
-                    screen.form.routes.push(MockRoute::default());
-                    screen.selected = Some(screen.form.routes.len() - 1);
-                    edited = true;
-                }
-                let Some(index) = screen
-                    .selected
-                    .filter(|index| *index < screen.form.routes.len())
-                else {
-                    return;
-                };
-                let route = &mut screen.form.routes[index];
-                ui.separator();
-                let mut remove = false;
+    if let Some(run) = &screen.run
+        && screen
+            .baseline
+            .as_ref()
+            .is_some_and(|base| *base != run.config)
+    {
+        ui.label(widgets::tone_text("Restart to apply", Tone::Warning));
+    }
+}
+
+/// The routes, one row each: enabled, method in its color, path, status; a route with a
+/// problem is marked. Returns whether anything changed.
+fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bool {
+    let mut edited = false;
+    let height = crate::theme::spacing().row;
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, true])
+        .max_height(ui.available_height() - 40.0)
+        .show(ui, |ui| {
+            if screen.form.routes.is_empty() {
+                ui.label(widgets::tone_text("No routes yet", Tone::Muted));
+            }
+            for (index, route) in screen.form.routes.iter_mut().enumerate() {
+                let selected = screen.selected == Some(index);
+                let broken = problems.iter().any(|p| p.route == index);
                 ui.horizontal(|ui| {
-                    edited |= ui.checkbox(&mut route.enabled, "Route enabled").changed();
-                    ui.label("Status");
-                    let response = ui.add(egui::DragValue::new(&mut route.status).range(200..=599));
-                    widgets::name(&response, "Mock response status");
-                    edited |= response.changed();
-                    problem_lines(ui, &problems, index, RouteField::Status);
-                    remove = widgets::remove_button(
+                    let enabled = ui.add(egui::Checkbox::without_text(&mut route.enabled));
+                    widgets::name(&enabled, &format!("Mock route {} enabled", index + 1));
+                    edited |= enabled.changed();
+                    let mono = egui::TextStyle::Monospace.resolve(ui.style());
+                    let body = egui::TextStyle::Body.resolve(ui.style());
+                    let mut job = egui::text::LayoutJob::default();
+                    let muted = !route.enabled;
+                    let fade =
+                        |color: egui::Color32| if muted { palette().text_muted } else { color };
+                    job.append(
+                        &format!("{:<7}", route.method),
+                        0.0,
+                        egui::TextFormat::simple(
+                            mono.clone(),
+                            fade(crate::theme::method_color(&route.method)),
+                        ),
+                    );
+                    job.append(
+                        &route.path,
+                        0.0,
+                        egui::TextFormat::simple(mono, fade(palette().text)),
+                    );
+                    let status = if broken {
+                        ("  ⚠".to_owned(), palette().error)
+                    } else {
+                        (format!("  {}", route.status), palette().text_muted)
+                    };
+                    let row = ui.add_sized(
+                        [ui.available_width(), height],
+                        egui::Button::selectable(
+                            selected,
+                            (
+                                job,
+                                egui::Atom::grow(),
+                                egui::RichText::new(status.0).font(body).color(status.1),
+                            ),
+                        )
+                        .stroke(egui::Stroke::NONE)
+                        .truncate(),
+                    );
+                    if selected {
+                        widgets::selection_bar(ui, row.rect);
+                    }
+                    widgets::name(&row, &format!("Mock route {}", index + 1));
+                    let row = if broken {
+                        row.on_hover_text("This route has a problem; select it to see what")
+                    } else {
+                        row
+                    };
+                    if row.clicked() {
+                        screen.selected = Some(index);
+                        screen.custom_method = None;
+                    }
+                });
+            }
+        });
+    let add = ui.button("+ Add route");
+    widgets::name(&add, "Add mock route");
+    if add.clicked() {
+        screen.form.routes.push(MockRoute::default());
+        screen.selected = Some(screen.form.routes.len() - 1);
+        screen.custom_method = None;
+        edited = true;
+    }
+    edited
+}
+
+/// The selected route: method and path, status, headers, body, and Delete route.
+fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bool {
+    let mut edited = false;
+    // The first route is open until another is chosen, so the editor is never idle.
+    if screen.selected.is_none() && !screen.form.routes.is_empty() {
+        screen.selected = Some(0);
+    }
+    let Some(index) = screen
+        .selected
+        .filter(|index| *index < screen.form.routes.len())
+    else {
+        ui.add_space(16.0);
+        ui.vertical_centered(|ui| {
+            ui.label(widgets::tone_text(
+                if screen.form.routes.is_empty() {
+                    "Add a route to answer requests with a fixed response."
+                } else {
+                    "Select a route to edit its response."
+                },
+                Tone::Muted,
+            ));
+        });
+        return false;
+    };
+    let invalid = |field| {
+        problems
+            .iter()
+            .any(|p| p.route == index && p.field == field)
+    };
+    let mut remove = false;
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            let route = &mut screen.form.routes[index];
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("Route {}", index + 1))
+                        .font(crate::theme::semibold(15.0)),
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    remove = widgets::delete_button(
                         ui,
                         ui.scope_id().with(("route", index)),
                         "mock route",
-                        24.0,
+                        "Delete route",
                     );
                 });
-                let invalid = |field| {
-                    problems
-                        .iter()
-                        .any(|p| p.route == index && p.field == field)
-                };
-                ui.horizontal(|ui| {
-                    edited |= checked_text(
-                        ui,
-                        "Mock method",
-                        &mut route.method,
-                        85.0,
-                        invalid(RouteField::Method),
-                    );
-                    edited |= checked_text(
-                        ui,
-                        "Mock path",
-                        &mut route.path,
-                        ui.available_width(),
-                        invalid(RouteField::Path) || invalid(RouteField::Route),
-                    );
-                });
-                for field in [RouteField::Method, RouteField::Path, RouteField::Route] {
-                    problem_lines(ui, &problems, index, field);
-                }
-                ui.label("Response headers");
-                let mut remove_header = None;
-                ui.push_id(("mock headers", index), |ui| {
-                    for (row, header) in route.headers.iter_mut().enumerate() {
-                        ui.push_id(row, |ui| {
-                            ui.horizontal(|ui| {
-                                let response = ui.checkbox(&mut header.is_enabled, "");
-                                widgets::name(
-                                    &response,
-                                    &format!("Mock header {} enabled", row + 1),
-                                );
-                                edited |= response.changed();
-                                edited |= text(
-                                    ui,
-                                    &format!("Mock header {} name", row + 1),
-                                    &mut header.name,
-                                    160.0,
-                                );
-                                edited |= text(
-                                    ui,
-                                    &format!("Mock header {} value", row + 1),
-                                    &mut header.value,
-                                    (ui.available_width() - 40.0).max(80.0),
-                                );
-                                if widgets::remove_button(
-                                    ui,
-                                    ui.scope_id().with("remove"),
-                                    &format!("mock header {}", row + 1),
-                                    24.0,
-                                ) {
-                                    remove_header = Some(row);
-                                }
-                            });
-                            problem_lines(ui, &problems, index, RouteField::Header(row));
-                        });
-                    }
-                });
-                if let Some(row) = remove_header {
-                    route.headers.remove(row);
-                    edited = true;
-                }
-                if ui.button("Add mock header").clicked() {
-                    route.headers.push(ParamItem::new("", ""));
-                    edited = true;
-                }
-                ui.label("Response body");
-                let response = ui.add(
-                    egui::TextEdit::multiline(&mut route.body)
-                        .font(egui::TextStyle::Monospace)
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(10),
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let picker =
+                    widgets::method_picker(ui, &mut route.method, &mut screen.custom_method);
+                edited |= picker;
+                edited |= checked_text(
+                    ui,
+                    "Mock path",
+                    &mut route.path,
+                    ui.available_width(),
+                    invalid(RouteField::Path) || invalid(RouteField::Route),
                 );
-                widgets::name(&response, "Mock response body");
+            });
+            for field in [RouteField::Method, RouteField::Path, RouteField::Route] {
+                problem_lines(ui, problems, index, field);
+            }
+            ui.horizontal(|ui| {
+                edited |= ui.checkbox(&mut route.enabled, "Enabled").changed();
+                ui.add_space(12.0);
+                ui.label("Status");
+                let response = ui.add(egui::DragValue::new(&mut route.status).range(200..=599));
+                widgets::name(&response, "Mock response status");
                 edited |= response.changed();
-                if remove {
-                    screen.form.routes.remove(index);
-                    screen.selected = None;
-                    edited = true;
+            });
+            problem_lines(ui, problems, index, RouteField::Status);
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("Response headers").font(crate::theme::semibold(13.0)));
+            let mut remove_header = None;
+            ui.push_id(("mock headers", index), |ui| {
+                for (row, header) in route.headers.iter_mut().enumerate() {
+                    ui.push_id(row, |ui| {
+                        ui.horizontal(|ui| {
+                            let response = ui.checkbox(&mut header.is_enabled, "");
+                            widgets::name(&response, &format!("Mock header {} enabled", row + 1));
+                            edited |= response.changed();
+                            edited |= text(
+                                ui,
+                                &format!("Mock header {} name", row + 1),
+                                &mut header.name,
+                                160.0_f32.min(ui.available_width() * 0.35),
+                            );
+                            edited |= text(
+                                ui,
+                                &format!("Mock header {} value", row + 1),
+                                &mut header.value,
+                                (ui.available_width() - 40.0).max(80.0),
+                            );
+                            if widgets::remove_button(
+                                ui,
+                                ui.scope_id().with("remove"),
+                                &format!("mock header {}", row + 1),
+                                24.0,
+                            ) {
+                                remove_header = Some(row);
+                            }
+                        });
+                        problem_lines(ui, problems, index, RouteField::Header(row));
+                    });
                 }
             });
-    });
-    if edited {
-        state.actions.push(Action::Mock(MockAction::Edited));
+            if let Some(row) = remove_header {
+                route.headers.remove(row);
+                edited = true;
+            }
+            if ui.button("Add mock header").clicked() {
+                route.headers.push(ParamItem::new("", ""));
+                edited = true;
+            }
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("Response body").font(crate::theme::semibold(13.0)));
+            let response = ui.add(
+                egui::TextEdit::multiline(&mut route.body)
+                    .code_editor()
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(10),
+            );
+            widgets::name(&response, "Mock response body");
+            edited |= response.changed();
+        });
+    if remove {
+        screen.form.routes.remove(index);
+        screen.selected = None;
+        edited = true;
     }
+    edited
 }

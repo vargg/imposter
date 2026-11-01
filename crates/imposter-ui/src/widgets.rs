@@ -1363,17 +1363,42 @@ pub const REMOVE_ARMED_SECONDS: f64 = 3.0;
 /// remove …"). It disarms after [`REMOVE_ARMED_SECONDS`] or once the pointer is somewhere
 /// else outside it. Returns whether to remove now.
 pub fn remove_button(ui: &mut Ui, id: egui::Id, what: &str, height: f32) -> bool {
+    two_click(ui, id, what, height, None)
+}
+
+/// [`remove_button`] with words ("Delete route") instead of ×, in red text, for removing a
+/// whole thing rather than a row.
+pub fn delete_button(ui: &mut Ui, id: egui::Id, what: &str, text: &str) -> bool {
+    let height = ui.spacing().interact_size.y;
+    two_click(ui, id, what, height, Some(text))
+}
+
+fn two_click(ui: &mut Ui, id: egui::Id, what: &str, height: f32, text: Option<&str>) -> bool {
     let (now, pointer) = ui.input(|i| (i.time, i.pointer.latest_pos()));
     // When it was armed, and where the pointer was then.
     let armed_at: Option<(f64, Option<egui::Pos2>)> = ui.data(|d| d.get_temp(id));
     let armed = armed_at.is_some_and(|(at, _)| now - at < REMOVE_ARMED_SECONDS);
-    let button = if armed {
-        egui::Button::new(RichText::new("×").strong().color(palette().error))
-            .stroke(egui::Stroke::new(1.0, palette().error))
-    } else {
-        egui::Button::new("×")
+    let response = match text {
+        None => {
+            let button = if armed {
+                egui::Button::new(RichText::new("×").strong().color(palette().error))
+                    .stroke(egui::Stroke::new(1.0, palette().error))
+            } else {
+                egui::Button::new("×")
+            };
+            ui.add_sized([24.0, height], button)
+        }
+        Some(text) => {
+            let shown = if armed { "Click again" } else { text };
+            let button = egui::Button::new(RichText::new(shown).color(palette().error));
+            let button = if armed {
+                button.stroke(egui::Stroke::new(1.0, palette().error))
+            } else {
+                button
+            };
+            ui.add(button)
+        }
     };
-    let response = ui.add_sized([24.0, height], button);
     let label = if armed {
         format!("Click again to remove {what}")
     } else {
