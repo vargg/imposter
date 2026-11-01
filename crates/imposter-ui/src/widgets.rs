@@ -1401,7 +1401,12 @@ fn two_click(ui: &mut Ui, id: egui::Id, what: &str, height: f32, text: Option<&s
             } else {
                 egui::Button::new("×")
             };
-            ui.add_sized([24.0, height], button)
+            // 24 points in every density: tables reserve exactly that for it.
+            ui.scope(|ui| {
+                ui.spacing_mut().button_padding.x = 4.0;
+                ui.add_sized([24.0, height], button)
+            })
+            .inner
         }
         Some(text) => {
             let shown = if armed { "Click again" } else { text };
@@ -1652,7 +1657,7 @@ pub fn multipart_table(
 }
 
 /// The auth form's label column, so fields line up whatever the label.
-const AUTH_LABELS: f32 = 90.0;
+const AUTH_LABELS: f32 = 76.0;
 
 pub fn auth_form(ui: &mut Ui, auth: &mut AuthForm, vars: &mut VarUi) -> bool {
     let mut changed = false;
@@ -1714,7 +1719,7 @@ fn secret_edit(ui: &mut Ui, text: &mut String, label: &str, width: f32, vars: &m
         .horizontal(|ui| {
             let eye = icons::size() + ui.spacing().item_spacing.x;
             let changed =
-                var_edit(ui, text, label, (width - eye).max(80.0), !shown, vars).changed();
+                var_edit(ui, text, label, (width - eye).max(40.0), !shown, vars).changed();
             let (icon, action) = if shown {
                 (Icon::EyeOff, format!("Hide {}", label.to_lowercase()))
             } else {

@@ -163,11 +163,13 @@ fn argument_field(
     if let Selector::Header(argument) | Selector::Json(argument) = selector {
         let field = ui.add_sized(
             [width, height],
-            egui::TextEdit::singleline(argument).hint_text(if header {
-                "Content-Type"
-            } else {
-                "$.items[0].id"
-            }),
+            egui::TextEdit::singleline(argument)
+                .desired_width(width)
+                .hint_text(if header {
+                    "Content-Type"
+                } else {
+                    "$.items[0].id"
+                }),
         );
         let what = if header { "header name" } else { "JSON path" };
         name(&field, &format!("{row} {what}"));
@@ -229,11 +231,13 @@ fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool 
     let mut changed = false;
     let mut remove = None;
     let spacing = ui.spacing().item_spacing.x;
+    // A check box is as wide as a control, which a denser layout makes 24.
+    let checkbox = CHECKBOX.max(ui.spacing().interact_size.y);
     let height = ui.spacing().interact_size.y;
     let width = ui.available_width();
-    let indent = CHECKBOX + spacing;
-    let one = CHECKBOX + SOURCE_WIDTH + OP_WIDTH + REMOVE + 5.0 * spacing + 2.0 * MIN_FIELD;
-    let two = CHECKBOX + SOURCE_WIDTH + REMOVE + 3.0 * spacing + MIN_FIELD;
+    let indent = checkbox + spacing;
+    let one = checkbox + SOURCE_WIDTH + OP_WIDTH + REMOVE + 5.0 * spacing + 2.0 * MIN_FIELD;
+    let two = checkbox + SOURCE_WIDTH + REMOVE + 3.0 * spacing + MIN_FIELD;
     let lines = if width >= one {
         Lines::One
     } else if width >= two {
@@ -251,19 +255,16 @@ fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool 
         }
         Lines::Two => (
             SOURCE_WIDTH,
-            width - CHECKBOX - SOURCE_WIDTH - REMOVE - 3.0 * spacing,
+            width - checkbox - SOURCE_WIDTH - REMOVE - 3.0 * spacing,
             OP_WIDTH,
             (rest - OP_WIDTH - spacing).max(MIN_FIELD),
         ),
-        Lines::Stacked => {
-            let op = (rest * 0.45).floor().min(OP_WIDTH);
-            (
-                width - CHECKBOX - REMOVE - 2.0 * spacing,
-                rest,
-                op,
-                (rest - op - spacing).max(48.0),
-            )
-        }
+        Lines::Stacked => (
+            width - checkbox - REMOVE - 2.0 * spacing,
+            rest,
+            rest.min(OP_WIDTH),
+            rest,
+        ),
     };
     if checks.is_empty() {
         ui.label(tone_text(
@@ -273,16 +274,35 @@ fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool 
     }
     for (index, check) in checks.iter_mut().enumerate() {
         let row = format!("Check {}", index + 1);
-        let mut comparison = |ui: &mut Ui, changed: &mut bool| {
-            let combo = egui::ComboBox::from_id_salt(("check op", index))
-                .width(op_width)
-                .selected_text(check.op.label())
-                .show_ui(ui, |ui| {
-                    for op in Op::ALL {
-                        *changed |= ui.selectable_value(&mut check.op, op, op.label()).changed();
-                    }
-                });
-            name(&combo.response, &format!("{row} operator"));
+        // The operator and the expected value; `op` and `value` say which to draw, as a
+        // stacked row puts each on a line of its own.
+        // Read before the row draws; a changed operator shows its value line next frame.
+        let takes_value = check.op.takes_value();
+        let mut comparison = |ui: &mut Ui, changed: &mut bool, op: bool, value: bool| {
+            if op {
+                let combo = egui::ComboBox::from_id_salt(("check op", index))
+                    .width(op_width)
+                    .selected_text(check.op.label())
+                    .show_ui(ui, |ui| {
+                        for op in Op::ALL {
+                            *changed |=
+                                ui.selectable_value(&mut check.op, op, op.label()).changed();
+                        }
+                    });
+                name(&combo.response, &format!("{row} operator"));
+            }
+            if !value {
+                return;
+            }
+            // The last field takes what the line has left, however wide the operator's
+            // picker grew for a long label ("does not contain").
+            let left = ui.available_width()
+                - if lines == Lines::One {
+                    REMOVE + ui.spacing().item_spacing.x
+                } else {
+                    0.0
+                };
+            let expected_width = left.min(expected_width).max(48.0);
             if check.op.takes_value() {
                 *changed |= widgets::var_edit(
                     ui,
@@ -299,7 +319,7 @@ fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool 
         };
         line(ui, 0.0, |ui| {
             let enabled = ui.add_sized(
-                [CHECKBOX, height],
+                [checkbox, height],
                 egui::Checkbox::without_text(&mut check.enabled),
             );
             name(&enabled, &format!("{row} enabled"));
@@ -315,7 +335,7 @@ fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool 
                 changed |= argument_field(ui, &row, &mut check.selector, path_width, true);
             }
             if lines == Lines::One {
-                comparison(ui, &mut changed);
+                comparison(ui, &mut changed, true, true);
             }
             let what = row.to_lowercase();
             if remove_button(ui, egui::Id::unique(("remove check", index)), &what, height) {
@@ -328,7 +348,14 @@ fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool 
             });
         }
         if lines != Lines::One {
-            line(ui, indent, |ui| comparison(ui, &mut changed));
+            if lines == Lines::Stacked {
+                line(ui, indent, |ui| comparison(ui, &mut changed, true, false));
+                if takes_value {
+                    line(ui, indent, |ui| comparison(ui, &mut changed, false, true));
+                }
+            } else {
+                line(ui, indent, |ui| comparison(ui, &mut changed, true, true));
+            }
             ui.add_space(6.0);
         }
     }
@@ -393,17 +420,19 @@ fn captures_table(
     let mut changed = false;
     let mut remove = None;
     let spacing = ui.spacing().item_spacing.x;
+    // A check box is as wide as a control, which a denser layout makes 24.
+    let checkbox = CHECKBOX.max(ui.spacing().interact_size.y);
     let height = ui.spacing().interact_size.y;
     let width = ui.available_width();
-    let indent = CHECKBOX + spacing;
-    let one = CHECKBOX
+    let indent = checkbox + spacing;
+    let one = checkbox
         + VARIABLE_WIDTH
         + TARGET_WIDTH
         + SOURCE_WIDTH
         + REMOVE
         + 5.0 * spacing
         + MIN_FIELD;
-    let two = CHECKBOX + MIN_FIELD + TARGET_WIDTH + REMOVE + 3.0 * spacing;
+    let two = checkbox + MIN_FIELD + TARGET_WIDTH + REMOVE + 3.0 * spacing;
     let lines = if width >= one {
         Lines::One
     } else if width >= two {
@@ -415,11 +444,11 @@ fn captures_table(
     let (variable_width, source_width, path_width) = match lines {
         Lines::One => (VARIABLE_WIDTH, SOURCE_WIDTH, width - one + MIN_FIELD),
         Lines::Two => (
-            width - CHECKBOX - TARGET_WIDTH - REMOVE - 3.0 * spacing,
+            width - checkbox - TARGET_WIDTH - REMOVE - 3.0 * spacing,
             SOURCE_WIDTH,
             (rest - SOURCE_WIDTH - spacing).max(MIN_FIELD),
         ),
-        Lines::Stacked => (width - CHECKBOX - REMOVE - 2.0 * spacing, rest, rest),
+        Lines::Stacked => (width - checkbox - REMOVE - 2.0 * spacing, rest, rest),
     };
     if captures.is_empty() {
         ui.label(tone_text(
@@ -448,7 +477,7 @@ fn captures_table(
         };
         line(ui, 0.0, |ui| {
             let enabled = ui.add_sized(
-                [CHECKBOX, height],
+                [checkbox, height],
                 egui::Checkbox::without_text(&mut capture.enabled),
             );
             name(&enabled, &format!("{row} enabled"));

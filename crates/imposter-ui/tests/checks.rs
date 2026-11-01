@@ -398,8 +398,8 @@ fn checks_stack_in_a_narrow_pane() {
     let app = &mut fixture.app;
     app.harness.set_size(imposter_ui::layout::MIN_WINDOW.into());
     tests_tab(app);
-    // What to read, then its path, then the comparison, each on its own line, all ending
-    // at the remove button's right edge.
+    // What to read, its path, the operator and the expected value, each on its own line,
+    // all ending at the remove button's right edge.
     let source = rect(app, "Check 2 source");
     let path = rect(app, "Check 2 JSON path");
     let op = rect(app, "Check 2 operator");
@@ -409,7 +409,7 @@ fn checks_stack_in_a_narrow_pane() {
         source.bottom() <= path.top() && path.bottom() <= op.top(),
         "{source:?} {path:?} {op:?}"
     );
-    assert!((op.center().y - expected.center().y).abs() < 1.0);
+    assert!(op.bottom() <= expected.top(), "{op:?} {expected:?}");
     for (what, r) in [("path", path), ("expected", expected)] {
         assert!(
             (r.right() - remove.right()).abs() < 1.5,

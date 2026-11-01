@@ -123,6 +123,32 @@ fn problems(app: &support::App, state: &str) -> Vec<String> {
     if app.harness.state().state.dialog.is_some() || egui::Popup::is_any_open(&app.harness.ctx) {
         return found;
     }
+    // Inside a pane card a control stays within its sides: the pane clips what runs past,
+    // which the window's edges cannot show (the Auth tab at 720 points).
+    let panes: Vec<Rect> = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(frame)
+                if frame.stroke.color == imposter_ui::theme::palette().border
+                    && frame.corner_radius == egui::CornerRadius::same(12) =>
+            {
+                Some(frame.rect)
+            }
+            _ => None,
+        })
+        .collect();
+    for (role, label, rect) in &controls {
+        if let Some(pane) = panes.iter().find(|pane| pane.contains(rect.center()))
+            && (rect.left() < pane.left() - 0.5 || rect.right() > pane.right() + 0.5)
+        {
+            found.push(format!(
+                "{state}: {role:?} {label:?} runs past its pane {pane:?}: {rect:?}"
+            ));
+        }
+    }
     let buttons: Vec<&(Role, String, Rect)> = controls
         .iter()
         .filter(|(role, _, _)| *role == Role::Button)

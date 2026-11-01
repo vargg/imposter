@@ -367,7 +367,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
     walks the screens, a sent response, a History run and the dialogs.
   - **Widths:** no visible control, and no outlined frame (panes, groups, cards, read
-    from the painted shapes), may run past the window's sides.
+    from the painted shapes), may run past the window's sides; a control inside a pane
+    card may not run past the card's sides, which clip it unseen (the Auth tab's eye at
+    720 points, Phase 6 review Q27).
   - **Overlap:** no two buttons may overlap, and no text label may run into a button
     (a long "500 Internal Server Error" into the Runs menu). This is checked only without a dialog open,
     since a dialog is a layer above.
@@ -689,7 +691,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   the same cells, and a source without a path (status, body, duration, size) or an
   operator without a value leaves its cell empty, so the columns stay put. By the pane's
   width a row takes one line, two (what to read, then the comparison), or one line per
-  part, as at 720 points with the sidebar shown. The sections are "Checks" and "Captures"
+  part, as at 720 points with the sidebar shown. The last field of a line takes what the
+  line has left when drawn, since a picker grows past its width for a long label ("does not
+  contain"), and the check box is as wide as a control in the density. The sections are "Checks" and "Captures"
   ("Add capture"), and each capture shows the scope it writes to ("→ Dev"), computed as the
   executor does: the defining scope, else the active environment, else Global. Why:
   operators jumped between rows, a narrow pane stacked five lines per check with fields cut
