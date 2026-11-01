@@ -377,7 +377,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   a token only inspects it) and can be chosen by keyboard or pointer. Values appear only in the inspector, opened explicitly (click on a token
   or Alt+Enter); from a password field they stay masked until "Reveal". The inspector and
   execution share `executor::inputs`, so it explains exactly what a send would use.
-  It opens under the token, with a pointer up to it, and says where each value comes from
+  It opens under the token, with a pointer up to it (frame and pointer edged in the
+  control-edge color, ≥3:1, Q21), and says where each value comes from
   in words ("Defined in the Dev environment (overrides Global)", then "Overridden in
   Global"; `vars::describe`). It closes with × at its top right or Esc, and "Copy value"
   copies what a send would use, masked or not, since copying is explicit. Why: opened at
@@ -413,8 +414,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   (the orange "⋯" read as selected). Each value fills its row, the current one filled and
   marked "current"; × is at the row's far end, at least 12 points from the value, and
   stays visible (and two-click) rather than appearing on hover, so keyboard and screen
-  reader users can reach it. "+ Save current value" ends the list. Why: × beside the
-  value invited removing it by mistake (the review's #38).
+  reader users can reach it. "+ Save “42”" ends the list, naming the field's value it
+  keeps. The bookmark is as wide as a two-digit count on every row, so the remove buttons
+  after it stay in one column. Why: × beside the value invited removing it by mistake (the
+  review's #38; Phase 5 review Q23, Q24).
 - **History search uses the sidebar's filter language** (`filter.rs`, with `status:` and
   `env:` added for History: `404`, `4xx`, `failed`, `cancelled`). Words match the request
   name and the URL as sent; bodies are not searched, because that would decode every

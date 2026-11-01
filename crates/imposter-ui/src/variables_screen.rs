@@ -355,9 +355,13 @@ fn saved_values(ui: &mut Ui, row: &mut vars::Row, index: usize, height: f32) -> 
                 ui.separator();
             }
             let can_save = !row.saved.contains(&row.value);
+            // Says which value it keeps: the field's, which the menu does not list.
+            let current = crate::widgets::saved_label(&row.value, false);
             let save = ui.add_enabled(
                 can_save,
-                egui::Button::selectable(false, "+ Save current value").stroke(egui::Stroke::NONE),
+                egui::Button::selectable(false, format!("+ Save \u{201c}{current}\u{201d}"))
+                    .stroke(egui::Stroke::NONE)
+                    .truncate(),
             );
             name(&save, "Save current value");
             let save = save.on_disabled_hover_text("The current value is already saved");

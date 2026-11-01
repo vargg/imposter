@@ -77,16 +77,16 @@ pub fn button_with_hint(
 }
 
 /// An icon button with a count after the icon when `count` is above zero ("🔖 3"): how
-/// many of something it opens, readable without opening it.
+/// many of something it opens, readable without opening it. Always as wide as a two-digit
+/// count, so buttons in a column line up whatever they count.
 pub fn count_button(ui: &mut Ui, icon: Icon, label: &str, hint: &str, count: usize) -> Response {
     let text = (count > 0).then(|| count.to_string());
     let font = egui::TextStyle::Small.resolve(ui.style());
-    let text_width = text.as_ref().map_or(0.0, |text| {
-        ui.fonts_mut(|f| f.layout_no_wrap(text.clone(), font.clone(), Color32::WHITE))
-            .size()
-            .x
-            + 4.0
-    });
+    let text_width = ui
+        .fonts_mut(|f| f.layout_no_wrap("99".to_owned(), font.clone(), Color32::WHITE))
+        .size()
+        .x
+        + 4.0;
     let response = ui.add_sized(
         [size() + text_width, size()],
         egui::Button::new("").frame_when_inactive(false),

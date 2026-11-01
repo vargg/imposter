@@ -240,6 +240,13 @@ fn the_saved_values_menu_marks_the_current_value_and_keeps_remove_at_the_far_end
         })
         .expect("a count beside the icon");
     assert_ne!(count, imposter_ui::theme::palette().accent);
+    // Rows with and without saved values keep their remove buttons in one column.
+    let first = app.harness.get_by_label("Remove variable 1").rect();
+    let second = app.harness.get_by_label("Remove variable 2").rect();
+    assert!(
+        (first.left() - second.left()).abs() < 0.5,
+        "{first:?} {second:?}"
+    );
 
     click(&mut app.harness, "Variable 2 saved values");
     let painted: Vec<(String, egui::Rect)> = app
@@ -261,6 +268,12 @@ fn the_saved_values_menu_marks_the_current_value_and_keeps_remove_at_the_far_end
         .filter(|text| text.ends_with("current"))
         .collect();
     assert_eq!(current, ["42current"], "only the current value is marked");
+    assert!(
+        painted
+            .iter()
+            .any(|(text, _)| text == "+ Save \u{201c}42\u{201d}"),
+        "the save row names the value it keeps"
+    );
     for (position, value) in [(1, "42"), (2, "77")] {
         let text = painted
             .iter()

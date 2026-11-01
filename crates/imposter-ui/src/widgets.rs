@@ -1135,7 +1135,9 @@ pub fn inspector(
         .order(egui::Order::Foreground)
         .fixed_pos(current.anchor + egui::vec2(-INSPECTOR_POINTER_INSET, INSPECTOR_POINTER))
         .show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
+            // A control edge (≥3:1), so the frame and its pointer can be seen on the bar.
+            let edge = egui::Stroke::new(1.0, palette().field_border);
+            egui::Frame::popup(ui.style()).stroke(edge).show(ui, |ui| {
                 ui.set_min_width(320.0);
                 ui.set_max_width(480.0);
                 ui.horizontal(|ui| {
@@ -1245,9 +1247,8 @@ pub fn inspector(
             });
         });
     // A small pointer from the frame up to the token.
-    let style = ctx.global_style();
-    let fill = style.visuals.window_fill;
-    let stroke = style.visuals.window_stroke;
+    let fill = ctx.global_style().visuals.window_fill;
+    let stroke = egui::Stroke::new(1.0, palette().field_border);
     let tip = current.anchor + egui::vec2(0.0, 1.0);
     let half = INSPECTOR_POINTER;
     let painter = ctx.layer_painter(area.response.layer_id);

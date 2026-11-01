@@ -312,6 +312,14 @@ fn clicking_a_token_inspects_it_and_open_definition_goes_to_its_scope() {
 
     app.harness.get_by_label("Defined in Global");
     app.harness.get_by_label("example.com");
+    // The pointer up to the token is drawn in the control-edge color, so it can be seen.
+    let edge = imposter_ui::theme::palette().field_border;
+    let tip = app.harness.state().state.inspect.as_ref().unwrap().anchor + egui::vec2(0.0, 1.0);
+    let pointer = app.harness.output().shapes.iter().any(|clipped| {
+        matches!(&clipped.shape, egui::Shape::LineSegment { points, stroke }
+            if stroke.color == edge && points.contains(&tip))
+    });
+    assert!(pointer, "a visible pointer at {tip:?}");
     // Opened under the token, not at the field's edge: "http://" comes before it.
     let anchor = app.harness.state().state.inspect.as_ref().unwrap().anchor;
     assert!(
