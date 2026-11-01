@@ -563,7 +563,13 @@ numbers, so both are excluded. Each logical change is its own commit.
   Settings, against a baseline: undoing an edit is not a change. Settings the screen does not
   show are kept. Closing asks about unsaved settings after the request and variables guards.
   Saving applies history retention at once (the Python app waited for the next send), so the
-  limits the History screen shows are already true.
+  limits the History screen shows are already true. The screen is one form: section headings
+  instead of framed groups, one label column shared by every section (`LABEL_COLUMN`), at most
+  720 points wide, with a line of help under fields that need it. Every path field has
+  Browse… (through `ImposterApp::pick`) and says "File not found" when the path names no file;
+  the check runs on the bridge (`transfer::is_file`) and is redone when the screen is opened.
+  "Verify TLS certificates", not SSL. Why: label columns differed per group, paths had to be
+  typed, and a wrong path showed only on the next send (the review's #50, #51).
 - **Shortcuts are one table, `shortcuts::ALL`, handled in one place before widgets draw**
   (`shortcuts::handle`) and doing nothing while a dialog is open. The same table drives the
   shortcut sheet (Cmd/Ctrl+Shift+/: grouped as Navigate, Send, Edit and View, keys drawn as

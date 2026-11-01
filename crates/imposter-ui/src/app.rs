@@ -214,6 +214,11 @@ pub enum Message {
     Flushed(Result<(), Failure>),
     /// Background work with nothing to apply (it logs its own failures).
     Done,
+    /// Whether a Settings path names a file.
+    PathChecked {
+        path: String,
+        exists: bool,
+    },
     FilePicked {
         target: FileRequest,
         path: Option<PathBuf>,
@@ -343,6 +348,8 @@ pub enum Action {
     Export,
     /// A Settings screen field changed.
     SettingsEdited,
+    /// Find out whether a path typed on the Settings screen names a file.
+    CheckPath(String),
     Mock(crate::mock_screen::MockAction),
     /// Copy the open request as a curl command with resolved values.
     CopyCurl,
@@ -375,6 +382,8 @@ pub struct SettingsScreen {
     loading: bool,
     /// Saving or discarding resolves an app close.
     closing: bool,
+    /// Whether each path typed in a path field names a file; `None` while it is checked.
+    pub paths: std::collections::HashMap<String, Option<bool>>,
 }
 
 impl Default for SettingsScreen {
@@ -388,6 +397,7 @@ impl Default for SettingsScreen {
             saving: false,
             loading: false,
             closing: false,
+            paths: std::collections::HashMap::new(),
         }
     }
 }
@@ -1434,6 +1444,9 @@ impl ImposterApp {
                     purpose: ConfirmPurpose::DiscardOnClose,
                 });
             }
+            Message::PathChecked { path, exists } => {
+                self.state.settings_screen.paths.insert(path, Some(exists));
+            }
             Message::FilePicked { target, path } => {
                 if let Some(path) = path {
                     self.file_picked(target, &path);
@@ -2266,13 +2279,22 @@ impl ImposterApp {
     }
 
     fn file_picked(&mut self, target: FileRequest, path: &std::path::Path) {
+        let path = path.display().to_string();
+        if let FileRequest::Setting(field) = target {
+            let screen = &mut self.state.settings_screen;
+            if let Some(value) = field.value(&mut screen.form) {
+                *value = path;
+                screen.refresh_status();
+            }
+            return;
+        }
         let Some(pane) = &mut self.state.editor else {
             return;
         };
-        let path = path.display().to_string();
         match target {
             FileRequest::Binary => pane.editor.binary_path = path,
             FileRequest::MultipartNew => pane.editor.multipart.push(FormItem::file("file", path)),
+            FileRequest::Setting(_) => return,
         }
         self.state.actions.push(Action::Edited {
             url: false,
@@ -2688,6 +2710,13 @@ impl ImposterApp {
             },
             Action::Mock(action) => self.mock_action(action),
             Action::SettingsEdited => self.state.settings_screen.refresh_status(),
+            Action::CheckPath(path) => {
+                self.state.settings_screen.paths.insert(path.clone(), None);
+                self.bridge.spawn(move |_| async move {
+                    let exists = transfer::is_file(PathBuf::from(&path)).await;
+                    Message::PathChecked { path, exists }
+                });
+            }
             Action::CopyCurl => self.copy_curl(),
             Action::Send => self.send(),
             Action::PickFile(target) => self.pick(
@@ -2733,6 +2762,10 @@ impl ImposterApp {
                 if screen == Screen::Variables && !self.state.variables.loaded {
                     let scope = self.state.variables.scope;
                     self.load_variables(scope);
+                }
+                if screen == Screen::Settings {
+                    // Files may have come or gone since the paths were last checked.
+                    self.state.settings_screen.paths.clear();
                 }
                 if screen == Screen::Settings && !self.state.settings_screen.is_loaded() {
                     self.load_settings();

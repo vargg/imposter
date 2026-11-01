@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use imposter_app::transfer::{
-    ExportScope, ImportKind, TransferError, detect, export_native, import, postman_export,
+    ExportScope, ImportKind, TransferError, detect, export_native, import, is_file, postman_export,
     read_preview, write_file, write_postman,
 };
 use imposter_core::model::{BodyType, Request, RequestTemplate, Variables};
@@ -702,4 +702,17 @@ async fn environment_colors_travel_with_exports() {
             ("Prod".to_owned(), Some(EnvColor::Red))
         ]
     );
+}
+
+#[tokio::test]
+async fn is_file_tells_files_from_folders_and_missing_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("ca.pem");
+    write_file(file.clone(), b"pem".to_vec()).await.unwrap();
+    assert!(is_file(file).await);
+    assert!(
+        !is_file(dir.path().to_owned()).await,
+        "a folder is not a file"
+    );
+    assert!(!is_file(dir.path().join("missing.pem")).await);
 }

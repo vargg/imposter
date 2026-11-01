@@ -93,7 +93,7 @@ fn settings_the_screen_does_not_show_are_kept() {
             .unwrap();
     });
     open_settings(&mut app);
-    click(&mut app.harness, "Verify SSL certificates");
+    click(&mut app.harness, "Verify TLS certificates");
     click(&mut app.harness, "Save settings");
     settle(&mut app.harness);
 
@@ -261,4 +261,55 @@ fn the_theme_applies_at_once_and_is_remembered() {
         egui::Theme::Light,
         "restored at the next start"
     );
+}
+
+#[test]
+fn paths_are_chosen_with_browse_and_a_missing_file_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let pem = dir.path().join("ca.pem");
+    std::fs::write(&pem, b"pem").unwrap();
+    let mut app = start();
+    open_settings(&mut app);
+    app.harness
+        .state_mut()
+        .script_file_dialogs([Some(pem.clone())]);
+    click(&mut app.harness, "Browse for ca bundle");
+    settle(&mut app.harness);
+    app.harness.run_steps(2);
+    settle(&mut app.harness);
+    app.harness.run_steps(2);
+    assert_eq!(
+        app.harness.state().state.settings_screen.form.ca_bundle,
+        pem.display().to_string()
+    );
+    assert!(save_enabled(&app), "a chosen path is an edit");
+    assert!(app.harness.query_by_label("File not found").is_none());
+
+    type_into(&mut app.harness, "CA bundle", ".missing");
+    settle(&mut app.harness);
+    app.harness.run_steps(2);
+    app.harness.get_by_label("File not found");
+}
+
+#[test]
+fn every_section_puts_its_fields_in_one_column() {
+    let mut app = start();
+    // Tall enough that every section is on screen at once.
+    app.harness.set_size(egui::vec2(1200.0, 1500.0));
+    open_settings(&mut app);
+    click(&mut app.harness, "Add host certificate");
+    let lefts: Vec<(String, f32)> = ["Proxy server", "CA bundle", "Host certificate 1 Host"]
+        .into_iter()
+        .map(|label| {
+            let rect = support::text_input(&app.harness, label).rect();
+            (label.to_owned(), rect.left())
+        })
+        .collect();
+    assert!(
+        lefts
+            .iter()
+            .all(|(_, left)| (left - lefts[0].1).abs() < 0.5),
+        "{lefts:?}"
+    );
+    app.harness.get_by_label("Verify TLS certificates");
 }

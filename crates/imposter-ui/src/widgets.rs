@@ -1526,6 +1526,8 @@ pub enum FileRequest {
     Binary,
     /// Add a new multipart file field.
     MultipartNew,
+    /// A path field on the Settings screen.
+    Setting(crate::settings_screen::PathField),
 }
 
 pub fn multipart_table(

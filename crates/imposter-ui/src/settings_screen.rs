@@ -5,7 +5,7 @@ use egui::{Align, Grid, Layout, Ui};
 use imposter_app::core::settings::{AppSettings, HostIdentity};
 
 use crate::app::{Action, State};
-use crate::theme::{Tone, palette};
+use crate::theme::Tone;
 use crate::widgets::{SaveStatus, save_controls};
 
 const MIB: u64 = 1024 * 1024;
@@ -72,25 +72,53 @@ impl SettingsForm {
     }
 }
 
-fn group(ui: &mut Ui, title: &str, contents: impl FnOnce(&mut Ui)) {
-    egui::Frame::new()
-        .fill(palette().surface)
-        .stroke(egui::Stroke::new(1.0, palette().border))
-        .corner_radius(8)
-        .inner_margin(12)
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.label(egui::RichText::new(title).font(crate::theme::semibold(15.0)));
-            ui.add_space(6.0);
-            Grid::new(title)
-                .num_columns(2)
-                .spacing([16.0, 8.0])
-                .show(ui, contents);
-        });
-    ui.add_space(10.0);
+/// A path field of the form, for its Browse… button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathField {
+    CaBundle,
+    Certificate,
+    Key,
+    HostCertificate(usize),
+    HostKey(usize),
 }
 
-/// A labelled field row; returns whether the value changed.
+impl PathField {
+    /// The field in `form`; `None` when its host certificate was removed meanwhile.
+    pub fn value(self, form: &mut SettingsForm) -> Option<&mut String> {
+        match self {
+            Self::CaBundle => Some(&mut form.ca_bundle),
+            Self::Certificate => Some(&mut form.certificate_path),
+            Self::Key => Some(&mut form.key_file),
+            Self::HostCertificate(index) => form
+                .host_identities
+                .get_mut(index)
+                .map(|identity| &mut identity.certificate_path),
+            Self::HostKey(index) => form
+                .host_identities
+                .get_mut(index)
+                .map(|identity| &mut identity.key_file),
+        }
+    }
+}
+
+/// Every section's labels share this column, so fields line up down the whole screen.
+const LABEL_COLUMN: f32 = 170.0;
+/// The widest the form gets, so fields stay a readable length in a wide window.
+const FORM_WIDTH: f32 = 720.0;
+
+/// A section: its title, then its fields in the shared two-column grid.
+fn section(ui: &mut Ui, title: &str, contents: impl FnOnce(&mut Ui)) {
+    ui.add_space(14.0);
+    ui.label(egui::RichText::new(title).font(crate::theme::semibold(15.0)));
+    ui.add_space(6.0);
+    Grid::new(title)
+        .num_columns(2)
+        .min_col_width(LABEL_COLUMN)
+        .max_col_width((ui.available_width() - LABEL_COLUMN - 16.0).max(160.0))
+        .spacing([16.0, 10.0])
+        .show(ui, contents);
+}
+
 /// A drop-down over `options`, showing the label of `value`.
 fn choice<T: Copy + PartialEq>(
     ui: &mut Ui,
@@ -112,11 +140,30 @@ fn choice<T: Copy + PartialEq>(
         .response
 }
 
-fn row(ui: &mut Ui, label: &str, field: impl FnOnce(&mut Ui) -> egui::Response) -> bool {
+/// One labelled row of the grid: the field, and under it what it is for when `help` says.
+/// Returns whether the value changed.
+fn row(
+    ui: &mut Ui,
+    label: &str,
+    help: Option<&str>,
+    field: impl FnOnce(&mut Ui) -> egui::Response,
+) -> bool {
     let caption = ui.label(label);
-    let response = field(ui).labelled_by(caption.id);
+    let changed = ui
+        .vertical(|ui| {
+            let response = field(ui).labelled_by(caption.id);
+            if let Some(help) = help {
+                ui.add(egui::Label::new(help_text(help)).wrap());
+            }
+            response.changed()
+        })
+        .inner;
     ui.end_row();
-    response.changed()
+    changed
+}
+
+fn help_text(text: &str) -> egui::RichText {
+    crate::widgets::tone_text(text, Tone::Muted).small()
 }
 
 fn text(ui: &mut Ui, value: &mut String, hint: &str, password: bool) -> egui::Response {
@@ -124,21 +171,74 @@ fn text(ui: &mut Ui, value: &mut String, hint: &str, password: bool) -> egui::Re
         egui::TextEdit::singleline(value)
             .hint_text(hint)
             .password(password)
-            .desired_width(ui.available_width().min(360.0)),
+            .desired_width(ui.available_width()),
     )
 }
 
-fn check(ui: &mut Ui, value: &mut bool, label: &str) -> bool {
+/// A check box in the field column, with help under it.
+fn check(ui: &mut Ui, value: &mut bool, label: &str, help: Option<&str>) -> bool {
     ui.label("");
-    let changed = ui.checkbox(value, label).changed();
+    let changed = ui
+        .vertical(|ui| {
+            let changed = ui.checkbox(value, label).changed();
+            if let Some(help) = help {
+                ui.add(egui::Label::new(help_text(help)).wrap());
+            }
+            changed
+        })
+        .inner;
     ui.end_row();
     changed
+}
+
+/// A file path: typed, or chosen with Browse…; a path that names no file says so.
+fn path(
+    ui: &mut Ui,
+    value: &mut String,
+    field: PathField,
+    name: &str,
+    paths: &std::collections::HashMap<String, Option<bool>>,
+    actions: &mut Vec<Action>,
+) -> egui::Response {
+    let response = ui
+        .horizontal(|ui| {
+            let browse_width = 80.0;
+            let response = ui.add(
+                egui::TextEdit::singleline(value)
+                    .hint_text("Path to a PEM file")
+                    .desired_width((ui.available_width() - browse_width).max(120.0)),
+            );
+            crate::widgets::name(&response, name);
+            let browse = ui
+                .button("Browse…")
+                .on_hover_text(format!("Choose the {} file", name.to_lowercase()));
+            crate::widgets::name(&browse, &format!("Browse for {}", name.to_lowercase()));
+            if browse.clicked() {
+                actions.push(Action::PickFile(crate::widgets::FileRequest::Setting(
+                    field,
+                )));
+            }
+            response
+        })
+        .inner;
+    let trimmed = value.trim();
+    if !trimmed.is_empty() {
+        match paths.get(trimmed) {
+            None => actions.push(Action::CheckPath(trimmed.to_owned())),
+            Some(Some(false)) => {
+                ui.label(crate::widgets::tone_text("File not found", Tone::Error));
+            }
+            Some(_) => {}
+        }
+    }
+    response
 }
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let screen = &mut state.settings_screen;
     let mut edited = false;
     let mut save = false;
+    let mut actions = Vec::new();
     let loaded = screen.is_loaded();
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -170,13 +270,13 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            // At most 760 wide, never wider than the window: `set_max_width` would widen.
-            ui.set_max_width(ui.available_width().min(760.0));
+            // At most FORM_WIDTH, never wider than the window: `set_max_width` would widen.
+            ui.set_max_width(ui.available_width().min(FORM_WIDTH));
             // Appearance applies at once and is remembered apart from Save: it is how this
             // app looks, not an application setting.
             let mut appearance = state.appearance;
-            group(ui, "Appearance", |ui| {
-                row(ui, "Theme", |ui| {
+            section(ui, "Appearance", |ui| {
+                row(ui, "Theme", Some("System follows the operating system."), |ui| {
                     choice(
                         ui,
                         "theme",
@@ -184,7 +284,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                         &crate::theme::ThemeChoice::ALL,
                     )
                 });
-                row(ui, "Density", |ui| {
+                row(ui, "Density", Some("Comfortable gives rows and controls more room."), |ui| {
                     choice(
                         ui,
                         "density",
@@ -196,65 +296,109 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             if appearance != state.appearance {
                 state.actions.push(Action::SetAppearance(appearance));
             }
-            ui.add_space(8.0);
             ui.add_enabled_ui(loaded, |ui| {
+                let paths = &screen.paths;
                 let form = &mut screen.form;
-                group(ui, "General", |ui| {
-                    edited |= check(ui, &mut form.autosave, "Automatically save request changes");
+                section(ui, "General", |ui| {
+                    edited |= check(
+                        ui,
+                        &mut form.autosave,
+                        "Automatically save request changes",
+                        Some("Otherwise Save, or Cmd/Ctrl+S, keeps them."),
+                    );
                 });
-                group(ui, "Network", |ui| {
-                    edited |= row(ui, "Request timeout", |ui| {
-                        ui.add(
-                            egui::DragValue::new(&mut form.timeout)
-                                .range(1..=300)
-                                .suffix(" seconds"),
-                        )
-                    });
-                    edited |= row(ui, "Proxy server", |ui| {
-                        text(
-                            ui,
-                            &mut form.proxy_url,
-                            "http://proxy.example.com:8080",
-                            false,
-                        )
-                    });
-                    edited |= row(ui, "Response body limit", |ui| {
-                        ui.add(
-                            egui::DragValue::new(&mut form.download_limit)
-                                .range(0..=100 * 1024)
-                                .suffix(" KB (0 for unlimited)"),
-                        )
-                    });
-                    edited |= check(ui, &mut form.follow_redirects, "Follow redirects");
+                section(ui, "Network", |ui| {
+                    edited |= row(
+                        ui,
+                        "Request timeout",
+                        Some("For connecting and for each read, not the whole exchange."),
+                        |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut form.timeout)
+                                    .range(1..=300)
+                                    .suffix(" seconds"),
+                            )
+                        },
+                    );
+                    edited |= row(
+                        ui,
+                        "Proxy server",
+                        Some("Every request goes through it; empty for none. System proxies are never used."),
+                        |ui| {
+                            text(
+                                ui,
+                                &mut form.proxy_url,
+                                "http://proxy.example.com:8080",
+                                false,
+                            )
+                        },
+                    );
+                    edited |= row(
+                        ui,
+                        "Response body limit",
+                        Some("Larger bodies are cut at this size; 0 for no limit."),
+                        |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut form.download_limit)
+                                    .range(0..=100 * 1024)
+                                    .suffix(" KB"),
+                            )
+                        },
+                    );
+                    edited |= check(ui, &mut form.follow_redirects, "Follow redirects", None);
                 });
-                group(ui, "TLS", |ui| {
-                    edited |= check(ui, &mut form.verify_ssl, "Verify SSL certificates");
-                    edited |= row(ui, "CA bundle", |ui| {
-                        text(ui, &mut form.ca_bundle, "", false)
+                section(ui, "TLS", |ui| {
+                    edited |= check(
+                        ui,
+                        &mut form.verify_ssl,
+                        "Verify TLS certificates",
+                        Some("Turn off only for servers you trust, such as local ones with self-signed certificates."),
+                    );
+                    edited |= row(
+                        ui,
+                        "CA bundle",
+                        Some("Replaces the system's trusted roots."),
+                        |ui| path(ui, &mut form.ca_bundle, PathField::CaBundle, "CA bundle", paths, &mut actions),
+                    );
+                    edited |= row(
+                        ui,
+                        "Client certificate",
+                        Some("Sent when a server asks for one."),
+                        |ui| {
+                            path(
+                                ui,
+                                &mut form.certificate_path,
+                                PathField::Certificate,
+                                "Client certificate",
+                                paths,
+                                &mut actions,
+                            )
+                        },
+                    );
+                    edited |= row(ui, "Private key", None, |ui| {
+                        path(ui, &mut form.key_file, PathField::Key, "Private key", paths, &mut actions)
                     });
-                    edited |= row(ui, "Client certificate", |ui| {
-                        text(ui, &mut form.certificate_path, "", false)
-                    });
-                    edited |= row(ui, "Private key", |ui| {
-                        text(ui, &mut form.key_file, "", false)
-                    });
-                    edited |= row(ui, "Key password", |ui| {
+                    edited |= row(ui, "Key password", None, |ui| {
                         text(ui, &mut form.password, "", true)
                     });
                 });
-                ui.label(
-                    egui::RichText::new("Host client certificates")
-                        .font(crate::theme::semibold(15.0)),
-                );
+                section(ui, "Host client certificates", |ui| {
+                    ui.label("");
+                    ui.add(
+                        egui::Label::new(help_text(
+                            "Used instead of the client certificate above for one host and port.",
+                        ))
+                        .wrap(),
+                    );
+                    ui.end_row();
+                });
                 let mut remove = None;
                 for (index, identity) in form.host_identities.iter_mut().enumerate() {
                     ui.push_id(index, |ui| {
-                        group(ui, &format!("Host certificate {}", index + 1), |ui| {
-                            let prefix = format!("Host certificate {}", index + 1);
+                        let prefix = format!("Host certificate {}", index + 1);
+                        section(ui, &prefix, |ui| {
                             for (label, value, secret) in [
                                 ("Host", &mut identity.host, false),
-                                ("Certificate", &mut identity.certificate_path, false),
-                                ("Key", &mut identity.key_file, false),
                                 ("Password", &mut identity.password, true),
                             ] {
                                 ui.label(label);
@@ -269,12 +413,21 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                             crate::widgets::name(&response, &format!("{prefix} Port"));
                             edited |= response.changed();
                             ui.end_row();
+                            for (label, value, field) in [
+                                ("Certificate", &mut identity.certificate_path, PathField::HostCertificate(index)),
+                                ("Key", &mut identity.key_file, PathField::HostKey(index)),
+                            ] {
+                                ui.label(label);
+                                let name = format!("{prefix} {label}");
+                                edited |= path(ui, value, field, &name, paths, &mut actions).changed();
+                                ui.end_row();
+                            }
                             ui.label("");
-                            if crate::widgets::remove_button(
+                            if crate::widgets::delete_button(
                                 ui,
                                 ui.scope_id().with("remove"),
                                 &prefix,
-                                24.0,
+                                "Remove host certificate",
                             ) {
                                 remove = Some(index);
                             }
@@ -286,25 +439,32 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     form.host_identities.remove(index);
                     edited = true;
                 }
+                ui.add_space(6.0);
                 if ui.button("Add host certificate").clicked() {
                     form.host_identities.push(HostIdentity::default());
                     edited = true;
                 }
-                group(ui, "History", |ui| {
-                    edited |= row(ui, "History entries", |ui| {
+                section(ui, "History", |ui| {
+                    edited |= row(ui, "History entries", None, |ui| {
                         ui.add(
                             egui::DragValue::new(&mut form.history_max_entries)
                                 .range(1..=1_000_000),
                         )
                     });
-                    edited |= row(ui, "History storage", |ui| {
-                        ui.add(
-                            egui::DragValue::new(&mut form.history_mib)
-                                .range(1..=102_400)
-                                .suffix(" MiB"),
-                        )
-                    });
+                    edited |= row(
+                        ui,
+                        "History storage",
+                        Some("The oldest runs go first when either limit is reached."),
+                        |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut form.history_mib)
+                                    .range(1..=102_400)
+                                    .suffix(" MiB"),
+                            )
+                        },
+                    );
                 });
+                ui.add_space(16.0);
             });
         });
     if edited {
@@ -313,6 +473,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     if save {
         state.actions.push(Action::Save);
     }
+    state.actions.extend(actions);
 }
 
 #[cfg(test)]

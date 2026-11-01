@@ -470,6 +470,14 @@ pub async fn write_file(path: PathBuf, bytes: Vec<u8>) -> std::io::Result<()> {
         .map_err(std::io::Error::other)?
 }
 
+/// Whether `path` names a file that exists, checked off the async threads (a settings
+/// path shown as "File not found" while typed).
+pub async fn is_file(path: PathBuf) -> bool {
+    tokio::fs::metadata(path)
+        .await
+        .is_ok_and(|metadata| metadata.is_file())
+}
+
 /// The Postman export of `scope` and its warnings, for review before writing.
 pub async fn postman_export(
     store: &StoreHandle,
