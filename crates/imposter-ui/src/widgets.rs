@@ -956,6 +956,10 @@ fn var_edit_with(
     .id(id)
     .desired_width(width)
     .password(password);
+    if single_line {
+        // Centred in a field taller than its text, as the method and buttons beside it are.
+        edit = edit.align(egui::Align2::LEFT_CENTER);
+    }
     if !password {
         edit = edit.layouter(&mut layouter);
     }
@@ -1336,7 +1340,12 @@ pub fn save_controls(ui: &mut Ui, status: &SaveStatus<'_>, action: &str) -> bool
     let hint = crate::shortcuts::hint(ui.ctx(), action, &crate::shortcuts::SAVE);
     let clicked = ui
         .add_enabled_ui(status.enabled, |ui| {
-            icons::button_with_hint(ui, Icon::Save, action, &hint, false)
+            // With something to save the icon is in the text color, apart from disabled.
+            if status.enabled {
+                icons::ready_button(ui, Icon::Save, action, &hint)
+            } else {
+                icons::button_with_hint(ui, Icon::Save, action, &hint, false)
+            }
         })
         .inner
         .clicked();
@@ -1743,6 +1752,43 @@ pub fn options_form(
 /// Standard methods plus a custom token, which keeps its case.
 pub fn method_picker(ui: &mut Ui, method: &mut String, custom: &mut Option<String>) -> bool {
     let mut changed = false;
+    // While a custom method is typed, its field takes the picker's place, so the row
+    // beside it (the URL) keeps its room.
+    if let Some(mut draft) = custom.take() {
+        // A field of its own, framed even where the picker is not (the request bar).
+        ui.scope(|ui| {
+            ui.set_style(ui.ctx().global_style());
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.add_space(4.0);
+            let field = ui.add(
+                egui::TextEdit::singleline(&mut draft)
+                    .desired_width(72.0)
+                    .hint_text("METHOD"),
+            );
+            name(&field, "Custom HTTP method");
+            let valid = is_method_token(&draft);
+            if ui.add_enabled(valid, egui::Button::new("Use")).clicked()
+                || (valid && field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+            {
+                *method = draft;
+                changed = true;
+            } else if !ui
+                .small_button("×")
+                .on_hover_text("Keep the method")
+                .clicked()
+            {
+                if !valid && !draft.is_empty() {
+                    ui.label(tone_text("No spaces allowed", Tone::Error))
+                        .on_hover_text(
+                            "A method is one word of letters, digits and !#$%&'*+-.^_`|~",
+                        );
+                }
+                *custom = Some(draft);
+            }
+            ui.add_space(4.0);
+        });
+        return changed;
+    }
     let response = egui::ComboBox::from_id_salt("method")
         .width(100.0)
         .height(320.0)
@@ -1764,26 +1810,6 @@ pub fn method_picker(ui: &mut Ui, method: &mut String, custom: &mut Option<Strin
             }
         });
     name(&response.response, "HTTP method");
-    if let Some(mut draft) = custom.take() {
-        let field = ui.add(
-            egui::TextEdit::singleline(&mut draft)
-                .desired_width(90.0)
-                .hint_text("METHOD"),
-        );
-        name(&field, "Custom HTTP method");
-        let valid = is_method_token(&draft);
-        if ui.add_enabled(valid, egui::Button::new("Use")).clicked()
-            || (valid && field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-        {
-            *method = draft;
-            changed = true;
-        } else if !ui.small_button("×").clicked() {
-            if !valid && !draft.is_empty() {
-                ui.label(tone_text("ASCII token, no spaces", Tone::Error));
-            }
-            *custom = Some(draft);
-        }
-    }
     changed
 }
 

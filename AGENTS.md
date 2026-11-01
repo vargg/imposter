@@ -240,6 +240,16 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
   256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
   dependency.
+- **The request bar is one control:** method, URL and Send share one edge
+  (`field_border`) on the input fill, with a divider after the method and Send filling the
+  right end; the fields inside draw no frame of their own (`workspace::frameless`), and the
+  focus ring goes around the whole bar. Single-line variable fields centre their text
+  vertically. A custom method being typed takes the method picker's place, so the URL
+  keeps its room at 720 points. Save's icon is in the text color while there is something
+  to save (`icons::ready_button`), muted at rest and faded when disabled. Why: the bar was
+  a frame in a frame in a card, its URL text sat 6 points above centre, and enabled and
+  disabled Save looked alike (the review's #22–#24). Checked by
+  `imposter-ui/tests/request_bar.rs` and the layout lint's custom-method state.
 - **The body editor fills its pane**, above a one-line footer ("Valid JSON" or the parse
   error with its line), and is never shorter than about four lines. Why: a fixed ten rows
   left most of a large pane empty (the review's #20).

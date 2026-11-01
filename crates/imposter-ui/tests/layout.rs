@@ -13,7 +13,7 @@ use imposter_testkit::{Server, response};
 use imposter_ui::app::{Action, Appearance, Screen};
 use imposter_ui::layout::MIN_WINDOW;
 use imposter_ui::theme::{Density, ThemeChoice};
-use support::{click, collection, request, settle, start_with};
+use support::{click, collection, request, settle, start_with, type_into};
 
 /// The status bar's own controls.
 const STATUS_BAR: [&str; 4] = [
@@ -184,6 +184,19 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, "Send");
     settle(&mut app.harness);
     check(app, "error response");
+    // A custom method being typed takes the method picker's place in the request bar.
+    click(&mut app.harness, "HTTP method");
+    click(&mut app.harness, "Custom method…");
+    type_into(&mut app.harness, "Custom HTTP method", " bad");
+    check(app, "custom method");
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .custom_method = None;
+    app.harness.run_steps(2);
     for screen in ["Variables", "History", "Settings", "Mocks"] {
         click(&mut app.harness, screen);
         settle(&mut app.harness);

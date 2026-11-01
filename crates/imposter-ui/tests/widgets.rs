@@ -237,8 +237,12 @@ fn a_custom_method_keeps_its_case() {
     );
     type_into(&mut app.harness, "Custom HTTP method", "-search");
     app.harness.get_by_label("Use");
+    assert!(
+        app.harness.query_by_label("HTTP method").is_none(),
+        "the field takes the picker's place"
+    );
     type_into(&mut app.harness, "Custom HTTP method", " bad");
-    app.harness.get_by_label("ASCII token, no spaces");
+    app.harness.get_by_label("No spaces allowed");
     app.harness
         .state_mut()
         .state

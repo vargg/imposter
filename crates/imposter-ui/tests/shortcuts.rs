@@ -168,12 +168,46 @@ fn the_save_icon_saves_and_the_status_is_one_word() {
             .accesskit_node()
             .is_disabled()
     };
+    // The icon's strokes: in the text color only while there is something to save.
+    let icon_colors = |app: &support::App| {
+        let area = app.harness.get_by_label("Save request").rect();
+        app.harness
+            .output()
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Rect(rect)
+                    if area.contains_rect(rect.rect) && rect.stroke.width > 0.0 =>
+                {
+                    Some(rect.stroke.color)
+                }
+                egui::Shape::LineSegment { points, stroke } if area.contains(points[0]) => {
+                    Some(stroke.color)
+                }
+                _ => None,
+            })
+            .filter(|color| *color != egui::Color32::TRANSPARENT)
+            .collect::<Vec<_>>()
+    };
+    let text = imposter_ui::theme::palette().text;
     app.harness.get_by_label("Saved");
     assert!(disabled(&app), "nothing to save");
+    let resting = icon_colors(&app);
+    assert!(
+        !resting.is_empty() && !resting.contains(&text),
+        "{resting:?}"
+    );
 
     type_into(&mut app.harness, "Request URL", "/x");
     app.harness.get_by_label("Unsaved");
     assert!(!disabled(&app));
+    app.harness.hover_at(egui::pos2(0.0, 0.0));
+    app.harness.run_steps(2);
+    let ready = icon_colors(&app);
+    assert!(
+        !ready.is_empty() && ready.iter().all(|c| *c == text),
+        "{ready:?}"
+    );
     click(&mut app.harness, "Save request");
     settle(&mut app.harness);
 

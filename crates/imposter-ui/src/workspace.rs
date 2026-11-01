@@ -519,6 +519,39 @@ fn sidebar_filter(state: &mut State, ui: &mut Ui) {
 }
 
 /// The method, URL and Send row: the main control, a little taller than the others.
+/// The request bar's corner radius.
+const BAR_RADIUS: u8 = 8;
+
+/// Fields and pickers inside the request bar draw no frame of their own: the bar is their
+/// edge, and it shows the focus ring.
+fn frameless(ui: &mut Ui) {
+    let visuals = ui.visuals_mut();
+    visuals.extreme_bg_color = egui::Color32::TRANSPARENT;
+    visuals.text_edit_bg_color = Some(egui::Color32::TRANSPARENT);
+    visuals.selection.stroke = egui::Stroke::NONE;
+    let hover = palette().hover;
+    for (state, fill) in [
+        (&mut visuals.widgets.inactive, egui::Color32::TRANSPARENT),
+        (&mut visuals.widgets.hovered, hover),
+        (&mut visuals.widgets.active, hover),
+        (&mut visuals.widgets.open, hover),
+    ] {
+        state.bg_stroke = egui::Stroke::NONE;
+        state.weak_bg_fill = fill;
+        state.bg_fill = fill;
+    }
+}
+
+/// A short vertical line between two parts of the request bar.
+fn divider(ui: &mut Ui, height: f32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(1.0, height), Sense::hover());
+    ui.painter().vline(
+        rect.center().x,
+        rect.shrink2(vec2(0.0, height * 0.2)).y_range(),
+        egui::Stroke::new(1.0, palette().field_border),
+    );
+}
+
 fn request_bar_height() -> f32 {
     crate::theme::spacing().control + 8.0
 }
@@ -826,19 +859,26 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
     };
     let mut url_edited = false;
     let mut edited = false;
-    egui::Frame::new()
-        .fill(palette().surface)
-        .stroke(egui::Stroke::new(1.0, palette().border))
-        .corner_radius(10)
-        .inner_margin(8)
+    let mut url_focused = false;
+    let height = request_bar_height();
+    // Method, URL and Send are one control: one edge, a divider between method and URL,
+    // and Send filling the right end.
+    let bar = egui::Frame::new()
+        .fill(palette().input)
+        .stroke(egui::Stroke::new(1.0, palette().field_border))
+        .corner_radius(BAR_RADIUS)
+        .inner_margin(1)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().interact_size.y = request_bar_height();
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.spacing_mut().interact_size.y = height - 2.0;
+                frameless(ui);
                 edited |=
                     widgets::method_picker(ui, &mut pane.editor.method, &mut pane.custom_method);
+                divider(ui, height - 2.0);
                 let send_width = 96.0;
-                let width =
-                    (ui.available_width() - send_width - ui.spacing().item_spacing.x).max(80.0);
+                // Narrow only while a custom method is typed beside it at the smallest size.
+                let width = (ui.available_width() - send_width).max(48.0);
                 let url_id = widgets::var_edit_id(ui, "Request URL");
                 if let Some(command) =
                     widgets::take_whole_paste(ui, url_id, &pane.editor.url, |text| {
@@ -859,15 +899,23 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                     widgets::focus_and_select_all(ui.ctx(), &url, pane.editor.url.chars().count());
                 }
                 url_edited = url.changed();
+                url_focused = url.has_focus();
                 let (label, fill) = if executing {
                     ("Cancel", palette().warning)
                 } else {
                     ("Send", palette().accent)
                 };
+                let inner = BAR_RADIUS - 1;
                 let send = ui.add_sized(
-                    vec2(send_width, request_bar_height()),
+                    vec2(send_width, height - 2.0),
                     egui::Button::new(RichText::new(label).color(palette().on_accent).strong())
-                        .fill(fill),
+                        .fill(fill)
+                        .corner_radius(egui::CornerRadius {
+                            nw: 0,
+                            sw: 0,
+                            ne: inner,
+                            se: inner,
+                        }),
                 );
                 // Where it goes, for the pointer and for screen readers.
                 let action = match (&environment, executing) {
@@ -889,6 +937,15 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 }
             })
         });
+    // The focus ring goes around the whole control, as the field's own would.
+    if url_focused {
+        ui.painter().rect_stroke(
+            bar.response.rect,
+            BAR_RADIUS,
+            ui.visuals().selection.stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
     if url_edited || edited {
         actions.push(Action::Edited {
             url: url_edited,

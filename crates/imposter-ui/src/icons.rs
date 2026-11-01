@@ -49,6 +49,23 @@ pub fn button_with_hint(
     hint: &str,
     selected: bool,
 ) -> Response {
+    drawn(ui, icon, label, hint, selected, palette().text_muted)
+}
+
+/// An icon button with something to do now (Save with unsaved changes): drawn in the text
+/// color, apart from its muted resting and faded disabled looks.
+pub fn ready_button(ui: &mut Ui, icon: Icon, label: &str, hint: &str) -> Response {
+    drawn(ui, icon, label, hint, false, palette().text)
+}
+
+fn drawn(
+    ui: &mut Ui,
+    icon: Icon,
+    label: &str,
+    hint: &str,
+    selected: bool,
+    resting: Color32,
+) -> Response {
     let response = ui.add_sized(
         [size(), size()],
         egui::Button::new("")
@@ -65,7 +82,7 @@ pub fn button_with_hint(
             // Hover is neutral; orange is for primary, selected and focused things.
             palette().text
         } else {
-            palette().text_muted
+            resting
         };
         paint(ui, icon, response.rect.center() - vec2(8.0, 8.0), color);
     }
