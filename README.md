@@ -105,14 +105,15 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 - Sidebar filter: text, `"phrases"`, `method:POST`, `url:users`, `name:…`, `-word`, OR.
 - Side-by-side or stacked request and response, switched from the status bar. Collections
   sidebar can be hidden. Splitter positions, window size and the last selection are restored.
-- Dark theme. Every control has an accessible name for screen readers; text colors meet
-  WCAG AA contrast.
+- Dark, light or system theme, and Compact or Comfortable density (Settings → Appearance).
+  Every control has an accessible name for screen readers; text colors meet WCAG AA
+  contrast in both themes, and control edges 3:1.
 
 ## Not supported
 
 Pre-request and test scripts; WebSocket, gRPC and GraphQL-specific tools; HTTP/2 (requests
 use HTTP/1.1); cloud sync and sharing; a persistent cookie jar (cookies are sent as you list
-them); themes other than the dark one.
+them).
 
 ## Installation
 
