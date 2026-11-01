@@ -4,7 +4,7 @@
 
 mod support;
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::execution::{ExecutionRecord, Response, Timestamp};
 use imposter_app::core::model::{Request, RequestTemplate};
 use imposter_app::core::settings::AppSettings;
@@ -47,14 +47,19 @@ fn executions_are_listed_with_their_request_and_response() {
     app.harness.run_steps(1);
     settle(&mut app.harness);
 
-    // The request as sent: no JSON dump of empty template fields.
+    // The response first, as that is what a run is looked up for.
+    assert_eq!(app.harness.state().state.history.tab, HistoryTab::Response);
+    // One line: the request as sent, how it went and how long it took.
     app.harness
-        .get_by_label(&format!("GET {}/items", server.url));
+        .get_by_label_contains(&format!("GET {}/items  ·  201 Created  ·  ", server.url));
+    // The request as sent: no JSON dump of empty template fields, and nothing printed as
+    // code when there is nothing to show.
+    click(&mut app.harness, "Request body");
     app.harness.get_by_label("No body");
     click(&mut app.harness, "Request headers");
     app.harness.get_by_label("No headers");
-    app.harness.state_mut().state.history.tab = HistoryTab::Response;
-    app.harness.run_steps(2);
+    click(&mut app.harness, "Response");
+    assert_eq!(app.harness.state().state.history.tab, HistoryTab::Response);
     app.harness.get_by_label("201 Created");
     app.harness.get_by_label_contains("made it");
 }
@@ -136,6 +141,7 @@ fn clearing_asks_and_removes_everything() {
     let (mut app, _server, _runtime) = sent_app();
     open_history(&mut app);
 
+    click(&mut app.harness, "History actions");
     click(&mut app.harness, "Clear all history…");
     click_button(&mut app.harness, "Delete history");
     settle(&mut app.harness);
@@ -303,5 +309,74 @@ fn leaving_a_restored_draft_offers_to_keep_it_as_a_new_request() {
         names.iter().filter(|n| n.starts_with("Create")).count(),
         2,
         "the draft became a new request beside the original: {names:?}"
+    );
+}
+
+/// Painted text runs and their colors.
+fn painted(app: &support::App) -> Vec<(String, egui::Color32)> {
+    app.harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => Some(text.galley.job.clone()),
+            _ => None,
+        })
+        .flat_map(|job| {
+            job.sections
+                .iter()
+                .map(|section| {
+                    let range = section.byte_range.start.0..section.byte_range.end.0;
+                    (job.text[range].to_owned(), section.format.color)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+#[test]
+fn the_list_is_a_table_of_name_method_url_status_and_time() {
+    let (mut app, server, _runtime) = sent_app();
+    app.harness.set_size(egui::vec2(1500.0, 850.0));
+    open_history(&mut app);
+    for title in [
+        "When",
+        "Name",
+        "Method",
+        "URL",
+        "Status",
+        "Time",
+        "Environment",
+    ] {
+        app.harness
+            .get_by_role_and_label(egui::accesskit::Role::Label, title);
+    }
+    let palette = imposter_ui::theme::palette();
+    let runs = painted(&app);
+    let has = |text: &str, color: egui::Color32| runs.iter().any(|(t, c)| t == text && *c == color);
+    assert!(has("just now", palette.text_muted), "relative time");
+    assert!(has("Create", palette.text), "the request's name");
+    // The origin repeats from row to row, so it is muted; the path is not.
+    assert!(has(&server.url, palette.text_muted), "{runs:?}");
+    assert!(has("/items", palette.text));
+    assert!(has("201", palette.ok), "a status pill");
+    // The exact time is a hover away.
+    let row = app.harness.get_by_label_contains("History GET");
+    assert!(
+        row.accesskit_node()
+            .description()
+            .is_some_and(|d| d.contains(':'))
+    );
+
+    // Clearing everything is not beside the everyday tools.
+    assert!(app.harness.query_by_label("Clear all history…").is_none());
+
+    // Narrow, the environment column gives way to the URL.
+    app.harness.set_size(imposter_ui::layout::MIN_WINDOW.into());
+    app.harness.run_steps(2);
+    assert!(
+        app.harness
+            .query_by_role_and_label(egui::accesskit::Role::Label, "Environment")
+            .is_none()
     );
 }

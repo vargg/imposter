@@ -11,9 +11,12 @@ use crate::viewer::{self, Language};
 use crate::widgets::{self, name, tone_text};
 
 const SEPARATOR: f32 = 6.0;
-/// Below this width the toolbar wraps rather than pinning "Clear all" to the right edge.
-const TOOLBAR_ONE_ROW: f32 = 900.0;
+/// The environment column shows from this width on; below it the URL needs the room.
+const ENVIRONMENT_COLUMN_FROM: f32 = 900.0;
+/// Height of the pager under the list.
+const PAGER: f32 = 30.0;
 
+/// A row's status as a pill: the code, or what happened when no response came.
 fn outcome_text(row: &ExecutionSummary) -> (String, Tone) {
     match row.outcome {
         Outcome::Response => (
@@ -24,7 +27,7 @@ fn outcome_text(row: &ExecutionSummary) -> (String, Tone) {
                 _ => Tone::Error,
             },
         ),
-        Outcome::TransportError => ("Connection failed".into(), Tone::Error),
+        Outcome::TransportError => ("Failed".into(), Tone::Error),
         Outcome::Cancelled => ("Cancelled".into(), Tone::Warning),
     }
 }
@@ -35,96 +38,70 @@ fn megabytes(bytes: u64) -> String {
     format!("{mib:.0} MiB")
 }
 
+/// The table's columns, left to right, with their widths for a list `width` wide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Column {
+    When,
+    Name,
+    Method,
+    Url,
+    Status,
+    Duration,
+    Environment,
+}
+
+impl Column {
+    fn title(self) -> &'static str {
+        match self {
+            Self::When => "When",
+            Self::Name => "Name",
+            Self::Method => "Method",
+            Self::Url => "URL",
+            Self::Status => "Status",
+            Self::Duration => "Time",
+            Self::Environment => "Environment",
+        }
+    }
+}
+
+/// Fixed columns at their width, Name and URL sharing the rest (URL twice as much).
+fn columns(width: f32) -> Vec<(Column, f32)> {
+    let environment = width >= ENVIRONMENT_COLUMN_FROM;
+    let fixed = 96.0 + 72.0 + 92.0 + 72.0 + if environment { 120.0 } else { 0.0 } + 8.0;
+    let free = (width - fixed).max(160.0);
+    let mut columns = vec![
+        (Column::When, 96.0),
+        (Column::Name, (free / 3.0).floor()),
+        (Column::Method, 72.0),
+        (Column::Url, (free * 2.0 / 3.0).floor()),
+        (Column::Status, 92.0),
+        (Column::Duration, 72.0),
+    ];
+    if environment {
+        columns.push((Column::Environment, 120.0));
+    }
+    columns
+}
+
+/// One line of text cut with "…" to fit `width`.
+fn cut(job: &mut egui::text::LayoutJob, width: f32) {
+    job.wrap = egui::text::TextWrapping {
+        max_width: width,
+        max_rows: 1,
+        break_anywhere: true,
+        overflow_character: Some('…'),
+    };
+}
+
+fn text_job(text: &str, color: egui::Color32, font: &egui::FontId) -> egui::text::LayoutJob {
+    egui::text::LayoutJob::simple_singleline(text.to_owned(), font.clone(), color)
+}
+
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut actions = Vec::new();
+    let now = imposter_app::core::execution::Timestamp(jiff::Timestamp::now().as_millisecond());
     let history = &mut state.history;
-    // One row with "Clear all" at the right edge; in a narrow window the row wraps instead,
-    // so its buttons never overlap.
-    let tools =
-        |ui: &mut Ui, actions: &mut Vec<Action>, history: &mut crate::app::HistoryScreen| {
-            let mut only = history.only_current;
-            if ui.checkbox(&mut only, "Current request only").changed() {
-                actions.push(Action::History(HistoryAction::OnlyCurrent(only)));
-            }
-            if ui.button("Refresh").clicked() {
-                actions.push(Action::History(HistoryAction::Refresh));
-            }
-            if ui
-                .add_enabled(history.offset > 0, egui::Button::new("Newer"))
-                .clicked()
-            {
-                actions.push(Action::History(HistoryAction::Newer));
-            }
-            if ui
-                .add_enabled(
-                    history.rows.len() as u64 == HISTORY_PAGE,
-                    egui::Button::new("Older"),
-                )
-                .clicked()
-            {
-                actions.push(Action::History(HistoryAction::Older));
-            }
-            let restore = ui
-                .add_enabled(
-                    history.record.is_some(),
-                    egui::Button::new("Restore as draft"),
-                )
-                .on_hover_text("Open an editable request draft without sending it.");
-            if restore.clicked() {
-                actions.push(Action::History(HistoryAction::Restore));
-            }
-            if ui
-                .add_enabled(history.record.is_some(), egui::Button::new("Copy as curl"))
-                .on_hover_text("Copy the request as it was sent, as a curl command")
-                .clicked()
-            {
-                actions.push(Action::History(HistoryAction::CopyCurl));
-            }
-        };
-    let clear = |ui: &mut Ui, actions: &mut Vec<Action>| {
-        if ui.button("Clear all history…").clicked() {
-            actions.push(Action::History(HistoryAction::Clear));
-        }
-    };
-    if ui.available_width() >= TOOLBAR_ONE_ROW {
-        ui.horizontal(|ui| {
-            tools(ui, &mut actions, history);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                clear(ui, &mut actions);
-            });
-        });
-    } else {
-        ui.horizontal_wrapped(|ui| {
-            tools(ui, &mut actions, history);
-            clear(ui, &mut actions);
-        });
-    }
-    ui.horizontal(|ui| {
-        let field = ui.add(
-            egui::TextEdit::singleline(&mut history.filter)
-                .hint_text("Filter: text, status:4xx, method:POST, env:…")
-                .desired_width(260.0_f32.min(ui.available_width() * 0.5)),
-        );
-        name(&field, "Filter history");
-        let field = field.on_hover_text(
-            "Words match the request name and URL. status:404, status:4xx, status:failed, \
-             method:, url:, name:, env:, OR, NOT, -word and \"phrases\". Bodies are not searched.",
-        );
-        if field.changed() {
-            actions.push(Action::History(HistoryAction::Filtered));
-        }
-        if let Some((status, tone)) = &history.status {
-            ui.label(tone_text(status.as_str(), *tone));
-        }
-        ui.label(tone_text(
-            format!(
-                "· Keeps up to {} executions and {}",
-                state.settings.history_max_entries,
-                megabytes(state.settings.history_max_bytes)
-            ),
-            Tone::Muted,
-        ));
-    });
+    toolbar(ui, history, &mut actions);
 
     let area = ui.available_rect_before_wrap();
     let ratio = state.layout.history_ratio;
@@ -154,184 +131,368 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     );
     widgets::split_grip(ui, handle, false, drag.hovered() || drag.dragged());
 
+    let retention = format!(
+        "Keeps up to {} executions and {}",
+        state.settings.history_max_entries,
+        megabytes(state.settings.history_max_bytes)
+    );
     ui.scope_builder(
         UiBuilder::new().max_rect(list).id_salt("history list"),
-        |ui| {
-            let width = ui.available_width();
-            let columns = [
-                180.0,
-                70.0,
-                (width - 180.0 - 70.0 - 130.0 - 140.0).max(160.0),
-                130.0,
-                140.0,
-            ];
-            let header = ["Time", "Method", "URL", "Outcome", "Environment"];
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                ui.add_space(4.0);
-                for (title, width) in header.into_iter().zip(columns) {
-                    widgets::heading_cell(ui, width, title);
-                }
-            });
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show_rows(
-                    ui,
-                    crate::theme::spacing().row,
-                    history.rows.len(),
-                    |ui, range| {
-                        for index in range {
-                            let row = &history.rows[index];
-                            let selected = history.selected == Some(row.id);
-                            let (rect, response) = ui.allocate_exact_size(
-                                vec2(width, crate::theme::spacing().row),
-                                Sense::click(),
-                            );
-                            let when = viewer::local_time(row.timestamp);
-                            name(
-                                &response,
-                                &format!("History {} {} {}", row.method, row.url, when),
-                            );
-                            let fill = if selected {
-                                palette().selected
-                            } else if response.hovered() {
-                                palette().hover
-                            } else {
-                                egui::Color32::TRANSPARENT
-                            };
-                            ui.painter().rect_filled(rect, 4.0, fill);
-                            if selected {
-                                widgets::selection_bar(ui, rect);
-                            }
-                            let (outcome, tone) = outcome_text(row);
-                            let cells = [
-                                (when, palette().text),
-                                (row.method.clone(), palette().text),
-                                (row.url.clone(), palette().text),
-                                (outcome, palette().tone(tone)),
-                                (row.environment.clone(), palette().text_muted),
-                            ];
-                            let mut x = rect.left() + 4.0;
-                            for ((text, color), column) in cells.into_iter().zip(columns) {
-                                let cell = Rect::from_min_size(
-                                    egui::pos2(x, rect.top()),
-                                    vec2(column - 8.0, crate::theme::spacing().row),
-                                );
-                                let galley = ui.painter().layout(
-                                    text,
-                                    egui::FontId::proportional(13.0),
-                                    color,
-                                    f32::INFINITY,
-                                );
-                                ui.painter().with_clip_rect(cell).galley(
-                                    egui::pos2(
-                                        cell.left(),
-                                        cell.center().y - galley.size().y / 2.0,
-                                    ),
-                                    galley,
-                                    color,
-                                );
-                                x += column;
-                            }
-                            if response.clicked() {
-                                actions.push(Action::History(HistoryAction::Select(row.id)));
-                            }
-                        }
-                    },
-                );
-        },
+        |ui| table(ui, history, now, &retention, &mut actions),
     );
-
     ui.scope_builder(
         UiBuilder::new()
             .max_rect(details)
             .id_salt("history details"),
-        |ui| {
-            if history.selected.is_none() {
-                ui.add_space(16.0);
-                ui.vertical_centered(|ui| {
-                    ui.label(tone_text(
-                        "Select an execution to see what was sent and received.",
-                        Tone::Muted,
-                    ))
-                });
-                return;
-            }
-            if history.record.is_none() {
-                ui.label(tone_text("Loading…", Tone::Muted));
-                return;
-            }
-            ui.horizontal(|ui| {
-                for (tab, label) in [
-                    (HistoryTab::Request, "Request"),
-                    (HistoryTab::Response, "Response"),
-                ] {
-                    if widgets::tab(ui, history.tab == tab, label).clicked() {
-                        history.tab = tab;
-                    }
-                }
-            });
-            match history.tab {
-                HistoryTab::Request => sent_request(ui, history),
-                HistoryTab::Response => {
-                    // History responses are not the open request's: no row adds a check.
-                    if let Some(crate::workspace::PaneAction::SaveBody) =
-                        crate::workspace::response_body(
-                            ui,
-                            &mut history.response,
-                            "history",
-                            true,
-                            false,
-                        )
-                    {
-                        actions.push(crate::workspace::save_body_action(&history.response));
-                    }
-                }
-            }
-        },
+        |ui| detail(ui, history, &mut actions),
     );
     ui.allocate_rect(area, Sense::hover());
     state.actions.extend(actions);
 }
 
-/// The request as sent: `METHOD URL`, then its body or headers, like the response.
+/// The filter, "Current request only" and Refresh; clearing everything is in the menu at
+/// the end, away from them.
+fn toolbar(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Vec<Action>) {
+    ui.horizontal(|ui| {
+        let width = (ui.available_width() - 280.0).clamp(140.0, 360.0);
+        let field = ui.add(
+            egui::TextEdit::singleline(&mut history.filter)
+                .hint_text("Filter: text, status:4xx, method:POST, env:…")
+                .desired_width(width),
+        );
+        name(&field, "Filter history");
+        let field = field.on_hover_text(
+            "Words match the request name and URL. status:404, status:4xx, status:failed, \
+             method:, url:, name:, env:, OR, NOT, -word and \"phrases\". Bodies are not searched.",
+        );
+        if field.changed() {
+            actions.push(Action::History(HistoryAction::Filtered));
+        }
+        let mut only = history.only_current;
+        if ui.checkbox(&mut only, "Current request only").changed() {
+            actions.push(Action::History(HistoryAction::OnlyCurrent(only)));
+        }
+        if ui.button("Refresh").clicked() {
+            actions.push(Action::History(HistoryAction::Refresh));
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            crate::icons::menu(ui, crate::icons::Icon::More, "History actions", |ui| {
+                if ui.button("Clear all history…").clicked() {
+                    actions.push(Action::History(HistoryAction::Clear));
+                }
+            });
+        });
+    });
+    ui.add_space(4.0);
+}
+
+/// The executions as a table, newest first, with the pager under it.
+fn table(
+    ui: &mut Ui,
+    history: &mut crate::app::HistoryScreen,
+    now: imposter_app::core::execution::Timestamp,
+    retention: &str,
+    actions: &mut Vec<Action>,
+) {
+    let width = ui.available_width();
+    let columns = columns(width);
+    let row_height = crate::theme::spacing().row;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.add_space(8.0);
+        for (column, width) in &columns {
+            widgets::heading_cell(ui, *width, column.title());
+        }
+    });
+    let body = ui.available_height() - PAGER;
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .max_height(body.max(row_height))
+        .show_rows(ui, row_height, history.rows.len(), |ui, range| {
+            for index in range {
+                let row = &history.rows[index];
+                let selected = history.selected == Some(row.id);
+                let (rect, response) =
+                    ui.allocate_exact_size(vec2(width, row_height), Sense::click());
+                let when = viewer::local_time(row.timestamp);
+                name(
+                    &response,
+                    &format!("History {} {} {}", row.method, row.url, when),
+                );
+                let fill = if selected {
+                    palette().selected
+                } else if response.hovered() {
+                    palette().hover
+                } else {
+                    egui::Color32::TRANSPARENT
+                };
+                ui.painter().rect_filled(rect, 4.0, fill);
+                if selected {
+                    widgets::selection_bar(ui, rect);
+                }
+                row_cells(ui, rect, row, &columns, now);
+                let response = response.on_hover_text(&when);
+                if response.clicked() {
+                    actions.push(Action::History(HistoryAction::Select(row.id)));
+                }
+            }
+        });
+    pager(ui, history, retention, actions);
+}
+
+/// One row's cells, painted: the list is virtualized, so nothing is laid out off screen.
+fn row_cells(
+    ui: &Ui,
+    rect: Rect,
+    row: &ExecutionSummary,
+    columns: &[(Column, f32)],
+    now: imposter_app::core::execution::Timestamp,
+) {
+    let body = egui::TextStyle::Body.resolve(ui.style());
+    let mono = egui::TextStyle::Monospace.resolve(ui.style());
+    let small = egui::TextStyle::Small.resolve(ui.style());
+    let palette = palette();
+    let mut x = rect.left() + 8.0;
+    for (column, width) in columns {
+        let cell = Rect::from_min_size(egui::pos2(x, rect.top()), vec2(width - 8.0, rect.height()));
+        x += width;
+        let mut job = match column {
+            Column::When => text_job(
+                &viewer::relative_time(row.timestamp, now),
+                palette.text_muted,
+                &small,
+            ),
+            Column::Name => text_job(
+                if row.name.is_empty() {
+                    "Untitled request"
+                } else {
+                    &row.name
+                },
+                palette.text,
+                &body,
+            ),
+            Column::Method => text_job(&row.method, crate::theme::method_color(&row.method), &mono),
+            Column::Url => {
+                let (origin, path) = viewer::split_origin(&row.url);
+                let mut job = egui::text::LayoutJob::default();
+                job.append(
+                    origin,
+                    0.0,
+                    egui::TextFormat::simple(mono.clone(), palette.text_muted),
+                );
+                job.append(
+                    path,
+                    0.0,
+                    egui::TextFormat::simple(mono.clone(), palette.text),
+                );
+                job
+            }
+            Column::Status => {
+                let (text, tone) = outcome_text(row);
+                let color = palette.tone(tone);
+                let galley = ui
+                    .painter()
+                    .layout_no_wrap(text, crate::theme::semibold(12.0), color);
+                let pill = Rect::from_center_size(
+                    egui::pos2(cell.left() + galley.size().x / 2.0 + 8.0, cell.center().y),
+                    galley.size() + vec2(16.0, 2.0),
+                );
+                ui.painter()
+                    .rect_filled(pill, 10.0, color.gamma_multiply(widgets::PILL_TINT));
+                ui.painter()
+                    .galley(pill.min + vec2(8.0, 1.0), galley, color);
+                continue;
+            }
+            Column::Duration => {
+                let text = if row.outcome == Outcome::Cancelled {
+                    String::new()
+                } else {
+                    viewer::format_duration(row.elapsed)
+                };
+                text_job(&text, palette.text_muted, &small)
+            }
+            Column::Environment => text_job(&row.environment, palette.text_muted, &small),
+        };
+        cut(&mut job, cell.width());
+        let galley = ui.painter().layout_job(job);
+        ui.painter().galley(
+            egui::pos2(cell.left(), cell.center().y - galley.size().y / 2.0),
+            galley,
+            palette.text,
+        );
+    }
+}
+
+/// Which executions show, how many history keeps, and Newer and Older.
+fn pager(
+    ui: &mut Ui,
+    history: &mut crate::app::HistoryScreen,
+    retention: &str,
+    actions: &mut Vec<Action>,
+) {
+    ui.horizontal(|ui| {
+        ui.set_height(PAGER);
+        if let Some((status, tone)) = &history.status {
+            ui.label(tone_text(status.as_str(), *tone));
+        }
+        ui.add(egui::Label::new(tone_text(format!("· {retention}"), Tone::Muted)).truncate());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add_enabled(
+                    history.rows.len() as u64 == HISTORY_PAGE,
+                    egui::Button::new("Older"),
+                )
+                .clicked()
+            {
+                actions.push(Action::History(HistoryAction::Older));
+            }
+            if ui
+                .add_enabled(history.offset > 0, egui::Button::new("Newer"))
+                .clicked()
+            {
+                actions.push(Action::History(HistoryAction::Newer));
+            }
+        });
+    });
+}
+
+/// The selected execution: one line with what was sent and how it went, and its actions;
+/// then one row of tabs for the response and the request as sent.
+fn detail(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Vec<Action>) {
+    if history.selected.is_none() {
+        ui.add_space(16.0);
+        ui.vertical_centered(|ui| {
+            ui.label(tone_text(
+                "Select an execution to see what was sent and received.",
+                Tone::Muted,
+            ))
+        });
+        return;
+    }
+    let (Some(record), Some(request)) = (&history.record, &history.request) else {
+        ui.label(tone_text("Loading…", Tone::Muted));
+        return;
+    };
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .button("Copy as curl")
+                .on_hover_text("Copy the request as it was sent, as a curl command")
+                .clicked()
+            {
+                actions.push(Action::History(HistoryAction::CopyCurl));
+            }
+            if ui
+                .button("Restore as draft")
+                .on_hover_text("Open an editable request draft without sending it.")
+                .clicked()
+            {
+                actions.push(Action::History(HistoryAction::Restore));
+            }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                let status = viewer::status(&record.response);
+                let mut job = egui::text::LayoutJob::default();
+                let mono = egui::TextStyle::Monospace.resolve(ui.style());
+                job.append(
+                    &request.summary,
+                    0.0,
+                    egui::TextFormat::simple(mono, palette().text),
+                );
+                job.append(
+                    &format!("  ·  {}", status.text),
+                    0.0,
+                    egui::TextFormat::simple(
+                        egui::TextStyle::Body.resolve(ui.style()),
+                        palette().tone(status.tone),
+                    ),
+                );
+                job.append(
+                    &format!("  ·  {}", viewer::format_duration(record.response.elapsed)),
+                    0.0,
+                    egui::TextFormat::simple(
+                        egui::TextStyle::Body.resolve(ui.style()),
+                        palette().text_muted,
+                    ),
+                );
+                ui.add(egui::Label::new(job).truncate().selectable(true))
+                    .on_hover_text(request.summary.as_str());
+            });
+        });
+    });
+    // One row of tabs: the response, then the request's body and headers as sent.
+    ui.horizontal(|ui| {
+        for (tab, sent, label, accessible) in [
+            (HistoryTab::Response, None, "Response", "Response"),
+            (
+                HistoryTab::Request,
+                Some(SentTab::Body),
+                "Request body",
+                "Request body",
+            ),
+            (
+                HistoryTab::Request,
+                Some(SentTab::Headers),
+                "Request headers",
+                "Request headers",
+            ),
+        ] {
+            let selected =
+                history.tab == tab && sent.is_none_or(|sent| history.request_tab == sent);
+            let response = widgets::tab(ui, selected, label);
+            name(&response, accessible);
+            if response.clicked() {
+                history.tab = tab;
+                if let Some(sent) = sent {
+                    history.request_tab = sent;
+                }
+            }
+        }
+        if history.tab == HistoryTab::Request {
+            let (view, text, copy) = match history.request_tab {
+                SentTab::Body => (
+                    &mut history.request_body_view,
+                    &request.body,
+                    "Copy request body",
+                ),
+                SentTab::Headers => (
+                    &mut history.request_headers_view,
+                    &request.headers,
+                    "Copy request headers",
+                ),
+            };
+            if !text.is_empty() {
+                widgets::viewer_tools(ui, view, text, copy);
+            }
+        }
+    });
+    match history.tab {
+        HistoryTab::Request => sent_request(ui, history),
+        HistoryTab::Response => {
+            // History responses are not the open request's: no row adds a check.
+            if let Some(crate::workspace::PaneAction::SaveBody) =
+                crate::workspace::response_body(ui, &mut history.response, "history", true, false)
+            {
+                actions.push(crate::workspace::save_body_action(&history.response));
+            }
+        }
+    }
+}
+
+/// The request's body or headers as sent; an empty one says so in words, not as code.
 fn sent_request(ui: &mut Ui, history: &mut crate::app::HistoryScreen) {
     let Some(request) = &history.request else {
         return;
     };
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(request.summary.as_str())
-                .monospace()
-                .strong(),
-        )
-        .selectable(true)
-        .truncate(),
-    )
-    .on_hover_text(request.summary.as_str());
-    ui.horizontal(|ui| {
-        for (tab, label) in [(SentTab::Body, "Body"), (SentTab::Headers, "Headers")] {
-            let response = widgets::tab(ui, history.request_tab == tab, label);
-            name(&response, &format!("Request {}", label.to_lowercase()));
-            if response.clicked() {
-                history.request_tab = tab;
-            }
-        }
-        match history.request_tab {
-            SentTab::Body => widgets::viewer_tools(
-                ui,
-                &mut history.request_body_view,
-                &request.body,
-                "Copy request body",
-            ),
-            SentTab::Headers => widgets::viewer_tools(
-                ui,
-                &mut history.request_headers_view,
-                &request.headers,
-                "Copy request headers",
-            ),
-        }
-    });
+    let (text, empty) = match history.request_tab {
+        SentTab::Body => (&request.body, "No body"),
+        SentTab::Headers => (&request.headers, "No headers"),
+    };
+    if text.is_empty() {
+        ui.add_space(16.0);
+        ui.vertical_centered(|ui| ui.label(tone_text(empty, Tone::Muted)));
+        return;
+    }
     let _ = match history.request_tab {
         SentTab::Body => widgets::code_viewer(
             ui,

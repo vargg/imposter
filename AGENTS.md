@@ -438,9 +438,25 @@ numbers, so both are excluded. Each logical change is its own commit.
   word.
 - **History shows times in the system time zone** (via `jiff`, display only); records store UTC
   milliseconds. The request of an execution is shown as sent (`viewer::sent_request`, built
-  with the executor's own `prepare`): `METHOD URL`, then Body and Headers tabs like the
-  response, never a dump of the stored template. Restoring an entry opens an unsaved draft through the unsaved-changes guard and
-  never sends; the draft keeps the captured collection variables for a deleted collection.
+  with the executor's own `prepare`), never a dump of the stored template. Restoring an
+  entry opens an unsaved draft through the unsaved-changes guard and never sends; the draft
+  keeps the captured collection variables for a deleted collection.
+  - **The list is a table** (`history_screen::columns`): When (relative, "5 min ago", from
+    `viewer::relative_time`; the exact time is the row's hover text), Name, Method in its
+    color, URL with the repeating origin muted, a status pill ("201", "Failed",
+    "Cancelled"), Time, and Environment from 900 points on. Text is cut with "…", never
+    clipped mid-glyph. Rows are painted, not laid out, so the list stays virtualized.
+  - **Tools:** the filter, "Current request only" and Refresh; "Clear all history…" is in
+    the "⋯" menu. Newer and Older are a pager under the list, with which executions show
+    and what history keeps.
+  - **Details:** one line ("GET url · 201 Created · 3 ms") with Restore as draft and Copy as
+    curl beside it, then one row of tabs: Response (first, as runs are looked up for it),
+    Request body, Request headers. An empty body or header list says so in muted text.
+
+  Why: the list had no name or duration and spent its width on full dates, URLs were
+  clipped without an ellipsis, "Clear all history…" sat beside "Copy as curl", the actions
+  were far from what they acted on, and the details had two levels of tabs with "No body"
+  printed as code (the review's #43–#46).
 - **The layout is a switch, not a mode:** side by side or stacked, changed only by the status
   bar's two layout buttons (the current one selected: one button showing the other
   layout's icon read as the current state), never by the window width. The window can shrink to 720×480 (`MIN_WINDOW`; the

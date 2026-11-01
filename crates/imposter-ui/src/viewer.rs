@@ -357,7 +357,7 @@ pub fn sent_request(record: &ExecutionRecord) -> SentRequest {
     }
     let language = language(content_type(&prepared.headers));
     let (body, language) = match prepared.body {
-        PreparedBody::Bytes(bytes) if bytes.is_empty() => ("No body".to_owned(), Language::Plain),
+        PreparedBody::Bytes(bytes) if bytes.is_empty() => (String::new(), Language::Plain),
         PreparedBody::Bytes(bytes) => {
             let cut = bytes.len() > PREVIEW_LIMIT;
             let mut text = decode(&bytes[..bytes.len().min(PREVIEW_LIMIT)], cut);
@@ -399,11 +399,7 @@ pub fn sent_request(record: &ExecutionRecord) -> SentRequest {
     };
     SentRequest {
         summary: format!("{} {}", prepared.method, prepared.url),
-        headers: if headers.is_empty() {
-            "No headers".to_owned()
-        } else {
-            headers.join("\n")
-        },
+        headers: headers.join("\n"),
         body,
         language,
     }
@@ -459,6 +455,44 @@ pub fn status(response: &Response) -> Status {
             detail: format!("{} {}", response.status, response.reason),
         },
     }
+}
+
+/// How long ago `then` was, at `now` (both in milliseconds): "just now", "12 s ago", "5 min
+/// ago", "3 h ago", "2 d ago", then the date in the system time zone ("24 Oct 2026").
+pub fn relative_time(
+    then: imposter_app::core::execution::Timestamp,
+    now: imposter_app::core::execution::Timestamp,
+) -> String {
+    let seconds = (now.0 - then.0).max(0) / 1000;
+    match seconds {
+        0..=9 => "just now".to_owned(),
+        10..=59 => format!("{seconds} s ago"),
+        60..=3599 => format!("{} min ago", seconds / 60),
+        3600..=86_399 => format!("{} h ago", seconds / 3600),
+        86_400..=604_799 => format!("{} d ago", seconds / 86_400),
+        _ => jiff::Timestamp::from_millisecond(then.0).map_or_else(
+            |_| then.to_rfc3339(),
+            |instant| {
+                instant
+                    .to_zoned(jiff::tz::TimeZone::system())
+                    .strftime("%d %b %Y")
+                    .to_string()
+            },
+        ),
+    }
+}
+
+/// A URL's origin (`https://api.example.com:8443`) and the rest (`/users?page=1`), so a
+/// list can mute the part that repeats. Text that is not a URL is all rest.
+pub fn split_origin(url: &str) -> (&str, &str) {
+    let Some(scheme) = url.find("://") else {
+        return ("", url);
+    };
+    let after = scheme + 3;
+    let end = url[after..]
+        .find(['/', '?', '#'])
+        .map_or(url.len(), |at| after + at);
+    url.split_at(end)
 }
 
 /// A history timestamp in the system time zone: "24 Oct 2026, 21:05:35".
@@ -1388,5 +1422,32 @@ mod tests {
         assert_eq!(find_all(text, ""), Vec::<Range<usize>>::new());
         assert_eq!(find_all("aaaa", "aa"), [0..2, 2..4]);
         assert_eq!(find_all("abc", "abcd"), Vec::<Range<usize>>::new());
+    }
+    #[test]
+    fn relative_times_read_as_people_say_them() {
+        use imposter_app::core::execution::Timestamp;
+        let now = Timestamp(1_800_000_000_000);
+        let ago = |seconds: i64| relative_time(Timestamp(now.0 - seconds * 1000), now);
+        assert_eq!(ago(0), "just now");
+        assert_eq!(ago(-5), "just now", "a clock behind the record");
+        assert_eq!(ago(42), "42 s ago");
+        assert_eq!(ago(5 * 60 + 59), "5 min ago");
+        assert_eq!(ago(3 * 3600), "3 h ago");
+        assert_eq!(ago(2 * 86_400), "2 d ago");
+        assert!(ago(30 * 86_400).ends_with(" 2026"), "{}", ago(30 * 86_400));
+    }
+
+    #[test]
+    fn urls_split_into_origin_and_rest() {
+        assert_eq!(
+            split_origin("http://127.0.0.1:9/users?page=1"),
+            ("http://127.0.0.1:9", "/users?page=1")
+        );
+        assert_eq!(
+            split_origin("https://api.example.com"),
+            ("https://api.example.com", "")
+        );
+        assert_eq!(split_origin("https://h?q=1#f"), ("https://h", "?q=1#f"));
+        assert_eq!(split_origin("{{base}}/users"), ("", "{{base}}/users"));
     }
 }

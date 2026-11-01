@@ -429,10 +429,11 @@ pub enum HistoryAction {
     Clear,
 }
 
+/// What History's details show; the response first, as it is what a run is looked up for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HistoryTab {
-    #[default]
     Request,
+    #[default]
     Response,
 }
 
