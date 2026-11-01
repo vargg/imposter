@@ -19,8 +19,6 @@ pub enum Icon {
     Search,
     Wrap,
     Save,
-    Pencil,
-    Trash,
     /// A shell prompt, for curl commands.
     Terminal,
     /// Chevrons pointing together: fold everything.
@@ -29,6 +27,8 @@ pub enum Icon {
     Expand,
     /// A funnel.
     Filter,
+    /// Values kept for later.
+    Bookmark,
 }
 
 /// The side of an icon button: as tall as the other controls, so they line up in a row.
@@ -74,6 +74,48 @@ pub fn button_with_hint(
     } else {
         response.on_disabled_hover_text(hint)
     }
+}
+
+/// An icon button with a count after the icon when `count` is above zero ("🔖 3"): how
+/// many of something it opens, readable without opening it.
+pub fn count_button(ui: &mut Ui, icon: Icon, label: &str, hint: &str, count: usize) -> Response {
+    let text = (count > 0).then(|| count.to_string());
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let text_width = text.as_ref().map_or(0.0, |text| {
+        ui.fonts_mut(|f| f.layout_no_wrap(text.clone(), font.clone(), Color32::WHITE))
+            .size()
+            .x
+            + 4.0
+    });
+    let response = ui.add_sized(
+        [size() + text_width, size()],
+        egui::Button::new("").frame_when_inactive(false),
+    );
+    crate::widgets::name(&response, label);
+    if ui.is_rect_visible(response.rect) {
+        let color = if response.hovered() || response.has_focus() {
+            palette().text
+        } else {
+            palette().text_muted
+        };
+        let left = response.rect.left() + (size() - 16.0) / 2.0;
+        paint(
+            ui,
+            icon,
+            egui::pos2(left, response.rect.center().y - 8.0),
+            color,
+        );
+        if let Some(text) = text {
+            ui.painter().text(
+                egui::pos2(left + 16.0 + 2.0, response.rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                text,
+                font,
+                color,
+            );
+        }
+    }
+    response.on_hover_text(hint)
 }
 
 pub fn menu<R>(
@@ -188,19 +230,6 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
             rectangle((5.0, 2.0), (10.5, 6.0));
             rectangle((4.5, 9.0), (11.5, 14.0));
         }
-        Icon::Pencil => {
-            painter.add(egui::Shape::closed_line(
-                vec![
-                    point(2.5, 13.5),
-                    point(3.2, 10.3),
-                    point(11.0, 2.5),
-                    point(13.5, 5.0),
-                    point(5.7, 12.8),
-                ],
-                stroke,
-            ));
-            line((9.3, 4.2), (11.8, 6.7));
-        }
         Icon::Terminal => {
             rectangle((1.0, 2.0), (15.0, 14.0));
             painter.add(egui::Shape::line(
@@ -208,29 +237,6 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
                 stroke,
             ));
             line((8.0, 10.5), (12.0, 10.5));
-        }
-        Icon::Trash => {
-            line((2.0, 4.0), (14.0, 4.0));
-            painter.add(egui::Shape::line(
-                vec![
-                    point(6.0, 4.0),
-                    point(6.0, 2.0),
-                    point(10.0, 2.0),
-                    point(10.0, 4.0),
-                ],
-                stroke,
-            ));
-            painter.add(egui::Shape::line(
-                vec![
-                    point(3.5, 4.0),
-                    point(4.5, 14.0),
-                    point(11.5, 14.0),
-                    point(12.5, 4.0),
-                ],
-                stroke,
-            ));
-            line((6.5, 7.0), (6.5, 11.5));
-            line((9.5, 7.0), (9.5, 11.5));
         }
         Icon::Collapse | Icon::Expand => {
             // Each chevron as (y of its ends, y of its tip).
@@ -255,6 +261,18 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
                     point(9.5, 13.5),
                     point(6.5, 12.0),
                     point(6.5, 8.5),
+                ],
+                stroke,
+            ));
+        }
+        Icon::Bookmark => {
+            painter.add(egui::Shape::closed_line(
+                vec![
+                    point(4.0, 2.0),
+                    point(12.0, 2.0),
+                    point(12.0, 14.0),
+                    point(8.0, 10.5),
+                    point(4.0, 14.0),
                 ],
                 stroke,
             ));

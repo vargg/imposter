@@ -217,3 +217,71 @@ fn a_value_removed_meanwhile_is_reported_and_not_recreated() {
     app.harness.get_by_label("Value not changed");
     assert_eq!(stored(&app).0, vars(&[("base", "http://h")]));
 }
+
+#[test]
+fn the_saved_values_menu_marks_the_current_value_and_keeps_remove_at_the_far_end() {
+    let mut app = with_saved_user("http://h".into());
+    click(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    // The trigger counts the list, in a neutral color: orange is for selection.
+    let trigger = app.harness.get_by_label("Variable 2 saved values").rect();
+    let count = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text)
+                if trigger.contains(text.pos) && text.galley.job.text == "2" =>
+            {
+                Some(text.fallback_color)
+            }
+            _ => None,
+        })
+        .expect("a count beside the icon");
+    assert_ne!(count, imposter_ui::theme::palette().accent);
+
+    click(&mut app.harness, "Variable 2 saved values");
+    let painted: Vec<(String, egui::Rect)> = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => Some((
+                text.galley.job.text.clone(),
+                egui::Rect::from_min_size(text.pos, text.galley.size()),
+            )),
+            _ => None,
+        })
+        .collect();
+    let current: Vec<&String> = painted
+        .iter()
+        .map(|(text, _)| text)
+        .filter(|text| text.ends_with("current"))
+        .collect();
+    assert_eq!(current, ["42current"], "only the current value is marked");
+    for (position, value) in [(1, "42"), (2, "77")] {
+        let text = painted
+            .iter()
+            .find(|(text, _)| text.starts_with(value))
+            .unwrap()
+            .1;
+        let remove = app
+            .harness
+            .get_by_label(&format!("Remove saved value {position}"))
+            .rect();
+        assert!(
+            remove.left() - text.right() >= 12.0,
+            "{value}: {text:?} too close to {remove:?}"
+        );
+        let row = app
+            .harness
+            .get_by_label(&format!("Use saved value {position}: {value}"))
+            .rect();
+        assert!(
+            (row.right() - remove.left()).abs() < 12.0,
+            "the value fills the row up to remove"
+        );
+    }
+}

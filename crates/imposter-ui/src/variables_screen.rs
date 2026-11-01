@@ -260,6 +260,9 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     state.actions.extend(actions);
 }
 
+/// Wide enough for a value, "current" and the remove button.
+const SAVED_MENU_WIDTH: f32 = 280.0;
+
 /// The scope's name (with its color) and kind on one line, and its place in precedence under
 /// them.
 fn header(title: String, kind: String, precedence: &str, color: Option<EnvColor>, ui: &mut Ui) {
@@ -284,29 +287,62 @@ fn saved_values(ui: &mut Ui, row: &mut vars::Row, index: usize, height: f32) -> 
         0 => "Saved values: none yet".to_owned(),
         count => format!("Saved values: {count}"),
     };
-    let button = icons::button_with_hint(ui, Icon::More, &label, &hint, !row.saved.is_empty());
+    let button = icons::count_button(ui, Icon::Bookmark, &label, &hint, row.saved.len());
     let mut changed = false;
     egui::Popup::menu(&button)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            ui.set_min_width(240.0);
+            ui.set_min_width(SAVED_MENU_WIDTH);
+            ui.set_max_width(SAVED_MENU_WIDTH);
             if row.saved.is_empty() {
-                ui.label(tone_text("No saved values", Tone::Muted));
+                ui.label(tone_text("No saved values yet", Tone::Muted));
             }
             let mut remove = None;
             for (position, value) in row.saved.iter().enumerate() {
                 ui.horizontal(|ui| {
                     let text = crate::widgets::saved_label(value, false);
-                    let choice = crate::widgets::option(
-                        ui,
-                        *value == row.value,
-                        RichText::new(&text).monospace(),
+                    let current = *value == row.value;
+                    // The value on the left, "current" after it, and × at the far right, so a
+                    // click meant for the value never lands on remove.
+                    let mut job = egui::text::LayoutJob::default();
+                    job.append(
+                        &text,
+                        0.0,
+                        egui::TextFormat::simple(
+                            egui::TextStyle::Monospace.resolve(ui.style()),
+                            palette().text,
+                        ),
                     );
+                    if current {
+                        job.append(
+                            "current",
+                            8.0,
+                            egui::TextFormat::simple(
+                                egui::TextStyle::Small.resolve(ui.style()),
+                                palette().text_muted,
+                            ),
+                        );
+                    }
+                    let width = ui.available_width() - height - ui.spacing().item_spacing.x;
+                    let choice = ui.add_sized(
+                        [width, height],
+                        egui::Button::selectable(current, (job, egui::Atom::grow()))
+                            .stroke(egui::Stroke::NONE)
+                            .truncate(),
+                    );
+                    if current {
+                        crate::widgets::selection_bar(ui, choice.rect);
+                    }
                     name(
                         &choice,
                         &format!("Use saved value {}: {text}", position + 1),
                     );
-                    if choice.clicked() && *value != row.value {
+                    let choice = choice.on_hover_text(if current {
+                        "The current value"
+                    } else {
+                        "Make this the current value"
+                    });
+                    if choice.clicked() && !current {
                         row.value.clone_from(value);
                         changed = true;
                     }
@@ -321,8 +357,16 @@ fn saved_values(ui: &mut Ui, row: &mut vars::Row, index: usize, height: f32) -> 
                 row.saved.remove(position);
                 changed = true;
             }
+            if !row.saved.is_empty() {
+                ui.separator();
+            }
             let can_save = !row.saved.contains(&row.value);
-            let save = ui.add_enabled(can_save, egui::Button::new("Save current value"));
+            let save = ui.add_enabled(
+                can_save,
+                egui::Button::selectable(false, "+ Save current value").stroke(egui::Stroke::NONE),
+            );
+            name(&save, "Save current value");
+            let save = save.on_disabled_hover_text("The current value is already saved");
             if save.clicked() {
                 row.save_current();
                 changed = true;

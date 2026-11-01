@@ -394,6 +394,12 @@ numbers, so both are excluded. Each logical change is its own commit.
   out. Rejected: linked rows switched together (Paw's environment domains; the
   user swaps values independently), a send-time prompt (Insomnia; keeps nothing), and one
   environment per value (Postman; multiplies environments).
+  On the Variables screen a bookmark with the list's count opens them, in a neutral color
+  (the orange "⋯" read as selected). Each value fills its row, the current one filled and
+  marked "current"; × is at the row's far end, at least 12 points from the value, and
+  stays visible (and two-click) rather than appearing on hover, so keyboard and screen
+  reader users can reach it. "+ Save current value" ends the list. Why: × beside the
+  value invited removing it by mistake (the review's #38).
 - **History search uses the sidebar's filter language** (`filter.rs`, with `status:` and
   `env:` added for History: `404`, `4xx`, `failed`, `cancelled`). Words match the request
   name and the URL as sent; bodies are not searched, because that would decode every
