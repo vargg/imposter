@@ -7,7 +7,8 @@ use crate::app::{Action, State, VariablesAction};
 use crate::icons::{self, Icon};
 use crate::theme::{Tone, palette};
 use crate::vars::{self, Scope};
-use crate::widgets::{SaveStatus, name, save_controls, tone_text};
+use crate::widgets::{SaveStatus, env_text, name, save_controls, tone_text};
+use imposter_app::core::model::EnvColor;
 
 fn scope_label(state: &State, scope: Scope) -> String {
     match scope {
@@ -23,16 +24,75 @@ fn scope_label(state: &State, scope: Scope) -> String {
     }
 }
 
+fn scope_color(state: &State, scope: Scope) -> Option<EnvColor> {
+    match scope {
+        Scope::Environment(id) => state
+            .environments
+            .iter()
+            .find(|e| e.id == id)
+            .and_then(|e| e.color),
+        Scope::Global | Scope::Collection(_) => None,
+    }
+}
+
+/// What the screen edits, in words: its name, what kind of scope it is, and where it stands
+/// in precedence (the active environment, then the collection, then Global).
+pub fn explanation(state: &State, scope: Scope) -> (String, String, &'static str) {
+    match scope {
+        Scope::Global => (
+            "Global".to_owned(),
+            "Every request".to_owned(),
+            "A collection's variables and the active environment override these.",
+        ),
+        Scope::Environment(id) => {
+            let name = state
+                .environments
+                .iter()
+                .find(|e| e.id == id)
+                .map_or_else(String::new, |e| e.name.clone());
+            let kind = if state.active_environment == Some(id) {
+                "Environment · active"
+            } else {
+                "Environment · not active"
+            };
+            (
+                name,
+                kind.to_owned(),
+                "While active, these override the collection's variables and Global.",
+            )
+        }
+        Scope::Collection(id) => (
+            state
+                .collections
+                .iter()
+                .find(|c| c.id == id)
+                .map_or_else(String::new, |c| c.name.clone()),
+            "Collection".to_owned(),
+            "Its requests use these; the active environment overrides them, and they override Global.",
+        ),
+    }
+}
+
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut actions = Vec::new();
     let current = state.variables.scope;
     ui.horizontal(|ui| {
+        let font = egui::TextStyle::Button.resolve(ui.style());
+        let text = palette().text;
         let combo = egui::ComboBox::from_id_salt("variables scope")
             .width(260.0)
-            .selected_text(scope_label(state, current))
+            .selected_text(env_text(
+                &scope_label(state, current),
+                scope_color(state, current),
+                font.clone(),
+                text,
+            ))
             .show_ui(ui, |ui| {
                 let mut pick = |ui: &mut Ui, scope: Scope, label: String| {
-                    if crate::widgets::option(ui, scope == current, label).clicked() {
+                    let shown = env_text(&label, scope_color(state, scope), font.clone(), text);
+                    let option = crate::widgets::option(ui, scope == current, shown);
+                    name(&option, &label);
+                    if option.clicked() {
                         actions.push(Action::Variables(VariablesAction::SelectScope(scope)));
                     }
                 };
@@ -53,17 +113,32 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 }
             });
         name(&combo.response, "Variable scope");
-        if icons::button(ui, Icon::Plus, "New environment", false).clicked() {
+        let new = ui
+            .button("+ Environment")
+            .on_hover_text("Create an environment");
+        name(&new, "New environment");
+        if new.clicked() {
             actions.push(Action::Variables(VariablesAction::NewEnvironment));
         }
-        if let Scope::Environment(id) = current {
-            if icons::button(ui, Icon::Pencil, "Rename environment", false).clicked() {
-                actions.push(Action::Variables(VariablesAction::RenameEnvironment(id)));
+        let has_rows = !state.variables.rows.is_empty();
+        icons::menu(ui, Icon::More, "Variable actions", |ui| {
+            if let Scope::Environment(id) = current {
+                if ui.button("Rename environment…").clicked() {
+                    actions.push(Action::Variables(VariablesAction::RenameEnvironment(id)));
+                }
+                if ui.button("Delete environment…").clicked() {
+                    actions.push(Action::Variables(VariablesAction::DeleteEnvironment(id)));
+                }
+                ui.separator();
             }
-            if icons::button(ui, Icon::Trash, "Delete environment", false).clicked() {
-                actions.push(Action::Variables(VariablesAction::DeleteEnvironment(id)));
+            // Asks below the rows before anything is removed.
+            if ui
+                .add_enabled(has_rows, egui::Button::new("Clear all variables…"))
+                .clicked()
+            {
+                state.variables.confirm_clear = true;
             }
-        }
+        });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let screen = &state.variables;
             let dirty = screen.dirty();
@@ -105,6 +180,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     }
     let mut edited = false;
     let highlight = state.variables.highlight.take();
+    let state_view = explanation(state, current);
+    let color = scope_color(state, current);
     egui::Frame::new()
         .fill(palette().surface)
         .stroke(egui::Stroke::new(1.0, palette().border))
@@ -114,6 +191,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    header(state_view.0, state_view.1, state_view.2, color, ui);
                     let height = ui.spacing().interact_size.y;
                     // Room for the saved values and remove buttons after the fields.
                     let available = ui.available_width() - 76.0;
@@ -161,19 +239,15 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                         if ui.button("Add Variable").clicked() {
                             state.variables.rows.push(vars::Row::new("", ""));
                         }
-                        if !state.variables.rows.is_empty() {
-                            if state.variables.confirm_clear {
-                                ui.label(tone_text("Remove all variables?", Tone::Warning));
-                                if ui.button(RichText::new("Remove all")).clicked() {
-                                    state.variables.rows.clear();
-                                    state.variables.confirm_clear = false;
-                                    edited = true;
-                                }
-                                if ui.button("Keep").clicked() {
-                                    state.variables.confirm_clear = false;
-                                }
-                            } else if ui.button("Clear All").clicked() {
-                                state.variables.confirm_clear = true;
+                        if state.variables.confirm_clear && !state.variables.rows.is_empty() {
+                            ui.label(tone_text("Remove all variables?", Tone::Warning));
+                            if ui.button(RichText::new("Remove all")).clicked() {
+                                state.variables.rows.clear();
+                                state.variables.confirm_clear = false;
+                                edited = true;
+                            }
+                            if ui.button("Keep").clicked() {
+                                state.variables.confirm_clear = false;
                             }
                         }
                     });
@@ -184,6 +258,21 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     }
 
     state.actions.extend(actions);
+}
+
+/// The scope's name (with its color) and kind on one line, and its place in precedence under
+/// them.
+fn header(title: String, kind: String, precedence: &str, color: Option<EnvColor>, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        if let Some(color) = color {
+            crate::widgets::env_dot(ui, color);
+        }
+        let title = RichText::new(title).font(crate::theme::semibold(15.0));
+        ui.add(egui::Label::new(title).truncate());
+        ui.label(tone_text(kind, Tone::Muted));
+    });
+    ui.add(egui::Label::new(tone_text(precedence, Tone::Muted)).wrap());
+    ui.add_space(8.0);
 }
 
 /// The row's saved values: pick one as the current value, save the current one, or remove

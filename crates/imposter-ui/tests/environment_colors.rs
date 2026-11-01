@@ -140,7 +140,8 @@ fn renaming_shows_the_color_and_can_clear_it() {
     click(&mut app.harness, "Environment · Prod");
     settle(&mut app.harness);
 
-    click(&mut app.harness, "Rename environment");
+    click(&mut app.harness, "Variable actions");
+    click(&mut app.harness, "Rename environment…");
     assert_eq!(chosen(&app), ["Red"]);
     support::text_input(&app.harness, "Name").type_text("uction");
     app.harness.run_steps(2);

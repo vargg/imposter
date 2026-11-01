@@ -375,6 +375,13 @@ numbers, so both are excluded. Each logical change is its own commit.
   independently of the active execution environment, with its own unsaved-changes guard for
   scope changes, reloads, environment management, "Open definition" and closing. Closing
   resolves the request guard first, then the variables guard, then writes UI state.
+  The list is headed by the scope's name (with its environment color), its kind ("Every
+  request", "Environment · active" or "· not active", "Collection") and one line on where
+  it stands in precedence (`variables_screen::explanation`). The toolbar has a labelled
+  "+ Environment"; renaming, deleting and "Clear all variables…" are in its "⋯" menu, and
+  clearing still asks under the rows. Why: the screen did not say which scope wins, nor
+  whether the environment shown is the one sends use, and "Clear All" sat beside "Add
+  Variable" (the review's #37, #39).
 - **Saved values: a list per variable, kept in the variable's scope beside its current value**
   (`model::SavedValues`, the `saved_values` column of migration V2, `store::scopes`). The
   current value stays the single source for execution, precedence, curl, history and exports;

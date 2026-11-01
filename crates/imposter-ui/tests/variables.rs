@@ -202,7 +202,8 @@ fn environments_are_created_renamed_and_deleted() {
         Scope::Environment(_)
     ));
 
-    click(&mut app.harness, "Rename environment");
+    click(&mut app.harness, "Variable actions");
+    click(&mut app.harness, "Rename environment…");
     app.harness.run_steps(2);
     support::text_input(&app.harness, "Name").type_text(" EU");
     app.harness.run_steps(1);
@@ -219,7 +220,8 @@ fn environments_are_created_renamed_and_deleted() {
         .collect();
     assert_eq!(names, ["Staging EU"]);
 
-    click(&mut app.harness, "Delete environment");
+    click(&mut app.harness, "Variable actions");
+    click(&mut app.harness, "Delete environment…");
     click_button(&mut app.harness, "Delete");
     settle(&mut app.harness);
     assert_eq!(
@@ -569,4 +571,94 @@ fn a_dollar_suggests_generated_values_and_the_inspector_explains_them() {
         "the example holds still while the inspector is open"
     );
     assert_eq!(example.trim_start_matches("For example: ").len(), 36);
+}
+
+/// The screen's heading: `title`, on the row of its `kind` and before it.
+fn heading_beside(app: &support::App, title: &str, kind: &str) {
+    let kind = app.harness.get_by_label(kind).rect();
+    assert!(
+        app.harness.query_all_by_label(title).any(|node| {
+            let rect = node.rect();
+            rect.right() <= kind.left() && (rect.center().y - kind.center().y).abs() < 4.0
+        }),
+        "no heading {title:?} before {kind:?}"
+    );
+}
+
+#[test]
+fn the_screen_says_what_it_edits_and_where_it_stands_in_precedence() {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                let dev = environments::create_environment(db, "Dev", &vars(&[]))?;
+                environments::set_active_environment(db, Some(dev.id))?;
+                environments::create_environment(db, "Prod", &vars(&[]))
+            })
+            .unwrap();
+        collection(store, "API");
+    });
+    open_screen(&mut app);
+    app.harness.get_by_label("Every request");
+    app.harness
+        .get_by_label("A collection's variables and the active environment override these.");
+
+    for (scope, title, kind) in [
+        ("Environment · Dev", "Dev", "Environment · active"),
+        ("Environment · Prod", "Prod", "Environment · not active"),
+    ] {
+        click(&mut app.harness, "Variable scope");
+        click(&mut app.harness, scope);
+        settle(&mut app.harness);
+        heading_beside(&app, title, kind);
+        app.harness
+            .get_by_label("While active, these override the collection's variables and Global.");
+    }
+
+    click(&mut app.harness, "Variable scope");
+    click(&mut app.harness, "Collection · API");
+    settle(&mut app.harness);
+    app.harness
+        .get_by_role_and_label(egui::accesskit::Role::Label, "API");
+    app.harness.get_by_label(
+        "Its requests use these; the active environment overrides them, and they override Global.",
+    );
+}
+
+#[test]
+fn clear_all_is_in_the_menu_and_asks_before_removing() {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1"), ("b", "2")])))
+            .unwrap();
+    });
+    open_screen(&mut app);
+    assert!(
+        app.harness.query_by_label("Clear All").is_none(),
+        "not beside Add Variable"
+    );
+    click(&mut app.harness, "Variable actions");
+    assert!(
+        app.harness.query_by_label("Rename environment…").is_none(),
+        "Global cannot be renamed"
+    );
+    click(&mut app.harness, "Clear all variables…");
+    app.harness.get_by_label("Remove all variables?");
+    click(&mut app.harness, "Keep");
+    assert_eq!(app.harness.state().state.variables.rows.len(), 2);
+
+    click(&mut app.harness, "Variable actions");
+    click(&mut app.harness, "Clear all variables…");
+    click(&mut app.harness, "Remove all");
+    assert_eq!(app.harness.state().state.variables.rows.len(), 0);
+    app.harness.get_by_label("Unsaved");
+    click(&mut app.harness, "Save variables");
+    settle(&mut app.harness);
+    assert_eq!(
+        app.harness
+            .state()
+            .store()
+            .call_blocking(|db| environments::globals(db))
+            .unwrap(),
+        vars(&[])
+    );
 }
