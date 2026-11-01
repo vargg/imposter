@@ -140,3 +140,34 @@ fn saved_values_need_version_2() {
     let document = decode(version_2.as_bytes()).unwrap();
     assert_eq!(document.saved_globals.values("user"), ["1", "2"]);
 }
+
+#[test]
+fn environment_colors_need_version_2_and_are_left_out_when_unset() {
+    let minimal = std::fs::read_to_string(fixtures().join("native/minimal.poster.json")).unwrap();
+    let colored = minimal.replace(
+        "\"environments\": []",
+        "\"environments\": [{\"name\": \"Prod\", \"color\": \"red\"}, {\"name\": \"Dev\"}]",
+    );
+    assert_eq!(
+        decode(colored.as_bytes()).unwrap_err().to_string(),
+        "Environment colors need format version 2"
+    );
+    let version_2 = colored
+        .replace("\"poster\"", "\"imposter\"")
+        .replace("\"version\": 1", "\"version\": 2");
+    let document = decode(version_2.as_bytes()).unwrap();
+    assert_eq!(
+        document
+            .environments
+            .iter()
+            .map(|e| e.color)
+            .collect::<Vec<_>>(),
+        [Some(imposter_core::model::EnvColor::Red), None]
+    );
+    let encoded = String::from_utf8(encode(&document)).unwrap();
+    assert_eq!(encoded.matches("\"color\"").count(), 1, "{encoded}");
+    assert!(
+        decode(version_2.replace("\"red\"", "\"pink\"").as_bytes()).is_err(),
+        "only known colors"
+    );
+}

@@ -181,6 +181,7 @@ pub fn snapshot(db: &Tx<'_>, scope: &ExportScope) -> Result<NativeDocument, Stor
                 name: Name::new(environment.name).ok_or(StoreError::NotFound("collection"))?,
                 variables: environment.variables,
                 saved_values: scopes::saved_values(db, Scope::Environment(environment.id))?,
+                color: environment.color,
             });
         }
     }
@@ -310,6 +311,9 @@ pub fn commit(db: &Tx<'_>, preview: &ImportPreview) -> Result<CollectionId, Stor
     for environment in &document.environments {
         let name = unique_name(environment.name.as_str(), &mut environment_names);
         let created = environments::create_environment(db, &name, &environment.variables)?;
+        if environment.color.is_some() {
+            environments::set_environment_color(db, created.id, environment.color)?;
+        }
         if !environment.saved_values.is_empty() {
             scopes::write(
                 db,

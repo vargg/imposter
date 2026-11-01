@@ -87,6 +87,58 @@ impl SavedValues {
     }
 }
 
+/// A color a user gives an environment, so the one in use is recognisable at a glance (a red
+/// production environment). Stored and exported by name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EnvColor {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+}
+
+impl EnvColor {
+    pub const ALL: [Self; 6] = [
+        Self::Red,
+        Self::Orange,
+        Self::Yellow,
+        Self::Green,
+        Self::Blue,
+        Self::Purple,
+    ];
+
+    /// The stored and exported name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Red => "red",
+            Self::Orange => "orange",
+            Self::Yellow => "yellow",
+            Self::Green => "green",
+            Self::Blue => "blue",
+            Self::Purple => "purple",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|color| color.name() == name)
+    }
+
+    /// The color offered for a new environment: red when a word of its name says production
+    /// ("prod", "production", "live"), whole words only, so "delivery" stays uncolored.
+    pub fn suggested_for(name: &str) -> Option<Self> {
+        name.split(|c: char| !c.is_alphanumeric())
+            .any(|word| {
+                ["prod", "production", "live"]
+                    .iter()
+                    .any(|production| word.eq_ignore_ascii_case(production))
+            })
+            .then_some(Self::Red)
+    }
+}
+
 fn yes() -> bool {
     true
 }
@@ -572,6 +624,38 @@ mod tests {
                 .timeout,
             None
         );
+    }
+
+    #[test]
+    fn environment_colors_round_trip_by_name() {
+        for color in EnvColor::ALL {
+            assert_eq!(EnvColor::from_name(color.name()), Some(color));
+            assert_eq!(
+                serde_json::to_string(&color).unwrap(),
+                format!("\"{}\"", color.name())
+            );
+        }
+        assert_eq!(EnvColor::from_name("Red"), None);
+        assert!(serde_json::from_str::<EnvColor>("\"pink\"").is_err());
+    }
+
+    #[test]
+    fn production_names_suggest_red_by_whole_word() {
+        for name in [
+            "Production",
+            "prod",
+            "PROD-eu",
+            "Live",
+            "eu live 2",
+            "api.prod",
+        ] {
+            assert_eq!(EnvColor::suggested_for(name), Some(EnvColor::Red), "{name}");
+        }
+        for name in [
+            "Dev", "Staging", "delivery", "products", "prodigy", "olive", "",
+        ] {
+            assert_eq!(EnvColor::suggested_for(name), None, "{name}");
+        }
     }
 
     #[test]

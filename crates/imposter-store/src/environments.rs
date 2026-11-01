@@ -1,7 +1,7 @@
 //! Environments, global variables and the active environment.
 
 use imposter_core::ids::EnvironmentId;
-use imposter_core::model::Variables;
+use imposter_core::model::{EnvColor, Variables};
 use imposter_core::variables::{Scope, VariableContext};
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -14,19 +14,24 @@ pub struct Environment {
     pub id: EnvironmentId,
     pub name: String,
     pub variables: Variables,
+    pub color: Option<EnvColor>,
 }
 
 const ACTIVE_KEY: &str = "active_environment";
 
-fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, String, String)> {
-    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+type Row = (i64, String, String, Option<String>);
+
+fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
+    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
 }
 
-fn to_environment((id, name, variables): (i64, String, String)) -> Result<Environment, StoreError> {
+fn to_environment((id, name, variables, color): Row) -> Result<Environment, StoreError> {
     Ok(Environment {
         id: EnvironmentId(id),
         name,
         variables: serde_json::from_str(&variables)?,
+        // The column's CHECK admits only known names.
+        color: color.as_deref().and_then(EnvColor::from_name),
     })
 }
 
@@ -49,7 +54,7 @@ fn check_name(
 
 pub fn environments(db: &Connection) -> Result<Vec<Environment>, StoreError> {
     let mut statement =
-        db.prepare("SELECT id, name, variables FROM environments ORDER BY name, id")?;
+        db.prepare("SELECT id, name, variables, color FROM environments ORDER BY name, id")?;
     let rows = statement
         .query_map([], row)?
         .collect::<Result<Vec<_>, _>>()?;
@@ -58,7 +63,7 @@ pub fn environments(db: &Connection) -> Result<Vec<Environment>, StoreError> {
 
 pub fn environment(db: &Connection, id: EnvironmentId) -> Result<Option<Environment>, StoreError> {
     db.query_row(
-        "SELECT id, name, variables FROM environments WHERE id = ?1",
+        "SELECT id, name, variables, color FROM environments WHERE id = ?1",
         [id.0],
         row,
     )
@@ -88,6 +93,7 @@ pub fn create_environment(
         id: EnvironmentId(db.last_insert_rowid()),
         name: name.to_owned(),
         variables: variables.clone(),
+        color: None,
     })
 }
 
@@ -100,6 +106,22 @@ pub fn rename_environment(
     let rows = db.execute(
         "UPDATE environments SET name = ?1 WHERE id = ?2",
         params![name, id.0],
+    )?;
+    if rows == 0 {
+        Err(StoreError::NotFound("environment"))
+    } else {
+        Ok(())
+    }
+}
+
+pub fn set_environment_color(
+    db: &Connection,
+    id: EnvironmentId,
+    color: Option<EnvColor>,
+) -> Result<(), StoreError> {
+    let rows = db.execute(
+        "UPDATE environments SET color = ?1 WHERE id = ?2",
+        params![color.map(EnvColor::name), id.0],
     )?;
     if rows == 0 {
         Err(StoreError::NotFound("environment"))

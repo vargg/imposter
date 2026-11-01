@@ -80,8 +80,8 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 ![History: executions, and the request as it was sent](docs/images/history.png)
 
 **Import and export**
-- Native `.imposter.json` (version 2, `"format": "imposter"`), which carries request checks
-  and saved variable values.
+- Native `.imposter.json` (version 2, `"format": "imposter"`), which carries request checks,
+  saved variable values and environment colors.
   `.poster.json` files from the Python version (version 1) import unchanged; the Python
   version cannot read version 2.
 - Postman Collection v2.1 import and export, validated against the official schema, with

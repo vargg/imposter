@@ -1,13 +1,13 @@
 //! The native format. Version 1 (`"format": "poster"`) is the full-fidelity contract shared
-//! with the Python app; version 2 (`"format": "imposter"`) adds request checks, captures and
-//! saved variable values. Strict:
+//! with the Python app; version 2 (`"format": "imposter"`) adds request checks, captures,
+//! saved variable values and environment colors. Strict:
 //! unknown fields are rejected at every level, a version 1 document may not use version 2
 //! data, and a document keeps its version when encoded again.
 
 use std::io::{Read as _, Write as _};
 use std::path::Path;
 
-use imposter_core::model::{RequestTemplate, SavedValues, Variables, is_method_token};
+use imposter_core::model::{EnvColor, RequestTemplate, SavedValues, Variables, is_method_token};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Imports larger than this are rejected before parsing.
@@ -115,6 +115,9 @@ pub struct TransferEnvironment {
     /// Version 2: values saved to swap the environment's variables with.
     #[serde(default, skip_serializing_if = "SavedValues::is_empty")]
     pub saved_values: SavedValues,
+    /// Version 2: the color the environment is shown in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<EnvColor>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -186,6 +189,8 @@ pub enum NativeError {
     ChecksInVersion1 { request: String },
     #[error("Saved values need format version 2")]
     SavedValuesInVersion1,
+    #[error("Environment colors need format version 2")]
+    ColorInVersion1,
     #[error("Request {request:?}: {source}")]
     Body {
         request: String,
@@ -242,6 +247,9 @@ pub fn decode(data: &[u8]) -> Result<NativeDocument, NativeError> {
                 .any(|e| !e.saved_values.is_empty())
         {
             return Err(NativeError::SavedValuesInVersion1);
+        }
+        if document.environments.iter().any(|e| e.color.is_some()) {
+            return Err(NativeError::ColorInVersion1);
         }
     }
     validate_templates(&document)?;

@@ -625,6 +625,7 @@ impl Decoder {
                     name: Name::new(name).ok_or(PostmanError::EmptyName)?,
                     variables,
                     saved_values: SavedValues::default(),
+                    color: None,
                 });
             }
             Some(_) => return Err(PostmanError::CompanionScope),

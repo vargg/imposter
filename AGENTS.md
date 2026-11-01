@@ -274,6 +274,14 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Variables are ordered JSON objects** (collections, environments, the single `globals` row).
   No environment may be named `Global`, which names the globals scope. Why: order is kept for
   display and export, and saving a scope replaces it whole, as in the Python app.
+- **An environment may have a color** (`model::EnvColor`: red, orange, yellow, green, blue,
+  purple, or none), stored by name in a column whose CHECK admits only those names (migration
+  V4) and exported in native version 2; Postman has no equivalent and leaves it out. A new
+  environment is offered red when a whole word of its name is `prod`, `production` or `live`
+  (`EnvColor::suggested_for`), so "delivery" is not. Why: the environment in use, above all
+  production, must be recognisable before Send (user's choice); a name pattern alone guessed
+  wrong, so the user picks and the pattern only suggests. Colors are names, not RGB, so each
+  theme draws them with checked contrast.
 - **History rows carry summary columns** (name, method, URL, status, outcome, elapsed) next to
   the JSON payload. Why: the list must not decode multi-megabyte payloads; details load one.
   Retention deletes oldest first by count and total payload size; a record larger than the
@@ -565,13 +573,13 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
 - **Native format: version 1 (`"format": "poster"`) is read as the Python app's contract;
-  Imposter writes version 2 (`"format": "imposter"`), which adds request checks, captures
-  and saved values.** New exports
+  Imposter writes version 2 (`"format": "imposter"`), which adds request checks, captures,
+  saved values and environment colors.** New exports
   use `.imposter.json`; imports accept both extensions and both versions without a companion
   prompt. A document keeps its version when decoded and encoded again, so Python exports still
   round-trip byte for byte (`imposter-transfer/tests/native_golden.rs`); markers and versions
-  must agree, and a version 1 document with checks, captures or saved values is refused
-  rather than half-read. Fields
+  must agree, and a version 1 document with checks, captures, saved values or colors is
+  refused rather than half-read. Fields
   only version 2 has are left out when empty, so its requests otherwise look like version 1.
   Why: moving from the Python app stays supported, and Imposter-only data travels with the
   collection instead of being dropped (user's choice); the cost is that the Python app cannot

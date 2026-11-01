@@ -657,3 +657,49 @@ async fn a_saved_body_is_written_whole_or_not_at_all() {
     let left: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
     assert_eq!(left.len(), 1, "no temporary files: {left:?}");
 }
+
+#[tokio::test]
+async fn environment_colors_travel_with_exports() {
+    use imposter_core::model::EnvColor;
+    let (dir, store) = open();
+    let (api, prod, dev) = store
+        .call(|db| {
+            let api = collections::create_collection(db, "API", "", &vars(&[]))?;
+            let prod = environments::create_environment(db, "Prod", &vars(&[]))?;
+            environments::set_environment_color(db, prod.id, Some(EnvColor::Red))?;
+            let dev = environments::create_environment(db, "Dev", &vars(&[]))?;
+            Ok((api.id, prod.id, dev.id))
+        })
+        .await
+        .unwrap();
+    let out = dir.path().join("api.imposter.json");
+    let scope = ExportScope {
+        collection: Some(api),
+        environments: vec![prod, dev],
+        globals: false,
+        draft: None,
+    };
+    export_native(&store.handle(), scope, out.clone())
+        .await
+        .unwrap();
+
+    let (_dir2, store2) = open();
+    let preview = read_preview(&store2.handle(), out, Vec::new())
+        .await
+        .unwrap();
+    import(&store2.handle(), preview, false).await.unwrap();
+    let colors = store2
+        .call(|db| environments::environments(db))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.name, e.color))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        colors,
+        [
+            ("Dev".to_owned(), None),
+            ("Prod".to_owned(), Some(EnvColor::Red))
+        ]
+    );
+}

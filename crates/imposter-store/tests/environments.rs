@@ -150,3 +150,59 @@ fn environments_are_listed_by_name() {
     all.sort();
     assert_eq!(all, ["a", "b"]);
 }
+
+#[test]
+fn an_environment_keeps_its_color_until_cleared() {
+    use imposter_core::model::EnvColor;
+    let (_dir, store) = store();
+    let env = store
+        .call_blocking(|db| create_environment(db, "Prod", &vars(&[])))
+        .unwrap();
+    assert_eq!(env.color, None);
+
+    store
+        .call_blocking(move |db| set_environment_color(db, env.id, Some(EnvColor::Red)))
+        .unwrap();
+    let read = |store: &imposter_store::Store| {
+        store
+            .call_blocking(move |db| environment(db, env.id))
+            .unwrap()
+            .unwrap()
+            .color
+    };
+    assert_eq!(read(&store), Some(EnvColor::Red));
+    assert_eq!(
+        store.call_blocking(|db| environments(db)).unwrap()[0].color,
+        Some(EnvColor::Red)
+    );
+    store
+        .call_blocking(move |db| rename_environment(db, env.id, "Production"))
+        .unwrap();
+    assert_eq!(
+        read(&store),
+        Some(EnvColor::Red),
+        "renaming keeps the color"
+    );
+
+    store
+        .call_blocking(move |db| set_environment_color(db, env.id, None))
+        .unwrap();
+    assert_eq!(read(&store), None);
+    assert!(matches!(
+        store.call_blocking(|db| set_environment_color(db, EnvironmentId(99), None)),
+        Err(StoreError::NotFound("environment"))
+    ));
+}
+
+#[test]
+fn the_color_column_refuses_unknown_names() {
+    let (_dir, store) = store();
+    store
+        .call_blocking(|db| create_environment(db, "Dev", &vars(&[])))
+        .unwrap();
+    let result = store.call_blocking(|db| {
+        db.execute("UPDATE environments SET color = 'pink'", [])
+            .map_err(StoreError::from)
+    });
+    assert!(result.is_err());
+}
