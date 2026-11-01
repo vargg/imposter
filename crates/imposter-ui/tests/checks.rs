@@ -228,10 +228,10 @@ fn captures_set_variables_that_the_next_send_uses() {
     let mut fixture = opened(Vec::new());
     let app = &mut fixture.app;
     click(&mut app.harness, "Tests");
-    click(&mut app.harness, "Add variable");
+    click(&mut app.harness, "Add capture");
     type_into(&mut app.harness, "Capture 1 variable", "user_id");
     replace(app, "Capture 1 JSON path", "$.id");
-    click(&mut app.harness, "Add variable");
+    click(&mut app.harness, "Add capture");
     type_into(&mut app.harness, "Capture 2 variable", "missing");
     replace(app, "Capture 2 JSON path", "$.nope");
     click(&mut app.harness, "Save request");
@@ -345,4 +345,149 @@ fn a_json_value_becomes_a_variable_named_after_it() {
         "7",
         "the unsaved capture runs with the next send"
     );
+}
+
+fn tests_tab(app: &mut support::App) {
+    app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Tests;
+    app.harness.run_steps(2);
+}
+
+fn rect(app: &support::App, label: &str) -> egui::Rect {
+    app.harness.get_by_label(label).rect()
+}
+
+#[test]
+fn checks_keep_their_columns_whatever_they_read() {
+    let mut fixture = opened(vec![
+        Check::new(Selector::Status, Op::Equals, "200"),
+        Check::new(Selector::Json("$.name".into()), Op::Equals, "Ann"),
+        Check::new(Selector::Duration, Op::Less, "500"),
+    ]);
+    let app = &mut fixture.app;
+    app.harness.set_size(egui::vec2(1500.0, 850.0));
+    tests_tab(app);
+    // One line each: the operator and expected value sit in one column whether or not the
+    // source has a path.
+    let ops: Vec<egui::Rect> = (1..=3)
+        .map(|n| rect(app, &format!("Check {n} operator")))
+        .collect();
+    let expected: Vec<egui::Rect> = (1..=3)
+        .map(|n| rect(app, &format!("Check {n} expected value")))
+        .collect();
+    for rects in [&ops, &expected] {
+        assert!(
+            rects
+                .iter()
+                .all(|r| (r.left() - rects[0].left()).abs() < 0.5),
+            "{rects:?}"
+        );
+    }
+    let source = rect(app, "Check 2 source");
+    assert!(
+        (ops[1].center().y - source.center().y).abs() < 1.0,
+        "one line"
+    );
+}
+
+#[test]
+fn checks_stack_in_a_narrow_pane() {
+    let mut fixture = opened(vec![
+        Check::new(Selector::Status, Op::Equals, "200"),
+        Check::new(Selector::Json("$.name".into()), Op::Equals, "Ann"),
+    ]);
+    let app = &mut fixture.app;
+    app.harness.set_size(imposter_ui::layout::MIN_WINDOW.into());
+    tests_tab(app);
+    // What to read, then its path, then the comparison, each on its own line, all ending
+    // at the remove button's right edge.
+    let source = rect(app, "Check 2 source");
+    let path = rect(app, "Check 2 JSON path");
+    let op = rect(app, "Check 2 operator");
+    let expected = rect(app, "Check 2 expected value");
+    let remove = rect(app, "Remove check 2");
+    assert!(
+        source.bottom() <= path.top() && path.bottom() <= op.top(),
+        "{source:?} {path:?} {op:?}"
+    );
+    assert!((op.center().y - expected.center().y).abs() < 1.0);
+    for (what, r) in [("path", path), ("expected", expected)] {
+        assert!(
+            (r.right() - remove.right()).abs() < 1.5,
+            "{what} {r:?} ends with {remove:?}"
+        );
+    }
+    // A status check has no path line.
+    let first_op = rect(app, "Check 1 operator");
+    let first_source = rect(app, "Check 1 source");
+    assert!(
+        first_op.top() - first_source.bottom() < 12.0,
+        "{first_source:?} {first_op:?}"
+    );
+}
+
+/// The capture rows' targets, top to bottom.
+fn targets(app: &support::App) -> Vec<String> {
+    let mut found: Vec<(f32, String)> = app
+        .harness
+        .query_all_by_label_contains("→ ")
+        .map(|node| {
+            let text = node.accesskit_node().value().unwrap_or_default();
+            (node.rect().top(), text)
+        })
+        .collect();
+    found.sort_by(|a, b| a.0.total_cmp(&b.0));
+    found.into_iter().map(|(_, text)| text).collect()
+}
+
+#[test]
+fn a_capture_says_which_scope_it_writes_to() {
+    let mut fixture = opened_with(
+        Vec::new(),
+        vec![
+            Capture::new("defined", Selector::Json("$.id".into())),
+            Capture::new("fresh", Selector::Json("$.name".into())),
+        ],
+    );
+    let app = &mut fixture.app;
+    app.harness
+        .state()
+        .store()
+        .call_blocking(|db| {
+            imposter_app::store::environments::set_globals(
+                db,
+                &[("defined".to_owned(), "1".to_owned())]
+                    .into_iter()
+                    .collect(),
+            )
+        })
+        .unwrap();
+    let dev = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| {
+            imposter_app::store::environments::create_environment(
+                db,
+                "Dev",
+                &imposter_app::core::model::Variables::default(),
+            )
+        })
+        .unwrap();
+    click(&mut app.harness, "Environment");
+    click(&mut app.harness, "Global (no environment)");
+    settle(&mut app.harness);
+    tests_tab(app);
+    assert_eq!(targets(app), ["→ Global", "→ Global"]);
+
+    app.harness
+        .state_mut()
+        .state
+        .actions
+        .push(imposter_ui::app::Action::SetEnvironment(Some(dev.id)));
+    app.harness.run_steps(1);
+    settle(&mut app.harness);
+    // Defined in Global: replaced there. Defined nowhere: the active environment.
+    assert_eq!(targets(app), ["→ Global", "→ Dev"]);
+    app.harness.get_by_label("Add capture");
+    assert!(app.harness.query_by_label("Add variable").is_none());
 }

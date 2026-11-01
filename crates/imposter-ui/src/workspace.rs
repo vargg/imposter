@@ -1199,6 +1199,8 @@ fn pane_frame(ui: &Ui, rect: Rect) {
 const PANE_RADIUS: f32 = 12.0;
 
 fn request_pane(state: &mut State, ui: &mut Ui) {
+    // Where captures of names nobody defines go: the active environment, else Global.
+    let capture_fallback = active_environment(state).map(|e| e.name.clone());
     let State {
         editor,
         snapshot,
@@ -1275,6 +1277,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                     &mut pane.editor.checks,
                     &mut pane.editor.captures,
                     &mut vars,
+                    capture_fallback.as_deref(),
                 );
             }
             EditorTab::Settings => {

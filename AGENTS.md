@@ -648,6 +648,15 @@ numbers, so both are excluded. Each logical change is its own commit.
   OpenAPI import adds a status check for the lowest documented success code and none when
   there is no documented success. Postman export lists checks as not exported. Rejected: a
   JavaScript engine (Postman's `pm.test`), a large dependency with an open-ended surface.
+- **The Tests tab edits checks and captures in a fixed grid** (`checks.rs`): every row has
+  the same cells, and a source without a path (status, body, duration, size) or an
+  operator without a value leaves its cell empty, so the columns stay put. By the pane's
+  width a row takes one line, two (what to read, then the comparison), or one line per
+  part, as at 720 points with the sidebar shown. The sections are "Checks" and "Captures"
+  ("Add capture"), and each capture shows the scope it writes to ("→ Dev"), computed as the
+  executor does: the defining scope, else the active environment, else Global. Why:
+  operators jumped between rows, a narrow pane stacked five lines per check with fields cut
+  at its edge, and nothing said where a capture would write (the review's #31, #32).
 - **Generated values are placeholders named `$function args`** (`core::generate`): `$uuid`
   (and Postman's `$guid`, `$randomUUID`), `$timestamp`, `$timestampMs`, `$isoTimestamp`, `$date`
   with a strftime format, each with an optional offset (`-1d`, `+2h`), `$randomInt [min max]`

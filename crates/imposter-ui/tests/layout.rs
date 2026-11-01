@@ -184,6 +184,30 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, "Send");
     settle(&mut app.harness);
     check(app, "error response");
+    // The Tests tab: checks with and without a path, one without an expected value, and a
+    // capture, in whatever layout the pane's width calls for.
+    {
+        use imposter_app::core::capture::Capture;
+        use imposter_app::core::check::{Check, Op};
+        use imposter_app::core::select::Selector;
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.editor.checks = vec![
+            Check::new(Selector::Status, Op::Equals, "200"),
+            Check::new(
+                Selector::Json("$.users[0].name".into()),
+                Op::NotContains,
+                "Bo",
+            ),
+            Check::new(Selector::Header("Content-Type".into()), Op::Exists, ""),
+        ];
+        pane.editor.captures = vec![Capture::new(
+            "first_user",
+            Selector::Json("$.users[0].id".into()),
+        )];
+        pane.tab = imposter_ui::app::EditorTab::Tests;
+    }
+    check(app, "tests tab");
+    app.harness.state_mut().state.editor.as_mut().unwrap().tab = imposter_ui::app::EditorTab::Body;
     // A custom method being typed takes the method picker's place in the request bar.
     click(&mut app.harness, "HTTP method");
     click(&mut app.harness, "Custom method…");

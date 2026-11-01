@@ -5,6 +5,7 @@ use egui::Ui;
 use imposter_app::core::capture::{Capture, Captured, Taken};
 use imposter_app::core::check::{Check, CheckResult, Op, Verdict};
 use imposter_app::core::select::Selector;
+use imposter_app::core::variables::Snapshot;
 
 use crate::theme::Tone;
 use crate::widgets::{self, VarUi, name, remove_button, tone_text};
@@ -113,19 +114,18 @@ fn last_member(path: &str) -> Option<&str> {
     last
 }
 
-/// The source picker and, for a header or a JSON path, its field. `row` names the cells
-/// ("Check 2"); `salt` keeps the picker's id apart from other rows'.
-fn selector_cells(
+/// The source picker. `row` names it ("Check 2 source"); `salt` keeps its id apart from
+/// other rows'.
+fn source_picker(
     ui: &mut Ui,
     salt: (&str, usize),
     row: &str,
     selector: &mut Selector,
-    argument_width: f32,
+    width: f32,
 ) -> bool {
-    let mut changed = false;
     let mut source = Source::of(selector);
     let combo = egui::ComboBox::from_id_salt(salt)
-        .width(SOURCE_WIDTH)
+        .width(width)
         .selected_text(source.label())
         .show_ui(ui, |ui| {
             for (choice, label) in Source::ALL {
@@ -133,67 +133,138 @@ fn selector_cells(
             }
         });
     name(&combo.response, &format!("{row} source"));
-    if source != Source::of(selector) {
-        let argument = match selector {
-            Selector::Header(text) | Selector::Json(text) => std::mem::take(text),
-            _ => String::new(),
-        };
-        let argument = if argument.is_empty() && source == Source::Json {
-            "$.".to_owned()
-        } else {
-            argument
-        };
-        *selector = source.selector(argument);
-        changed = true;
+    if source == Source::of(selector) {
+        return false;
     }
+    let argument = match selector {
+        Selector::Header(text) | Selector::Json(text) => std::mem::take(text),
+        _ => String::new(),
+    };
+    let argument = if argument.is_empty() && source == Source::Json {
+        "$.".to_owned()
+    } else {
+        argument
+    };
+    *selector = source.selector(argument);
+    true
+}
+
+/// A header name or JSON path field when the source takes one; otherwise an empty cell of
+/// the same width when `keep_cell`, so the cells after it stay in their column.
+fn argument_field(
+    ui: &mut Ui,
+    row: &str,
+    selector: &mut Selector,
+    width: f32,
+    keep_cell: bool,
+) -> bool {
+    let height = ui.spacing().interact_size.y;
+    let header = matches!(selector, Selector::Header(_));
     if let Selector::Header(argument) | Selector::Json(argument) = selector {
-        let header = source == Source::Header;
-        let field = ui.add(
-            egui::TextEdit::singleline(argument)
-                .hint_text(if header {
-                    "Content-Type"
-                } else {
-                    "$.items[0].id"
-                })
-                .desired_width(argument_width),
+        let field = ui.add_sized(
+            [width, height],
+            egui::TextEdit::singleline(argument).hint_text(if header {
+                "Content-Type"
+            } else {
+                "$.items[0].id"
+            }),
         );
         let what = if header { "header name" } else { "JSON path" };
         name(&field, &format!("{row} {what}"));
-        changed |= field.changed();
+        field.changed()
+    } else {
+        if keep_cell {
+            ui.allocate_space(egui::vec2(width, height));
+        }
+        false
     }
-    changed
 }
 
-fn takes_argument(selector: &Selector) -> bool {
-    matches!(selector, Selector::Header(_) | Selector::Json(_))
-}
-
-/// The request's Tests tab: its checks, then the variables it sets from each response.
-/// Returns whether anything changed.
+/// The request's Tests tab: its checks, then the captures that set variables from each
+/// response. `fallback` is the active environment, where a capture of a name nobody defines
+/// goes (Global without one). Returns whether anything changed.
 pub fn tests_tab(
     ui: &mut Ui,
     checks: &mut Vec<Check>,
     captures: &mut Vec<Capture>,
     vars: &mut VarUi,
+    fallback: Option<&str>,
 ) -> bool {
-    ui.label(tone_text("Checks", Tone::Muted));
+    ui.label(egui::RichText::new("Checks").font(crate::theme::semibold(13.0)));
     let mut changed = checks_table(ui, checks, vars);
     ui.add_space(12.0);
-    ui.label(tone_text("Set variables from the response", Tone::Muted));
-    changed |= captures_table(ui, captures);
+    ui.label(egui::RichText::new("Captures").font(crate::theme::semibold(13.0)));
+    changed |= captures_table(ui, captures, vars.snapshot, fallback);
     changed
 }
 
-/// Checks: enabled, what to read, operator, expected value, remove.
+/// How a table's rows are laid out, by the width they have: every cell on one line; what
+/// to read on one line and the rest under it; or each part on a line of its own, as in a
+/// narrow pane. Text fields keep a usable width in each, and cells keep their columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Lines {
+    One,
+    Two,
+    Stacked,
+}
+
+/// The check box's cell and the remove button's.
+const CHECKBOX: f32 = 24.0;
+const REMOVE: f32 = 24.0;
+/// The target scope's cell in a capture row.
+const TARGET_WIDTH: f32 = 110.0;
+
+/// The cells of a row in order, one line at a time, never wrapping.
+fn line<R>(ui: &mut Ui, indent: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.horizontal(|ui| {
+        ui.add_space(indent);
+        add(ui)
+    })
+    .inner
+}
+
+/// Checks in a fixed grid: enabled, what to read, its path or header (an empty cell for
+/// status, body, duration and size), operator, expected value, remove.
 fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool {
     let mut changed = false;
     let mut remove = None;
-    let height = ui.spacing().interact_size.y;
     let spacing = ui.spacing().item_spacing.x;
-    // Checkbox, both pickers and ×, with the spacing between six cells; the text fields share
-    // the rest, so a row fits on one line when the pane allows it and wraps otherwise.
-    let fixed = 24.0 + SOURCE_WIDTH + OP_WIDTH + 24.0 + 6.0 * spacing + 16.0;
-    let free = (ui.available_width() - fixed).max(2.0 * MIN_FIELD);
+    let height = ui.spacing().interact_size.y;
+    let width = ui.available_width();
+    let indent = CHECKBOX + spacing;
+    let one = CHECKBOX + SOURCE_WIDTH + OP_WIDTH + REMOVE + 5.0 * spacing + 2.0 * MIN_FIELD;
+    let two = CHECKBOX + SOURCE_WIDTH + REMOVE + 3.0 * spacing + MIN_FIELD;
+    let lines = if width >= one {
+        Lines::One
+    } else if width >= two {
+        Lines::Two
+    } else {
+        Lines::Stacked
+    };
+    let rest = width - indent;
+    let (source_width, path_width, op_width, expected_width) = match lines {
+        Lines::One => {
+            // The two text fields share what the fixed cells leave.
+            let fields = width - (one - 2.0 * MIN_FIELD);
+            let free = (fields / 2.0).floor();
+            (SOURCE_WIDTH, free, OP_WIDTH, free)
+        }
+        Lines::Two => (
+            SOURCE_WIDTH,
+            width - CHECKBOX - SOURCE_WIDTH - REMOVE - 3.0 * spacing,
+            OP_WIDTH,
+            (rest - OP_WIDTH - spacing).max(MIN_FIELD),
+        ),
+        Lines::Stacked => {
+            let op = (rest * 0.45).floor().min(OP_WIDTH);
+            (
+                width - CHECKBOX - REMOVE - 2.0 * spacing,
+                rest,
+                op,
+                (rest - op - spacing).max(48.0),
+            )
+        }
+    };
     if checks.is_empty() {
         ui.label(tone_text(
             "Checks run after every response: status, headers, JSON paths, duration or size.",
@@ -202,46 +273,18 @@ fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool 
     }
     for (index, check) in checks.iter_mut().enumerate() {
         let row = format!("Check {}", index + 1);
-        ui.horizontal_wrapped(|ui| {
-            let enabled = ui.add_sized(
-                [24.0, height],
-                egui::Checkbox::without_text(&mut check.enabled),
-            );
-            name(&enabled, &format!("{row} enabled"));
-            changed |= enabled.changed();
-            let argument = takes_argument(&check.selector);
-            let argument_width = if !argument {
-                0.0
-            } else if check.op.takes_value() {
-                (free * 0.55).max(MIN_FIELD)
-            } else {
-                free - spacing
-            };
-            changed |= selector_cells(
-                ui,
-                ("check source", index),
-                &row,
-                &mut check.selector,
-                argument_width,
-            );
-            // A path field adds a cell, and with it one more spacing.
-            let argument_width = if takes_argument(&check.selector) {
-                argument_width.max(MIN_FIELD) + spacing
-            } else {
-                0.0
-            };
-            let expected_width = (free - argument_width).max(MIN_FIELD);
+        let mut comparison = |ui: &mut Ui, changed: &mut bool| {
             let combo = egui::ComboBox::from_id_salt(("check op", index))
-                .width(OP_WIDTH)
+                .width(op_width)
                 .selected_text(check.op.label())
                 .show_ui(ui, |ui| {
                     for op in Op::ALL {
-                        changed |= ui.selectable_value(&mut check.op, op, op.label()).changed();
+                        *changed |= ui.selectable_value(&mut check.op, op, op.label()).changed();
                     }
                 });
             name(&combo.response, &format!("{row} operator"));
             if check.op.takes_value() {
-                changed |= widgets::var_edit(
+                *changed |= widgets::var_edit(
                     ui,
                     &mut check.expected,
                     &format!("{row} expected value"),
@@ -250,12 +293,44 @@ fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool 
                     vars,
                 )
                 .changed();
+            } else if lines == Lines::One {
+                ui.allocate_space(egui::vec2(expected_width, height));
+            }
+        };
+        line(ui, 0.0, |ui| {
+            let enabled = ui.add_sized(
+                [CHECKBOX, height],
+                egui::Checkbox::without_text(&mut check.enabled),
+            );
+            name(&enabled, &format!("{row} enabled"));
+            changed |= enabled.changed();
+            changed |= source_picker(
+                ui,
+                ("check source", index),
+                &row,
+                &mut check.selector,
+                source_width,
+            );
+            if lines != Lines::Stacked {
+                changed |= argument_field(ui, &row, &mut check.selector, path_width, true);
+            }
+            if lines == Lines::One {
+                comparison(ui, &mut changed);
             }
             let what = row.to_lowercase();
             if remove_button(ui, egui::Id::unique(("remove check", index)), &what, height) {
                 remove = Some(index);
             }
         });
+        if lines == Lines::Stacked && takes_argument(&check.selector) {
+            line(ui, indent, |ui| {
+                changed |= argument_field(ui, &row, &mut check.selector, path_width, false);
+            });
+        }
+        if lines != Lines::One {
+            line(ui, indent, |ui| comparison(ui, &mut changed));
+            ui.add_space(6.0);
+        }
     }
     if let Some(index) = remove {
         checks.remove(index);
@@ -268,14 +343,84 @@ fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool 
     changed
 }
 
-/// Captures: enabled, variable name, what to read, remove.
-fn captures_table(ui: &mut Ui, captures: &mut Vec<Capture>) -> bool {
+fn takes_argument(selector: &Selector) -> bool {
+    matches!(selector, Selector::Header(_) | Selector::Json(_))
+}
+
+/// Where a capture of `variable` writes, as the executor decides it (`capture::target`):
+/// the scope that defines the name, else the active environment, else Global. The short
+/// name for the row, and a sentence for its hover text.
+fn capture_target(
+    snapshot: Option<&Snapshot>,
+    fallback: Option<&str>,
+    variable: &str,
+) -> (String, String) {
+    if let Some(definition) = snapshot.and_then(|s| s.effective(variable))
+        && crate::vars::Scope::of(&definition.source).is_some()
+    {
+        return (
+            definition.source.label().to_owned(),
+            format!(
+                "Sets {variable} in {}, which defines it",
+                crate::vars::where_defined(&definition.source)
+            ),
+        );
+    }
+    match fallback {
+        Some(environment) => (
+            environment.to_owned(),
+            format!(
+                "Nothing defines {variable}, so it goes to the active environment, {environment}"
+            ),
+        ),
+        None => (
+            "Global".to_owned(),
+            format!(
+                "Nothing defines {variable} and no environment is active, so it goes to Global"
+            ),
+        ),
+    }
+}
+
+/// Captures in a fixed grid: enabled, variable, where it goes, what to read and its path,
+/// remove.
+fn captures_table(
+    ui: &mut Ui,
+    captures: &mut Vec<Capture>,
+    snapshot: Option<&Snapshot>,
+    fallback: Option<&str>,
+) -> bool {
     let mut changed = false;
     let mut remove = None;
-    let height = ui.spacing().interact_size.y;
     let spacing = ui.spacing().item_spacing.x;
-    let fixed = 24.0 + VARIABLE_WIDTH + SOURCE_WIDTH + 24.0 + 6.0 * spacing + 16.0;
-    let free = (ui.available_width() - fixed).max(MIN_FIELD);
+    let height = ui.spacing().interact_size.y;
+    let width = ui.available_width();
+    let indent = CHECKBOX + spacing;
+    let one = CHECKBOX
+        + VARIABLE_WIDTH
+        + TARGET_WIDTH
+        + SOURCE_WIDTH
+        + REMOVE
+        + 5.0 * spacing
+        + MIN_FIELD;
+    let two = CHECKBOX + MIN_FIELD + TARGET_WIDTH + REMOVE + 3.0 * spacing;
+    let lines = if width >= one {
+        Lines::One
+    } else if width >= two {
+        Lines::Two
+    } else {
+        Lines::Stacked
+    };
+    let rest = width - indent;
+    let (variable_width, source_width, path_width) = match lines {
+        Lines::One => (VARIABLE_WIDTH, SOURCE_WIDTH, width - one + MIN_FIELD),
+        Lines::Two => (
+            width - CHECKBOX - TARGET_WIDTH - REMOVE - 3.0 * spacing,
+            SOURCE_WIDTH,
+            (rest - SOURCE_WIDTH - spacing).max(MIN_FIELD),
+        ),
+        Lines::Stacked => (width - CHECKBOX - REMOVE - 2.0 * spacing, rest, rest),
+    };
     if captures.is_empty() {
         ui.label(tone_text(
             "Values taken from each response go into variables: the scope that defines the \
@@ -285,27 +430,48 @@ fn captures_table(ui: &mut Ui, captures: &mut Vec<Capture>) -> bool {
     }
     for (index, capture) in captures.iter_mut().enumerate() {
         let row = format!("Capture {}", index + 1);
-        ui.horizontal_wrapped(|ui| {
+        let (target, why) = capture_target(snapshot, fallback, capture.variable.trim());
+        let target_cell = |ui: &mut Ui, width: f32| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(width, height),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    let label = ui
+                        .add(
+                            egui::Label::new(tone_text(format!("→ {target}"), Tone::Muted))
+                                .truncate(),
+                        )
+                        .on_hover_text(&why);
+                    name(&label, &format!("{row} goes to {target}"));
+                },
+            );
+        };
+        line(ui, 0.0, |ui| {
             let enabled = ui.add_sized(
-                [24.0, height],
+                [CHECKBOX, height],
                 egui::Checkbox::without_text(&mut capture.enabled),
             );
             name(&enabled, &format!("{row} enabled"));
             changed |= enabled.changed();
-            let field = ui.add(
-                egui::TextEdit::singleline(&mut capture.variable)
-                    .hint_text("variable")
-                    .desired_width(VARIABLE_WIDTH),
+            let field = ui.add_sized(
+                [variable_width, height],
+                egui::TextEdit::singleline(&mut capture.variable).hint_text("variable"),
             );
             name(&field, &format!("{row} variable"));
             changed |= field.changed();
-            changed |= selector_cells(
-                ui,
-                ("capture source", index),
-                &row,
-                &mut capture.selector,
-                free,
-            );
+            if lines != Lines::Stacked {
+                target_cell(ui, TARGET_WIDTH);
+            }
+            if lines == Lines::One {
+                changed |= source_picker(
+                    ui,
+                    ("capture source", index),
+                    &row,
+                    &mut capture.selector,
+                    source_width,
+                );
+                changed |= argument_field(ui, &row, &mut capture.selector, path_width, true);
+            }
             let what = row.to_lowercase();
             if remove_button(
                 ui,
@@ -316,12 +482,35 @@ fn captures_table(ui: &mut Ui, captures: &mut Vec<Capture>) -> bool {
                 remove = Some(index);
             }
         });
+        if lines == Lines::Stacked {
+            line(ui, indent, |ui| target_cell(ui, rest));
+        }
+        if lines != Lines::One {
+            line(ui, indent, |ui| {
+                changed |= source_picker(
+                    ui,
+                    ("capture source", index),
+                    &row,
+                    &mut capture.selector,
+                    source_width,
+                );
+                if lines == Lines::Two {
+                    changed |= argument_field(ui, &row, &mut capture.selector, path_width, false);
+                }
+            });
+            if lines == Lines::Stacked && takes_argument(&capture.selector) {
+                line(ui, indent, |ui| {
+                    changed |= argument_field(ui, &row, &mut capture.selector, path_width, false);
+                });
+            }
+            ui.add_space(6.0);
+        }
     }
     if let Some(index) = remove {
         captures.remove(index);
         changed = true;
     }
-    if ui.button("Add variable").clicked() {
+    if ui.button("Add capture").clicked() {
         captures.push(Capture::new("", Selector::Json("$.".into())));
         changed = true;
     }
