@@ -523,27 +523,32 @@ pub fn env_pill(ui: &mut Ui, name: &str, color: Option<EnvColor>) -> egui::Respo
         }
         None => (palette().text_muted, palette().hover),
     };
+    let font = crate::theme::semibold(12.0);
+    let dot = if color.is_some() { 8.0 + 4.0 } else { 0.0 };
+    let name_width = ui
+        .fonts_mut(|f| f.layout_no_wrap(name.to_owned(), font.clone(), text))
+        .size()
+        .x;
+    // As wide as its contents, up to a limit past which the name is cut.
+    let width = (dot + name_width).min(MAX_WIDTH);
+    let height = ui.text_style_height(&egui::TextStyle::Body);
     let response = egui::Frame::new()
         .fill(fill)
         .corner_radius(10)
         .inner_margin(egui::Margin::symmetric(PILL_PADDING, 1))
         .show(ui, |ui| {
-            ui.set_max_width(MAX_WIDTH);
             // Left to right even inside a right-to-left row, so the dot leads.
-            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                if let Some(color) = color {
-                    env_dot(ui, color);
-                }
-                ui.add(
-                    egui::Label::new(
-                        RichText::new(name)
-                            .color(text)
-                            .font(crate::theme::semibold(12.0)),
-                    )
-                    .truncate(),
-                )
-            })
+            ui.allocate_ui_with_layout(
+                egui::vec2(width, height),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    if let Some(color) = color {
+                        env_dot(ui, color);
+                    }
+                    ui.add(egui::Label::new(RichText::new(name).color(text).font(font)).truncate())
+                },
+            )
             .inner
         })
         .inner;

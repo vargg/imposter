@@ -205,6 +205,22 @@ fn the_active_environment_is_named_above_send_and_in_the_status_bar() {
         pill.bottom() <= send.top() && pill.right() <= send.right() + 1.0,
         "the pill sits above Send: {pill:?} {send:?}"
     );
+    // The pill hugs its name: a dot and padding wider, never stretched to its limit.
+    let tint = red.gamma_multiply(imposter_ui::widgets::PILL_TINT);
+    let fill = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) if rect.fill == tint => Some(rect.rect),
+            _ => None,
+        })
+        .expect("the pill's tint");
+    assert!(
+        fill.width() < pill.width() + 40.0 && fill.contains_rect(pill),
+        "{fill:?} around {pill:?}"
+    );
     let status = named[1];
     let dots: Vec<egui::Pos2> = app
         .harness
