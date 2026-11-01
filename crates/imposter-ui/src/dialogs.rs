@@ -323,7 +323,7 @@ impl Dialog {
                     chosen,
                 } => {
                     ui.heading(if id.is_some() {
-                        "Rename Environment"
+                        "Edit Environment"
                     } else {
                         "New Environment"
                     });
@@ -343,9 +343,15 @@ impl Dialog {
                     if crate::widgets::env_swatches(ui, color) {
                         *chosen = true;
                     }
+                    if !*chosen && color.is_some() {
+                        ui.label(
+                            tone_text("Suggested for production environments", Tone::Muted)
+                                .small(),
+                        );
+                    }
                     let valid = !value.trim().is_empty();
                     let enter = enter_pressed && (field.lost_focus() || field.has_focus());
-                    let verb = if id.is_some() { "Rename" } else { "Create" };
+                    let verb = if id.is_some() { "Save" } else { "Create" };
                     match buttons(
                         ui,
                         &[("Cancel", Kind::Plain, true), (verb, Kind::Primary, valid)],

@@ -461,7 +461,6 @@ pub fn option<'a>(ui: &mut Ui, selected: bool, atoms: impl egui::IntoAtoms<'a>) 
 pub const fn env_color_name(color: EnvColor) -> &'static str {
     match color {
         EnvColor::Red => "Red",
-        EnvColor::Orange => "Orange",
         EnvColor::Yellow => "Yellow",
         EnvColor::Green => "Green",
         EnvColor::Blue => "Blue",
@@ -490,6 +489,44 @@ pub fn env_dot(ui: &mut Ui, color: EnvColor) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, height), egui::Sense::hover());
     ui.painter()
         .circle_filled(rect.center(), 3.5, crate::theme::env_color(color));
+}
+
+/// The environment a send uses, as a tag: its name on its color's tint with a dot before it,
+/// or muted on a neutral fill without a color. Words carry it, so hue is never the only cue.
+pub fn env_pill(ui: &mut Ui, name: &str, color: Option<EnvColor>) -> egui::Response {
+    const MAX_WIDTH: f32 = 160.0;
+    let (text, fill) = match color {
+        Some(color) => {
+            let shade = crate::theme::env_color(color);
+            (shade, shade.gamma_multiply(PILL_TINT))
+        }
+        None => (palette().text_muted, palette().hover),
+    };
+    let response = egui::Frame::new()
+        .fill(fill)
+        .corner_radius(10)
+        .inner_margin(egui::Margin::symmetric(PILL_PADDING, 1))
+        .show(ui, |ui| {
+            ui.set_max_width(MAX_WIDTH);
+            // Left to right even inside a right-to-left row, so the dot leads.
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                if let Some(color) = color {
+                    env_dot(ui, color);
+                }
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(name)
+                            .color(text)
+                            .font(crate::theme::semibold(12.0)),
+                    )
+                    .truncate(),
+                )
+            })
+            .inner
+        })
+        .inner;
+    response.on_hover_text(format!("Requests are sent with the {name} environment"))
 }
 
 /// Swatches for an environment's color: none, then each color, one selected. Returns

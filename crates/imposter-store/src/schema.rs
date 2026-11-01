@@ -97,7 +97,7 @@ ALTER TABLE requests ADD COLUMN url TEXT GENERATED ALWAYS AS (json_extract(templ
 /// A color per environment (`EnvColor` by name), or none.
 const V4: &str = r"
 ALTER TABLE environments ADD COLUMN color TEXT
-    CHECK (color IN ('red', 'orange', 'yellow', 'green', 'blue', 'purple'));
+    CHECK (color IN ('red', 'yellow', 'green', 'blue', 'purple'));
 ";
 
 /// Open a connection with the pragmas every connection needs.

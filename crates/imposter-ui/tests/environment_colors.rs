@@ -34,12 +34,10 @@ fn swatch(app: &support::App, label: &str) -> bool {
 }
 
 fn chosen(app: &support::App) -> Vec<&'static str> {
-    [
-        "No color", "Red", "Orange", "Yellow", "Green", "Blue", "Purple",
-    ]
-    .into_iter()
-    .filter(|label| swatch(app, label))
-    .collect()
+    ["No color", "Red", "Yellow", "Green", "Blue", "Purple"]
+        .into_iter()
+        .filter(|label| swatch(app, label))
+        .collect()
 }
 
 /// The text of every painted run whose color is `color`.
@@ -107,6 +105,8 @@ fn a_new_environment_named_for_production_is_offered_red_until_a_color_is_chosen
     support::text_input(&app.harness, "Name").type_text("Prod");
     app.harness.run_steps(2);
     assert_eq!(chosen(&app), ["Red"], "a production name suggests red");
+    app.harness
+        .get_by_label("Suggested for production environments");
     support::text_input(&app.harness, "Name").type_text("ucts");
     app.harness.run_steps(2);
     assert_eq!(
@@ -122,6 +122,11 @@ fn a_new_environment_named_for_production_is_offered_red_until_a_color_is_chosen
     support::text_input(&app.harness, "Name").type_text(" eu");
     app.harness.run_steps(2);
     assert_eq!(chosen(&app), ["Blue"], "a chosen color stays while typing");
+    assert!(
+        app.harness
+            .query_by_label("Suggested for production environments")
+            .is_none()
+    );
     click_button(&mut app.harness, "Create");
     settle(&mut app.harness);
 
@@ -141,7 +146,7 @@ fn renaming_shows_the_color_and_can_clear_it() {
     settle(&mut app.harness);
 
     click(&mut app.harness, "Variable actions");
-    click(&mut app.harness, "Rename environment…");
+    click(&mut app.harness, "Edit name and color…");
     assert_eq!(chosen(&app), ["Red"]);
     support::text_input(&app.harness, "Name").type_text("uction");
     app.harness.run_steps(2);
@@ -151,7 +156,7 @@ fn renaming_shows_the_color_and_can_clear_it() {
         "renaming never changes the color by itself"
     );
     click(&mut app.harness, "No color");
-    click_button(&mut app.harness, "Rename");
+    click_button(&mut app.harness, "Save");
     settle(&mut app.harness);
 
     assert_eq!(
@@ -160,47 +165,69 @@ fn renaming_shows_the_color_and_can_clear_it() {
     );
 }
 
+/// The Send button's accessible description.
+fn send_description(app: &support::App) -> Option<String> {
+    app.harness
+        .get_by_role_and_label(Role::Button, "Send")
+        .accesskit_node()
+        .description()
+}
+
+/// Text labels named `name`, top to bottom.
+fn labels_named(app: &support::App, name: &str) -> Vec<egui::Rect> {
+    let mut rects: Vec<egui::Rect> = app
+        .harness
+        .query_all_by_label(name)
+        .map(|node| node.rect())
+        .collect();
+    rects.sort_by(|a, b| a.top().total_cmp(&b.top()));
+    rects
+}
+
 #[test]
-fn the_active_environment_color_shows_in_the_picker_request_bar_and_status_bar() {
+fn the_active_environment_is_named_above_send_and_in_the_status_bar() {
     let mut app = with_environments(true);
     let red = env_color(EnvColor::Red);
-    // The picker writes a red dot before the name; the status bar paints one.
-    assert_eq!(painted_in(&app, red), ["● "]);
-    assert_eq!(red_dots(&app), 1);
-    let name = app.harness.get_by_label("Prod").rect();
-    let dot = app
+    // Words in the environment's color above Send, a dot in the picker, and painted dots
+    // before the pill's and the status bar's names.
+    let mut painted = painted_in(&app, red);
+    painted.sort();
+    assert_eq!(painted, ["Prod", "● "]);
+    assert_eq!(red_dots(&app), 2);
+    let named = labels_named(&app, "Prod");
+    assert_eq!(named.len(), 2, "the pill and the status bar");
+    let send = app
+        .harness
+        .get_by_role_and_label(Role::Button, "Send")
+        .rect();
+    let pill = named[0];
+    assert!(
+        pill.bottom() <= send.top() && pill.right() <= send.right() + 1.0,
+        "the pill sits above Send: {pill:?} {send:?}"
+    );
+    let status = named[1];
+    let dots: Vec<egui::Pos2> = app
         .harness
         .output()
         .shapes
         .iter()
-        .find_map(|clipped| match &clipped.shape {
+        .filter_map(|clipped| match &clipped.shape {
             egui::Shape::Circle(c) if c.fill == red => Some(c.center),
             _ => None,
         })
-        .unwrap();
-    assert!(
-        dot.x < name.left() && (dot.y - name.center().y).abs() < 3.0,
-        "the dot comes before the name: {dot:?} {name:?}"
+        .collect();
+    for name in [pill, status] {
+        assert!(
+            dots.iter()
+                .any(|dot| dot.x < name.left() && (dot.y - name.center().y).abs() < 3.0),
+            "a dot before {name:?}: {dots:?}"
+        );
+    }
+    assert_eq!(
+        send_description(&app).as_deref(),
+        Some("Sends with the Prod environment")
     );
-    // The request bar is rimmed in red.
-    let rims = app
-        .harness
-        .output()
-        .shapes
-        .iter()
-        .filter(|clipped| {
-            matches!(&clipped.shape, egui::Shape::Rect(rect)
-                if rect.stroke.color == red && rect.stroke.width >= 2.0)
-        })
-        .count();
-    assert_eq!(rims, 1);
-
-    // Dev has no color: nothing is red, and the bar has its usual edge.
-    click(&mut app.harness, "Environment");
-    click(&mut app.harness, "Dev");
-    settle(&mut app.harness);
-    assert_eq!(painted_in(&app, red), Vec::<String>::new());
-    assert_eq!(red_dots(&app), 0);
+    // No colored rim: a red edge read as an error, a green one as success.
     let rims = app
         .harness
         .output()
@@ -211,6 +238,26 @@ fn the_active_environment_color_shows_in_the_picker_request_bar_and_status_bar()
         )
         .count();
     assert_eq!(rims, 0);
+
+    // Dev has no color: its name still shows, muted; nothing is red.
+    click(&mut app.harness, "Environment");
+    click(&mut app.harness, "Dev");
+    settle(&mut app.harness);
+    assert_eq!(painted_in(&app, red), Vec::<String>::new());
+    assert_eq!(red_dots(&app), 0);
+    assert_eq!(labels_named(&app, "Dev").len(), 2);
+    assert_eq!(
+        send_description(&app).as_deref(),
+        Some("Sends with the Dev environment")
+    );
+
+    // Without an environment there is no pill, and Send names none.
+    click(&mut app.harness, "Environment");
+    click(&mut app.harness, "Global (no environment)");
+    settle(&mut app.harness);
+    let description = send_description(&app).unwrap_or_default();
+    assert!(!description.contains("environment"), "{description}");
+    assert_eq!(labels_named(&app, "Dev").len(), 0);
 }
 
 #[test]

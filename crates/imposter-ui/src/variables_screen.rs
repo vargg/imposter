@@ -123,7 +123,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         let has_rows = !state.variables.rows.is_empty();
         icons::menu(ui, Icon::More, "Variable actions", |ui| {
             if let Scope::Environment(id) = current {
-                if ui.button("Rename environment…").clicked() {
+                if ui.button("Edit name and color…").clicked() {
                     actions.push(Action::Variables(VariablesAction::RenameEnvironment(id)));
                 }
                 if ui.button("Delete environment…").clicked() {

@@ -274,23 +274,29 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Variables are ordered JSON objects** (collections, environments, the single `globals` row).
   No environment may be named `Global`, which names the globals scope. Why: order is kept for
   display and export, and saving a scope replaces it whole, as in the Python app.
-- **An environment may have a color** (`model::EnvColor`: red, orange, yellow, green, blue,
-  purple, or none), stored by name in a column whose CHECK admits only those names (migration
-  V4) and exported in native version 2; Postman has no equivalent and leaves it out. A new
+- **An environment may have a color** (`model::EnvColor`: red, yellow, green, blue, purple,
+  or none), stored by name in a column whose CHECK admits only those names (migration V4)
+  and exported in native version 2; Postman has no equivalent and leaves it out. A new
   environment is offered red when a whole word of its name is `prod`, `production` or `live`
   (`EnvColor::suggested_for`), so "delivery" is not. Why: the environment in use, above all
   production, must be recognisable before Send (user's choice); a name pattern alone guessed
   wrong, so the user picks and the pattern only suggests. Colors are names, not RGB, so each
-  theme draws them with checked contrast.
-  - **Choosing:** the New and Rename environment dialogs have swatches (No color, then the
-    six; radio buttons to screen readers). A new environment's color follows its name until
-    the user picks one; renaming never changes it by itself.
-  - **Showing:** the active environment's color is a dot before its name in the picker and
-    the status bar, and a 2-point rim around the request bar; the picker's options and the
-    palette's environment rows have the dot. Every shade is ≥4.5:1 on every background
-    (`theme.rs` tests). The status bar paints its dot, because a "●" in the label became
-    its accessible value. The rim replaced the planned stripe on Send: Send is filled with
-    the accent, and red or orange on it would differ by hue alone.
+  theme draws them with checked contrast. Orange is not offered: it is the accent, and an
+  orange environment read as focus (Phase 5 review, Q19; dropped before V4 was released).
+  - **Choosing:** the New and Edit environment dialogs have swatches (No color, then the
+    five; radio buttons to screen readers). A new environment's color follows its name until
+    the user picks one, and says "Suggested for production environments" meanwhile; editing
+    never changes it by itself. On the Variables screen, "⋯ → Edit name and color…".
+  - **Showing:** the active environment is a pill with its name right above Send, on its
+    color's tint with a dot before it (muted on a neutral fill without a color), and Send's
+    hover text and accessible description name it ("Sends with the Prod environment"). The
+    picker and the status bar have the dot too, as do the picker's options and the
+    palette's environment rows. Every shade is ≥4.5:1 on every background and on its own
+    tint (`theme.rs` tests). Dots are painted, because a "●" in a label became its
+    accessible value. Why words, not a colored rim around the request bar: the shades are
+    the status tones, so a green rim read as success and a red one as an error, and hue
+    alone failed colour-blind users and sat beside the orange Send (Q17, Q18). Not done:
+    an imported or migrated "Production" still arrives without a color.
   - **Managing:** the picker ends with "Manage environments…", which opens Variables on the
     active environment (Global without one), through the Variables guard.
 - **History rows carry summary columns** (name, method, URL, status, outcome, elapsed) next to

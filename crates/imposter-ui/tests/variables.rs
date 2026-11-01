@@ -203,11 +203,11 @@ fn environments_are_created_renamed_and_deleted() {
     ));
 
     click(&mut app.harness, "Variable actions");
-    click(&mut app.harness, "Rename environment…");
+    click(&mut app.harness, "Edit name and color…");
     app.harness.run_steps(2);
     support::text_input(&app.harness, "Name").type_text(" EU");
     app.harness.run_steps(1);
-    click_button(&mut app.harness, "Rename");
+    click_button(&mut app.harness, "Save");
     settle(&mut app.harness);
     let names: Vec<String> = app
         .harness
@@ -658,7 +658,7 @@ fn clear_all_is_in_the_menu_and_asks_before_removing() {
     );
     click(&mut app.harness, "Variable actions");
     assert!(
-        app.harness.query_by_label("Rename environment…").is_none(),
+        app.harness.query_by_label("Edit name and color…").is_none(),
         "Global cannot be renamed"
     );
     click(&mut app.harness, "Clear all variables…");

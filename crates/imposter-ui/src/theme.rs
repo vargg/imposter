@@ -41,7 +41,6 @@ pub struct Palette {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EnvColors {
     pub red: Color32,
-    pub orange: Color32,
     pub yellow: Color32,
     pub green: Color32,
     pub blue: Color32,
@@ -86,7 +85,6 @@ pub const DARK: Palette = Palette {
     },
     environment: EnvColors {
         red: Color32::from_rgb(0xff, 0x6b, 0x6b),
-        orange: Color32::from_rgb(0xff, 0x9f, 0x43),
         yellow: Color32::from_rgb(0xf0, 0xc0, 0x5a),
         green: Color32::from_rgb(0x5f, 0xd0, 0x8a),
         blue: Color32::from_rgb(0x6c, 0xb6, 0xff),
@@ -125,7 +123,6 @@ pub const LIGHT: Palette = Palette {
     },
     environment: EnvColors {
         red: Color32::from_rgb(0xbf, 0x24, 0x24),
-        orange: Color32::from_rgb(0xa8, 0x4a, 0x00),
         yellow: Color32::from_rgb(0x7a, 0x5c, 0x00),
         green: Color32::from_rgb(0x15, 0x70, 0x2f),
         blue: Color32::from_rgb(0x0b, 0x57, 0xa4),
@@ -242,7 +239,6 @@ pub fn env_color(color: EnvColor) -> Color32 {
     let shades = palette().environment;
     match color {
         EnvColor::Red => shades.red,
-        EnvColor::Orange => shades.orange,
         EnvColor::Yellow => shades.yellow,
         EnvColor::Green => shades.green,
         EnvColor::Blue => shades.blue,
@@ -631,6 +627,29 @@ mod tests {
                 assert!(ratio >= AA, "{name} {tone:?} pill: {ratio:.2}");
             }
         }
+    }
+
+    /// The environment pill above Send: its color on its own tint, over the background
+    /// and the surface, rounded a level either way as rendering does.
+    #[test]
+    fn environment_pills_are_readable_in_both_themes() {
+        for (name, palette) in BOTH {
+            CURRENT.with(|current| current.set(palette));
+            for color in EnvColor::ALL {
+                let shade = env_color(color);
+                for under in [palette.background, palette.surface] {
+                    let fill = tinted(shade, crate::widgets::PILL_TINT, under);
+                    for fill in [fill, nudged(fill, -1), nudged(fill, 1)] {
+                        let ratio = contrast(shade, fill);
+                        assert!(ratio >= AA, "{name} {color:?} pill: {ratio:.2}");
+                    }
+                }
+            }
+            // Without a color: muted text on the hover fill.
+            let ratio = contrast(palette.text_muted, palette.hover);
+            assert!(ratio >= AA, "{name} uncolored pill: {ratio:.2}");
+        }
+        CURRENT.with(|current| current.set(&DARK));
     }
 
     /// Unknown variables (red on the tint, in fields) and failed checks (red and plain text

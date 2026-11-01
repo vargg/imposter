@@ -29,8 +29,8 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 - Three scopes: global, per collection, and environments. The active environment overrides
   the collection, which overrides globals.
 - Give an environment a color (a new one named "prod", "production" or "live" is offered
-  red): the active environment's color rims the request bar and marks the picker and the
-  status bar, so a production send is recognisable before it goes out.
+  red). The active environment's name shows right above Send, in its color, so a production
+  send is recognisable before it goes out.
 - Placeholders are highlighted: defined names in orange, unknown ones in red. Typing `{{`
   suggests names. Clicking a placeholder, or pressing Alt+Enter, shows where its value comes
   from. Values from password fields stay masked until revealed.

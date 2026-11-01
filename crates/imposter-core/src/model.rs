@@ -93,7 +93,6 @@ impl SavedValues {
 #[serde(rename_all = "lowercase")]
 pub enum EnvColor {
     Red,
-    Orange,
     Yellow,
     Green,
     Blue,
@@ -101,9 +100,8 @@ pub enum EnvColor {
 }
 
 impl EnvColor {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 5] = [
         Self::Red,
-        Self::Orange,
         Self::Yellow,
         Self::Green,
         Self::Blue,
@@ -114,7 +112,6 @@ impl EnvColor {
     pub fn name(self) -> &'static str {
         match self {
             Self::Red => "red",
-            Self::Orange => "orange",
             Self::Yellow => "yellow",
             Self::Green => "green",
             Self::Blue => "blue",

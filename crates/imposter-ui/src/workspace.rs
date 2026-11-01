@@ -3,7 +3,7 @@
 
 use egui::{Align, Layout, Rect, RichText, Sense, Ui, UiBuilder, vec2};
 use imposter_app::core::ids::FolderId;
-use imposter_app::core::model::{BodyType, EnvColor};
+use imposter_app::core::model::BodyType;
 
 use crate::app::{Action, EditorTab, ImposterApp, ResponseTab, Screen, State};
 use crate::dialogs::{ConfirmPurpose, Dialog, NamePurpose};
@@ -657,6 +657,11 @@ fn context_bar(
     save: Option<widgets::SaveStatus<'static>>,
     save_text: &str,
 ) {
+    let environment = state
+        .editor
+        .is_some()
+        .then(|| active_environment(state).map(|e| (e.name.clone(), e.color)))
+        .flatten();
     ui.horizontal(|ui| {
         let path = match &state.editor {
             // The request pane says what to do.
@@ -677,8 +682,7 @@ fn context_bar(
                     .unwrap_or_else(|| pane.editor.name().to_owned()),
             },
         };
-        ui.add(egui::Label::new(breadcrumb(&path)).truncate())
-            .on_hover_text(&path);
+        // The right end first, so the path is cut to what is left rather than run under it.
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if let Some(save) = save {
                 if widgets::save_controls(ui, &save, save_text) {
@@ -688,6 +692,14 @@ fn context_bar(
                     state.actions.push(Action::CopyCurl);
                 }
             }
+            // Where a send goes, in words, right above Send.
+            if let Some((name, color)) = &environment {
+                widgets::env_pill(ui, name, *color);
+            }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(egui::Label::new(breadcrumb(&path)).truncate())
+                    .on_hover_text(&path);
+            });
         });
     });
 }
@@ -724,11 +736,6 @@ fn active_environment(state: &State) -> Option<&imposter_app::store::environment
     state
         .active_environment
         .and_then(|id| state.environments.iter().find(|e| e.id == id))
-}
-
-/// The active environment's color, if it has one.
-fn active_color(state: &State) -> Option<EnvColor> {
-    active_environment(state).and_then(|e| e.color)
 }
 
 fn environment_picker(state: &mut State, ui: &mut Ui) {
@@ -793,7 +800,7 @@ fn layout_switch(layout: &mut WorkspaceLayout, ui: &mut Ui) {
 }
 
 fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
-    let color = active_color(state);
+    let environment = active_environment(state).map(|e| e.name.clone());
     let State {
         editor,
         snapshot,
@@ -809,13 +816,9 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
     };
     let mut url_edited = false;
     let mut edited = false;
-    // A colored environment rims the bar, so where a send goes shows before Send.
-    let rim = color.map_or(egui::Stroke::new(1.0, palette().border), |c| {
-        egui::Stroke::new(2.0, crate::theme::env_color(c))
-    });
     egui::Frame::new()
         .fill(palette().surface)
-        .stroke(rim)
+        .stroke(egui::Stroke::new(1.0, palette().border))
         .corner_radius(10)
         .inner_margin(8)
         .show(ui, |ui| {
@@ -856,9 +859,19 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                     egui::Button::new(RichText::new(label).color(palette().on_accent).strong())
                         .fill(fill),
                 );
+                // Where it goes, for the pointer and for screen readers.
+                let action = match (&environment, executing) {
+                    (Some(name), false) => format!("Send with {name}"),
+                    _ => label.to_owned(),
+                };
+                if !executing && let Some(name) = &environment {
+                    let description = format!("Sends with the {name} environment");
+                    ui.ctx()
+                        .accesskit_node_builder(send.id, |node| node.set_description(description));
+                }
                 let send = send.on_hover_text(crate::shortcuts::hint(
                     ui.ctx(),
-                    label,
+                    &action,
                     &crate::shortcuts::SEND,
                 ));
                 if send.clicked() {
