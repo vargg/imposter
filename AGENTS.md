@@ -371,6 +371,12 @@ numbers, so both are excluded. Each logical change is its own commit.
   a token only inspects it) and can be chosen by keyboard or pointer. Values appear only in the inspector, opened explicitly (click on a token
   or Alt+Enter); from a password field they stay masked until "Reveal". The inspector and
   execution share `executor::inputs`, so it explains exactly what a send would use.
+  It opens under the token, with a pointer up to it, and says where each value comes from
+  in words ("Defined in the Dev environment (overrides Global)", then "Overridden in
+  Global"; `vars::describe`). It closes with × at its top right or Esc, and "Copy value"
+  copies what a send would use, masked or not, since copying is explicit. Why: opened at
+  the field's edge it pointed at nothing, and "Effective · Environment · Dev" read as
+  internal labels (the review's #36).
 - **The Variables screen edits one scope at a time** (Global, an environment, a collection),
   independently of the active execution environment, with its own unsaved-changes guard for
   scope changes, reloads, environment management, "Open definition" and closing. Closing

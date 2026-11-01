@@ -925,10 +925,18 @@ fn var_edit_with(
     if (response.clicked() || alt_enter)
         && let Some(token) = cursor.and_then(|c| vars::token_at(text, c))
     {
+        // Under the token itself, so the inspector points at what it explains.
+        let start = text[..token.range.start].chars().count();
+        let at = output
+            .galley
+            .pos_from_cursor(egui::text::CCursor::new(start))
+            .left_bottom()
+            + output.galley_pos.to_vec2();
+        let x = at.x.clamp(response.rect.left(), response.rect.right());
         *vars.inspect = Some(Inspection {
             name: token.name,
             masked: password,
-            anchor: response.rect.left_bottom(),
+            anchor: egui::pos2(x, response.rect.bottom()),
         });
     }
 
@@ -1067,12 +1075,23 @@ pub fn inspector(
     let sample_id = egui::Id::unique(("generated sample", current.name.as_str()));
     let area = egui::Area::new(egui::Id::unique("variable inspector"))
         .order(egui::Order::Foreground)
-        .fixed_pos(current.anchor + egui::vec2(0.0, 4.0))
+        .fixed_pos(current.anchor + egui::vec2(-INSPECTOR_POINTER_INSET, INSPECTOR_POINTER))
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(320.0);
                 ui.set_max_width(480.0);
-                ui.heading(current.name.as_str());
+                ui.horizontal(|ui| {
+                    ui.heading(current.name.as_str());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let close_button = ui
+                            .add(egui::Button::new("×").frame_when_inactive(false))
+                            .on_hover_text("Close (Esc)");
+                        name(&close_button, "Close");
+                        if close_button.clicked() {
+                            close = true;
+                        }
+                    });
+                });
                 let definitions = snapshot.and_then(|s| s.definitions.get(&current.name));
                 match (definitions, error) {
                     (_, Some(error)) => {
@@ -1154,12 +1173,37 @@ pub fn inspector(
                         open = target.map(InspectorAction::Open);
                         close = true;
                     }
-                    if ui.button("Close").clicked() {
-                        close = true;
+                    let value = definitions.and_then(|d| d.first()).filter(|_| error.is_none());
+                    if let Some(value) = value {
+                        // Copying is explicit, so a masked value is copied as it is.
+                        let copy = ui.button("Copy value").on_hover_text(
+                            "Copy the value a send would use",
+                        );
+                        if copy.clicked() {
+                            ui.ctx().copy_text(value.value.clone());
+                        }
                     }
                 });
             });
         });
+    // A small pointer from the frame up to the token.
+    let style = ctx.global_style();
+    let fill = style.visuals.window_fill;
+    let stroke = style.visuals.window_stroke;
+    let tip = current.anchor + egui::vec2(0.0, 1.0);
+    let half = INSPECTOR_POINTER;
+    let painter = ctx.layer_painter(area.response.layer_id);
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            tip,
+            tip + egui::vec2(half, half + 1.0),
+            tip + egui::vec2(-half, half + 1.0),
+        ],
+        fill,
+        egui::Stroke::NONE,
+    ));
+    painter.line_segment([tip + egui::vec2(-half, half), tip], stroke);
+    painter.line_segment([tip, tip + egui::vec2(half, half)], stroke);
     let clicked_outside = ctx.input(|i| i.pointer.any_pressed())
         && !area.response.contains_pointer()
         && !area.response.hovered();
@@ -1173,6 +1217,10 @@ pub fn inspector(
     }
     open
 }
+
+/// The height of the inspector's pointer, and how far right of the frame's edge it sits.
+const INSPECTOR_POINTER: f32 = 6.0;
+const INSPECTOR_POINTER_INSET: f32 = 16.0;
 
 /// Above this size the body editor stops highlighting (see AGENTS.md: editor decision).
 pub const HIGHLIGHT_LIMIT: usize = 64 * 1024;

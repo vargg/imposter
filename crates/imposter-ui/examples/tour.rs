@@ -427,11 +427,15 @@ fn main() {
         tour.shot("3-01-environment-picker");
         tour.harness.key_press(egui::Key::Escape);
         tour.settle();
-        tour.harness.state_mut().state.inspect = Some(imposter_ui::widgets::Inspection {
-            name: "token".into(),
-            masked: true,
-            anchor: egui::pos2(window.x * 0.45, 150.0),
-        });
+        // Click the {{base}} token at the start of the URL, as a user would.
+        if let Some(field) = tour
+            .harness
+            .query_by_role_and_label(egui::accesskit::Role::TextInput, "Request URL")
+        {
+            let at = egui::pos2(field.rect().left() + 30.0, field.rect().center().y);
+            tour.harness.drag_at(at);
+            tour.harness.drop_at(at);
+        }
         tour.harness.run_steps(3);
         tour.shot("3-02-inspector");
         tour.harness.state_mut().state.inspect = None;

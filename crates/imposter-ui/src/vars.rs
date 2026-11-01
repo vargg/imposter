@@ -123,23 +123,39 @@ pub fn scope_label(source: &Source) -> &'static str {
     }
 }
 
-/// One line per definition for the inspector, highest precedence first.
+/// Where a value is defined, as a sentence says it: "Global", "the Dev environment".
+pub fn where_defined(source: &Source) -> String {
+    match source {
+        Source::Global => "Global".to_owned(),
+        Source::Environment { name, .. } => format!("the {name} environment"),
+        Source::Collection { name, .. } => format!("the {name} collection"),
+    }
+}
+
+/// One heading and value per definition for the inspector, highest precedence first: "Defined
+/// in the Dev environment (overrides Global)", then "Overridden in Global" for each other.
 pub fn describe(definitions: &[Definition], masked: bool) -> Vec<(String, String)> {
     const PREVIEW: usize = 4096;
+    let overridden: Vec<String> = definitions
+        .iter()
+        .skip(1)
+        .map(|d| where_defined(&d.source))
+        .collect();
     definitions
         .iter()
         .enumerate()
         .map(|(index, definition)| {
-            let heading = format!(
-                "{} · {} · {}",
-                if index == 0 {
-                    "Effective"
-                } else {
-                    "Overridden"
-                },
-                scope_label(&definition.source),
-                definition.source.label()
-            );
+            let heading = if index > 0 {
+                format!("Overridden in {}", where_defined(&definition.source))
+            } else if overridden.is_empty() {
+                format!("Defined in {}", where_defined(&definition.source))
+            } else {
+                format!(
+                    "Defined in {} (overrides {})",
+                    where_defined(&definition.source),
+                    join_and(&overridden)
+                )
+            };
             let value = if masked {
                 "••••••••".to_owned()
             } else if definition.value.is_empty() {
@@ -153,6 +169,15 @@ pub fn describe(definitions: &[Definition], masked: bool) -> Vec<(String, String
             (heading, value)
         })
         .collect()
+}
+
+/// "a", "a and b", "a, b and c".
+fn join_and(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 /// One editable variable. `key` identifies the row's widgets while rows above it are added,
@@ -344,11 +369,30 @@ mod tests {
         let lines = describe(&snapshot.definitions["host"], false);
         assert_eq!(
             lines[0],
-            ("Effective · Environment · Dev".into(), "Empty value".into())
+            (
+                "Defined in the Dev environment (overrides Global)".into(),
+                "Empty value".into()
+            )
+        );
+        assert_eq!(lines[1], ("Overridden in Global".into(), "g".into()));
+        let api = Definition {
+            value: "c".into(),
+            source: Source::Collection {
+                id: None,
+                name: "API".into(),
+            },
+            saved: Vec::new(),
+        };
+        let mut three = snapshot.definitions["host"].clone();
+        three.insert(1, api);
+        assert_eq!(
+            describe(&three, false)[0].0,
+            "Defined in the Dev environment (overrides the API collection and Global)"
         );
         assert_eq!(
-            lines[1],
-            ("Overridden · Global · Global".into(), "g".into())
+            describe(&three[2..], false)[0].0,
+            "Defined in Global",
+            "nothing to override"
         );
         assert_eq!(
             describe(&snapshot.definitions["token"], true)[0].1,

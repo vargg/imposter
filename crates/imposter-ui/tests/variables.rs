@@ -310,8 +310,28 @@ fn clicking_a_token_inspects_it_and_open_definition_goes_to_its_scope() {
         "clicking a token opens its inspector"
     );
 
-    app.harness.get_by_label("Effective · Global · Global");
+    app.harness.get_by_label("Defined in Global");
     app.harness.get_by_label("example.com");
+    // Opened under the token, not at the field's edge: "http://" comes before it.
+    let anchor = app.harness.state().state.inspect.as_ref().unwrap().anchor;
+    assert!(
+        anchor.x > field.left() + 30.0 && anchor.x < at.x,
+        "{anchor:?} in {field:?}"
+    );
+    app.harness.get_by_label("Copy value").click();
+    app.harness.step();
+    let copied: Vec<String> = app
+        .harness
+        .output()
+        .platform_output
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(copied, ["example.com"]);
     click(&mut app.harness, "Open definition");
     settle(&mut app.harness);
 
