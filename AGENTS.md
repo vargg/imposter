@@ -250,6 +250,11 @@ numbers, so both are excluded. Each logical change is its own commit.
   a frame in a frame in a card, its URL text sat 6 points above centre, and enabled and
   disabled Save looked alike (the review's #22–#24). Checked by
   `imposter-ui/tests/request_bar.rs` and the layout lint's custom-method state.
+- **The Auth tab is a two-column grid** (`widgets::auth_form`): one label column, fields to
+  the pane's edge (sized from the pane, since a grid cell sees only itself), and an eye
+  button after each secret (password, token) that shows or hides it for the session; the
+  choice is never stored. Why: labels were indented differently, the field had a fixed width,
+  and a typed secret could not be checked (the review's #25).
 - **The body editor fills its pane**, above a one-line footer ("Valid JSON" or the parse
   error with its line), and is never shorter than about four lines. Why: a fixed ten rows
   left most of a large pane empty (the review's #20).

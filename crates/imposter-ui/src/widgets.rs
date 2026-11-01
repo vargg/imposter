@@ -1636,50 +1636,82 @@ pub fn multipart_table(
     changed
 }
 
+/// The auth form's label column, so fields line up whatever the label.
+const AUTH_LABELS: f32 = 90.0;
+
 pub fn auth_form(ui: &mut Ui, auth: &mut AuthForm, vars: &mut VarUi) -> bool {
     let mut changed = false;
     let selected = AUTH_CHOICES
         .iter()
         .find(|(kind, _)| *kind == auth.kind)
         .map_or("None", |(_, label)| label);
-    ui.horizontal(|ui| {
-        let caption = ui.label("Type");
-        let combo = egui::ComboBox::from_id_salt("auth type")
-            .selected_text(selected)
-            .show_ui(ui, |ui| {
-                for (kind, label) in AUTH_CHOICES {
-                    changed |= ui.selectable_value(&mut auth.kind, kind, label).changed();
+    // Fields take the rest of the pane; inside a grid cell the cell is all a field would see.
+    let width = (ui.available_width() - AUTH_LABELS - 12.0).max(64.0);
+    egui::Grid::new("auth form")
+        .num_columns(2)
+        .min_col_width(AUTH_LABELS)
+        .spacing([12.0, 10.0])
+        .show(ui, |ui| {
+            let caption = ui.label("Type");
+            let combo = egui::ComboBox::from_id_salt("auth type")
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    for (kind, label) in AUTH_CHOICES {
+                        changed |= ui.selectable_value(&mut auth.kind, kind, label).changed();
+                    }
+                });
+            combo.response.labelled_by(caption.id);
+            ui.end_row();
+            match auth.kind {
+                None => {
+                    ui.label("");
+                    ui.label(tone_text(
+                        "No authentication is configured for this request.",
+                        Tone::Muted,
+                    ));
+                    ui.end_row();
                 }
-            });
-        combo.response.labelled_by(caption.id);
-    });
-    let width = (ui.available_width() - 100.0).clamp(160.0, 420.0);
-    match auth.kind {
-        None => {
-            ui.label(tone_text(
-                "No authentication is configured for this request.",
-                Tone::Muted,
-            ));
-        }
-        Some(AuthKind::Basic | AuthKind::Digest) => {
-            ui.horizontal(|ui| {
-                ui.add_sized([80.0, 18.0], egui::Label::new("Username"));
-                changed |=
-                    var_edit(ui, &mut auth.username, "Username", width, false, vars).changed();
-            });
-            ui.horizontal(|ui| {
-                ui.add_sized([80.0, 18.0], egui::Label::new("Password"));
-                changed |=
-                    var_edit(ui, &mut auth.password, "Password", width, true, vars).changed();
-            });
-        }
-        Some(AuthKind::BearerToken) => {
-            ui.horizontal(|ui| {
-                ui.add_sized([80.0, 18.0], egui::Label::new("Token"));
-                changed |= var_edit(ui, &mut auth.token, "Token", width, true, vars).changed();
-            });
-        }
-    }
+                Some(AuthKind::Basic | AuthKind::Digest) => {
+                    ui.label("Username");
+                    changed |=
+                        var_edit(ui, &mut auth.username, "Username", width, false, vars).changed();
+                    ui.end_row();
+                    ui.label("Password");
+                    changed |= secret_edit(ui, &mut auth.password, "Password", width, vars);
+                    ui.end_row();
+                }
+                Some(AuthKind::BearerToken) => {
+                    ui.label("Token");
+                    changed |= secret_edit(ui, &mut auth.token, "Token", width, vars);
+                    ui.end_row();
+                }
+            }
+        });
+    changed
+}
+
+/// A secret's field, masked until its eye button shows it. Shown or not is remembered per
+/// field for the session, never stored.
+fn secret_edit(ui: &mut Ui, text: &mut String, label: &str, width: f32, vars: &mut VarUi) -> bool {
+    let id = ui.make_persistent_id(("shown secret", label));
+    let mut shown: bool = ui.data(|d| d.get_temp(id)).unwrap_or(false);
+    let changed = ui
+        .horizontal(|ui| {
+            let eye = icons::size() + ui.spacing().item_spacing.x;
+            let changed =
+                var_edit(ui, text, label, (width - eye).max(80.0), !shown, vars).changed();
+            let (icon, action) = if shown {
+                (Icon::EyeOff, format!("Hide {}", label.to_lowercase()))
+            } else {
+                (Icon::Eye, format!("Show {}", label.to_lowercase()))
+            };
+            if icons::button(ui, icon, &action, false).clicked() {
+                shown = !shown;
+            }
+            changed
+        })
+        .inner;
+    ui.data_mut(|d| d.insert_temp(id, shown));
     changed
 }
 

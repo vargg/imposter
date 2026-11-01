@@ -94,6 +94,47 @@ fn bearer_tokens_are_saved() {
 }
 
 #[test]
+fn secrets_are_masked_until_shown_and_fields_share_a_column() {
+    use egui::accesskit::Role;
+    let mut app = opened();
+    tab(&mut app, EditorTab::Auth);
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .auth
+        .kind = Some(AuthKind::Basic);
+    app.harness.run_steps(2);
+    type_into(&mut app.harness, "Password", "secret");
+    app.harness
+        .get_by_role_and_label(Role::PasswordInput, "Password");
+
+    click(&mut app.harness, "Show password");
+    app.harness
+        .get_by_role_and_label(Role::TextInput, "Password");
+    click(&mut app.harness, "Hide password");
+    app.harness
+        .get_by_role_and_label(Role::PasswordInput, "Password");
+
+    // Username and password start in one column and reach the eye's edge.
+    let user = support::text_input(&app.harness, "Username").rect();
+    let password = support::text_input(&app.harness, "Password").rect();
+    let eye = app.harness.get_by_label("Show password").rect();
+    assert!(
+        (user.left() - password.left()).abs() < 0.5,
+        "{user:?} {password:?}"
+    );
+    assert!(eye.left() > password.right(), "{password:?} {eye:?}");
+    assert!(
+        (user.right() - eye.right()).abs() < 2.0,
+        "{user:?} ends with {eye:?}"
+    );
+}
+
+#[test]
 fn header_rows_can_be_added_edited_disabled_and_cleared() {
     let mut app = opened();
     tab(&mut app, EditorTab::Headers);

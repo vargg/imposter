@@ -29,6 +29,10 @@ pub enum Icon {
     Filter,
     /// Values kept for later.
     Bookmark,
+    /// Show a hidden value.
+    Eye,
+    /// Hide a shown value: the eye, struck through.
+    EyeOff,
 }
 
 /// The side of an icon button: as tall as the other controls, so they line up in a row.
@@ -281,6 +285,21 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
                 ],
                 stroke,
             ));
+        }
+        Icon::Eye | Icon::EyeOff => {
+            // A lens of two arcs with the pupil inside.
+            let angle = |step: u8| std::f32::consts::PI * f32::from(step) / 16.0;
+            let lens: Vec<Pos2> = (0..=16_u8)
+                .map(|step| point(8.0 - 7.0 * angle(step).cos(), 8.0 - 4.5 * angle(step).sin()))
+                .chain((1..16_u8).map(|step| {
+                    point(8.0 + 7.0 * angle(step).cos(), 8.0 + 4.5 * angle(step).sin())
+                }))
+                .collect();
+            painter.add(egui::Shape::closed_line(lens, stroke));
+            painter.circle_stroke(point(8.0, 8.0), 2.0, stroke);
+            if icon == Icon::EyeOff {
+                line((2.0, 14.0), (14.0, 2.0));
+            }
         }
         Icon::Bookmark => {
             painter.add(egui::Shape::closed_line(

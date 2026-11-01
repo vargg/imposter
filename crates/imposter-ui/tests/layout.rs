@@ -207,6 +207,16 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         pane.tab = imposter_ui::app::EditorTab::Tests;
     }
     check(app, "tests tab");
+    // Auth: a label column, fields to the pane's edge, an eye on secrets.
+    for kind in [
+        imposter_app::core::model::AuthKind::Basic,
+        imposter_app::core::model::AuthKind::BearerToken,
+    ] {
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.editor.auth.kind = Some(kind);
+        pane.tab = imposter_ui::app::EditorTab::Auth;
+        check(app, &format!("auth {kind:?}"));
+    }
     app.harness.state_mut().state.editor.as_mut().unwrap().tab = imposter_ui::app::EditorTab::Body;
     // A custom method being typed takes the method picker's place in the request bar.
     click(&mut app.harness, "HTTP method");
