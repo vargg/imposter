@@ -544,6 +544,8 @@ enum Navigation {
     Restore {
         request: Box<Request>,
         status: &'static str,
+        /// The run the draft comes from, shown as its response.
+        response: Option<Box<Response>>,
     },
     /// Write a reviewed import, then show the new collection.
     Import {
@@ -1601,10 +1603,7 @@ impl ImposterApp {
         state.appearance = startup.appearance;
         if let Some(draft) = startup.draft {
             self.load_editor(&draft);
-            self.request_status(
-                "Restored unsaved draft — Send to execute, Save to add to the selected collection",
-                Tone::Muted,
-            );
+            self.request_status("Restored the draft you left open", Tone::Muted);
         } else {
             self.state.restore = startup.last.request_id;
         }
@@ -1889,9 +1888,16 @@ impl ImposterApp {
                     Message::Imported(result.map_err(failure))
                 });
             }
-            Navigation::Restore { request, status } => {
+            Navigation::Restore {
+                request,
+                status,
+                response,
+            } => {
                 self.state.generation += 1;
                 self.load_editor(&request);
+                if let Some(response) = response {
+                    self.state.response.show(*response);
+                }
                 self.state.screen = Screen::Requests;
                 self.request_status(status, Tone::Muted);
             }
@@ -2886,7 +2892,8 @@ impl ImposterApp {
                     };
                     self.navigate(Navigation::Restore {
                         request: Box::new(request),
-                        status: "Opened from curl as an unsaved draft — Save to add it to a collection",
+                        status: "Opened the curl command as a draft",
+                        response: None,
                     });
                 }
             }
@@ -3828,7 +3835,8 @@ impl ImposterApp {
                     let draft = record.restore();
                     self.navigate(Navigation::Restore {
                         request: Box::new(draft),
-                        status: "Restored unsaved draft — Send to execute, Save to add to the selected collection",
+                        status: "Restored a draft from History",
+                        response: Some(Box::new(record.response.clone())),
                     });
                 }
             }

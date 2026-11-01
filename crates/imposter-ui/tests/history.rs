@@ -88,6 +88,13 @@ fn restoring_opens_an_unsaved_draft_without_sending() {
             .editor
             .is_draft()
     );
+    // The run it came from is shown, and the draft says it is in no collection yet.
+    app.harness.get_by_label("201 Created");
+    app.harness.get_by_label_contains("made it");
+    app.harness
+        .get_by_label("This draft is not in a collection yet.");
+    click(&mut app.harness, "Save draft to collection");
+    app.harness.get_by_label("Request name in API");
 }
 
 #[test]

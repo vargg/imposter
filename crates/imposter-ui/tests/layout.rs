@@ -249,6 +249,12 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     settle(&mut app.harness);
     app.harness.state_mut().state.history.tab = imposter_ui::app::HistoryTab::Response;
     check(app, "History response");
+    // A restored draft: its banner above the request bar, the recorded response beside it.
+    click(&mut app.harness, "Restore as draft");
+    settle(&mut app.harness);
+    check(app, "restored draft");
+    click(&mut app.harness, "History");
+    settle(&mut app.harness);
     click(&mut app.harness, "Requests");
     settle(&mut app.harness);
     for (dialog, keys) in [("palette", egui::Key::K), ("recent", egui::Key::P)] {

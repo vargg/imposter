@@ -448,7 +448,12 @@ numbers, so both are excluded. Each logical change is its own commit.
   milliseconds. The request of an execution is shown as sent (`viewer::sent_request`, built
   with the executor's own `prepare`), never a dump of the stored template. Restoring an
   entry opens an unsaved draft through the unsaved-changes guard and never sends; the draft
-  keeps the captured collection variables for a deleted collection.
+  keeps the captured collection variables for a deleted collection, and the response pane
+  shows the recorded response, so the run it came from stays in view. Every draft (restored,
+  pasted curl, or left open last time) has a banner above the request bar: "This draft is
+  not in a collection yet." with "Save to <collection>", which is Save. Why: the draft's
+  instructions lived only in the status bar, and the restored run's response was gone (the
+  review's #42).
   - **The list is a table** (`history_screen::columns`): When (relative, "5 min ago", from
     `viewer::relative_time`; the exact time is the row's hover text), Name, Method in its
     color, URL with the repeating origin muted, a status pill ("201", "Failed",

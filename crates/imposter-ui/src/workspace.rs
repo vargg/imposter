@@ -186,6 +186,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
             }
             context_bar(state, ui, save, save_text);
             ui.add_space(8.0);
+            draft_banner(state, ui);
             command_bar(state, ui, executing);
             ui.add_space(12.0);
             split(state, ui);
@@ -519,6 +520,49 @@ fn sidebar_filter(state: &mut State, ui: &mut Ui) {
 }
 
 /// The method, URL and Send row: the main control, a little taller than the others.
+/// Over a draft: it is in no collection yet, and one click starts saving it to the one
+/// selected, as Save does.
+fn draft_banner(state: &mut State, ui: &mut Ui) {
+    if !state
+        .editor
+        .as_ref()
+        .is_some_and(|pane| pane.editor.is_draft())
+    {
+        return;
+    }
+    let collection = state
+        .collection
+        .and_then(|id| state.collections.iter().find(|c| c.id == id))
+        .map(|c| c.name.clone());
+    egui::Frame::new()
+        .fill(palette().hover)
+        .stroke(egui::Stroke::new(1.0, palette().field_border))
+        .corner_radius(BAR_RADIUS)
+        .inner_margin(egui::Margin::symmetric(10, 4))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                let button = match &collection {
+                    Some(name) => format!("Save to {name}"),
+                    None => "Save to a collection".to_owned(),
+                };
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let save = ui.button(&button);
+                    name(&save, "Save draft to collection");
+                    if save.clicked() {
+                        state.actions.push(Action::Save);
+                    }
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        ui.add(
+                            egui::Label::new("This draft is not in a collection yet.").truncate(),
+                        );
+                    });
+                });
+            });
+        });
+    ui.add_space(8.0);
+}
+
 /// The request bar's corner radius.
 const BAR_RADIUS: u8 = 8;
 
