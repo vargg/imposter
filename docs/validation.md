@@ -65,4 +65,5 @@ issue or commit that fixed it).
 
 | Date | OS | Build | Result |
 |---|---|---|---|
+| 2026-11-01 | macOS 26.6.2, arm64 | I’mposter 0.2.0 | Claude: `scripts/check.sh` passed (coverage 94.9% of lines); CI passed on macOS, Linux and Windows (run 41310778075); the packaged real-window HTTP/history/shutdown smoke test passed; bundle version 0.2.0, identifier `dev.imposter.app`, ad-hoc signature (`codesign --verify --deep --strict`) and DMG checksum verified. Full manual walkthrough (including native dialogs and display checks) not performed; Linux/Windows package checks are run by the release workflow. |
 | 2026-10-28 | macOS 26.6.2, arm64 | I’mposter 0.1.3 | Codex: local full gate passed; packaged real-window HTTP/history/shutdown smoke test passed; bundle version, ad-hoc signature and DMG integrity verified. Full manual walkthrough (including native dialogs and display checks) not performed; Linux/Windows package checks are run by the release workflow. |
