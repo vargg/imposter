@@ -176,8 +176,16 @@ fn parse_private_key(data: &[u8], password: &str) -> Result<PrivateKeyDer<'stati
             pkcs8::Error::EncryptedPrivateKey(pkcs5::Error::NoPbes1CryptSupport) => {
                 KeyError::Tls(TlsError::UnsupportedKeyEncryption("PBES1".to_owned()))
             }
+            // A wrong password still passes the padding check about once in 256 tries and
+            // "decrypts" to noise, which then fails as DER: the block itself parsed above.
+            pkcs8::Error::Asn1(_) => KeyError::Tls(TlsError::WrongPassword),
             other => KeyError::Pem(other.to_string()),
         })?;
+        // Noise that happens to be DER is still not a key: only a key that parses proves
+        // the password right.
+        if pkcs8::PrivateKeyInfoRef::try_from(plain.as_bytes()).is_err() {
+            return Err(KeyError::Tls(TlsError::WrongPassword));
+        }
         return Ok(PrivatePkcs8KeyDer::from(plain.as_bytes().to_vec()).into());
     }
     match PrivateKeyDer::from_pem_slice(data) {
@@ -232,5 +240,39 @@ impl ServerCertVerifier for NoVerification {
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
         self.0.supported_schemes()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pkcs8::der::EncodePem as _;
+
+    use super::*;
+
+    /// An encrypted key block whose correct decryption is `plaintext`: noise stands for what
+    /// a wrong password that happens to pass the padding check yields.
+    fn encrypted(password: &str, plaintext: &[u8]) -> String {
+        let scheme: pkcs5::EncryptionScheme =
+            pkcs5::pbes2::Parameters::generate_pbkdf2_sha256_aes256cbc(1000, b"saltsalt", [7; 16])
+                .unwrap()
+                .into();
+        let data = scheme.encrypt(password, plaintext).unwrap();
+        let info = EncryptedPrivateKeyInfoRef {
+            encryption_algorithm: scheme,
+            encrypted_data: pkcs8::der::asn1::OctetStringRef::new(&data).unwrap(),
+        };
+        info.to_pem(pkcs8::der::pem::LineEnding::LF).unwrap()
+    }
+
+    #[test]
+    fn a_decryption_that_is_not_a_key_is_a_wrong_password() {
+        // Noise that is not DER, and noise that is DER (SEQUENCE { INTEGER 5 }) but no key.
+        for plaintext in [&b"not a private key"[..], &[0x30, 0x03, 0x02, 0x01, 0x05]] {
+            let pem = encrypted("right", plaintext);
+            assert!(matches!(
+                parse_private_key(pem.as_bytes(), "right"),
+                Err(KeyError::Tls(TlsError::WrongPassword))
+            ));
+        }
     }
 }

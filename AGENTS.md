@@ -265,6 +265,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   (`Proc-Type: 4,ENCRYPTED`) is rejected** with advice to run `openssl pkcs8 -topk8`. Why:
   rustls and RustCrypto do not implement the legacy OpenSSL scheme. PBKDF2-HMAC-SHA1 is enabled
   because LibreSSL and older OpenSSL use it by default (fixtures in `imposter-http/tests/fixtures`).
+  A decryption that is not a key is a wrong password: about once in 256 tries a wrong one
+  passes the padding check and yields noise, which was reported as an invalid PEM file (and
+  made `encrypted_key_errors_are_specific` flaky).
 - **HTTP/1.1 only.** Why: matches the Python app (httpx default) and keeps the wire format the
   tests pin; HTTP/2 settings are out of scope.
 - **Header order: values of one name keep their order; names go out in first-occurrence order,
