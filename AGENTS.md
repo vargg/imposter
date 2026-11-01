@@ -40,6 +40,10 @@ Python/PyQt6 prototype at `~/dev/pystman`, which stays the reference implementat
   received. SQLite: a real database in a temp dir. UI: real actions through `egui_kittest`. Mock
   only the boundary a fault-injection test targets.
   Why: mocks confirm what we assumed; real boundaries catch what we did not.
+- **Tests assert our own wording, never the operating system's.** System error text
+  differs by OS ("Connection refused" vs Windows' "actively refused it"); check the part
+  every OS shares ("os error") or the error kind.
+  Why: a test that passed on macOS and Linux failed only in the Windows CI job.
 - **Tests are deterministic and independent.** No fixed sleeps: wait on channels or events with a
   deadline. No external network, no personal data directory (`IMPOSTER_DATA_DIR` points at a temp
   dir). Every test owns and cleans up its resources.

@@ -205,7 +205,9 @@ fn a_connection_failure_reads_plainly_fits_and_can_be_retried() {
         "the raw text waits under Details"
     );
     click(&mut app.harness, "Details");
-    app.harness.get_by_label_contains("Connection refused");
+    // The system's own words differ by OS ("Connection refused" here, "actively refused
+    // it" on Windows); every one ends with its error number.
+    app.harness.get_by_label_contains("os error");
     assert!(
         app.harness
             .query_by_label_contains("TransportError")
