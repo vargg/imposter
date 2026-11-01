@@ -7,7 +7,7 @@ use crate::app::{Action, State, VariablesAction};
 use crate::icons::{self, Icon};
 use crate::theme::{Tone, palette};
 use crate::vars::{self, Scope};
-use crate::widgets::{SaveStatus, env_text, name, save_controls, tone_text};
+use crate::widgets::{SaveStatus, env_option_text, env_text, name, save_controls, tone_text};
 use imposter_app::core::model::EnvColor;
 
 fn scope_label(state: &State, scope: Scope) -> String {
@@ -35,13 +35,12 @@ fn scope_color(state: &State, scope: Scope) -> Option<EnvColor> {
     }
 }
 
-/// What the screen edits, in words: its name, what kind of scope it is, and where it stands
-/// in precedence (the active environment, then the collection, then Global).
-pub fn explanation(state: &State, scope: Scope) -> (String, String, &'static str) {
+/// What the scope is for, in a sentence, and where it stands in precedence (the active
+/// environment, then the collection, then Global). The picker above names the scope.
+pub fn explanation(state: &State, scope: Scope) -> (String, &'static str) {
     match scope {
         Scope::Global => (
-            "Global".to_owned(),
-            "Every request".to_owned(),
+            "Used by every request.".to_owned(),
             "A collection's variables and the active environment override these.",
         ),
         Scope::Environment(id) => {
@@ -49,26 +48,27 @@ pub fn explanation(state: &State, scope: Scope) -> (String, String, &'static str
                 .environments
                 .iter()
                 .find(|e| e.id == id)
-                .map_or_else(String::new, |e| e.name.clone());
-            let kind = if state.active_environment == Some(id) {
-                "Environment · active"
+                .map_or("This environment", |e| e.name.as_str());
+            let usage = if state.active_environment == Some(id) {
+                format!("{name} is the active environment: requests use these now.")
             } else {
-                "Environment · not active"
+                format!("{name} is not active: requests use these only while it is.")
             };
             (
-                name,
-                kind.to_owned(),
+                usage,
                 "While active, these override the collection's variables and Global.",
             )
         }
         Scope::Collection(id) => (
-            state
-                .collections
-                .iter()
-                .find(|c| c.id == id)
-                .map_or_else(String::new, |c| c.name.clone()),
-            "Collection".to_owned(),
-            "Its requests use these; the active environment overrides them, and they override Global.",
+            format!(
+                "Used by the requests in {}.",
+                state
+                    .collections
+                    .iter()
+                    .find(|c| c.id == id)
+                    .map_or("this collection", |c| c.name.as_str())
+            ),
+            "The active environment overrides these, and they override Global.",
         ),
     }
 }
@@ -79,6 +79,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     ui.horizontal(|ui| {
         let font = egui::TextStyle::Button.resolve(ui.style());
         let text = palette().text;
+        ui.label(tone_text("Editing", Tone::Muted));
         let combo = egui::ComboBox::from_id_salt("variables scope")
             .width(260.0)
             .selected_text(env_text(
@@ -89,7 +90,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             ))
             .show_ui(ui, |ui| {
                 let mut pick = |ui: &mut Ui, scope: Scope, label: String| {
-                    let shown = env_text(&label, scope_color(state, scope), font.clone(), text);
+                    let shown =
+                        env_option_text(&label, scope_color(state, scope), font.clone(), text);
                     let option = crate::widgets::option(ui, scope == current, shown);
                     name(&option, &label);
                     if option.clicked() {
@@ -98,10 +100,15 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 };
                 pick(ui, Scope::Global, "Global".into());
                 for environment in &state.environments {
+                    let active = if state.active_environment == Some(environment.id) {
+                        " (active)"
+                    } else {
+                        ""
+                    };
                     pick(
                         ui,
                         Scope::Environment(environment.id),
-                        format!("Environment · {}", environment.name),
+                        format!("Environment · {}{active}", environment.name),
                     );
                 }
                 for collection in &state.collections {
@@ -112,6 +119,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     );
                 }
             });
+        // Named for what it chooses; the caption says what the screen does with it.
         name(&combo.response, "Variable scope");
         let new = ui
             .button("+ Environment")
@@ -180,8 +188,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     }
     let mut edited = false;
     let highlight = state.variables.highlight.take();
-    let state_view = explanation(state, current);
-    let color = scope_color(state, current);
+    let (usage, precedence) = explanation(state, current);
     egui::Frame::new()
         .fill(palette().surface)
         .stroke(egui::Stroke::new(1.0, palette().border))
@@ -191,7 +198,9 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    header(state_view.0, state_view.1, state_view.2, color, ui);
+                    ui.label(usage);
+                    ui.add(egui::Label::new(tone_text(precedence, Tone::Muted)).wrap());
+                    ui.add_space(8.0);
                     let height = ui.spacing().interact_size.y;
                     // Room for the saved values and remove buttons after the fields.
                     let available = ui.available_width() - 76.0;
@@ -262,21 +271,6 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
 
 /// Wide enough for a value, "current" and the remove button.
 const SAVED_MENU_WIDTH: f32 = 280.0;
-
-/// The scope's name (with its color) and kind on one line, and its place in precedence under
-/// them.
-fn header(title: String, kind: String, precedence: &str, color: Option<EnvColor>, ui: &mut Ui) {
-    ui.horizontal(|ui| {
-        if let Some(color) = color {
-            crate::widgets::env_dot(ui, color);
-        }
-        let title = RichText::new(title).font(crate::theme::semibold(15.0));
-        ui.add(egui::Label::new(title).truncate());
-        ui.label(tone_text(kind, Tone::Muted));
-    });
-    ui.add(egui::Label::new(tone_text(precedence, Tone::Muted)).wrap());
-    ui.add_space(8.0);
-}
 
 /// The row's saved values: pick one as the current value, save the current one, or remove
 /// one. Returns whether the row changed. The menu stays open while it is used, since

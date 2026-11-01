@@ -482,6 +482,27 @@ pub fn env_text(name: &str, color: Option<EnvColor>, font: FontId, text: Color32
     job
 }
 
+/// An environment in a list: like [`env_text`], with the dot's room kept when it has no
+/// color, so every name in the list starts at the same place.
+pub fn env_option_text(
+    name: &str,
+    color: Option<EnvColor>,
+    font: FontId,
+    text: Color32,
+) -> LayoutJob {
+    if color.is_some() {
+        return env_text(name, color, font, text);
+    }
+    let mut job = LayoutJob::default();
+    job.append(
+        "● ",
+        0.0,
+        TextFormat::simple(font.clone(), Color32::TRANSPARENT),
+    );
+    job.append(name, 0.0, TextFormat::simple(font, text));
+    job
+}
+
 /// A dot in an environment's color, painted rather than written, so the label beside it
 /// stays the name alone for screen readers.
 pub fn env_dot(ui: &mut Ui, color: EnvColor) {

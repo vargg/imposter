@@ -751,12 +751,22 @@ fn environment_picker(state: &mut State, ui: &mut Ui) {
         .width(170.0)
         .selected_text(selected)
         .show_ui(ui, |ui| {
-            if widgets::option(ui, active.is_none(), GLOBAL).clicked() {
+            let global = widgets::option(
+                ui,
+                active.is_none(),
+                widgets::env_option_text(GLOBAL, None, font.clone(), text),
+            );
+            name(&global, GLOBAL);
+            if global.clicked() {
                 state.actions.push(Action::SetEnvironment(None));
             }
             for environment in &state.environments {
-                let label =
-                    widgets::env_text(&environment.name, environment.color, font.clone(), text);
+                let label = widgets::env_option_text(
+                    &environment.name,
+                    environment.color,
+                    font.clone(),
+                    text,
+                );
                 let option = widgets::option(ui, active == Some(environment.id), label);
                 name(&option, &environment.name);
                 if option.clicked() {

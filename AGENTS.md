@@ -387,13 +387,16 @@ numbers, so both are excluded. Each logical change is its own commit.
   independently of the active execution environment, with its own unsaved-changes guard for
   scope changes, reloads, environment management, "Open definition" and closing. Closing
   resolves the request guard first, then the variables guard, then writes UI state.
-  The list is headed by the scope's name (with its environment color), its kind ("Every
-  request", "Environment · active" or "· not active", "Collection") and one line on where
-  it stands in precedence (`variables_screen::explanation`). The toolbar has a labelled
-  "+ Environment"; renaming, deleting and "Clear all variables…" are in its "⋯" menu, and
-  clearing still asks under the rows. Why: the screen did not say which scope wins, nor
-  whether the environment shown is the one sends use, and "Clear All" sat beside "Add
-  Variable" (the review's #37, #39).
+  The scope picker is captioned "Editing"; its list marks the active environment
+  ("(active)"). Under it, one sentence says what the scope is for ("Used by every
+  request.", "Dev is the active environment: requests use these now.") and one line where
+  it stands in precedence (`variables_screen::explanation`); the name is not repeated,
+  since the picker shows it. The toolbar has a labelled "+ Environment"; editing the name
+  and color, deleting and "Clear all variables…" are in its "⋯" menu, and clearing still
+  asks under the rows. In environment lists, names without a color keep the dot's room,
+  so all start in line. Why: the screen did not say which scope wins, nor whether the
+  environment shown is the one sends use, and "Clear All" sat beside "Add Variable" (the
+  review's #37, #39; Phase 5 review Q22, Q25).
 - **Saved values: a list per variable, kept in the variable's scope beside its current value**
   (`model::SavedValues`, the `saved_values` column of migration V2, `store::scopes`). The
   current value stays the single source for execution, precedence, curl, history and exports;

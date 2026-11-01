@@ -593,18 +593,6 @@ fn a_dollar_suggests_generated_values_and_the_inspector_explains_them() {
     assert_eq!(example.trim_start_matches("For example: ").len(), 36);
 }
 
-/// The screen's heading: `title`, on the row of its `kind` and before it.
-fn heading_beside(app: &support::App, title: &str, kind: &str) {
-    let kind = app.harness.get_by_label(kind).rect();
-    assert!(
-        app.harness.query_all_by_label(title).any(|node| {
-            let rect = node.rect();
-            rect.right() <= kind.left() && (rect.center().y - kind.center().y).abs() < 4.0
-        }),
-        "no heading {title:?} before {kind:?}"
-    );
-}
-
 #[test]
 fn the_screen_says_what_it_edits_and_where_it_stands_in_precedence() {
     let mut app = start_with(|store| {
@@ -618,18 +606,30 @@ fn the_screen_says_what_it_edits_and_where_it_stands_in_precedence() {
         collection(store, "API");
     });
     open_screen(&mut app);
-    app.harness.get_by_label("Every request");
+    // The picker is captioned; the text under it explains rather than repeats it.
+    let picker = app.harness.get_by_label("Variable scope").rect();
+    let caption = app.harness.get_by_label("Editing").rect();
+    assert!(
+        caption.right() <= picker.left() && (caption.center().y - picker.center().y).abs() < 4.0
+    );
+    app.harness.get_by_label("Used by every request.");
     app.harness
         .get_by_label("A collection's variables and the active environment override these.");
 
-    for (scope, title, kind) in [
-        ("Environment · Dev", "Dev", "Environment · active"),
-        ("Environment · Prod", "Prod", "Environment · not active"),
+    for (scope, usage) in [
+        (
+            "Environment · Dev (active)",
+            "Dev is the active environment: requests use these now.",
+        ),
+        (
+            "Environment · Prod",
+            "Prod is not active: requests use these only while it is.",
+        ),
     ] {
         click(&mut app.harness, "Variable scope");
         click(&mut app.harness, scope);
         settle(&mut app.harness);
-        heading_beside(&app, title, kind);
+        app.harness.get_by_label(usage);
         app.harness
             .get_by_label("While active, these override the collection's variables and Global.");
     }
@@ -637,11 +637,9 @@ fn the_screen_says_what_it_edits_and_where_it_stands_in_precedence() {
     click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Collection · API");
     settle(&mut app.harness);
+    app.harness.get_by_label("Used by the requests in API.");
     app.harness
-        .get_by_role_and_label(egui::accesskit::Role::Label, "API");
-    app.harness.get_by_label(
-        "Its requests use these; the active environment overrides them, and they override Global.",
-    );
+        .get_by_label("The active environment overrides these, and they override Global.");
 }
 
 #[test]

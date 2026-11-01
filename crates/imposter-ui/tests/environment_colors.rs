@@ -266,6 +266,22 @@ fn the_picker_and_the_palette_mark_colored_environments() {
     let red = env_color(EnvColor::Red);
     click(&mut app.harness, "Environment");
     assert_eq!(painted_in(&app, red), ["● "], "only Prod's option");
+    // Options without a color keep the dot's room, so every name starts in line.
+    let options: Vec<String> = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) if text.galley.job.text.starts_with("● ") => {
+                Some(text.galley.job.text.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    for option in ["● Global (no environment)", "● Dev", "● Prod"] {
+        assert!(options.iter().any(|o| o == option), "{option}: {options:?}");
+    }
     app.harness.key_press(egui::Key::Escape);
     app.harness.run_steps(2);
 
