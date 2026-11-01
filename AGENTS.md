@@ -282,6 +282,17 @@ numbers, so both are excluded. Each logical change is its own commit.
   production, must be recognisable before Send (user's choice); a name pattern alone guessed
   wrong, so the user picks and the pattern only suggests. Colors are names, not RGB, so each
   theme draws them with checked contrast.
+  - **Choosing:** the New and Rename environment dialogs have swatches (No color, then the
+    six; radio buttons to screen readers). A new environment's color follows its name until
+    the user picks one; renaming never changes it by itself.
+  - **Showing:** the active environment's color is a dot before its name in the picker and
+    the status bar, and a 2-point rim around the request bar; the picker's options and the
+    palette's environment rows have the dot. Every shade is ≥4.5:1 on every background
+    (`theme.rs` tests). The status bar paints its dot, because a "●" in the label became
+    its accessible value. The rim replaced the planned stripe on Send: Send is filled with
+    the accent, and red or orange on it would differ by hue alone.
+  - **Managing:** the picker ends with "Manage environments…", which opens Variables on the
+    active environment (Global without one), through the Variables guard.
 - **History rows carry summary columns** (name, method, URL, status, outcome, elapsed) next to
   the JSON payload. Why: the list must not decode multi-megabyte payloads; details load one.
   Retention deletes oldest first by count and total payload size; a record larger than the

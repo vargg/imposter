@@ -13,7 +13,7 @@ use std::time::Duration;
 use egui::ViewportCommand;
 use imposter_app::core::execution::{ExecutionRecord, Outcome as ExchangeOutcome, Response};
 use imposter_app::core::ids::{CollectionId, EnvironmentId, ExecutionId, FolderId, RequestId};
-use imposter_app::core::model::{FormItem, Request, SavedValues, Variables};
+use imposter_app::core::model::{EnvColor, FormItem, Request, SavedValues, Variables};
 use imposter_app::core::settings::AppSettings;
 use imposter_app::core::variables::Snapshot;
 use imposter_app::executor::{self, ExecuteError, Executed};
@@ -323,6 +323,8 @@ pub enum Action {
     PasteCurl(String),
     /// Switch the active execution environment (`None`: globals only).
     SetEnvironment(Option<EnvironmentId>),
+    /// Open the Variables screen on the active environment (Global without one).
+    ManageEnvironments,
     /// The inspector's "Open definition": edit `name` in `scope`.
     OpenDefinition(Scope, String),
     /// Open the Variables screen on a scope with a new row for an undefined name.
@@ -478,6 +480,8 @@ enum VarTransition {
     RenameEnvironment(EnvironmentId),
     DeleteEnvironment(EnvironmentId),
     OpenDefinition(Scope, String),
+    /// Show the Variables screen on `scope`.
+    Open(Scope),
     /// Open `scope` with a new row for `name`, unless it already has one.
     Define(Scope, String),
     Close,
@@ -2446,46 +2450,46 @@ impl ImposterApp {
                 self.task(move |db| collections::rename_request(db, id, &name), reload);
             }
             NamePurpose::SaveDraft(collection) => self.save_draft(collection, name),
-            NamePurpose::NewEnvironment => {
-                let db = self.db.clone();
-                self.bridge.spawn(move |_| async move {
-                    let result = db
-                        .call(move |tx| {
-                            let created =
-                                environments::create_environment(tx, &name, &Variables::new())?;
-                            Ok((
-                                created.id,
-                                environments::environments(tx)?,
-                                environments::active_environment(tx)?,
-                            ))
-                        })
-                        .await;
-                    match result {
-                        Ok((id, list, active)) => Message::Environments {
-                            select: Some(Scope::Environment(id)),
-                            result: Ok((list, active)),
-                        },
-                        Err(error) => Message::Environments {
-                            select: None,
-                            result: Err(failure(error)),
-                        },
-                    }
-                });
-            }
-            NamePurpose::RenameEnvironment(id) => self.task(
-                move |db| {
-                    environments::rename_environment(db, id, &name)?;
-                    Ok((
-                        environments::environments(db)?,
-                        environments::active_environment(db)?,
-                    ))
-                },
-                |result| Message::Environments {
-                    select: None,
-                    result: result.map_err(failure),
-                },
-            ),
         }
+    }
+
+    /// Create or rename an environment and set its color, in one command.
+    fn environment_named(
+        &mut self,
+        id: Option<EnvironmentId>,
+        name: String,
+        color: Option<EnvColor>,
+    ) {
+        let db = self.db.clone();
+        self.bridge.spawn(move |_| async move {
+            let result = db
+                .call(move |tx| {
+                    let id = match id {
+                        Some(id) => {
+                            environments::rename_environment(tx, id, &name)?;
+                            id
+                        }
+                        None => environments::create_environment(tx, &name, &Variables::new())?.id,
+                    };
+                    environments::set_environment_color(tx, id, color)?;
+                    Ok((
+                        id,
+                        environments::environments(tx)?,
+                        environments::active_environment(tx)?,
+                    ))
+                })
+                .await;
+            match result {
+                Ok((id, list, active)) => Message::Environments {
+                    select: Some(Scope::Environment(id)),
+                    result: Ok((list, active)),
+                },
+                Err(error) => Message::Environments {
+                    select: None,
+                    result: Err(failure(error)),
+                },
+            }
+        });
     }
 
     fn confirmed(&mut self, purpose: ConfirmPurpose) {
@@ -2734,6 +2738,18 @@ impl ImposterApp {
                 }
             }
             Action::SetEnvironment(id) => self.set_environment(id),
+            Action::ManageEnvironments => {
+                let scope = self
+                    .state
+                    .active_environment
+                    .map_or(Scope::Global, Scope::Environment);
+                if self.state.variables.scope == scope && self.state.variables.loaded {
+                    // Already there, unsaved edits included.
+                    self.state.screen = Screen::Variables;
+                } else {
+                    self.variables_navigate(VarTransition::Open(scope));
+                }
+            }
             Action::OpenDefinition(scope, name) => {
                 self.variables_navigate(VarTransition::OpenDefinition(scope, name));
             }
@@ -2763,6 +2779,10 @@ impl ImposterApp {
             Outcome::Name(purpose, name) => {
                 self.state.dialog = None;
                 self.named(purpose, name);
+            }
+            Outcome::Environment { id, name, color } => {
+                self.state.dialog = None;
+                self.environment_named(id, name, color);
             }
             Outcome::Confirmed(purpose) => {
                 self.state.dialog = None;
@@ -3108,20 +3128,19 @@ impl ImposterApp {
         match transition {
             VarTransition::Scope(scope) => self.load_variables(scope),
             VarTransition::NewEnvironment => {
-                self.state.dialog = Some(Dialog::name(
-                    "New Environment",
-                    "Environment Name:",
-                    "",
-                    NamePurpose::NewEnvironment,
-                ));
+                self.state.dialog = Some(Dialog::new_environment());
             }
             VarTransition::RenameEnvironment(id) => {
-                let current = self.environment_name(id);
-                self.state.dialog = Some(Dialog::name(
-                    "Rename Environment",
-                    "Name:",
-                    &current,
-                    NamePurpose::RenameEnvironment(id),
+                let color = self
+                    .state
+                    .environments
+                    .iter()
+                    .find(|e| e.id == id)
+                    .and_then(|e| e.color);
+                self.state.dialog = Some(Dialog::rename_environment(
+                    id,
+                    &self.environment_name(id),
+                    color,
                 ));
             }
             VarTransition::DeleteEnvironment(id) => {
@@ -3132,6 +3151,10 @@ impl ImposterApp {
                     confirm: "Delete".into(),
                     purpose: ConfirmPurpose::DeleteEnvironment(id),
                 });
+            }
+            VarTransition::Open(scope) => {
+                self.state.screen = Screen::Variables;
+                self.load_variables(scope);
             }
             VarTransition::OpenDefinition(scope, name) => {
                 self.state.screen = Screen::Variables;

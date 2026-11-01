@@ -16,7 +16,7 @@ use imposter_app::core::capture::Capture;
 use imposter_app::core::check::{Check, Op};
 use imposter_app::core::mock::{MockConfig, MockRoute};
 use imposter_app::core::model::{
-    BodyType, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
+    BodyType, EnvColor, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
 };
 use imposter_app::core::select::Selector;
 use imposter_app::core::variables::Scope;
@@ -195,11 +195,13 @@ fn seed(dir: &Path, base: &str) {
                 "Dev",
                 &vars(&[("base", &base), ("token", "dev-token")]),
             )?;
-            environments::create_environment(
+            environments::set_environment_color(db, dev.id, Some(EnvColor::Green))?;
+            let production = environments::create_environment(
                 db,
                 "Production",
                 &vars(&[("base", "https://api.example.com"), ("token", "")]),
             )?;
+            environments::set_environment_color(db, production.id, Some(EnvColor::Red))?;
             environments::set_active_environment(db, Some(dev.id))?;
             let mut saved = SavedValues::default();
             saved.set("user_id", ["42".into(), "77".into(), "91".into()]);
@@ -446,12 +448,29 @@ fn main() {
         tour.settle();
         tour.click("New environment");
         tour.settle();
+        // The field has focus; its caption shares the name "Name".
+        if let Some(field) = tour
+            .harness
+            .query_by_role_and_label(egui::accesskit::Role::TextInput, "Name")
+        {
+            field.type_text("Production EU");
+            tour.harness.run_steps(2);
+        }
         tour.shot("3-06-new-environment");
         tour.harness.key_press(egui::Key::Escape);
         tour.settle();
         tour.type_into("Variable 2 value", "-edited");
         tour.shot("3-07-unsaved-variables");
         tour.click("Revert unsaved changes");
+        tour.settle();
+        tour.click("Requests");
+        tour.settle();
+        tour.click("Environment");
+        tour.click("Production");
+        tour.settle();
+        tour.shot("3-08-production-active");
+        tour.click("Environment");
+        tour.click("Dev");
         tour.settle();
 
         // Task 4: checks and captured variables.

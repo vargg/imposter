@@ -4,6 +4,7 @@
 
 use egui::{Key, Ui};
 use imposter_app::core::ids::{CollectionId, RequestId};
+use imposter_app::core::model::EnvColor;
 use imposter_app::store::collections::IndexedRequest;
 
 use crate::app::{Action, Screen, State};
@@ -64,6 +65,8 @@ pub struct Item {
     pub label: String,
     pub method: Option<String>,
     pub hint: Option<egui::KeyboardShortcut>,
+    /// An environment's color, drawn as a dot before the label.
+    pub color: Option<EnvColor>,
     pub action: Action,
 }
 
@@ -321,6 +324,13 @@ fn row_text(
         );
         gap = METHOD_GAP;
     }
+    if let Some(color) = item.color {
+        text.append(
+            "● ",
+            0.0,
+            egui::TextFormat::simple(body.clone(), crate::theme::env_color(color)),
+        );
+    }
     // Positions in the haystack the items are matched against: the method, a space, then
     // the label.
     let offset = item.method.as_ref().map_or(0, |m| m.chars().count() + 1);
@@ -392,6 +402,7 @@ fn request_item(request: &IndexedRequest) -> Item {
         label: path.join(" › "),
         method: Some(request.method.clone()),
         hint: None,
+        color: None,
         action: Action::OpenIn {
             collection: request.collection_id,
             request: request.id,
@@ -408,6 +419,7 @@ fn fixed_items(state: &State) -> Vec<Item> {
             label: label.to_owned(),
             method: None,
             hint: shortcut.copied(),
+            color: None,
             action,
         });
     };
@@ -507,12 +519,13 @@ fn fixed_items(state: &State) -> Vec<Item> {
         Some(&shortcuts::SHORTCUTS),
         Action::Prompt(Dialog::Shortcuts),
     );
-    let mut environment = |label: String, action: Action| {
+    let mut environment = |label: String, color: Option<EnvColor>, action: Action| {
         items.push(Item {
             group: Group::Environments,
             label,
             method: None,
             hint: None,
+            color,
             action,
         });
     };
@@ -520,12 +533,17 @@ fn fixed_items(state: &State) -> Vec<Item> {
         environment(
             // The group's heading says these are environments.
             "Global (no environment)".to_owned(),
+            None,
             Action::SetEnvironment(None),
         );
     }
     for env in &state.environments {
         if state.active_environment != Some(env.id) {
-            environment(env.name.clone(), Action::SetEnvironment(Some(env.id)));
+            environment(
+                env.name.clone(),
+                env.color,
+                Action::SetEnvironment(Some(env.id)),
+            );
         }
     }
     items
@@ -715,6 +733,7 @@ mod tests {
                 label: "Go to History".into(),
                 method: None,
                 hint: None,
+                color: None,
                 action: Action::Screen(Screen::History),
             }],
             recent: vec![RequestId(3)],
@@ -771,6 +790,7 @@ mod tests {
             label: "Stack Request and Response".into(),
             method: None,
             hint: None,
+            color: None,
             action: Action::ToggleLayout,
         });
         searched.query = "stats".into();

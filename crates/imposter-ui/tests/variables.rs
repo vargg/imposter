@@ -193,7 +193,7 @@ fn environments_are_created_renamed_and_deleted() {
 
     click(&mut app.harness, "New environment");
     app.harness.run_steps(2);
-    support::text_input(&app.harness, "Environment Name").type_text("Staging");
+    support::text_input(&app.harness, "Name").type_text("Staging");
     app.harness.run_steps(1);
     click_button(&mut app.harness, "Create");
     settle(&mut app.harness);

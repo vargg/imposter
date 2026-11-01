@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use egui::{Id, RichText};
 use imposter_app::core::ids::{CollectionId, EnvironmentId, FolderId};
+use imposter_app::core::model::EnvColor;
 use imposter_app::transfer::ImportPreview;
 
 use crate::theme::Tone;
@@ -18,8 +19,6 @@ pub enum NamePurpose {
     RenameCollection(CollectionId),
     Rename(NodeId),
     SaveDraft(CollectionId),
-    NewEnvironment,
-    RenameEnvironment(EnvironmentId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +52,14 @@ pub enum Dialog {
         message: String,
         confirm: String,
         purpose: ConfirmPurpose,
+    },
+    /// Create an environment (`id` is `None`) or rename one, and choose its color.
+    Environment {
+        id: Option<EnvironmentId>,
+        name: String,
+        color: Option<EnvColor>,
+        /// Whether the user chose the color; until then a new environment's follows its name.
+        chosen: bool,
     },
     /// Unsaved changes before navigating; `failed` after an autosave or save attempt failed.
     Guard {
@@ -105,6 +112,11 @@ pub enum Dialog {
 pub enum Outcome {
     Open,
     Name(NamePurpose, String),
+    Environment {
+        id: Option<EnvironmentId>,
+        name: String,
+        color: Option<EnvColor>,
+    },
     Confirmed(ConfirmPurpose),
     Guard(GuardChoice),
     VariablesGuard(GuardChoice),
@@ -129,11 +141,8 @@ impl NamePurpose {
     /// The verb on the dialog's main button.
     const fn verb(self) -> &'static str {
         match self {
-            Self::NewCollection
-            | Self::NewFolder { .. }
-            | Self::NewRequest { .. }
-            | Self::NewEnvironment => "Create",
-            Self::RenameCollection(_) | Self::Rename(_) | Self::RenameEnvironment(_) => "Rename",
+            Self::NewCollection | Self::NewFolder { .. } | Self::NewRequest { .. } => "Create",
+            Self::RenameCollection(_) | Self::Rename(_) => "Rename",
             Self::SaveDraft(_) => "Save",
         }
     }
@@ -225,6 +234,25 @@ impl Dialog {
         }
     }
 
+    /// A new environment: no name yet, so no color.
+    pub fn new_environment() -> Self {
+        Self::Environment {
+            id: None,
+            name: String::new(),
+            color: None,
+            chosen: false,
+        }
+    }
+
+    pub fn rename_environment(id: EnvironmentId, name: &str, color: Option<EnvColor>) -> Self {
+        Self::Environment {
+            id: Some(id),
+            name: name.to_owned(),
+            color,
+            chosen: true,
+        }
+    }
+
     pub fn error(title: &str, message: impl Into<String>) -> Self {
         Self::Message {
             title: title.into(),
@@ -284,6 +312,59 @@ impl Dialog {
                         Some(_) => outcome = Outcome::Name(*purpose, value.trim().to_owned()),
                         None if valid && enter => {
                             outcome = Outcome::Name(*purpose, value.trim().to_owned());
+                        }
+                        None => {}
+                    }
+                }
+                Self::Environment {
+                    id,
+                    name: value,
+                    color,
+                    chosen,
+                } => {
+                    ui.heading(if id.is_some() {
+                        "Rename Environment"
+                    } else {
+                        "New Environment"
+                    });
+                    let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    let caption = ui.label("Name");
+                    let field =
+                        ui.add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY));
+                    let field = field.labelled_by(caption.id);
+                    if !field.has_focus() && ui.memory(|m| m.focused().is_none()) {
+                        field.request_focus();
+                    }
+                    if field.changed() && !*chosen {
+                        *color = EnvColor::suggested_for(value);
+                    }
+                    ui.add_space(8.0);
+                    ui.label("Color");
+                    if crate::widgets::env_swatches(ui, color) {
+                        *chosen = true;
+                    }
+                    let valid = !value.trim().is_empty();
+                    let enter = enter_pressed && (field.lost_focus() || field.has_focus());
+                    let verb = if id.is_some() { "Rename" } else { "Create" };
+                    match buttons(
+                        ui,
+                        &[("Cancel", Kind::Plain, true), (verb, Kind::Primary, valid)],
+                        false,
+                    ) {
+                        Some(0) => outcome = Outcome::Closed,
+                        Some(_) => {
+                            outcome = Outcome::Environment {
+                                id: *id,
+                                name: value.trim().to_owned(),
+                                color: *color,
+                            };
+                        }
+                        None if valid && enter => {
+                            outcome = Outcome::Environment {
+                                id: *id,
+                                name: value.trim().to_owned(),
+                                color: *color,
+                            };
                         }
                         None => {}
                     }

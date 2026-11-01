@@ -3,7 +3,7 @@
 
 use egui::{Align, Layout, Rect, RichText, Sense, Ui, UiBuilder, vec2};
 use imposter_app::core::ids::FolderId;
-use imposter_app::core::model::BodyType;
+use imposter_app::core::model::{BodyType, EnvColor};
 
 use crate::app::{Action, EditorTab, ImposterApp, ResponseTab, Screen, State};
 use crate::dialogs::{ConfirmPurpose, Dialog, NamePurpose};
@@ -694,12 +694,19 @@ fn context_bar(
 
 /// The right end of the status bar: where a send goes and whether mocks are serving.
 fn status_context(state: &State, ui: &mut Ui) {
-    let environment = state
-        .active_environment
-        .and_then(|id| state.environments.iter().find(|e| e.id == id))
-        .map_or("No environment", |e| e.name.as_str());
-    ui.label(tone_text(environment, Tone::Muted).small())
-        .on_hover_text("Active environment");
+    let active = active_environment(state);
+    // The bar runs right to left: the name first puts the dot before it.
+    ui.label(
+        tone_text(
+            active.map_or("No environment", |e| e.name.as_str()),
+            Tone::Muted,
+        )
+        .small(),
+    )
+    .on_hover_text("Active environment");
+    if let Some(color) = active.and_then(|e| e.color) {
+        widgets::env_dot(ui, color);
+    }
     if let Some(address) = state
         .mocks
         .run
@@ -713,25 +720,47 @@ fn status_context(state: &State, ui: &mut Ui) {
     }
 }
 
-fn environment_picker(state: &mut State, ui: &mut Ui) {
-    let active = state.active_environment;
-    let selected = active
+fn active_environment(state: &State) -> Option<&imposter_app::store::environments::Environment> {
+    state
+        .active_environment
         .and_then(|id| state.environments.iter().find(|e| e.id == id))
-        .map_or("Global (no environment)".to_owned(), |e| e.name.clone());
+}
+
+/// The active environment's color, if it has one.
+fn active_color(state: &State) -> Option<EnvColor> {
+    active_environment(state).and_then(|e| e.color)
+}
+
+fn environment_picker(state: &mut State, ui: &mut Ui) {
+    const GLOBAL: &str = "Global (no environment)";
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let text = palette().text;
+    let active = state.active_environment;
+    let selected = active_environment(state).map_or_else(
+        || widgets::env_text(GLOBAL, None, font.clone(), text),
+        |e| widgets::env_text(&e.name, e.color, font.clone(), text),
+    );
     let combo = egui::ComboBox::from_id_salt("environment")
         .width(170.0)
         .selected_text(selected)
         .show_ui(ui, |ui| {
-            if widgets::option(ui, active.is_none(), "Global (no environment)").clicked() {
+            if widgets::option(ui, active.is_none(), GLOBAL).clicked() {
                 state.actions.push(Action::SetEnvironment(None));
             }
             for environment in &state.environments {
-                if widgets::option(ui, active == Some(environment.id), &environment.name).clicked()
-                {
+                let label =
+                    widgets::env_text(&environment.name, environment.color, font.clone(), text);
+                let option = widgets::option(ui, active == Some(environment.id), label);
+                name(&option, &environment.name);
+                if option.clicked() {
                     state
                         .actions
                         .push(Action::SetEnvironment(Some(environment.id)));
                 }
+            }
+            ui.separator();
+            if widgets::option(ui, false, "Manage environments…").clicked() {
+                state.actions.push(Action::ManageEnvironments);
             }
         });
     name(&combo.response, "Environment");
@@ -764,6 +793,7 @@ fn layout_switch(layout: &mut WorkspaceLayout, ui: &mut Ui) {
 }
 
 fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
+    let color = active_color(state);
     let State {
         editor,
         snapshot,
@@ -779,9 +809,13 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
     };
     let mut url_edited = false;
     let mut edited = false;
+    // A colored environment rims the bar, so where a send goes shows before Send.
+    let rim = color.map_or(egui::Stroke::new(1.0, palette().border), |c| {
+        egui::Stroke::new(2.0, crate::theme::env_color(c))
+    });
     egui::Frame::new()
         .fill(palette().surface)
-        .stroke(egui::Stroke::new(1.0, palette().border))
+        .stroke(rim)
         .corner_radius(10)
         .inner_margin(8)
         .show(ui, |ui| {

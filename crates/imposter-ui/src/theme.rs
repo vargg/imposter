@@ -4,6 +4,7 @@
 use std::cell::Cell;
 
 use egui::{Color32, CornerRadius, Stroke, Theme, ThemePreference, Visuals};
+use imposter_app::core::model::EnvColor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
@@ -32,6 +33,19 @@ pub struct Palette {
     pub warning: Color32,
     pub error: Color32,
     pub syntax: Syntax,
+    /// Environment colors, readable as text on every background, so a name can wear one.
+    pub environment: EnvColors,
+}
+
+/// One shade per [`EnvColor`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnvColors {
+    pub red: Color32,
+    pub orange: Color32,
+    pub yellow: Color32,
+    pub green: Color32,
+    pub blue: Color32,
+    pub purple: Color32,
 }
 
 /// Highlighting colors, readable on `input`.
@@ -70,6 +84,14 @@ pub const DARK: Palette = Palette {
         tag: Color32::from_rgb(0x4e, 0xc9, 0xb0),
         comment: Color32::from_rgb(0x8a, 0x99, 0x8a),
     },
+    environment: EnvColors {
+        red: Color32::from_rgb(0xff, 0x6b, 0x6b),
+        orange: Color32::from_rgb(0xff, 0x9f, 0x43),
+        yellow: Color32::from_rgb(0xf0, 0xc0, 0x5a),
+        green: Color32::from_rgb(0x5f, 0xd0, 0x8a),
+        blue: Color32::from_rgb(0x6c, 0xb6, 0xff),
+        purple: Color32::from_rgb(0xc4, 0x9b, 0xff),
+    },
 };
 
 /// The accent darkens to stay readable as text on white; the tones darken likewise.
@@ -100,6 +122,14 @@ pub const LIGHT: Palette = Palette {
         keyword: Color32::from_rgb(0x6f, 0x3f, 0xb5),
         tag: Color32::from_rgb(0x0f, 0x6b, 0x5c),
         comment: Color32::from_rgb(0x5f, 0x6b, 0x6d),
+    },
+    environment: EnvColors {
+        red: Color32::from_rgb(0xbf, 0x24, 0x24),
+        orange: Color32::from_rgb(0xa8, 0x4a, 0x00),
+        yellow: Color32::from_rgb(0x7a, 0x5c, 0x00),
+        green: Color32::from_rgb(0x15, 0x70, 0x2f),
+        blue: Color32::from_rgb(0x0b, 0x57, 0xa4),
+        purple: Color32::from_rgb(0x6f, 0x3f, 0xb5),
     },
 };
 
@@ -204,6 +234,19 @@ impl ThemeChoice {
             Self::Light => ThemePreference::Light,
             Self::System => ThemePreference::System,
         }
+    }
+}
+
+/// How an environment's color is drawn in the current theme.
+pub fn env_color(color: EnvColor) -> Color32 {
+    let shades = palette().environment;
+    match color {
+        EnvColor::Red => shades.red,
+        EnvColor::Orange => shades.orange,
+        EnvColor::Yellow => shades.yellow,
+        EnvColor::Green => shades.green,
+        EnvColor::Blue => shades.blue,
+        EnvColor::Purple => shades.purple,
     }
 }
 
@@ -502,6 +545,29 @@ mod tests {
                 ] {
                     let ratio = contrast(method_color(method), background);
                     assert!(ratio >= AA, "{name} {method} on {background:?}: {ratio:.2}");
+                }
+            }
+        }
+        CURRENT.with(|current| current.set(&DARK));
+    }
+
+    #[test]
+    fn environment_colors_are_readable_on_every_background() {
+        for (name, palette) in BOTH {
+            CURRENT.with(|current| current.set(palette));
+            for color in EnvColor::ALL {
+                for background in [
+                    palette.background,
+                    palette.surface,
+                    palette.input,
+                    palette.hover,
+                    palette.selected,
+                ] {
+                    let ratio = contrast(env_color(color), background);
+                    assert!(
+                        ratio >= AA,
+                        "{name} {color:?} on {background:?}: {ratio:.2}"
+                    );
                 }
             }
         }

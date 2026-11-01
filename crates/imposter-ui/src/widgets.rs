@@ -4,7 +4,7 @@
 use egui::text::LayoutJob;
 use egui::{Color32, FontId, RichText, TextFormat, Ui};
 use imposter_app::core::model::{
-    AuthKind, FormItem, FormKind, ParamItem, STANDARD_METHODS, is_method_token,
+    AuthKind, EnvColor, FormItem, FormKind, ParamItem, STANDARD_METHODS, is_method_token,
 };
 use imposter_app::core::settings::AppSettings;
 
@@ -455,6 +455,90 @@ fn tab_row<T: Copy + PartialEq>(
 /// row looks the same everywhere (the theme outlines controls, and egui would outline it too).
 pub fn option<'a>(ui: &mut Ui, selected: bool, atoms: impl egui::IntoAtoms<'a>) -> egui::Response {
     ui.add(egui::Button::selectable(selected, atoms).stroke(egui::Stroke::NONE))
+}
+
+/// A color's name as people say it.
+pub const fn env_color_name(color: EnvColor) -> &'static str {
+    match color {
+        EnvColor::Red => "Red",
+        EnvColor::Orange => "Orange",
+        EnvColor::Yellow => "Yellow",
+        EnvColor::Green => "Green",
+        EnvColor::Blue => "Blue",
+        EnvColor::Purple => "Purple",
+    }
+}
+
+/// An environment's name after a dot in its color; the name alone when it has none.
+pub fn env_text(name: &str, color: Option<EnvColor>, font: FontId, text: Color32) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    if let Some(color) = color {
+        job.append(
+            "● ",
+            0.0,
+            TextFormat::simple(font.clone(), crate::theme::env_color(color)),
+        );
+    }
+    job.append(name, 0.0, TextFormat::simple(font, text));
+    job
+}
+
+/// A dot in an environment's color, painted rather than written, so the label beside it
+/// stays the name alone for screen readers.
+pub fn env_dot(ui: &mut Ui, color: EnvColor) {
+    let height = ui.text_style_height(&egui::TextStyle::Small);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, height), egui::Sense::hover());
+    ui.painter()
+        .circle_filled(rect.center(), 3.5, crate::theme::env_color(color));
+}
+
+/// Swatches for an environment's color: none, then each color, one selected. Returns
+/// whether the user chose one.
+pub fn env_swatches(ui: &mut Ui, color: &mut Option<EnvColor>) -> bool {
+    let mut chosen = false;
+    let side = crate::theme::spacing().control;
+    ui.horizontal(|ui| {
+        for choice in std::iter::once(None).chain(EnvColor::ALL.map(Some)) {
+            let label = choice.map_or("No color", env_color_name);
+            let selected = *color == choice;
+            let (rect, response) =
+                ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click());
+            response.widget_info(|| {
+                egui::WidgetInfo::selected(egui::Role::RadioButton, true, selected, label)
+            });
+            let palette = palette();
+            let painter = ui.painter();
+            let center = rect.center();
+            let radius = side * 0.32;
+            if let Some(c) = choice {
+                painter.circle_filled(center, radius, crate::theme::env_color(c));
+            } else {
+                // "No color": an empty circle, struck through.
+                let stroke = egui::Stroke::new(1.5, palette.field_border);
+                painter.circle_stroke(center, radius, stroke);
+                let d = radius * std::f32::consts::FRAC_1_SQRT_2;
+                painter.line_segment(
+                    [center + egui::vec2(-d, d), center + egui::vec2(d, -d)],
+                    stroke,
+                );
+            }
+            if selected {
+                painter.circle_stroke(center, side * 0.47, egui::Stroke::new(2.0, palette.text));
+            } else if response.hovered() {
+                painter.circle_stroke(
+                    center,
+                    side * 0.47,
+                    egui::Stroke::new(1.0, palette.text_muted),
+                );
+            }
+            if response.clicked() {
+                *color = choice;
+                chosen = true;
+            }
+            response.on_hover_text(label);
+        }
+    });
+    chosen
 }
 
 /// The grip in the middle of a split's `handle`: a short bar across the split, in the

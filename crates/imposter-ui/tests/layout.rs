@@ -93,8 +93,8 @@ fn labels(app: &support::App) -> Vec<(Role, String, Rect)> {
         .collect()
 }
 
-/// What is wrong with the current frame, if anything. With a dialog open, only widths are
-/// checked: the dialog sits on a layer above what it overlaps.
+/// What is wrong with the current frame, if anything. With a dialog or a popup open, only
+/// widths are checked: it sits on a layer above what it overlaps.
 fn problems(app: &support::App, state: &str) -> Vec<String> {
     let window = app.harness.ctx.content_rect();
     let controls = controls(app);
@@ -120,7 +120,7 @@ fn problems(app: &support::App, state: &str) -> Vec<String> {
             ));
         }
     }
-    if app.harness.state().state.dialog.is_some() {
+    if app.harness.state().state.dialog.is_some() || egui::Popup::is_any_open(&app.harness.ctx) {
         return found;
     }
     let buttons: Vec<&(Role, String, Rect)> = controls
@@ -224,6 +224,16 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     check(app, "name dialog");
     app.harness.key_press(egui::Key::Escape);
     settle(&mut app.harness);
+    click(&mut app.harness, "Environment");
+    check(app, "environment picker");
+    app.harness.key_press(egui::Key::Escape);
+    settle(&mut app.harness);
+    click(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    click(&mut app.harness, "New environment");
+    check(app, "environment dialog");
+    app.harness.key_press(egui::Key::Escape);
+    settle(&mut app.harness);
     app.harness.state_mut().state.screen = Screen::Requests;
     found
 }
@@ -248,6 +258,23 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
             for density in [Density::Compact, Density::Comfortable] {
                 let url = url.clone();
                 let mut app = start_with(move |store| {
+                    // Active and colored, so the request bar and status bar show it.
+                    store
+                        .call_blocking(|db| {
+                            use imposter_app::store::environments as env;
+                            let prod = env::create_environment(
+                                db,
+                                "Production EU",
+                                &imposter_app::core::model::Variables::new(),
+                            )?;
+                            env::set_environment_color(
+                                db,
+                                prod.id,
+                                Some(imposter_app::core::model::EnvColor::Red),
+                            )?;
+                            env::set_active_environment(db, Some(prod.id))
+                        })
+                        .unwrap();
                     let api = collection(store, "API");
                     request(store, api.id, "Users", &url);
                     request(store, api.id, "Health", "http://127.0.0.1:9/");
