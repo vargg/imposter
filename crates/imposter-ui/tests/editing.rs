@@ -956,14 +956,17 @@ fn body_is_default_and_docs_save_with_the_request() {
     assert_eq!(
         labels,
         [
-            "Body", "Auth", "Query", "Headers", "Cookies", "Settings", "Docs", "Tests", "Captures"
+            "Body", "Auth", "Query", "Headers", "Cookies", "Settings", "Docs", "Tests", "Captures",
+            "Scripts"
         ]
     );
+    // Tabs that fit are in this order; the rest wait under "More", in the same order.
     let positions: Vec<_> = labels
         .iter()
         .filter(|label| **label != "Settings")
-        .map(|label| app.harness.get_by_label(label).rect().left())
+        .filter_map(|label| app.harness.query_by_label(label).map(|n| n.rect().left()))
         .collect();
+    assert!(positions.len() >= 7, "most tabs fit: {positions:?}");
     assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
     click(&mut app.harness, "Docs");
     type_into(

@@ -154,3 +154,17 @@ pub const API: &[ApiEntry] = &[
         r#"print("hello"); debug([1, 2]);"#,
     ),
 ];
+
+/// The README's script reference rows, generated from [`API`]; a test keeps them equal.
+pub fn readme_rows() -> Vec<String> {
+    API.iter()
+        .map(|entry| {
+            format!(
+                "| {} | `{}` | {} |",
+                entry.phase.label(),
+                entry.name.replace('|', "\\|"),
+                entry.description.replace('|', "\\|")
+            )
+        })
+        .collect()
+}

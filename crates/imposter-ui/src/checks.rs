@@ -550,6 +550,22 @@ impl Tally {
         })
     }
 
+    /// A response's checks and its after-response script's tests together; a script error
+    /// counts as a failure, since it never passes silently.
+    pub fn of_response(response: &imposter_app::core::execution::Response) -> Self {
+        let mut tally = Self::of(&response.checks);
+        if let Some(script) = &response.script {
+            tally.passed += script.tests.iter().filter(|t| t.passed).count();
+            tally.failed += script.failures();
+        }
+        tally
+    }
+
+    /// Whether there is anything to count.
+    pub fn is_empty(self) -> bool {
+        self.passed + self.failed + self.unchecked == 0
+    }
+
     /// "✓3", "✗1", "?1" (not checked), each in its tone; counts of zero are left out.
     pub fn marks(self) -> Vec<(String, Tone)> {
         [
@@ -592,7 +608,22 @@ const SHOWN_VALUE: usize = 80;
 /// The results of a response's checks, one line each with what was read or why it could not
 /// be decided, failures first and tinted, then what its captures took. The checks' tally is
 /// in the status line, so it is not repeated here.
-pub fn results(ui: &mut Ui, results: &[CheckResult], captured: &[Captured]) {
+/// What the response's Tests tab lists: the script's error first, then failed checks and
+/// tests, the rest, the variables captured, and the live run's console.
+pub struct Results<'a> {
+    pub checks: &'a [CheckResult],
+    pub captured: &'a [Captured],
+    pub script: Option<&'a imposter_app::core::execution::ScriptReport>,
+    pub console: &'a [String],
+}
+
+pub fn results(ui: &mut Ui, all: &Results<'_>) {
+    let Results {
+        checks: results,
+        captured,
+        script,
+        console,
+    } = *all;
     egui::ScrollArea::vertical()
         .id_salt("check results")
         .auto_shrink([false, false])
@@ -604,6 +635,20 @@ pub fn results(ui: &mut Ui, results: &[CheckResult], captured: &[Captured]) {
                 Verdict::Unchecked(_) => 1,
                 Verdict::Passed => 2,
             });
+            if let Some(script) = script.filter(|s| !s.error.is_empty()) {
+                tinted(ui, true, |ui| {
+                    ui.label(tone_text("Error", Tone::Error).strong());
+                    ui.label(script.error.as_str());
+                });
+            }
+            let tests = script.map_or(&[][..], |s| s.tests.as_slice());
+            for test in tests.iter().filter(|t| !t.passed) {
+                tinted(ui, true, |ui| {
+                    ui.label(tone_text("Failed", Tone::Error).strong());
+                    ui.label(test.name.as_str());
+                    ui.label(tone_text(test.message.as_str(), Tone::Muted));
+                });
+            }
             for result in ordered {
                 let failed = result.verdict == Verdict::Failed;
                 let tint = if failed {
@@ -630,8 +675,14 @@ pub fn results(ui: &mut Ui, results: &[CheckResult], captured: &[Captured]) {
                         });
                     });
             }
+            for test in tests.iter().filter(|t| t.passed) {
+                tinted(ui, false, |ui| {
+                    ui.label(tone_text("Passed", Tone::Ok).strong());
+                    ui.label(test.name.as_str());
+                });
+            }
             if !captured.is_empty() {
-                if !results.is_empty() {
+                if !results.is_empty() || !tests.is_empty() {
                     ui.add_space(8.0);
                 }
                 for capture in captured {
@@ -643,6 +694,31 @@ pub fn results(ui: &mut Ui, results: &[CheckResult], captured: &[Captured]) {
                     });
                 }
             }
+            if !console.is_empty() {
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new("Console").font(crate::theme::semibold(13.0)));
+                ui.label(tone_text("Console output is not kept in History", Tone::Muted).small());
+                for line in console {
+                    ui.add(egui::Label::new(egui::RichText::new(line.as_str()).monospace()).wrap());
+                }
+            }
+        });
+}
+
+/// One result row, on a red tint when it failed.
+fn tinted(ui: &mut Ui, failed: bool, add: impl FnOnce(&mut Ui)) {
+    let tint = if failed {
+        widgets::error_tint()
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    egui::Frame::new()
+        .fill(tint)
+        .corner_radius(4)
+        .inner_margin(egui::Margin::symmetric(4, 2))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_wrapped(add);
         });
 }
 

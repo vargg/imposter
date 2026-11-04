@@ -1566,6 +1566,9 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
             EditorTab::Tests => {
                 edited = crate::checks::checks_table(ui, &mut pane.editor.checks, &mut vars);
             }
+            EditorTab::Scripts => {
+                edited = crate::scripts_tab::draw(ui, &mut pane.editor.scripts, actions);
+            }
             EditorTab::Captures => {
                 edited = crate::checks::captures_table(
                     ui,
@@ -1929,8 +1932,8 @@ fn status_line(
     if !failed {
         parts.push(StatusPart::Pill(status.text.clone(), status.tone));
     }
-    if !response.checks.is_empty() {
-        let tally = crate::checks::Tally::of(&response.checks);
+    let tally = crate::checks::Tally::of_response(response);
+    if !tally.is_empty() {
         parts.push(StatusPart::Checks(tally));
     }
     let time = viewer::format_duration(response.elapsed);
@@ -1946,11 +1949,8 @@ fn status_line(
         parts.push(StatusPart::Text(tone_text(kind, Tone::Muted)));
     }
     let mut hover = vec![status.detail.clone()];
-    if !response.checks.is_empty() {
-        hover.push(format!(
-            "checks: {}",
-            crate::checks::Tally::of(&response.checks).words()
-        ));
+    if !tally.is_empty() {
+        hover.push(format!("checks: {}", tally.words()));
     }
     hover.push(time.clone());
     if delivered {
@@ -2187,15 +2187,21 @@ pub fn response_body(
     };
     let results = response.as_ref().map_or(&[][..], |r| r.checks.as_slice());
     let captured = response.as_ref().map_or(&[][..], |r| r.captures.as_slice());
+    let script = response.as_ref().and_then(|r| r.script.as_ref());
+    let console = response.as_ref().map_or(&[][..], |r| r.console.as_slice());
+    let tally = response
+        .as_ref()
+        .map(crate::checks::Tally::of_response)
+        .unwrap_or_default();
     let headers_count = response.as_ref().map_or(0, |r| r.headers.len());
     let mut tabs = vec![
         widgets::TabSpec::new(ResponseTab::Body, "Body"),
         widgets::TabSpec::new(ResponseTab::Headers, "Headers")
             .badge(count_badge(headers_count, Tone::Muted)),
     ];
-    if !results.is_empty() || !captured.is_empty() {
+    if !results.is_empty() || !captured.is_empty() || script.is_some() || !console.is_empty() {
         // Failures, when there are any: a red total read as that many failures.
-        let failed = crate::checks::Tally::of(results).failed;
+        let failed = tally.failed;
         let badge = if failed > 0 {
             Some(widgets::TabBadge {
                 mark: widgets::Mark::Failed(failed),
@@ -2203,7 +2209,8 @@ pub fn response_body(
                 description: format!("{failed} failed"),
             })
         } else {
-            count_badge(results.len() + captured.len(), Tone::Muted)
+            let tests = script.map_or(0, |s| s.tests.len());
+            count_badge(results.len() + captured.len() + tests, Tone::Muted)
         };
         // The request's Tests tab has the same text.
         tabs.push(
@@ -2293,7 +2300,15 @@ pub fn response_body(
             None,
         ),
         ResponseTab::Tests => {
-            crate::checks::results(ui, results, captured);
+            crate::checks::results(
+                ui,
+                &crate::checks::Results {
+                    checks: results,
+                    captured,
+                    script,
+                    console,
+                },
+            );
             None
         }
         ResponseTab::Request => sent.as_ref().and_then(|text| {

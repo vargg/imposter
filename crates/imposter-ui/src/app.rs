@@ -619,10 +619,11 @@ pub enum EditorTab {
     Docs,
     Tests,
     Captures,
+    Scripts,
 }
 
 impl EditorTab {
-    pub const ALL: [(Self, &'static str); 9] = [
+    pub const ALL: [(Self, &'static str); 10] = [
         (Self::Body, "Body"),
         (Self::Auth, "Auth"),
         (Self::Params, "Query"),
@@ -632,6 +633,7 @@ impl EditorTab {
         (Self::Docs, "Docs"),
         (Self::Tests, "Tests"),
         (Self::Captures, "Captures"),
+        (Self::Scripts, "Scripts"),
     ];
 }
 

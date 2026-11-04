@@ -247,6 +247,37 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     app.harness.state_mut().state.editor.as_mut().unwrap().tab =
         imposter_ui::app::EditorTab::Captures;
     check(app, "captures tab");
+    // Scripts: two editors, one with a compile error under it; then a send whose
+    // after-response script fails a test, logs and leaves its error in the Tests tab.
+    {
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.editor.scripts.before = "request.set_header(\"X-Trace\", uuid());".into();
+        pane.editor.scripts.after = "let broken = ;".into();
+        pane.tab = imposter_ui::app::EditorTab::Scripts;
+    }
+    check(app, "scripts tab");
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .scripts
+        .after = "print(\"a long line of console output that has to wrap in a narrow pane\");\ntest(\"the status is 200 OK\", response.status == 200);\nresponse.nope();".into();
+    click(&mut app.harness, SEND);
+    settle(&mut app.harness);
+    app.harness.state_mut().state.response.tab = imposter_ui::app::ResponseTab::Tests;
+    check(app, "script results");
+    app.harness.state_mut().state.response.tab = imposter_ui::app::ResponseTab::Body;
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .scripts = imposter_app::core::model::Scripts::default();
     // The request's settings: one row each, with a reset icon on an override.
     {
         let pane = app.harness.state_mut().state.editor.as_mut().unwrap();

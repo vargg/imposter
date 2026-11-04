@@ -71,6 +71,41 @@ Python/PyQt6 version and imports its native collection format. New exports use `
   environment, and the next request uses it. Right-click a JSON value and choose Set variable
   to add one. Nothing is set while the Variables screen has unsaved changes to that scope.
 
+**Scripts**
+- Each request can have two [Rhai](https://rhai.rs) scripts, edited in its Scripts tab. The
+  before-sending script runs with variables and generated values filled in and can change
+  the method, URL, query, headers and a JSON or text body; what it changes is what is sent,
+  and what History and Copy as curl show. Use it to sign a request (HMAC), add computed
+  headers or stamp a body.
+- The after-response script reads the response (status, headers, body, JSON, JSONPath) and
+  runs tests, shown with the checks and kept in History. Both scripts can set variables,
+  which go where captures go.
+- Scripts never touch files, the network or the environment. Each may run 2 seconds and a
+  million operations; Cancel stops one. A failing before-sending script stops the send and
+  says which line failed. What scripts print shows under the response and is not kept.
+- "Insert example…" adds a ready-made script; "Script reference" lists everything below.
+
+| When | Use | What it does |
+|---|---|---|
+| Before sending | `request.method, request.url` | Read or change the method and URL. Setting the URL takes its query from it. |
+| Before sending | `request.header(name), request.set_header(name, value), request.add_header(name, value), request.remove_header(name)` | Read or change headers; names ignore case. set_header replaces every value of the name. Auth headers are added after the script. |
+| Before sending | `request.query(name), request.set_query(name, value), request.remove_query(name)` | Read or change query parameters; the URL follows. |
+| Before sending | `request.body, request.json()` | The body as text, or parsed as JSON. A JSON or text body can be replaced; form, multipart and file bodies cannot. |
+| After response | `request` | The request as it was sent: the same fields, read-only. |
+| After response | `response.status, response.reason, response.time_ms, response.size, response.truncated` | The status, its reason, the time in milliseconds, the body's size in bytes, and whether the body was cut at the capture limit. |
+| After response | `response.header(name), response.headers` | One header (every value joined with ", "), or all of them by lowercase name. |
+| After response | `response.body, response.json(), response.path(jsonpath)` | The body as text, parsed as JSON, or the value a JSONPath selects (several values as an array, none as ()). |
+| After response | `test(name, condition), test(name, \|\| { … })` | A test, shown with the checks and kept in History. A closure fails when it returns false or throws. |
+| Both | `expect(actual, expected)` | Throws "expected …, got …" when they differ: inside a test it fails the test with that message. |
+| Both | `vars.get(name), vars.set(name, value)` | Read a variable, or set one for later requests: it goes where captures go (the scope that defines it, else the active environment, else Global). |
+| Both | `sha256(data), sha512(data), sha1(data), md5(data)` | Digests of text or bytes, as bytes. |
+| Both | `hmac_sha256(key, data), hmac_sha512(key, data), hmac_sha1(key, data)` | HMACs of text or bytes, as bytes; a key may be the bytes of an earlier HMAC. |
+| Both | `hex(data), base64_encode(data), base64url_encode(data), base64_decode(text)` | Encode text or bytes; base64_decode gives bytes (`.as_string()` reads them as text). |
+| Both | `url_encode(text), url_decode(text)` | Percent-encoding as RFC 3986: everything but letters, digits and - _ . ~ is escaped. |
+| Both | `uuid(), now_ms(), now_iso(), random_int(min, max)` | Generated values, as {{$uuid}}, {{$timestampMs}}, {{$isoTimestamp}} and {{$randomInt}} make them. |
+| Both | `parse_json(text), to_json(value)` | JSON text to a value and back. |
+| Both | `print(value), debug(value)` | Write to the console under the response; it is not kept in History. |
+
 **Load tests**
 - Send one request many times from the Load screen (its tab, a request's right-click menu,
   or the command palette), as `ab` does: total requests, concurrency, an optional time

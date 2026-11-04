@@ -506,6 +506,28 @@ fn main() {
         tour.open_tab("Captures");
         tour.settle();
         tour.shot("4-01b-captures");
+        // Scripts: a before-sending signature and after-response tests, then their results.
+        {
+            let scripts = &mut tour
+                .harness
+                .state_mut()
+                .state
+                .editor
+                .as_mut()
+                .expect("a request is open")
+                .editor
+                .scripts;
+            scripts.before = "request.set_header(\"X-Signature\", hex(hmac_sha256(\"secret\", request.body)));\n".into();
+            scripts.after = "print(`${response.status} in ${response.time_ms} ms`);\ntest(\"status is 2xx\", response.status < 300);\ntest(\"has a name\", || response.path(\"$.name\") != ());\n".into();
+        }
+        tour.open_tab("Scripts");
+        tour.settle();
+        tour.shot("4-01c-scripts");
+        tour.send();
+        tour.settle();
+        tour.harness.state_mut().state.response.tab = ResponseTab::Tests;
+        tour.settle();
+        tour.shot("4-01d-script-results");
         tour.harness.state_mut().state.response.tab = ResponseTab::Body;
         tour.settle();
         if let Some(node) = tour.harness.query_by_label_contains("\"name\": \"Ann\"") {

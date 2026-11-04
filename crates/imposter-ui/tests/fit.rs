@@ -11,8 +11,8 @@ use imposter_ui::app::EditorTab;
 use imposter_ui::layout::MIN_WINDOW;
 use support::{click, collection, request, settle, start_with};
 
-const EDITOR_TABS: [&str; 8] = [
-    "Body", "Auth", "Query", "Headers", "Cookies", "Docs", "Tests", "Captures",
+const EDITOR_TABS: [&str; 9] = [
+    "Body", "Auth", "Query", "Headers", "Cookies", "Docs", "Tests", "Captures", "Scripts",
 ];
 
 fn small() -> support::App {

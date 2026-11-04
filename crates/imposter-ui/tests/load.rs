@@ -166,3 +166,25 @@ fn the_palette_load_tests_the_open_request() {
         ("Ping", "API")
     );
 }
+
+#[test]
+fn a_request_with_scripts_is_said_to_run_without_them() {
+    let mut f = fixture(Duration::ZERO, false);
+    click(&mut f.app.harness, "GET Ping");
+    settle(&mut f.app.harness);
+    f.app
+        .harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .scripts
+        .after = "test(\"ok\", true);".into();
+    click(&mut f.app.harness, "Load");
+    settle(&mut f.app.harness);
+    f.app
+        .harness
+        .get_by_label(imposter_ui::load_screen::SCRIPTS_SKIPPED);
+}

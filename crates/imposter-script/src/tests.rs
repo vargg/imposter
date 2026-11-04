@@ -402,3 +402,19 @@ fn the_console_is_capped() {
     let (_, outcome) = before_ok(r#"debug("x");"#);
     assert_eq!(outcome.console, ["\"x\""]);
 }
+
+#[test]
+fn the_readme_lists_the_reference_as_the_app_does() {
+    let readme = include_str!("../../../README.md");
+    let rows: Vec<&str> = readme
+        .lines()
+        .skip_while(|line| !line.starts_with("| When | Use | What it does |"))
+        .skip(2)
+        .take_while(|line| line.starts_with('|'))
+        .collect();
+    assert_eq!(
+        rows,
+        readme_rows(),
+        "update the README's script table from imposter_script::API"
+    );
+}

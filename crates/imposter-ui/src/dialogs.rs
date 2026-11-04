@@ -105,6 +105,8 @@ pub enum Dialog {
     },
     /// Every keyboard shortcut, from `shortcuts::ALL`.
     Shortcuts,
+    /// What scripts can use, from `imposter_script::API`.
+    ScriptReference,
     /// Fuzzy search over actions, requests and environments.
     Palette(Box<crate::palette::Palette>),
     /// What an export includes. Environments and globals are opt-in.
@@ -543,6 +545,51 @@ impl Dialog {
                                             ui.end_row();
                                         }
                                     });
+                            }
+                        });
+                }
+                Self::ScriptReference => {
+                    // A sheet to read, like the shortcut sheet: Esc or a click outside.
+                    ui.horizontal(|ui| {
+                        ui.heading("Script reference");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(tone_text("Esc to close", Tone::Muted).small());
+                        });
+                    });
+                    ui.add_space(4.0);
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, true])
+                        .max_height((max_height - 56.0).max(120.0))
+                        .show(ui, |ui| {
+                            let width = ui.available_width() - SCROLL_BAR_ROOM;
+                            ui.set_max_width(width.min(640.0));
+                            for phase in [
+                                imposter_app::script::Phase::Before,
+                                imposter_app::script::Phase::After,
+                                imposter_app::script::Phase::Both,
+                            ] {
+                                ui.add_space(6.0);
+                                ui.label(
+                                    RichText::new(phase.label())
+                                        .font(crate::theme::semibold(13.0))
+                                        .color(crate::theme::palette().text_muted),
+                                );
+                                for entry in
+                                    imposter_app::script::API.iter().filter(|e| e.phase == phase)
+                                {
+                                    ui.add_space(4.0);
+                                    ui.add(
+                                        egui::Label::new(RichText::new(entry.name).monospace())
+                                            .wrap(),
+                                    );
+                                    ui.add(egui::Label::new(entry.description).wrap());
+                                    ui.add(
+                                        egui::Label::new(
+                                            tone_text(entry.example, Tone::Muted).monospace(),
+                                        )
+                                        .wrap(),
+                                    );
+                                }
                             }
                         });
                 }

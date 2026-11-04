@@ -718,11 +718,8 @@ pub fn outcome_summary(response: &Response) -> (String, Tone) {
         Outcome::Response => {
             let status = status(response);
             let line = format!("{} · {time}", status.text);
-            let failed = response
-                .checks
-                .iter()
-                .filter(|r| r.verdict == imposter_app::core::check::Verdict::Failed)
-                .count();
+            // Script tests and errors count as checks: one list, one number.
+            let failed = crate::checks::Tally::of_response(response).failed;
             if failed > 0 {
                 let checks = if failed == 1 { "check" } else { "checks" };
                 return (format!("{line} · {failed} {checks} failed"), Tone::Error);

@@ -52,6 +52,8 @@ pub struct Report {
     pub stopped: bool,
     /// Ended by the time limit.
     pub timed_out: bool,
+    /// The request has scripts, which load runs do not run yet.
+    pub skipped_scripts: bool,
 }
 
 /// What every worker shares.
@@ -112,6 +114,7 @@ pub async fn run(
     progress: Arc<Progress>,
 ) -> Result<Report, ExecuteError> {
     let inputs = inputs(store, &request).await?;
+    let skipped_scripts = !request.template.scripts.is_empty();
     let (resolved, settings, values) =
         resolve_with(&request, &inputs, &mut SystemEntropy::default())?;
     prepare(&resolved.template, settings.attach_cookies)
@@ -185,6 +188,7 @@ pub async fn run(
         summary: Summary::from_samples(&samples, wall),
         stopped: cancel.is_cancelled(),
         timed_out: timed_out.load(Ordering::SeqCst),
+        skipped_scripts,
     })
 }
 

@@ -255,7 +255,18 @@ fn captures_set_variables_that_the_next_send_uses() {
             .description()
     };
     assert_eq!(description(app, "Captures").as_deref(), Some("2 in use"));
-    assert_eq!(description(app, "Tests"), None);
+    // Tests may wait under "More" beside the selected Captures tab; its badge is none.
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .badge(EditorTab::Tests),
+        None
+    );
 
     send(app);
     assert_eq!(globals(app).get("user_id").map(String::as_str), Some("7"));

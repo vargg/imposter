@@ -2032,9 +2032,8 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
     let width = ui.available_width();
     let id = var_edit_id(ui, "Request body");
     let typing = (json && text.len() <= HIGHLIGHT_LIMIT)
-        .then(|| typing_input(ui, id, text))
-        .flatten()
-        .map(|(input, selection)| (text.clone(), selection, input));
+        .then(|| Typing::read(ui, id, text))
+        .flatten();
     let response = var_edit_with(
         ui,
         text,
@@ -2045,23 +2044,8 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
         Some((Some(json), "Enter request body (JSON, XML, etc.)")),
     );
     let mut changed = response.changed();
-    // Help only where egui made the plain edit: an accepted suggestion, IME or anything
-    // else stays as egui left it.
-    if let Some((before, selection, input)) = typing
-        && changed
-        && *text == json_typing::plain(&before, selection.clone(), input).text
-        && let Some(edit) = json_typing::assisted(&before, selection, input)
-    {
-        *text = edit.text;
-        let at = |byte: usize| egui::text::CCursor::new(text[..byte].chars().count());
-        let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
-        state
-            .cursor
-            .set_char_range(Some(egui::text::CCursorRange::two(
-                at(edit.selection.start),
-                at(edit.selection.end),
-            )));
-        state.store(ui.ctx(), id);
+    if let Some(typing) = typing {
+        typing.help(ui, id, text, changed);
     }
     // A document pasted into an empty body is laid out at once; one typed is left alone,
     // since re-indenting under the cursor would fight it.
@@ -2111,6 +2095,47 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
         ui.label(tone_text("Large body: highlighting is off", Tone::Muted).small());
     }
     changed
+}
+
+/// A key typed into a code field, with the text and selection before it, for the typing
+/// aids of `json_typing` (closing pairs, indenting new lines).
+pub struct Typing {
+    before: String,
+    selection: std::ops::Range<usize>,
+    input: json_typing::Input,
+}
+
+impl Typing {
+    /// Read before the field draws: the key it gets this frame, if it may get help.
+    pub fn read(ui: &Ui, id: egui::Id, text: &str) -> Option<Self> {
+        typing_input(ui, id, text).map(|(input, selection)| Self {
+            before: text.to_owned(),
+            selection,
+            input,
+        })
+    }
+
+    /// Apply the help after the field drew, only where egui made exactly the plain edit: an
+    /// accepted suggestion, IME or anything else stays as egui left it.
+    pub fn help(self, ui: &Ui, id: egui::Id, text: &mut String, changed: bool) {
+        let plain = json_typing::plain(&self.before, self.selection.clone(), self.input);
+        if !changed || *text != plain.text {
+            return;
+        }
+        let Some(edit) = json_typing::assisted(&self.before, self.selection, self.input) else {
+            return;
+        };
+        *text = edit.text;
+        let at = |byte: usize| egui::text::CCursor::new(text[..byte].chars().count());
+        let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                at(edit.selection.start),
+                at(edit.selection.end),
+            )));
+        state.store(ui.ctx(), id);
+    }
 }
 
 /// The key the focused body field `id` gets this frame, when it is the only edit and one

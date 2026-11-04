@@ -14,7 +14,7 @@ use imposter_core::generate::{Entropy, generate};
 use imposter_core::model::{RequestTemplate, Variables};
 use rhai::{Dynamic, Engine, EvalAltResult, FnPtr, NativeCallContext, Position, Scope};
 
-pub use api::{API, ApiEntry, Phase};
+pub use api::{API, ApiEntry, Phase, readme_rows};
 use values::{ScriptRequest, ScriptResponse, Vars, lock};
 
 /// Scripts longer than this are refused before compiling.

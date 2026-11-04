@@ -895,6 +895,19 @@ numbers, so both are excluded. Each logical change is its own commit.
     a capture-style write (`capture::target`: the defining scope, else the active
     environment, else Global), after the captures, so a scope with unsaved edits on the
     Variables screen is protected exactly as for captures.
+  - **The Scripts tab** (`scripts_tab.rs`, after Captures, a dot when either is set) holds
+    both scripts one under the other, not as sub-tabs (two levels of tabs were removed from
+    History, the review's #46). Each editor is highlighted by a small hand-written Rhai
+    tokenizer (`highlight::rhai`), gets the body editor's typing aids (`widgets::Typing`),
+    says "Compiles" or the error with its line and column under it, and has "Insert
+    example…" for its phase; "Script reference" opens a sheet drawn from
+    `imposter_script::API`, as is the README's table (a test keeps them equal). In a narrow
+    pane the rows wrap rather than widen the pane (found by the layout lint at 720 points).
+  - **Results:** the response's Tests tab lists the script's error, failed tests, checks,
+    passed tests, captures, then the console; script failures count with failed checks in
+    the tab's badge, the status line's "✗n" and "n checks failed".
+  - **Load runs do not run scripts yet** (`Report::skipped_scripts`); the Load screen says
+    so ("This request's scripts are not run in load tests") so it is not taken for a bug.
   - **Console:** shown with the live response only, never stored (`Response.console` is
     `serde(skip)`: printed values often hold tokens; user's choice) and never logged
     (`imposter-app/tests/scripts.rs` captures trace-level logs). Script tests are stored
@@ -1003,7 +1016,7 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Toolchain pinned in `rust-toolchain.toml`, `Cargo.lock` committed, CI uses `--locked`.**
   Why: every machine and CI run builds the same thing.
 
-- **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests, Captures.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks and Captures the variables it sets from a response, each tab counting its own rows ("Set variable" from a JSON row opens Captures). Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document; checks and captures in one tab under two headings made captures hard to find (user's note). The response keeps one Tests tab for check results and capture writes, both results of the run. Enforced by `imposter-ui/tests/editing.rs`.
+- **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests, Captures, Scripts.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks and Captures the variables it sets from a response, each tab counting its own rows ("Set variable" from a JSON row opens Captures). Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document; checks and captures in one tab under two headings made captures hard to find (user's note). The response keeps one Tests tab for check results and capture writes, both results of the run. Enforced by `imposter-ui/tests/editing.rs`.
 
 - **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `imposter-ui/tests/editing.rs`. `{{variables}}` in a name are drawn in the accent, as in the editor, and the sidebar's edge has a grip like the splits', since it can be dragged wider (200–400 points, remembered) and nothing said so (the review's #59).
 

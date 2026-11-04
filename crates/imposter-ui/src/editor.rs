@@ -301,6 +301,7 @@ pub struct Editor {
     pub options: OptionsForm,
     pub checks: Vec<imposter_app::core::check::Check>,
     pub captures: Vec<imposter_app::core::capture::Capture>,
+    pub scripts: imposter_app::core::model::Scripts,
 }
 
 fn named<T: Clone>(rows: &[T], name: impl Fn(&T) -> &str) -> Vec<T> {
@@ -338,6 +339,7 @@ impl Editor {
             EditorTab::Cookies => count(in_use(&self.cookies)),
             EditorTab::Tests => count(self.checks.len()),
             EditorTab::Captures => count(self.captures.len()),
+            EditorTab::Scripts => dot(!self.scripts.is_empty()),
             EditorTab::Auth => dot(self.auth.kind.is_some()),
             EditorTab::Docs => dot(!self.description.trim().is_empty()),
             EditorTab::Body => dot(match self.body_type {
@@ -397,6 +399,7 @@ impl Editor {
             options: OptionsForm::load(&template.options),
             checks: template.checks.clone(),
             captures: template.captures.clone(),
+            scripts: template.scripts.clone(),
         }
     }
 
@@ -452,6 +455,7 @@ impl Editor {
         template.options = self.options.read()?;
         template.body_type = self.body_type;
         template.checks.clone_from(&self.checks);
+        template.scripts.clone_from(&self.scripts);
         template.captures.clone_from(&self.captures);
         match self.body_type {
             BodyType::None => template.body = Vec::new(),

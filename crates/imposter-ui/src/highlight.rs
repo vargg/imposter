@@ -106,6 +106,76 @@ pub fn json(text: &str) -> Spans {
     spans
 }
 
+/// Rhai's keywords, colored like JSON's literals.
+const RHAI_KEYWORDS: [&str; 24] = [
+    "let", "const", "if", "else", "switch", "do", "while", "loop", "until", "for", "in",
+    "continue", "break", "return", "throw", "try", "catch", "fn", "private", "true", "false",
+    "this", "global", "Fn",
+];
+
+/// A whole Rhai script: comments, strings (`"…"`, `'c'` and back-ticked templates, which may
+/// span lines), numbers and keywords.
+pub fn rhai(text: &str) -> Spans {
+    let bytes = text.as_bytes();
+    let mut spans = Spans::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let start = i;
+        let token = match bytes[i] {
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                i = text[i..].find('\n').map_or(bytes.len(), |end| i + end);
+                Token::Comment
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i = text[i + 2..]
+                    .find("*/")
+                    .map_or(bytes.len(), |end| i + 2 + end + 2);
+                Token::Comment
+            }
+            quote @ (b'"' | b'\'' | b'`') => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != quote {
+                    i += if bytes[i] == b'\\' { 2 } else { 1 };
+                }
+                i = (i + 1).min(bytes.len());
+                Token::String
+            }
+            b'0'..=b'9' => {
+                while i < bytes.len()
+                    && (bytes[i].is_ascii_alphanumeric() || matches!(bytes[i], b'.' | b'_'))
+                {
+                    i += 1;
+                }
+                Token::Number
+            }
+            c if c.is_ascii_alphabetic() || c == b'_' => {
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                    i += 1;
+                }
+                if RHAI_KEYWORDS.contains(&&text[start..i]) {
+                    Token::Keyword
+                } else {
+                    Token::Plain
+                }
+            }
+            _ => {
+                i += 1;
+                while i < bytes.len()
+                    && !bytes[i].is_ascii_alphanumeric()
+                    && !matches!(bytes[i], b'/' | b'"' | b'\'' | b'`' | b'_')
+                {
+                    i += 1;
+                }
+                Token::Plain
+            }
+        };
+        let end = text.ceil_char_boundary(i.min(bytes.len()));
+        i = end;
+        push(&mut spans, start..end, token);
+    }
+    spans
+}
+
 pub fn markup(text: &str) -> Spans {
     let bytes = text.as_bytes();
     let mut spans = Spans::new();
@@ -183,6 +253,34 @@ pub fn header(text: &str) -> Spans {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rhai_scripts_color_comments_strings_numbers_and_keywords() {
+        let text = "let n = 42; // count\nprint(`v ${n}`); /* a\nb */ \"é\"";
+        let spans = rhai(text);
+        let covered: String = spans.iter().map(|(r, _)| &text[r.clone()]).collect();
+        assert_eq!(covered, text, "every byte, in order");
+        let of = |part: &str| {
+            let at = text.find(part).unwrap();
+            spans
+                .iter()
+                .find(|(r, _)| r.contains(&at))
+                .map(|(_, t)| *t)
+                .unwrap()
+        };
+        assert_eq!(of("let"), Token::Keyword);
+        assert_eq!(of("42"), Token::Number);
+        assert_eq!(of("// count"), Token::Comment);
+        assert_eq!(of("`v"), Token::String);
+        assert_eq!(of("/* a"), Token::Comment);
+        assert_eq!(of("print"), Token::Plain);
+        assert_eq!(of("\"é"), Token::String);
+        assert_eq!(
+            rhai("\"open"),
+            [(0..5, Token::String)],
+            "an open string ends the text"
+        );
+    }
 
     fn kinds(text: &str, spans: &Spans) -> Vec<(String, Token)> {
         spans

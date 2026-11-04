@@ -80,7 +80,7 @@ async fn as_many_requests_are_in_flight_as_the_concurrency() {
     assert_eq!(report.summary.statuses.get(&200), Some(&12));
     assert_eq!(report.summary.bytes, 24);
     assert_eq!((progress.done(), progress.errors()), (12, 0));
-    assert!(!report.stopped && !report.timed_out);
+    assert!(!report.stopped && !report.timed_out && !report.skipped_scripts);
 }
 
 #[tokio::test]
@@ -251,6 +251,23 @@ async fn runs_record_no_history_and_write_no_captures() {
         .unwrap();
     assert_eq!(history, 0);
     assert!(globals.is_empty());
+}
+
+#[tokio::test]
+async fn scripts_are_not_run_and_the_report_says_so() {
+    let (_dir, store) = open();
+    let server = LoadServer::start(|_, _| LoadReply::ok(b"")).await;
+    let mut template = get(&server.url);
+    template.scripts.before = r#"request.set_header("X-Script", "ran");"#.into();
+    let request = saved(&store, template).await;
+    let report = go(&store, request, plan(2, 1, true)).await;
+    assert!(report.skipped_scripts);
+    assert!(
+        server
+            .requests()
+            .iter()
+            .all(|(_, r)| r.header("x-script").is_none())
+    );
 }
 
 #[tokio::test]
