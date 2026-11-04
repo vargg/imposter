@@ -1,7 +1,7 @@
 //! The Variables screen: globals, environments and collection variables, edited one scope at a
 //! time with its own unsaved-changes guard.
 
-use egui::{Align, Layout, RichText, Ui};
+use egui::{Align, Layout, Ui};
 
 use crate::app::{Action, State, VariablesAction};
 use crate::icons::{self, Icon};
@@ -141,12 +141,12 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 }
                 ui.separator();
             }
-            // Asks below the rows before anything is removed.
+            // Asks first, naming how many go.
             if ui
                 .add_enabled(has_rows, egui::Button::new("Clear all variables…"))
                 .clicked()
             {
-                state.variables.confirm_clear = true;
+                actions.push(Action::Variables(VariablesAction::ClearAll));
             }
         });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -249,17 +249,6 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     ui.horizontal(|ui| {
                         if ui.button("Add Variable").clicked() {
                             state.variables.rows.push(vars::Row::new("", ""));
-                        }
-                        if state.variables.confirm_clear && !state.variables.rows.is_empty() {
-                            ui.label(tone_text("Remove all variables?", Tone::Warning));
-                            if ui.button(RichText::new("Remove all")).clicked() {
-                                state.variables.rows.clear();
-                                state.variables.confirm_clear = false;
-                                edited = true;
-                            }
-                            if ui.button("Keep").clicked() {
-                                state.variables.confirm_clear = false;
-                            }
                         }
                     });
                 });

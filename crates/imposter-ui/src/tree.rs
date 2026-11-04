@@ -31,6 +31,17 @@ pub fn request_count(nodes: &[Node]) -> usize {
         .sum()
 }
 
+/// How many folders `nodes` hold, nested ones included.
+pub fn folder_count(nodes: &[Node]) -> usize {
+    nodes
+        .iter()
+        .map(|node| match node {
+            Node::Folder { children, .. } => 1 + folder_count(children),
+            Node::Request(_) => 0,
+        })
+        .sum()
+}
+
 impl Node {
     pub fn id(&self) -> NodeId {
         match self {

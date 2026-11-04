@@ -502,8 +502,10 @@ fn switching_collections_clears_a_request_from_another_collection_and_deleting_o
     app.harness.get_by_label("This collection is empty");
 
     click(&mut app.harness, "Collection actions");
-    click(&mut app.harness, "Delete Collection");
-    click_button(&mut app.harness, "Delete");
+    click(&mut app.harness, "Delete Collection…");
+    app.harness
+        .get_by_label_contains("Delete \"B\" with nothing inside, including unsaved edits?");
+    click_button(&mut app.harness, "Delete collection");
     settle(&mut app.harness);
     let names: Vec<String> = app
         .harness

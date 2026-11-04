@@ -150,6 +150,11 @@ fn the_variables_screen_saves_and_picks_values_under_its_guard() {
         "list edits are unsaved changes"
     );
     click(&mut app.harness, "Revert unsaved changes");
+    assert!(
+        app.harness.state().state.variables.dirty(),
+        "a stray click on Revert loses nothing: it asks first"
+    );
+    support::click_button(&mut app.harness, "Discard changes");
     assert_eq!(
         app.harness.state().state.variables.rows[1].saved,
         ["77", "91"]
@@ -176,6 +181,7 @@ fn unsaved_edits_to_the_scope_block_choosing_and_a_clean_screen_follows_the_choi
     app.harness.state_mut().state.screen = Screen::Variables;
     app.harness.run_steps(2);
     click(&mut app.harness, "Revert unsaved changes");
+    support::click_button(&mut app.harness, "Discard changes");
     app.harness.state_mut().state.screen = Screen::Requests;
     app.harness.run_steps(2);
     inspect(&mut app, "user", false);

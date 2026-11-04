@@ -8,7 +8,8 @@ use imposter_app::core::model::EnvColor;
 use imposter_app::transfer::ImportPreview;
 
 use crate::theme::Tone;
-use crate::tree::NodeId;
+use crate::tree::{Node, NodeId};
+use crate::vars::Scope;
 use crate::widgets::{name, tone_text};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,10 @@ pub enum ConfirmPurpose {
     Delete(NodeId),
     DeleteEnvironment(EnvironmentId),
     ClearHistory,
+    /// Remove every row of the Variables screen's scope (an unsaved edit).
+    ClearVariables(Scope),
+    /// Put the Variables screen's scope back as stored, losing its unsaved edits.
+    RevertVariables(Scope),
     DiscardOnClose,
     /// Write a Postman export despite the listed limitations.
     PostmanExport,
@@ -636,6 +641,132 @@ fn curl(ui: &mut egui::Ui, text: &mut String) -> Outcome {
     outcome
 }
 
+/// What a delete takes with it: "8 requests in 2 folders", "1 request", "nothing inside".
+pub fn contents(requests: usize, folders: usize) -> String {
+    match (requests, folders) {
+        (0, 0) => "nothing inside".to_owned(),
+        (requests, 0) => counted(requests, "request"),
+        (requests, folders) => format!(
+            "{} in {}",
+            counted(requests, "request"),
+            counted(folders, "folder")
+        ),
+    }
+}
+
+/// Every action that removes saved data asks first, naming what goes, and the red button
+/// says what it does: one stray click must never lose data.
+impl Dialog {
+    fn confirm(title: &str, message: String, confirm: &str, purpose: ConfirmPurpose) -> Self {
+        Self::Confirm {
+            title: title.to_owned(),
+            message,
+            confirm: confirm.to_owned(),
+            purpose,
+        }
+    }
+
+    /// `roots` are the collection's top-level nodes, when its tree is loaded.
+    pub fn delete_collection(id: CollectionId, name: &str, roots: Option<&[Node]>) -> Self {
+        let what = roots.map_or_else(String::new, |roots| {
+            format!(
+                " with {}",
+                contents(
+                    crate::tree::request_count(roots),
+                    crate::tree::folder_count(roots)
+                )
+            )
+        });
+        Self::confirm(
+            "Delete collection",
+            format!(
+                "Delete \"{name}\"{what}, including unsaved edits? This cannot be undone; \
+                 their runs stay in History."
+            ),
+            "Delete collection",
+            ConfirmPurpose::DeleteCollection(id),
+        )
+    }
+
+    pub fn delete_node(node: &Node) -> Self {
+        let (title, message) = match node {
+            Node::Folder { folder, children } => (
+                "Delete folder",
+                format!(
+                    "Delete the folder \"{}\" with {}, including unsaved edits? This cannot \
+                     be undone; their runs stay in History.",
+                    folder.name,
+                    contents(
+                        crate::tree::request_count(children),
+                        crate::tree::folder_count(children)
+                    )
+                ),
+            ),
+            Node::Request(request) => (
+                "Delete request",
+                format!(
+                    "Delete the request \"{}\", including unsaved edits? This cannot be \
+                     undone; its runs stay in History.",
+                    request.name
+                ),
+            ),
+        };
+        Self::confirm(title, message, title, ConfirmPurpose::Delete(node.id()))
+    }
+
+    pub fn delete_environment(id: EnvironmentId, name: &str, variables: usize) -> Self {
+        Self::confirm(
+            "Delete environment",
+            format!(
+                "Delete the environment \"{name}\" and its {}? This cannot be undone.",
+                counted(variables, "variable")
+            ),
+            "Delete environment",
+            ConfirmPurpose::DeleteEnvironment(id),
+        )
+    }
+
+    /// `executions` is how many runs history holds, when known.
+    pub fn clear_history(executions: Option<u64>) -> Self {
+        let what = executions.map_or_else(
+            || "all execution history".to_owned(),
+            |n| {
+                let n = usize::try_from(n).unwrap_or(usize::MAX);
+                format!("{} from history", counted(n, "execution"))
+            },
+        );
+        Self::confirm(
+            "Clear all history",
+            format!("Delete {what}? This cannot be undone. Saved requests are not affected."),
+            "Delete history",
+            ConfirmPurpose::ClearHistory,
+        )
+    }
+
+    /// `name` is the scope as the picker shows it.
+    pub fn clear_variables(scope: Scope, name: &str, variables: usize) -> Self {
+        Self::confirm(
+            "Clear all variables",
+            format!(
+                "Remove all {} from {name}? Nothing is written until you save; Revert brings \
+                 them back before that.",
+                counted(variables, "variable")
+            ),
+            "Remove all",
+            ConfirmPurpose::ClearVariables(scope),
+        )
+    }
+
+    pub fn revert_variables(scope: Scope, name: &str) -> Self {
+        Self::confirm(
+            "Revert variables",
+            format!("Discard the unsaved changes to {name} and go back to what is saved?"),
+            "Discard changes",
+            ConfirmPurpose::RevertVariables(scope),
+        )
+    }
+}
+
 /// "1 request", "7 requests".
 fn counted(count: usize, noun: &str) -> String {
     if count == 1 {
@@ -742,6 +873,14 @@ fn export(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_delete_names_what_goes_with_it() {
+        assert_eq!(contents(0, 0), "nothing inside");
+        assert_eq!(contents(1, 0), "1 request");
+        assert_eq!(contents(8, 2), "8 requests in 2 folders");
+        assert_eq!(contents(0, 1), "0 requests in 1 folder");
+    }
 
     #[test]
     fn only_the_main_action_is_filled_and_disabled_buttons_are_neutral() {

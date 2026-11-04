@@ -40,7 +40,7 @@ fn names(app: &support::App) -> Vec<String> {
 fn ask_to_delete(app: &mut support::App) {
     app.harness.get_by_label("GET Remove").click_secondary();
     app.harness.run_steps(2);
-    click(&mut app.harness, "Delete");
+    click(&mut app.harness, "Delete…");
     app.harness.run_steps(2);
 }
 
@@ -54,7 +54,7 @@ fn the_destructive_action_is_last_enter_confirms_and_escape_cancels() {
         .rect();
     let delete = app
         .harness
-        .get_by_role_and_label(Role::Button, "Delete")
+        .get_by_role_and_label(Role::Button, "Delete request")
         .rect();
     assert!(delete.left() > cancel.right(), "the action comes last");
 

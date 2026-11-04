@@ -224,7 +224,7 @@ fn environments_are_created_renamed_and_deleted() {
 
     click(&mut app.harness, "Variable actions");
     click(&mut app.harness, "Delete environment…");
-    click_button(&mut app.harness, "Delete");
+    click_button(&mut app.harness, "Delete environment");
     settle(&mut app.harness);
     assert_eq!(
         app.harness
@@ -670,13 +670,14 @@ fn clear_all_is_in_the_menu_and_asks_before_removing() {
         "Global cannot be renamed"
     );
     click(&mut app.harness, "Clear all variables…");
-    app.harness.get_by_label("Remove all variables?");
-    click(&mut app.harness, "Keep");
+    app.harness
+        .get_by_label_contains("Remove all 2 variables from Global?");
+    click(&mut app.harness, "Cancel");
     assert_eq!(app.harness.state().state.variables.rows.len(), 2);
 
     click(&mut app.harness, "Variable actions");
     click(&mut app.harness, "Clear all variables…");
-    click(&mut app.harness, "Remove all");
+    click_button(&mut app.harness, "Remove all");
     assert_eq!(app.harness.state().state.variables.rows.len(), 0);
     assert_eq!(save_state(&app.harness, "Save variables"), "Unsaved");
     click(&mut app.harness, "Save variables");

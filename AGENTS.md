@@ -417,8 +417,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   request.", "Dev is the active environment: requests use these now.") and one line where
   it stands in precedence (`variables_screen::explanation`); the name is not repeated,
   since the picker shows it. The toolbar has a labelled "+ Environment"; editing the name
-  and color, deleting and "Clear all variables…" are in its "⋯" menu, and clearing still
-  asks under the rows. In environment lists, names without a color keep the dot's room,
+  and color, deleting and "Clear all variables…" are in its "⋯" menu, and clearing asks
+  in a dialog with the count. In environment lists, names without a color keep the dot's room,
   so all start in line. Why: the screen did not say which scope wins, nor whether the
   environment shown is the one sends use, and "Clear All" sat beside "Add Variable" (the
   review's #37, #39; Phase 5 review Q22, Q25).
@@ -580,6 +580,16 @@ numbers, so both are excluded. Each logical change is its own commit.
   word. Save is an icon button named by its action. Section headings and explanatory
   subtitles are left out where tabs and controls already say it. Why: user review found the
   longer texts noisy, and later that "Unsaved" beside a highlighted Save said it twice.
+- **Every action that removes saved data asks first, in a dialog that names what goes**
+  (`Dialog::delete_collection`, `delete_node`, `delete_environment`, `clear_history`,
+  `clear_variables`, `revert_variables`): "Delete \"API\" with 8 requests in 2 folders",
+  "Delete 312 executions from history?", and the red button says what it does ("Delete
+  collection", "Discard changes"). Menu items that open one end with "…". Revert on
+  Variables asks too (Mocks' goes through its unsaved-changes guard). Edits inside a form
+  (a row's ×, a table's "Clear all") keep their two-click or inline question, since Save
+  has not written them yet. Why: a misclick must never lose data (user's rule); a
+  question that does not say how much goes is answered without reading. Checked by
+  `imposter-ui/tests/destructive.rs`.
 - **Removing a row takes two clicks** (`widgets::remove_button`): the first arms the × (red,
   "Click again to remove …"), the second removes; it disarms after a few seconds or when the
   pointer goes elsewhere. Why: one stray click must not lose a header or variable; this works

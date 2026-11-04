@@ -476,8 +476,10 @@ pub struct HistoryScreen {
 pub enum VariablesAction {
     SelectScope(Scope),
     Save,
-    /// Back to the stored rows, without asking.
+    /// Back to the stored rows, after asking.
     Revert,
+    /// Remove every row, after asking; an unsaved edit.
+    ClearAll,
     Edited,
     NewEnvironment,
     RenameEnvironment(EnvironmentId),
@@ -509,7 +511,6 @@ pub struct VariablesScreen {
     /// from the rows.
     pub status: Option<SaveWord>,
     pub loaded: bool,
-    pub confirm_clear: bool,
     /// A name to highlight after "Open definition".
     pub highlight: Option<String>,
     /// A name to add as a new row once the scope has loaded ("Define" from a blocked send).
@@ -2598,6 +2599,18 @@ impl ImposterApp {
                     },
                 },
             ),
+            ConfirmPurpose::ClearVariables(scope) => {
+                let screen = &mut self.state.variables;
+                if screen.scope == scope {
+                    screen.rows.clear();
+                    screen.status = None;
+                }
+            }
+            ConfirmPurpose::RevertVariables(scope) => {
+                if self.state.variables.scope == scope {
+                    self.revert_variables();
+                }
+            }
             ConfirmPurpose::DiscardOnClose => {
                 self.state.saver.discard(None);
                 self.state.close = CloseState::Ready;
@@ -3189,12 +3202,13 @@ impl ImposterApp {
             }
             VarTransition::DeleteEnvironment(id) => {
                 let current = self.environment_name(id);
-                self.state.dialog = Some(Dialog::Confirm {
-                    title: "Delete Environment".into(),
-                    message: format!("Delete the environment \"{current}\" and its variables?"),
-                    confirm: "Delete".into(),
-                    purpose: ConfirmPurpose::DeleteEnvironment(id),
-                });
+                let variables = self
+                    .state
+                    .environments
+                    .iter()
+                    .find(|e| e.id == id)
+                    .map_or(0, |e| e.variables.len());
+                self.state.dialog = Some(Dialog::delete_environment(id, &current, variables));
             }
             VarTransition::Open(scope) => {
                 self.state.screen = Screen::Variables;
@@ -3211,6 +3225,23 @@ impl ImposterApp {
                 self.load_variables(scope);
             }
             VarTransition::Close => self.settings_close(),
+        }
+    }
+
+    /// A variables scope in a sentence: "Global", "the Dev environment", "the API collection".
+    fn scope_phrase(&self, scope: Scope) -> String {
+        match scope {
+            Scope::Global => "Global".to_owned(),
+            Scope::Environment(id) => format!("the {} environment", self.environment_name(id)),
+            Scope::Collection(id) => self
+                .state
+                .collections
+                .iter()
+                .find(|c| c.id == id)
+                .map_or_else(
+                    || "the collection".to_owned(),
+                    |c| format!("the {} collection", c.name),
+                ),
         }
     }
 
@@ -3411,7 +3442,24 @@ impl ImposterApp {
                 }
             }
             VariablesAction::Save => self.save_variables(),
-            VariablesAction::Revert => self.revert_variables(),
+            VariablesAction::Revert => {
+                let scope = self.state.variables.scope;
+                if self.state.variables.dirty() {
+                    self.state.dialog =
+                        Some(Dialog::revert_variables(scope, &self.scope_phrase(scope)));
+                }
+            }
+            VariablesAction::ClearAll => {
+                let scope = self.state.variables.scope;
+                let count = self.state.variables.rows.len();
+                if count > 0 {
+                    self.state.dialog = Some(Dialog::clear_variables(
+                        scope,
+                        &self.scope_phrase(scope),
+                        count,
+                    ));
+                }
+            }
             VariablesAction::Edited => {
                 self.state.variables.status = None;
             }
@@ -3880,13 +3928,8 @@ impl ImposterApp {
                 }
             }
             HistoryAction::Clear => {
-                self.state.dialog = Some(Dialog::Confirm {
-                    title: "Clear all history".into(),
-                    message: "Delete all execution history? Saved requests are not affected."
-                        .into(),
-                    confirm: "Delete history".into(),
-                    purpose: ConfirmPurpose::ClearHistory,
-                });
+                let executions = self.state.history.usage.map(|u| u.entries);
+                self.state.dialog = Some(Dialog::clear_history(executions));
             }
         }
     }

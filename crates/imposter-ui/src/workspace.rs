@@ -6,7 +6,7 @@ use imposter_app::core::ids::FolderId;
 use imposter_app::core::model::BodyType;
 
 use crate::app::{Action, EditorTab, ImposterApp, ResponseTab, Screen, State};
-use crate::dialogs::{ConfirmPurpose, Dialog, NamePurpose};
+use crate::dialogs::{Dialog, NamePurpose};
 use crate::editor::BODY_CHOICES;
 use crate::icons::{self, Icon};
 use crate::layout::{Orientation, SIDEBAR_WIDTH, WorkspaceLayout};
@@ -325,16 +325,14 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                 if ui.button("Export Collection…").clicked() {
                     state.actions.push(Action::Export);
                 }
-                if ui.button("Delete Collection").clicked() {
-                    state.actions.push(Action::Prompt(Dialog::Confirm {
-                        title: "Delete collection".into(),
-                        message: format!(
-                            "Delete \"{collection_name}\" and its contents, \
-                         including any unsaved edits?"
-                        ),
-                        confirm: "Delete".into(),
-                        purpose: ConfirmPurpose::DeleteCollection(id),
-                    }));
+                if ui.button("Delete Collection…").clicked() {
+                    let roots = state
+                        .tree
+                        .as_ref()
+                        .filter(|t| t.source.collection.id == id)
+                        .map(|t| t.roots.as_slice());
+                    let dialog = Dialog::delete_collection(id, &collection_name, roots);
+                    state.actions.push(Action::Prompt(dialog));
                 }
             });
         } else {
@@ -459,16 +457,8 @@ fn node_menu(
             choice: 0,
         }));
     }
-    if ui.button("Delete").clicked() {
-        actions.push(Action::Prompt(Dialog::Confirm {
-            title: "Delete".into(),
-            message: format!(
-                "Delete \"{}\" and its contents, including any unsaved edits?",
-                node.name()
-            ),
-            confirm: "Delete".into(),
-            purpose: ConfirmPurpose::Delete(id),
-        }));
+    if ui.button("Delete…").clicked() {
+        actions.push(Action::Prompt(Dialog::delete_node(node)));
     }
 }
 
