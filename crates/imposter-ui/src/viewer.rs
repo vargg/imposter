@@ -695,6 +695,7 @@ pub fn failure_title(kind: &str) -> &'static str {
         "InvalidUrl" => "Invalid URL",
         "InvalidHeader" => "Invalid header",
         "InvalidProxy" => "Invalid proxy",
+        "ScriptError" => "Script failed",
         _ => "Request failed",
     }
 }

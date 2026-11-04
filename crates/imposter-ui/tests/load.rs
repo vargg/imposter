@@ -168,7 +168,7 @@ fn the_palette_load_tests_the_open_request() {
 }
 
 #[test]
-fn a_request_with_scripts_is_said_to_run_without_them() {
+fn a_request_with_scripts_says_they_run_and_shows_the_first_script_error() {
     let mut f = fixture(Duration::ZERO, false);
     click(&mut f.app.harness, "GET Ping");
     settle(&mut f.app.harness);
@@ -181,10 +181,17 @@ fn a_request_with_scripts_is_said_to_run_without_them() {
         .unwrap()
         .editor
         .scripts
-        .after = "test(\"ok\", true);".into();
+        .after = "let a = 1;\nthrow \"bad answer\";".into();
     click(&mut f.app.harness, "Load");
     settle(&mut f.app.harness);
     f.app
         .harness
-        .get_by_label(imposter_ui::load_screen::SCRIPTS_SKIPPED);
+        .get_by_label(imposter_ui::load_screen::SCRIPTS_RUN);
+    set_plan(&mut f.app, "3", "1");
+    click(&mut f.app.harness, "Start the load test");
+    settle(&mut f.app.harness);
+    assert_eq!(f.server.requests().len(), 3);
+    f.app
+        .harness
+        .get_by_label("After-response script, line 2: bad answer");
 }

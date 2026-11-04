@@ -362,6 +362,13 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, "Stop the load test");
     settle(&mut app.harness);
     check(app, "Load result");
+    if let Some(run) = app.harness.state_mut().state.load.runs.first_mut() {
+        run.report.script_error = Some(
+            "Before-sending script, line 12: a long error that has to wrap in a narrow window"
+                .into(),
+        );
+    }
+    check(app, "Load result with a script error");
     click(&mut app.harness, "History");
     settle(&mut app.harness);
     if let Some(row) = app

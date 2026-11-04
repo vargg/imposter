@@ -80,7 +80,7 @@ async fn as_many_requests_are_in_flight_as_the_concurrency() {
     assert_eq!(report.summary.statuses.get(&200), Some(&12));
     assert_eq!(report.summary.bytes, 24);
     assert_eq!((progress.done(), progress.errors()), (12, 0));
-    assert!(!report.stopped && !report.timed_out && !report.skipped_scripts);
+    assert!(!report.stopped && !report.timed_out && report.script_error.is_none());
 }
 
 #[tokio::test]
@@ -253,20 +253,171 @@ async fn runs_record_no_history_and_write_no_captures() {
     assert!(globals.is_empty());
 }
 
+fn scripted(url: &str, before: &str, after: &str) -> RequestTemplate {
+    RequestTemplate {
+        method: "POST".into(),
+        body: br#"{"n":1}"#.to_vec(),
+        body_type: imposter_core::model::BodyType::Json,
+        scripts: imposter_core::model::Scripts {
+            before: before.into(),
+            after: after.into(),
+        },
+        ..get(url)
+    }
+}
+
 #[tokio::test]
-async fn scripts_are_not_run_and_the_report_says_so() {
+async fn the_before_script_runs_for_every_request() {
     let (_dir, store) = open();
     let server = LoadServer::start(|_, _| LoadReply::ok(b"")).await;
-    let mut template = get(&server.url);
-    template.scripts.before = r#"request.set_header("X-Script", "ran");"#.into();
+    let template = scripted(
+        &server.url,
+        r#"request.set_header("X-Id", uuid());
+request.set_header("X-Sig", hex(hmac_sha256("k", request.body)));"#,
+        "",
+    );
     let request = saved(&store, template).await;
-    let report = go(&store, request, plan(2, 1, true)).await;
-    assert!(report.skipped_scripts);
+    let report = go(&store, request, plan(8, 2, true)).await;
+    assert_eq!(report.summary.completed, 8);
+    let received = server.requests();
+    let ids: HashSet<&str> = received
+        .iter()
+        .map(|(_, r)| r.header("x-id").unwrap())
+        .collect();
+    assert_eq!(ids.len(), 8, "each request ran the script afresh");
+    assert!(received.iter().all(|(_, r)| r.header("x-sig")
+        == Some("d2096d38d6daae75e745b2935b72afa721590494ec70b2477097f53a96f51330")));
+}
+
+#[tokio::test]
+async fn after_script_tests_count_with_the_checks_and_set_nothing() {
+    let (_dir, store) = open();
+    let server = LoadServer::start(|_, _| LoadReply::ok(b"{}")).await;
+    let template = scripted(
+        &server.url,
+        "",
+        r#"test("ok", response.status == 200);
+test("created", response.status == 201);
+vars.set("seen", "yes");"#,
+    );
+    let request = saved(&store, template).await;
+    let report = go(&store, request, plan(4, 2, true)).await;
+    let checks = report.summary.checks;
+    assert_eq!((checks.passed, checks.failed), (4, 4));
+    assert_eq!(
+        report.summary.errors, 4,
+        "a failed test makes the request an error"
+    );
+    let (history, globals) = store
+        .call(|db| Ok((executions::count(db)?, environments::globals(db)?)))
+        .await
+        .unwrap();
+    assert_eq!((history, globals.len()), (0, 0), "load runs write nothing");
+}
+
+#[tokio::test]
+async fn an_after_script_error_counts_and_its_first_message_is_kept() {
+    let (_dir, store) = open();
+    let server = LoadServer::start(|_, _| LoadReply::ok(b"")).await;
+    let request = saved(
+        &store,
+        scripted(&server.url, "", "let a = 1;\nthrow \"bad\";"),
+    )
+    .await;
+    let report = go(&store, request, plan(3, 1, true)).await;
+    assert_eq!(report.summary.checks.failed, 3);
+    assert_eq!(
+        report.script_error.as_deref(),
+        Some("After-response script, line 2: bad")
+    );
+}
+
+#[tokio::test]
+async fn a_before_script_that_fails_up_front_stops_the_run_before_anything_is_sent() {
+    let (_dir, store) = open();
+    let server = LoadServer::start(|_, _| LoadReply::ok(b"")).await;
+    for before in ["throw \"no key\";", "let x = ;"] {
+        let request = saved(&store, scripted(&server.url, before, "")).await;
+        let result = run(
+            &store.handle(),
+            request,
+            plan(5, 1, true),
+            CancellationToken::new(),
+            Arc::new(Progress::default()),
+        )
+        .await;
+        assert!(
+            matches!(&result, Err(ExecuteError::Script(m)) if m.starts_with("Before-sending script, line 1")),
+            "{result:?}"
+        );
+    }
+    assert_eq!(server.requests().len(), 0);
+}
+
+#[tokio::test]
+async fn a_before_script_failing_on_some_requests_counts_them_as_script_errors() {
+    let (_dir, store) = open();
+    let server = LoadServer::start(|_, _| LoadReply::ok(b"")).await;
+    // Random by design: a script that always failed would stop the run at its check. The
+    // check passes 3 times in 4, so retrying makes a spurious failure about 1e-30 likely,
+    // and 200 requests all passing about 1e-25.
+    let request = saved(
+        &store,
+        scripted(
+            &server.url,
+            r#"if random_int(1, 4) == 1 { throw "unlucky"; }"#,
+            "",
+        ),
+    )
+    .await;
+    let report = loop {
+        match run(
+            &store.handle(),
+            request.clone(),
+            plan(200, 4, true),
+            CancellationToken::new(),
+            Arc::new(Progress::default()),
+        )
+        .await
+        {
+            Ok(report) => break report,
+            Err(ExecuteError::Script(_)) => {}
+            Err(other) => panic!("{other:?}"),
+        }
+    };
+    let failed = report
+        .summary
+        .error_kinds
+        .get("ScriptError")
+        .copied()
+        .unwrap_or(0);
+    assert!(failed > 0 && failed < 200, "{failed}");
+    assert_eq!(
+        server.requests().len() as u64,
+        200 - failed,
+        "nothing sent for a failed script"
+    );
+    assert_eq!(
+        report.script_error.as_deref(),
+        Some("Before-sending script, line 1: unlucky")
+    );
+}
+
+#[tokio::test]
+async fn script_time_is_not_counted_as_latency() {
+    let (_dir, store) = open();
+    let server = LoadServer::start(|_, _| LoadReply::ok(b"")).await;
+    let request = saved(
+        &store,
+        scripted(&server.url, "let i = 0; while i < 60000 { i += 1; }", ""),
+    )
+    .await;
+    let report = go(&store, request, plan(4, 1, true)).await;
+    let per_request = report.summary.wall / 4;
+    let slowest = report.summary.total.unwrap().max;
     assert!(
-        server
-            .requests()
-            .iter()
-            .all(|(_, r)| r.header("x-script").is_none())
+        slowest * 2 < per_request,
+        "the exchange ({slowest:?}) is a fraction of each request's time with its script ({per_request:?})"
     );
 }
 

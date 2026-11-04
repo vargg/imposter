@@ -1,22 +1,28 @@
 //! Load runs: one request sent many times by concurrent workers, measured and summed up.
-//! A run is kept apart from Send: nothing goes to History, captures are never written, and
-//! it runs on its own runtime so the app's other work does not skew its timings.
+//! A run is kept apart from Send: nothing goes to History, captures and script variables are
+//! never written, and it runs on its own runtime so the app's other work does not skew its
+//! timings. The request's scripts run for every request, compiled once.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
 use imposter_core::check::{self, Check};
+use imposter_core::execution::Response;
 use imposter_core::load::{CheckTally, LoadPlan, Sample, SampleOutcome, Summary, micros};
-use imposter_core::model::Request;
-use imposter_core::prepare::{Prepared, prepare};
+use imposter_core::model::{Request, RequestTemplate, Variables};
+use imposter_core::prepare::prepare;
 use imposter_core::select::Selector;
 use imposter_http::transport::IdentityRouting;
 use imposter_http::{Policy, SendError, Session};
+use imposter_script::Compiled;
 use imposter_store::StoreHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::executor::{ExecuteError, Inputs, SystemEntropy, inputs, resolve_with};
+use crate::executor::{
+    AFTER_SCRIPT, BEFORE_SCRIPT, ExecuteError, Inputs, SCRIPT_TIME, SystemEntropy, inputs,
+    resolve_with, script_host,
+};
 
 /// How far a run has got, read by the UI while it runs (plain counters, never a lock).
 #[derive(Debug, Default)]
@@ -52,8 +58,9 @@ pub struct Report {
     pub stopped: bool,
     /// Ended by the time limit.
     pub timed_out: bool,
-    /// The request has scripts, which load runs do not run yet.
-    pub skipped_scripts: bool,
+    /// The first script error of the run, in words naming the script and its line; the
+    /// failures themselves are counted in the summary.
+    pub script_error: Option<String>,
 }
 
 /// What every worker shares.
@@ -68,6 +75,57 @@ struct Run {
     progress: Arc<Progress>,
     /// Cancelled by the user or the time limit; requests in flight are dropped.
     stop: CancellationToken,
+    /// The request's scripts, compiled once for every request.
+    before: Option<Compiled>,
+    after: Option<Compiled>,
+    script_error: Mutex<Option<String>>,
+}
+
+impl Run {
+    /// Keep the first script error the run meets.
+    fn script_failed(&self, message: String) {
+        let mut first = self
+            .script_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        first.get_or_insert(message);
+    }
+}
+
+/// `source` compiled, or `None` without a script; a script that does not compile stops the
+/// run as it stops Send.
+fn compiled(source: &str, name: &str) -> Result<Option<Compiled>, ExecuteError> {
+    if source.trim().is_empty() {
+        return Ok(None);
+    }
+    imposter_script::compile(source)
+        .map(Some)
+        .map_err(|error| ExecuteError::Script(error.describe(name)))
+}
+
+/// Run the before-sending script on `template` off the async workers; its error in words.
+async fn run_before(
+    script: &Compiled,
+    template: RequestTemplate,
+    values: Variables,
+    stop: CancellationToken,
+) -> Result<RequestTemplate, String> {
+    let script = script.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut template = template;
+        let outcome = imposter_script::before_compiled(
+            &script,
+            &mut template,
+            &values,
+            script_host(stop, SCRIPT_TIME),
+        );
+        match outcome.error {
+            Some(error) => Err(error.describe(BEFORE_SCRIPT)),
+            None => Ok(template),
+        }
+    })
+    .await
+    .unwrap_or_else(|_| Err(format!("{BEFORE_SCRIPT} failed unexpectedly")))
 }
 
 /// The run's own runtime, shut down in the background however `run` ends: dropping a
@@ -114,10 +172,18 @@ pub async fn run(
     progress: Arc<Progress>,
 ) -> Result<Report, ExecuteError> {
     let inputs = inputs(store, &request).await?;
-    let skipped_scripts = !request.template.scripts.is_empty();
+    let before = compiled(&request.template.scripts.before, BEFORE_SCRIPT)?;
+    let after = compiled(&request.template.scripts.after, AFTER_SCRIPT)?;
     let (resolved, settings, values) =
         resolve_with(&request, &inputs, &mut SystemEntropy::default())?;
-    prepare(&resolved.template, settings.attach_cookies)
+    // The first request is checked whole, its before-sending script included, as Send would.
+    let template = match &before {
+        Some(script) => run_before(script, resolved.template, values.clone(), cancel.clone())
+            .await
+            .map_err(ExecuteError::Script)?,
+        None => resolved.template,
+    };
+    prepare(&template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
     let mut policy = Policy::from_settings(&settings);
     policy.identity_routing = Some(Box::new(IdentityRouting {
@@ -125,7 +191,7 @@ pub async fn run(
         options: request.template.options.clone(),
         variables: values,
     }));
-    let keep = if reads_body(&request.template.checks) {
+    let keep = if reads_body(&request.template.checks) || after.is_some() {
         policy.capture_limit.unwrap_or(u64::MAX)
     } else {
         0
@@ -153,7 +219,11 @@ pub async fn run(
         next: AtomicU32::new(0),
         progress,
         stop: stop.clone(),
+        before,
+        after,
+        script_error: Mutex::new(None),
     });
+    let shared = Arc::clone(&run);
     let started = Instant::now();
     if let Some(limit) = plan.time_limit() {
         let (stop, timed_out) = (stop.clone(), timed_out.clone());
@@ -188,7 +258,11 @@ pub async fn run(
         summary: Summary::from_samples(&samples, wall),
         stopped: cancel.is_cancelled(),
         timed_out: timed_out.load(Ordering::SeqCst),
-        skipped_scripts,
+        script_error: shared
+            .script_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take(),
     })
 }
 
@@ -224,19 +298,47 @@ async fn one(run: &Run, entropy: &mut SystemEntropy) -> Sample {
         bytes: 0,
         checks: CheckTally::default(),
     };
-    let Some((prepared, values)) = prepared(run, entropy) else {
+    let Ok((resolved, settings, values)) = resolve_with(&run.request, &run.inputs, entropy) else {
+        return failed("InvalidRequest");
+    };
+    // Script time is not the server's: latency is measured around the exchange only.
+    let template = match &run.before {
+        Some(script) => {
+            match run_before(script, resolved.template, values.clone(), run.stop.clone()).await {
+                Ok(template) => template,
+                Err(message) => {
+                    run.script_failed(message);
+                    return failed("ScriptError");
+                }
+            }
+        }
+        None => resolved.template,
+    };
+    let Ok(prepared) = prepare(&template, settings.attach_cookies) else {
         return failed("InvalidRequest");
     };
     match run.session.measure(&prepared, run.keep).await {
         Ok(measured) => {
             let results =
                 check::evaluate(&run.request.template.checks, &measured.response, &values);
+            let mut checks = CheckTally::of(&results);
+            if let Some(script) = &run.after {
+                after_tally(
+                    run,
+                    script,
+                    template,
+                    &measured.response,
+                    values,
+                    &mut checks,
+                )
+                .await;
+            }
             Sample {
                 total_us: micros(measured.total),
                 first_byte_us: Some(micros(measured.first_byte)),
                 outcome: SampleOutcome::Status(measured.response.status),
                 bytes: measured.bytes,
-                checks: CheckTally::of(&results),
+                checks,
             }
         }
         Err(SendError::Failed { kind, .. }) => failed(kind.as_str()),
@@ -244,12 +346,37 @@ async fn one(run: &Run, entropy: &mut SystemEntropy) -> Sample {
     }
 }
 
-/// The request with fresh generated values, ready to send, and the values it used.
-fn prepared(
+/// Run the after-response script and count its tests with the checks; an error counts as a
+/// failure, as it does after a Send. Variables it sets and what it prints are dropped.
+async fn after_tally(
     run: &Run,
-    entropy: &mut SystemEntropy,
-) -> Option<(Prepared, imposter_core::model::Variables)> {
-    let (resolved, settings, values) = resolve_with(&run.request, &run.inputs, entropy).ok()?;
-    let prepared = prepare(&resolved.template, settings.attach_cookies).ok()?;
-    Some((prepared, values))
+    script: &Compiled,
+    template: RequestTemplate,
+    response: &Response,
+    values: Variables,
+    checks: &mut CheckTally,
+) {
+    let (script, response, stop) = (script.clone(), response.clone(), run.stop.clone());
+    let outcome = tokio::task::spawn_blocking(move || {
+        imposter_script::after_compiled(
+            &script,
+            &template,
+            &response,
+            &values,
+            script_host(stop, SCRIPT_TIME),
+        )
+    })
+    .await;
+    let Ok(outcome) = outcome else {
+        checks.failed += 1;
+        run.script_failed(format!("{AFTER_SCRIPT} failed unexpectedly"));
+        return;
+    };
+    let passed = outcome.tests.iter().filter(|t| t.passed).count() as u64;
+    checks.passed += passed;
+    checks.failed += outcome.tests.len() as u64 - passed;
+    if let Some(error) = outcome.error {
+        checks.failed += 1;
+        run.script_failed(error.describe(AFTER_SCRIPT));
+    }
 }

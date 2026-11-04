@@ -342,6 +342,16 @@ numbers, so both are excluded. Each logical change is its own commit.
     "latency"); `ab`'s "served within" table; counts by status and error kind; a 1-2-5
     millisecond histogram. Latency counts responses only: a refused connection is an
     error, not a fast request.
+  - **Scripts** run for every request: the before-sending one on each request's resolved
+    values (so per-request signatures work), the after-response one on each response,
+    its tests counted with the checks and an error as one failure. Each is compiled once
+    per run (`imposter_script::compile`) and run with its own small engine (about 0.13 ms);
+    the first request is checked with its before script, so one that cannot compile or
+    run stops the run before anything is sent. Later failures are `ScriptError` samples
+    with nothing sent, and the first error message of the run is kept on the report and
+    shown on the result. Script time is not latency: the exchange alone is timed.
+    `vars.set` and printed lines are dropped, as captures are never written. The screen
+    says so for an open request with scripts.
   - **Stopping** (the user or the time limit) drops the requests in flight and sums up
     what finished.
   - **The Load screen** (`load_screen.rs`) is its own header tab, reached also from a
@@ -907,8 +917,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Results:** the response's Tests tab lists the script's error, failed tests, checks,
     passed tests, captures, then the console; script failures count with failed checks in
     the tab's badge, the status line's "✗n" and "n checks failed".
-  - **Load runs do not run scripts yet** (`Report::skipped_scripts`); the Load screen says
-    so ("This request's scripts are not run in load tests") so it is not taken for a bug.
+  - **Load runs run them too**, for every request (see the load decision); only their
+    variable writes and console are dropped there.
   - **Console:** shown with the live response only, never stored (`Response.console` is
     `serde(skip)`: printed values often hold tokens; user's choice) and never logged
     (`imposter-app/tests/scripts.rs` captures trace-level logs). Script tests are stored

@@ -283,8 +283,9 @@ pub fn progress_text(done: u64, planned: u32, elapsed: f64) -> String {
 
 const LABEL_COLUMN: f32 = 110.0;
 
-/// Load runs send the request as resolved; its scripts are left for later.
-pub const SCRIPTS_SKIPPED: &str = "This request's scripts are not run in load tests";
+/// What a load run does with the request's scripts, which differs from a Send.
+pub const SCRIPTS_RUN: &str =
+    "This request's scripts run for every request; variables they set are not written";
 const FIELD_WIDTH: f32 = 90.0;
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
@@ -303,23 +304,14 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             ui.set_max_width(ui.available_width().min(760.0));
             target_row(ui, &state.load, &mut actions);
             ui.add_space(12.0);
-            // Known before a run when the request is open, and from the run otherwise.
+            // Said where it is known before a run: when the request is open.
             let scripted = state
                 .editor
                 .as_ref()
                 .filter(|p| p.editor.id() == state.load.target.as_ref().map(|t| t.id))
-                .map_or_else(
-                    || {
-                        state
-                            .load
-                            .runs
-                            .get(state.load.shown)
-                            .is_some_and(|run| run.report.skipped_scripts)
-                    },
-                    |p| !p.editor.scripts.is_empty(),
-                );
+                .is_some_and(|p| !p.editor.scripts.is_empty());
             if scripted {
-                ui.label(tone_text(SCRIPTS_SKIPPED, Tone::Warning));
+                ui.add(egui::Label::new(tone_text(SCRIPTS_RUN, Tone::Muted)).wrap());
                 ui.add_space(4.0);
             }
             plan_form(ui, &mut state.load);
@@ -498,6 +490,10 @@ fn result(ui: &mut Ui, screen: &LoadScreen, finished: &Finished, actions: &mut V
     });
     if let Some(ending) = ending(finished) {
         ui.label(tone_text(ending, Tone::Warning));
+    }
+    // The first script error of the run, so the failing line shows without digging.
+    if let Some(error) = &finished.report.script_error {
+        ui.add(egui::Label::new(tone_text(error.as_str(), Tone::Error)).wrap());
     }
     ui.add(egui::Label::new(RichText::new(headline(summary)).strong()).wrap());
     ui.add_space(6.0);
