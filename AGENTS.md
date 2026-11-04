@@ -309,16 +309,21 @@ numbers, so both are excluded. Each logical change is its own commit.
     five; radio buttons to screen readers). A new environment's color follows its name until
     the user picks one, and says "Suggested for production environments" meanwhile; editing
     never changes it by itself. On the Variables screen, "⋯ → Edit name and color…".
-  - **Showing:** the active environment is a pill with its name right above Send, on its
-    color's tint with a dot before it (muted on a neutral fill without a color), and Send's
-    hover text and accessible description name it ("Sends with the Prod environment"). The
-    picker and the status bar have the dot too, as do the picker's options and the
-    palette's environment rows. Every shade is ≥4.5:1 on every background and on its own
-    tint (`theme.rs` tests). Dots are painted, because a "●" in a label became its
-    accessible value. Why words, not a colored rim around the request bar: the shades are
-    the status tones, so a green rim read as success and a red one as an error, and hue
-    alone failed colour-blind users and sat beside the orange Send (Q17, Q18). Not done:
-    an imported or migrated "Production" still arrives without a color.
+  - **Showing:** the header's picker is the one place the active environment is named. A
+    colored one fills it with its color's tint, its name semibold in that color after a
+    "●" and a 3-point stripe of the full color on its left edge; Send then names it in
+    words ("Send to Prod", as wide as its words up to 168 points and 30% of the bar,
+    past which the name is cut). Without a color the picker is plain and Send reads
+    "Send". Send's accessible description names the environment either way ("Sends with
+    the Prod environment"). The picker's options and the palette's environment rows have
+    the dot. Every shade is ≥4.5:1 on every background and on its own tint (`theme.rs`
+    tests). Why: the name was shown three times (a pill above Send, the picker and the
+    status bar) and a small dot still did not read as a sure sign (user's note). Send
+    keeps the accent: colored by environment it would break "orange means primary", and a
+    red Send read as an error. A colored rim around the request bar was rejected too: the
+    shades are the status tones, so a green rim read as success and a red one as an
+    error, and hue alone failed colour-blind users (Q17, Q18). Not done: an imported or
+    migrated "Production" still arrives without a color.
   - **Managing:** the picker ends with "Manage environments…", which opens Variables on the
     active environment (Global without one), through the Variables guard.
 - **History rows carry summary columns** (name, method, URL, status, outcome, elapsed) next to
@@ -539,7 +544,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Merging:** a failed check makes the result read "· n checks failed", and a capture
     written right after a send is added to that result (" · set token") rather than
     replacing it.
-  - **The right end** shows the active environment and, while mocks serve, their port.
+  - **The right end** shows the mock server's port while it serves; the environment is
+    left to the picker and Send.
 
   Why: the review found it reporting an earlier request's failure after a blocked send, and
   "Ready" during a send. A status that outlives its context misleads more than no status.

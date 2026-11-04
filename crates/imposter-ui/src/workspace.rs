@@ -751,11 +751,6 @@ fn context_bar(
     save: Option<widgets::SaveStatus<'static>>,
     save_text: &str,
 ) {
-    let environment = state
-        .editor
-        .is_some()
-        .then(|| active_environment(state).map(|e| (e.name.clone(), e.color)))
-        .flatten();
     ui.horizontal(|ui| {
         let path = match &state.editor {
             // The request pane says what to do.
@@ -786,10 +781,6 @@ fn context_bar(
                     state.actions.push(Action::CopyCurl);
                 }
             }
-            // Where a send goes, in words, right above Send.
-            if let Some((name, color)) = &environment {
-                widgets::env_pill(ui, name, *color);
-            }
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 ui.add(egui::Label::new(breadcrumb(&path)).truncate())
                     .on_hover_text(&path);
@@ -800,26 +791,14 @@ fn context_bar(
 
 /// The right end of the status bar: where a send goes and whether mocks are serving.
 fn status_context(state: &State, ui: &mut Ui) {
-    let active = active_environment(state);
-    // The bar runs right to left: the name first puts the dot before it.
-    ui.label(
-        tone_text(
-            active.map_or("No environment", |e| e.name.as_str()),
-            Tone::Muted,
-        )
-        .small(),
-    )
-    .on_hover_text("Active environment");
-    if let Some(color) = active.and_then(|e| e.color) {
-        widgets::env_dot(ui, color);
-    }
+    // The environment is in the header's picker and on Send; said a third time here it
+    // only added noise.
     if let Some(address) = state
         .mocks
         .run
         .as_ref()
         .and_then(|run| run.address.as_deref())
     {
-        ui.separator();
         let port = address.rsplit(':').next().unwrap_or(address);
         ui.label(tone_text(format!("Mocks :{port}"), Tone::Ok).small())
             .on_hover_text(format!("Mock server running at {address}"));
@@ -837,47 +816,90 @@ fn environment_picker(state: &mut State, ui: &mut Ui) {
     let font = egui::TextStyle::Button.resolve(ui.style());
     let text = palette().text;
     let active = state.active_environment;
+    let color = active_environment(state).and_then(|e| e.color);
+    // A colored environment fills the picker with its tint, its name semibold in its color
+    // after a stripe: the target of every send, readable at a glance and not by hue alone.
     let selected = active_environment(state).map_or_else(
         || widgets::env_text(GLOBAL, None, font.clone(), text),
-        |e| widgets::env_text(&e.name, e.color, font.clone(), text),
+        |e| match e.color {
+            Some(color) => widgets::env_text(
+                &e.name,
+                Some(color),
+                crate::theme::semibold(font.size),
+                crate::theme::env_color(color),
+            ),
+            None => widgets::env_text(&e.name, None, font.clone(), text),
+        },
     );
-    let combo = egui::ComboBox::from_id_salt("environment")
-        .width(170.0)
-        .selected_text(selected)
-        .show_ui(ui, |ui| {
-            let global = widgets::option(
-                ui,
-                active.is_none(),
-                widgets::env_option_text(GLOBAL, None, font.clone(), text),
-            );
-            name(&global, GLOBAL);
-            if global.clicked() {
-                state.actions.push(Action::SetEnvironment(None));
-            }
-            for environment in &state.environments {
-                let label = widgets::env_option_text(
-                    &environment.name,
-                    environment.color,
-                    font.clone(),
-                    text,
-                );
-                let option = widgets::option(ui, active == Some(environment.id), label);
-                name(&option, &environment.name);
-                if option.clicked() {
-                    state
-                        .actions
-                        .push(Action::SetEnvironment(Some(environment.id)));
+    let combo = ui
+        .scope(|ui| {
+            if let Some(color) = color {
+                let tint = crate::theme::env_color(color).gamma_multiply(widgets::PILL_TINT);
+                let looks = &mut ui.visuals_mut().widgets;
+                for look in [&mut looks.inactive, &mut looks.hovered, &mut looks.active] {
+                    look.weak_bg_fill = tint;
+                    look.bg_fill = tint;
                 }
+                looks.open.weak_bg_fill = tint;
             }
-            ui.separator();
-            if widgets::option(ui, false, "Manage environments…").clicked() {
-                state.actions.push(Action::ManageEnvironments);
-            }
-        });
+            egui::ComboBox::from_id_salt("environment")
+                .width(170.0)
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    let global = widgets::option(
+                        ui,
+                        active.is_none(),
+                        widgets::env_option_text(GLOBAL, None, font.clone(), text),
+                    );
+                    name(&global, GLOBAL);
+                    if global.clicked() {
+                        state.actions.push(Action::SetEnvironment(None));
+                    }
+                    for environment in &state.environments {
+                        let label = widgets::env_option_text(
+                            &environment.name,
+                            environment.color,
+                            font.clone(),
+                            text,
+                        );
+                        let option = widgets::option(ui, active == Some(environment.id), label);
+                        name(&option, &environment.name);
+                        if option.clicked() {
+                            state
+                                .actions
+                                .push(Action::SetEnvironment(Some(environment.id)));
+                        }
+                    }
+                    ui.separator();
+                    if widgets::option(ui, false, "Manage environments…").clicked() {
+                        state.actions.push(Action::ManageEnvironments);
+                    }
+                })
+        })
+        .inner;
+    if let Some(color) = color {
+        let rect = combo.response.rect;
+        let stripe = Rect::from_min_size(rect.min, vec2(3.0, rect.height()));
+        ui.painter().rect_filled(
+            stripe,
+            egui::CornerRadius {
+                nw: 2,
+                sw: 2,
+                ne: 0,
+                se: 0,
+            },
+            crate::theme::env_color(color),
+        );
+    }
     name(&combo.response, "Environment");
-    combo.response.on_hover_text(
-        "Global uses global and collection variables without an environment override.",
+    let hint = active_environment(state).map_or_else(
+        || {
+            "Global uses global and collection variables without an environment override."
+                .to_owned()
+        },
+        |e| format!("Requests are sent with the {} environment", e.name),
     );
+    combo.response.on_hover_text(hint);
 }
 
 /// Switch between side by side and stacked. The icon shows what a click switches to.
@@ -905,6 +927,11 @@ fn layout_switch(layout: &mut WorkspaceLayout, ui: &mut Ui) {
 
 fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
     let environment = active_environment(state).map(|e| e.name.clone());
+    // A colored environment is named on Send itself ("Send to Prod"): the words on the
+    // button clicked say where the request goes.
+    let target = active_environment(state)
+        .filter(|e| e.color.is_some())
+        .map(|e| e.name.clone());
     let State {
         editor,
         snapshot,
@@ -937,7 +964,25 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 edited |=
                     widgets::method_picker(ui, &mut pane.editor.method, &mut pane.custom_method);
                 divider(ui, height - 2.0);
-                let send_width = 96.0;
+                let (label, fill) = match (&target, executing) {
+                    (_, true) => ("Cancel".to_owned(), palette().warning),
+                    (Some(name), false) => (format!("Send to {name}"), palette().accent),
+                    (None, false) => ("Send".to_owned(), palette().accent),
+                };
+                let label_width = ui
+                    .fonts_mut(|f| {
+                        f.layout_no_wrap(
+                            label.clone(),
+                            egui::TextStyle::Button.resolve(ui.style()),
+                            egui::Color32::WHITE,
+                        )
+                    })
+                    .size()
+                    .x;
+                // As wide as its words up to a limit, past which the name is cut; in a
+                // narrow window the URL keeps most of the bar.
+                let limit = (ui.available_width() * 0.3).clamp(96.0, 168.0);
+                let send_width = (label_width + 28.0).clamp(96.0, limit);
                 // Narrow only while a custom method is typed beside it at the smallest size.
                 let width = (ui.available_width() - send_width).max(48.0);
                 let url_id = widgets::var_edit_id(ui, "Request URL");
@@ -961,15 +1006,11 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 }
                 url_edited = url.changed();
                 url_focused = url.has_focus();
-                let (label, fill) = if executing {
-                    ("Cancel", palette().warning)
-                } else {
-                    ("Send", palette().accent)
-                };
                 let inner = BAR_RADIUS - 1;
                 let send = ui.add_sized(
                     vec2(send_width, height - 2.0),
-                    egui::Button::new(RichText::new(label).color(palette().on_accent).strong())
+                    egui::Button::new(RichText::new(&label).color(palette().on_accent).strong())
+                        .truncate()
                         .fill(fill)
                         .corner_radius(egui::CornerRadius {
                             nw: 0,
@@ -981,7 +1022,7 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 // Where it goes, for the pointer and for screen readers.
                 let action = match (&environment, executing) {
                     (Some(name), false) => format!("Send with {name}"),
-                    _ => label.to_owned(),
+                    _ => label.clone(),
                 };
                 if !executing && let Some(name) = &environment {
                     let description = format!("Sends with the {name} environment");

@@ -629,10 +629,10 @@ mod tests {
         }
     }
 
-    /// The environment pill above Send: its color on its own tint, over the background
-    /// and the surface, rounded a level either way as rendering does.
+    /// A colored environment's name on its own tint (the picker), over the background and
+    /// the surface, rounded a level either way as rendering does.
     #[test]
-    fn environment_pills_are_readable_in_both_themes() {
+    fn colored_environment_names_are_readable_in_both_themes() {
         for (name, palette) in BOTH {
             CURRENT.with(|current| current.set(palette));
             for color in EnvColor::ALL {

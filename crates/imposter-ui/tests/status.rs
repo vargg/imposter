@@ -143,9 +143,16 @@ fn a_running_send_shows_its_time() {
 }
 
 #[test]
-fn the_right_end_names_the_environment() {
+fn the_status_bar_leaves_the_environment_to_the_picker_and_send() {
     let fixture = fixture();
-    fixture.app.harness.get_by_label("No environment");
+    assert!(
+        fixture
+            .app
+            .harness
+            .query_by_label("No environment")
+            .is_none(),
+        "said a third time, it only added noise"
+    );
 }
 
 fn runs(app: &support::App) -> u64 {

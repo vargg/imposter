@@ -518,58 +518,6 @@ pub fn env_option_text(
     job
 }
 
-/// A dot in an environment's color, painted rather than written, so the label beside it
-/// stays the name alone for screen readers.
-pub fn env_dot(ui: &mut Ui, color: EnvColor) {
-    let height = ui.text_style_height(&egui::TextStyle::Small);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, height), egui::Sense::hover());
-    ui.painter()
-        .circle_filled(rect.center(), 3.5, crate::theme::env_color(color));
-}
-
-/// The environment a send uses, as a tag: its name on its color's tint with a dot before it,
-/// or muted on a neutral fill without a color. Words carry it, so hue is never the only cue.
-pub fn env_pill(ui: &mut Ui, name: &str, color: Option<EnvColor>) -> egui::Response {
-    const MAX_WIDTH: f32 = 160.0;
-    let (text, fill) = match color {
-        Some(color) => {
-            let shade = crate::theme::env_color(color);
-            (shade, shade.gamma_multiply(PILL_TINT))
-        }
-        None => (palette().text_muted, palette().hover),
-    };
-    let font = crate::theme::semibold(12.0);
-    let dot = if color.is_some() { 8.0 + 4.0 } else { 0.0 };
-    let name_width = ui
-        .fonts_mut(|f| f.layout_no_wrap(name.to_owned(), font.clone(), text))
-        .size()
-        .x;
-    // As wide as its contents, up to a limit past which the name is cut.
-    let width = (dot + name_width).min(MAX_WIDTH);
-    let height = ui.text_style_height(&egui::TextStyle::Body);
-    let response = egui::Frame::new()
-        .fill(fill)
-        .corner_radius(10)
-        .inner_margin(egui::Margin::symmetric(PILL_PADDING, 1))
-        .show(ui, |ui| {
-            // Left to right even inside a right-to-left row, so the dot leads.
-            ui.allocate_ui_with_layout(
-                egui::vec2(width, height),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    if let Some(color) = color {
-                        env_dot(ui, color);
-                    }
-                    ui.add(egui::Label::new(RichText::new(name).color(text).font(font)).truncate())
-                },
-            )
-            .inner
-        })
-        .inner;
-    response.on_hover_text(format!("Requests are sent with the {name} environment"))
-}
-
 /// Swatches for an environment's color: none, then each color, one selected. Returns
 /// whether the user chose one.
 pub fn env_swatches(ui: &mut Ui, color: &mut Option<EnvColor>) -> bool {

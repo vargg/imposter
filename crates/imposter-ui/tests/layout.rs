@@ -184,6 +184,9 @@ fn appearance(app: &mut support::App, theme: ThemeChoice, density: Density) {
     app.harness.run_steps(3);
 }
 
+/// Send names the active, colored environment of the walk.
+const SEND: &str = "Send to Production EU";
+
 /// Walk the screens and dialogs, collecting problems at each stop.
 fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     let mut found = Vec::new();
@@ -194,7 +197,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     check(app, "start");
     click(&mut app.harness, "GET Users");
     settle(&mut app.harness);
-    click(&mut app.harness, "Send");
+    click(&mut app.harness, SEND);
     settle(&mut app.harness);
     check(app, "response");
     // Both panes have a Headers tab.
@@ -207,7 +210,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     // A long status beside the runs menu.
     click(&mut app.harness, "GET Broken");
     settle(&mut app.harness);
-    click(&mut app.harness, "Send");
+    click(&mut app.harness, SEND);
     settle(&mut app.harness);
     check(app, "error response");
     // The Tests tab: checks with and without a path, one without an expected value, and a
@@ -340,7 +343,7 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
             for density in [Density::Compact, Density::Comfortable] {
                 let url = url.clone();
                 let mut app = start_with(move |store| {
-                    // Active and colored, so the request bar and status bar show it.
+                    // Active and colored, so the picker is tinted and Send names it.
                     store
                         .call_blocking(|db| {
                             use imposter_app::store::environments as env;

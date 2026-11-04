@@ -1,5 +1,5 @@
 //! Environment colors: chosen in the environment dialog, shown wherever the active
-//! environment is (picker, request bar, status bar, palette).
+//! environment is (the picker, Send, the palette).
 #![cfg(test)]
 #![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 
@@ -165,84 +165,59 @@ fn renaming_shows_the_color_and_can_clear_it() {
     );
 }
 
-/// The Send button's accessible description.
-fn send_description(app: &support::App) -> Option<String> {
+/// The accessible description of the Send button named `label`.
+fn send_description(app: &support::App, label: &str) -> Option<String> {
     app.harness
-        .get_by_role_and_label(Role::Button, "Send")
+        .get_by_role_and_label(Role::Button, label)
         .accesskit_node()
         .description()
 }
 
-/// Text labels named `name`, top to bottom.
-fn labels_named(app: &support::App, name: &str) -> Vec<egui::Rect> {
-    let mut rects: Vec<egui::Rect> = app
-        .harness
-        .query_all_by_label(name)
-        .map(|node| node.rect())
-        .collect();
-    rects.sort_by(|a, b| a.top().total_cmp(&b.top()));
-    rects
-}
-
-#[test]
-fn the_active_environment_is_named_above_send_and_in_the_status_bar() {
-    let mut app = with_environments(true);
-    let red = env_color(EnvColor::Red);
-    // Words in the environment's color above Send, a dot in the picker, and painted dots
-    // before the pill's and the status bar's names.
-    let mut painted = painted_in(&app, red);
-    painted.sort();
-    assert_eq!(painted, ["Prod", "● "]);
-    assert_eq!(red_dots(&app), 2);
-    let named = labels_named(&app, "Prod");
-    assert_eq!(named.len(), 2, "the pill and the status bar");
-    let send = app
-        .harness
-        .get_by_role_and_label(Role::Button, "Send")
-        .rect();
-    let pill = named[0];
-    assert!(
-        pill.bottom() <= send.top() && pill.right() <= send.right() + 1.0,
-        "the pill sits above Send: {pill:?} {send:?}"
-    );
-    // The pill hugs its name: a dot and padding wider, never stretched to its limit.
-    let tint = red.gamma_multiply(imposter_ui::widgets::PILL_TINT);
-    let fill = app
-        .harness
-        .output()
-        .shapes
-        .iter()
-        .find_map(|clipped| match &clipped.shape {
-            egui::Shape::Rect(rect) if rect.fill == tint => Some(rect.rect),
-            _ => None,
-        })
-        .expect("the pill's tint");
-    assert!(
-        fill.width() < pill.width() + 40.0 && fill.contains_rect(pill),
-        "{fill:?} around {pill:?}"
-    );
-    let status = named[1];
-    let dots: Vec<egui::Pos2> = app
-        .harness
+/// Painted rectangles filled with `fill`.
+fn filled(app: &support::App, fill: egui::Color32) -> Vec<egui::Rect> {
+    app.harness
         .output()
         .shapes
         .iter()
         .filter_map(|clipped| match &clipped.shape {
-            egui::Shape::Circle(c) if c.fill == red => Some(c.center),
+            egui::Shape::Rect(rect) if rect.fill == fill => Some(rect.rect),
             _ => None,
         })
-        .collect();
-    for name in [pill, status] {
-        assert!(
-            dots.iter()
-                .any(|dot| dot.x < name.left() && (dot.y - name.center().y).abs() < 3.0),
-            "a dot before {name:?}: {dots:?}"
-        );
-    }
+        .collect()
+}
+
+#[test]
+fn a_colored_environment_fills_the_picker_and_names_send() {
+    let mut app = with_environments(true);
+    let red = env_color(EnvColor::Red);
+    let tint = red.gamma_multiply(imposter_ui::widgets::PILL_TINT);
+    // The picker: its name in the color on its tint, after a stripe in the full color.
+    assert_eq!(painted_in(&app, red), ["● Prod"]);
+    let picker = app.harness.get_by_label("Environment").rect();
+    assert!(
+        filled(&app, tint)
+            .iter()
+            .any(|fill| fill.contains_rect(picker.shrink(1.0))),
+        "the picker is on the tint"
+    );
+    assert!(
+        filled(&app, red).iter().any(|stripe| stripe.width() <= 3.0
+            && (stripe.left() - picker.left()).abs() < 1.0
+            && (stripe.height() - picker.height()).abs() < 1.0),
+        "a stripe on the picker's left edge"
+    );
+    // Send says where it goes, in words; no pill or status bar name repeats it.
+    let send = app
+        .harness
+        .get_by_role_and_label(Role::Button, "Send to Prod")
+        .rect();
+    assert!(send.width() > 96.0, "wider than a plain Send: {send:?}");
     assert_eq!(
-        send_description(&app).as_deref(),
+        send_description(&app, "Send to Prod").as_deref(),
         Some("Sends with the Prod environment")
     );
+    assert!(app.harness.query_by_label("Prod").is_none(), "named once");
+    assert_eq!(red_dots(&app), 0);
     // No colored rim: a red edge read as an error, a green one as success.
     let rims = app
         .harness
@@ -255,25 +230,50 @@ fn the_active_environment_is_named_above_send_and_in_the_status_bar() {
         .count();
     assert_eq!(rims, 0);
 
-    // Dev has no color: its name still shows, muted; nothing is red.
+    // Dev has no color: a plain picker and a plain Send that still names it to readers.
     click(&mut app.harness, "Environment");
     click(&mut app.harness, "Dev");
     settle(&mut app.harness);
     assert_eq!(painted_in(&app, red), Vec::<String>::new());
-    assert_eq!(red_dots(&app), 0);
-    assert_eq!(labels_named(&app, "Dev").len(), 2);
+    assert_eq!(filled(&app, tint), Vec::<egui::Rect>::new(), "no tint");
     assert_eq!(
-        send_description(&app).as_deref(),
+        send_description(&app, "Send").as_deref(),
         Some("Sends with the Dev environment")
     );
+    assert!(app.harness.query_by_label("Dev").is_none(), "named once");
 
-    // Without an environment there is no pill, and Send names none.
+    // Without an environment Send names none.
     click(&mut app.harness, "Environment");
     click(&mut app.harness, "Global (no environment)");
     settle(&mut app.harness);
-    let description = send_description(&app).unwrap_or_default();
+    let description = send_description(&app, "Send").unwrap_or_default();
     assert!(!description.contains("environment"), "{description}");
-    assert_eq!(labels_named(&app, "Dev").len(), 0);
+}
+
+#[test]
+fn a_long_environment_name_is_cut_on_send_and_the_url_keeps_its_room() {
+    let mut app = start_with(move |store| {
+        store
+            .call_blocking(move |db| {
+                let long = "Production Europe West Primary";
+                let prod = environments::create_environment(db, long, &Variables::new())?;
+                environments::set_environment_color(db, prod.id, Some(EnvColor::Red))?;
+                environments::set_active_environment(db, Some(prod.id))
+            })
+            .unwrap();
+        let api = collection(store, "API");
+        request(store, api.id, "Get", "http://h");
+    });
+    app.harness.set_size(imposter_ui::layout::MIN_WINDOW.into());
+    click(&mut app.harness, "GET Get");
+    settle(&mut app.harness);
+    let send = app
+        .harness
+        .get_by_role_and_label(Role::Button, "Send to Production Europe West Primary")
+        .rect();
+    assert!(send.width() <= 168.5, "{send:?}");
+    let url = app.harness.get_by_label("Request URL").rect();
+    assert!(url.width() >= 200.0, "{url:?}");
 }
 
 #[test]
