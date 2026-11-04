@@ -381,6 +381,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   refused. Why: about 40 lines, no second rusqlite version to keep in step, and the backup
   happens exactly before the first change. Released migrations are frozen
   (`imposter-store/tests/schema.rs` pins their fingerprints); schema changes are new migrations.
+  V5 adds a `scripts` column (JSON `model::Scripts`) to collections and folders; requests
+  needed none, as their scripts live in the template JSON.
 - **A request row stores its template as JSON, the single source of truth.** The tree reads
   `name`, `method` and `position` through generated columns, so it never decodes bodies;
   rename and reorder use `json_set`, and saving a template keeps the stored position, since

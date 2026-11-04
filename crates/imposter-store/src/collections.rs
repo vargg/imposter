@@ -1,7 +1,7 @@
 //! Collections, folders and requests.
 
 use imposter_core::ids::{CollectionId, FolderId, RequestId};
-use imposter_core::model::{Request, RequestTemplate, Variables};
+use imposter_core::model::{Request, RequestTemplate, Scripts, Variables};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{Conflict, StoreError};
@@ -12,6 +12,8 @@ pub struct Collection {
     pub name: String,
     pub description: String,
     pub variables: Variables,
+    /// Run around every request in the collection, before its folders' and its own.
+    pub scripts: Scripts,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +24,8 @@ pub struct Folder {
     pub name: String,
     pub description: String,
     pub position: i64,
+    /// Run around every request inside the folder, after its parent's.
+    pub scripts: Scripts,
 }
 
 /// What the tree shows for a request, read without decoding its body.
@@ -60,19 +64,70 @@ fn changed(rows: usize, entity: &'static str) -> Result<(), StoreError> {
     }
 }
 
-fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, String, String, String)> {
-    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+type CollectionRow = (i64, String, String, String, String);
+
+const COLLECTION_COLUMNS: &str = "id, name, description, variables, scripts";
+
+fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CollectionRow> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+    ))
 }
 
 fn to_collection(
-    (id, name, description, variables): (i64, String, String, String),
+    (id, name, description, variables, scripts): CollectionRow,
 ) -> Result<Collection, StoreError> {
     Ok(Collection {
         id: CollectionId(id),
         name,
         description,
         variables: serde_json::from_str(&variables)?,
+        scripts: serde_json::from_str(&scripts)?,
     })
+}
+
+/// Scripts stored as JSON in a row: unreadable ones are an error, never silently none.
+fn scripts_column(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Scripts> {
+    let text: String = row.get(index)?;
+    serde_json::from_str(&text).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
+}
+
+pub fn set_collection_scripts(
+    db: &Connection,
+    id: CollectionId,
+    scripts: &Scripts,
+) -> Result<(), StoreError> {
+    changed(
+        db.execute(
+            "UPDATE collections SET scripts = ?1 WHERE id = ?2",
+            params![serde_json::to_string(scripts)?, id.0],
+        )?,
+        "collection",
+    )
+}
+
+pub fn set_folder_scripts(
+    db: &Connection,
+    id: FolderId,
+    scripts: &Scripts,
+) -> Result<(), StoreError> {
+    changed(
+        db.execute(
+            "UPDATE folders SET scripts = ?1 WHERE id = ?2",
+            params![serde_json::to_string(scripts)?, id.0],
+        )?,
+        "folder",
+    )
 }
 
 pub fn create_collection(
@@ -91,12 +146,14 @@ pub fn create_collection(
         name: name.to_owned(),
         description: description.to_owned(),
         variables: variables.clone(),
+        scripts: Scripts::default(),
     })
 }
 
 pub fn collections(db: &Connection) -> Result<Vec<Collection>, StoreError> {
-    let mut statement =
-        db.prepare("SELECT id, name, description, variables FROM collections ORDER BY name, id")?;
+    let mut statement = db.prepare(&format!(
+        "SELECT {COLLECTION_COLUMNS} FROM collections ORDER BY name, id"
+    ))?;
     let rows = statement
         .query_map([], collection_row)?
         .collect::<Result<Vec<_>, _>>()?;
@@ -105,7 +162,7 @@ pub fn collections(db: &Connection) -> Result<Vec<Collection>, StoreError> {
 
 pub fn collection(db: &Connection, id: CollectionId) -> Result<Option<Collection>, StoreError> {
     db.query_row(
-        "SELECT id, name, description, variables FROM collections WHERE id = ?1",
+        &format!("SELECT {COLLECTION_COLUMNS} FROM collections WHERE id = ?1"),
         [id.0],
         collection_row,
     )
@@ -257,10 +314,12 @@ fn folder_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Folder> {
         name: row.get(3)?,
         description: row.get(4)?,
         position: row.get(5)?,
+        scripts: scripts_column(row, 6)?,
     })
 }
 
-const FOLDER_COLUMNS: &str = "id, collection_id, parent_folder_id, name, description, position";
+const FOLDER_COLUMNS: &str =
+    "id, collection_id, parent_folder_id, name, description, position, scripts";
 
 pub fn folders(db: &Connection, collection: CollectionId) -> Result<Vec<Folder>, StoreError> {
     let mut statement = db.prepare(&format!(
@@ -347,6 +406,7 @@ pub fn create_folder(
         name: name.to_owned(),
         description: description.to_owned(),
         position,
+        scripts: Scripts::default(),
     })
 }
 

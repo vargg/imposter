@@ -268,6 +268,7 @@ mod tests {
             name: name.into(),
             description: String::new(),
             position,
+            scripts: imposter_app::core::model::Scripts::default(),
         }
     }
 
@@ -289,6 +290,7 @@ mod tests {
                 name: "API".into(),
                 description: String::new(),
                 variables: Variables::new(),
+                scripts: imposter_app::core::model::Scripts::default(),
             },
             folders: vec![
                 folder(10, None, "Users", 1),

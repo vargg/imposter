@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::StoreError;
 
 /// Every migration in order; the database's `user_version` counts how many have run.
-pub const MIGRATIONS: &[&str] = &[V1, V2, V3, V4];
+pub const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5];
 
 const V1: &str = r"
 CREATE TABLE collections (
@@ -98,6 +98,13 @@ ALTER TABLE requests ADD COLUMN url TEXT GENERATED ALWAYS AS (json_extract(templ
 const V4: &str = r"
 ALTER TABLE environments ADD COLUMN color TEXT
     CHECK (color IN ('red', 'yellow', 'green', 'blue', 'purple'));
+";
+
+/// Scripts on collections and folders (`model::Scripts` as JSON), run around every request
+/// inside them.
+const V5: &str = r"
+ALTER TABLE collections ADD COLUMN scripts TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE folders ADD COLUMN scripts TEXT NOT NULL DEFAULT '{}';
 ";
 
 /// Open a connection with the pragmas every connection needs.

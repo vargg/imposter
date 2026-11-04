@@ -571,3 +571,62 @@ fn the_request_index_lists_every_collection_with_folder_paths() {
     );
     assert!(index.iter().all(|r| r.method == "GET"));
 }
+
+#[test]
+fn collections_and_folders_keep_their_scripts() {
+    let (_dir, store) = store();
+    let scripts = imposter_core::model::Scripts {
+        before: r#"request.set_header("X-Collection", "1");"#.into(),
+        after: r#"test("ok", true);"#.into(),
+    };
+    let stored = scripts.clone();
+    let (collection_id, folder_id) = store
+        .call_blocking(move |db| {
+            let c = create_collection(db, "API", "", &Variables::new())?;
+            let f = create_folder(db, c.id, None, "Users", "", 0)?;
+            assert!(
+                c.scripts.is_empty() && f.scripts.is_empty(),
+                "none at first"
+            );
+            set_collection_scripts(db, c.id, &stored)?;
+            set_folder_scripts(db, f.id, &stored)?;
+            Ok((c.id, f.id))
+        })
+        .unwrap();
+    let (collection_read, folder_read, listed) = store
+        .call_blocking(move |db| {
+            Ok((
+                collection(db, collection_id)?.unwrap(),
+                folder(db, folder_id)?.unwrap(),
+                collections(db)?,
+            ))
+        })
+        .unwrap();
+    assert_eq!(collection_read.scripts, scripts);
+    assert_eq!(folder_read.scripts, scripts);
+    assert_eq!(
+        listed[0].scripts, scripts,
+        "the list carries them for the menus"
+    );
+    let tree_folder = store
+        .call_blocking(move |db| tree(db, collection_id))
+        .unwrap()
+        .unwrap()
+        .folders
+        .remove(0);
+    assert_eq!(tree_folder.scripts, scripts, "the tree carries them too");
+
+    let moved = store
+        .call_blocking(move |db| {
+            let inner = create_folder(db, collection_id, None, "Inner", "", 1)?;
+            move_folder(db, folder_id, Some(inner.id))?;
+            folder(db, folder_id)
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(moved.scripts, scripts, "a moved folder keeps its scripts");
+    let missing = store.call_blocking(|db| {
+        set_folder_scripts(db, FolderId(999), &imposter_core::model::Scripts::default())
+    });
+    assert!(matches!(missing, Err(StoreError::NotFound("folder"))));
+}
