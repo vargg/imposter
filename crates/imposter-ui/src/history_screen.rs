@@ -3,7 +3,8 @@
 
 use egui::{Rect, Sense, Ui, UiBuilder, vec2};
 use imposter_app::core::execution::Outcome;
-use imposter_app::store::executions::ExecutionSummary;
+use imposter_app::core::settings::AppSettings;
+use imposter_app::store::executions::{ExecutionSummary, Usage};
 
 use crate::app::{Action, HISTORY_PAGE, HistoryAction, HistoryTab, SentTab, State};
 use crate::theme::{Tone, palette};
@@ -36,6 +37,25 @@ fn megabytes(bytes: u64) -> String {
     #[allow(clippy::cast_precision_loss)] // a display approximation
     let mib = bytes as f64 / (1024.0 * 1024.0);
     format!("{mib:.0} MiB")
+}
+
+/// What history holds against what it keeps: "312 of 1000 executions · 41 MB of 250 MiB".
+/// Without a reading yet, only the limits.
+pub fn retention(settings: &AppSettings, usage: Option<Usage>) -> String {
+    match usage {
+        Some(usage) => format!(
+            "{} of {} executions · {} of {}",
+            usage.entries,
+            settings.history_max_entries,
+            viewer::format_size(usize::try_from(usage.bytes).unwrap_or(usize::MAX)),
+            megabytes(settings.history_max_bytes)
+        ),
+        None => format!(
+            "Keeps up to {} executions and {}",
+            settings.history_max_entries,
+            megabytes(settings.history_max_bytes)
+        ),
+    }
 }
 
 /// The table's columns, left to right, with their widths for a list `width` wide.
@@ -131,11 +151,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     );
     widgets::split_grip(ui, handle, false, drag.hovered() || drag.dragged());
 
-    let retention = format!(
-        "Keeps up to {} executions and {}",
-        state.settings.history_max_entries,
-        megabytes(state.settings.history_max_bytes)
-    );
+    let retention = retention(&state.settings, history.usage);
     ui.scope_builder(
         UiBuilder::new().max_rect(list).id_salt("history list"),
         |ui| table(ui, history, now, &retention, &mut actions),

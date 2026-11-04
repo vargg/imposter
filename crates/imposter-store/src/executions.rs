@@ -189,6 +189,25 @@ pub fn execution(db: &Connection, id: ExecutionId) -> Result<Option<ExecutionRec
         .transpose()?)
 }
 
+/// How much history holds, measured as retention counts it: executions and payload bytes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Usage {
+    pub entries: u64,
+    pub bytes: u64,
+}
+
+pub fn usage(db: &Connection) -> Result<Usage, StoreError> {
+    let (entries, bytes): (i64, i64) = db.query_row(
+        "SELECT count(*), coalesce(sum(payload_size), 0) FROM executions",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    Ok(Usage {
+        entries: u64::try_from(entries).unwrap_or(0),
+        bytes: u64::try_from(bytes).unwrap_or(0),
+    })
+}
+
 pub fn count(db: &Connection) -> Result<u64, StoreError> {
     let count: i64 = db.query_row("SELECT count(*) FROM executions", [], |row| row.get(0))?;
     Ok(u64::try_from(count).unwrap_or(0))

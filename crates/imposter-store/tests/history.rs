@@ -259,6 +259,39 @@ fn retention_can_be_applied_when_settings_shrink_and_clear_empties_history() {
 }
 
 #[test]
+fn usage_counts_what_retention_counts() {
+    let (_dir, store) = store();
+    assert_eq!(
+        store.call_blocking(|db| usage(db)).unwrap(),
+        Usage::default(),
+        "empty history"
+    );
+    store
+        .call_blocking(|db| {
+            record_execution(db, &record(None, 10, 0))?;
+            record_execution(db, &record(None, 3000, 1)).map(drop)
+        })
+        .unwrap();
+    let used = store.call_blocking(|db| usage(db)).unwrap();
+    assert_eq!(used.entries, 2);
+    assert!(used.bytes > 3000, "{used:?}");
+    // The total is exactly the budget retention compares with: one byte less drops a run.
+    assert_eq!(
+        store
+            .call_blocking(move |db| enforce_retention(db, u64::MAX, used.bytes))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        store
+            .call_blocking(move |db| enforce_retention(db, u64::MAX, used.bytes - 1))
+            .unwrap(),
+        1
+    );
+    assert_eq!(store.call_blocking(|db| usage(db)).unwrap().entries, 1);
+}
+
+#[test]
 fn settings_default_until_saved_and_are_validated() {
     let (_dir, store) = store();
     assert_eq!(

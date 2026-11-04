@@ -467,7 +467,9 @@ numbers, so both are excluded. Each logical change is its own commit.
     clipped mid-glyph. Rows are painted, not laid out, so the list stays virtualized.
   - **Tools:** the filter, "Current request only" and Refresh; "Clear all history…" is in
     the "⋯" menu. Newer and Older are a pager under the list, with which executions show
-    and what history keeps.
+    and what history holds against what it keeps ("312 of 1000 executions · 41 MB of 250
+    MiB", `executions::usage`, the same sum retention compares); Settings says it under the
+    limits. Why: the limits alone left no way to judge them.
   - **Details:** one line ("GET url · 201 Created · 3 ms") with Restore as draft and Copy as
     curl beside it, then one row of tabs: Response (first, as runs are looked up for it),
     Request body, Request headers. An empty body or header list says so in muted text.

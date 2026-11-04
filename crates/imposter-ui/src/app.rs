@@ -207,6 +207,7 @@ pub enum Message {
         generation: u64,
         result: Result<Vec<ExecutionSummary>, Failure>,
     },
+    HistoryUsage(Result<executions::Usage, Failure>),
     HistoryRecord {
         id: ExecutionId,
         result: Result<Option<Box<ExecutionRecord>>, Failure>,
@@ -466,6 +467,8 @@ pub struct HistoryScreen {
     pub tab: HistoryTab,
     pub status: Option<(String, Tone)>,
     pub loaded: bool,
+    /// What history holds now, beside the limits; `None` until first read.
+    pub usage: Option<executions::Usage>,
     generation: u64,
 }
 
@@ -1418,6 +1421,10 @@ impl ImposterApp {
                 result,
             } => self.captures_written(&scopes, &names, result),
             Message::HistoryPage { generation, result } => self.history_page(generation, result),
+            Message::HistoryUsage(result) => match result {
+                Ok(usage) => self.state.history.usage = Some(usage),
+                Err(error) => tracing::warn!(%error, "reading the history usage failed"),
+            },
             Message::HistoryRecord { id, result } => {
                 if self.state.history.selected == Some(id) {
                     match result {
@@ -3425,6 +3432,7 @@ impl ImposterApp {
     // ---- settings -------------------------------------------------------------------------------
 
     fn load_settings(&mut self) {
+        self.load_usage();
         let screen = &mut self.state.settings_screen;
         if screen.loading {
             return;
@@ -3500,8 +3508,11 @@ impl ImposterApp {
                     self.state.autosave_due = None;
                 }
                 self.state.settings = settings;
+                // Retention may have dropped runs.
                 if self.state.history.loaded {
                     self.load_history();
+                } else {
+                    self.load_usage();
                 }
                 if std::mem::take(&mut self.state.settings_screen.closing) {
                     self.mocks_transition(crate::mock_screen::Transition::Close);
@@ -3713,7 +3724,16 @@ impl ImposterApp {
 
     // ---- history --------------------------------------------------------------------------------
 
+    /// Read how much history holds, after anything that may change it.
+    fn load_usage(&mut self) {
+        self.task(
+            |db| executions::usage(db),
+            |result| Message::HistoryUsage(result.map_err(failure)),
+        );
+    }
+
     fn load_history(&mut self) {
+        self.load_usage();
         let history = &mut self.state.history;
         history.generation += 1;
         let generation = history.generation;
@@ -3749,6 +3769,9 @@ impl ImposterApp {
     }
 
     fn history_page(&mut self, generation: u64, result: Result<Vec<ExecutionSummary>, Failure>) {
+        if generation == 0 {
+            self.load_usage();
+        }
         let history = &mut self.state.history;
         // Generation 0 answers "clear all history", which always applies.
         if generation != 0 && generation != history.generation {

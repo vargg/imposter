@@ -7,6 +7,7 @@ use imposter_app::core::settings::{AppSettings, HostIdentity};
 use crate::app::{Action, State};
 use crate::theme::Tone;
 use crate::widgets::{SaveStatus, SaveWord, save_controls};
+use imposter_app::store::executions::Usage;
 
 const MIB: u64 = 1024 * 1024;
 
@@ -162,6 +163,20 @@ fn row(
     changed
 }
 
+/// Under the history limits: what history holds now, so the limits can be judged.
+fn storage_help(usage: Option<Usage>) -> String {
+    let rule = "The oldest runs go first when either limit is reached.";
+    match usage {
+        Some(usage) => format!(
+            "History holds {} execution{}, {}. {rule}",
+            usage.entries,
+            if usage.entries == 1 { "" } else { "s" },
+            crate::viewer::format_size(usize::try_from(usage.bytes).unwrap_or(usize::MAX))
+        ),
+        None => rule.to_owned(),
+    }
+}
+
 fn help_text(text: &str) -> egui::RichText {
     crate::widgets::tone_text(text, Tone::Muted).small()
 }
@@ -235,6 +250,7 @@ fn path(
 }
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
+    let storage_help = storage_help(state.history.usage);
     let screen = &mut state.settings_screen;
     let mut edited = false;
     let mut save = false;
@@ -450,7 +466,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     edited |= row(
                         ui,
                         "History storage",
-                        Some("The oldest runs go first when either limit is reached."),
+                        Some(&storage_help),
                         |ui| {
                             ui.add(
                                 egui::DragValue::new(&mut form.history_mib)

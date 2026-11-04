@@ -65,6 +65,37 @@ fn executions_are_listed_with_their_request_and_response() {
 }
 
 #[test]
+fn history_says_how_much_it_holds_beside_its_limits() {
+    let (mut app, _server, _runtime) = sent_app();
+    open_history(&mut app);
+    let pager = app
+        .harness
+        .get_by_label_contains("· 1 of 1000 executions · ")
+        .accesskit_node()
+        .value()
+        .unwrap_or_default();
+    assert!(pager.ends_with(" of 250 MiB"), "{pager}");
+
+    // The Settings screen; a "Settings" request tab is open too.
+    app.harness
+        .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
+    settle(&mut app.harness);
+    assert_eq!(app.harness.state().state.screen, Screen::Settings);
+    app.harness
+        .get_by_label_contains("History holds 1 execution, ");
+
+    // The screen's button; Settings has a History heading.
+    click_button(&mut app.harness, "History");
+    settle(&mut app.harness);
+    click(&mut app.harness, "History actions");
+    click(&mut app.harness, "Clear all history…");
+    click_button(&mut app.harness, "Delete history");
+    settle(&mut app.harness);
+    app.harness
+        .get_by_label_contains("· 0 of 1000 executions · 0 B of 250 MiB");
+}
+
+#[test]
 fn restoring_opens_an_unsaved_draft_without_sending() {
     let (mut app, server, _runtime) = sent_app();
     open_history(&mut app);
