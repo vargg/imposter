@@ -96,6 +96,47 @@ impl MockReply {
     }
 }
 
+/// What a scripted route's responder made of a request: the answer (a 500 naming the
+/// error when the script failed), the error, and what the script printed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Responded {
+    pub reply: MockReply,
+    pub error: Option<String>,
+    pub console: Vec<String>,
+}
+
+impl Responded {
+    /// A plain-text 500 saying why the script gave no answer.
+    pub fn failed(error: String, console: Vec<String>) -> Self {
+        Self {
+            reply: MockReply {
+                status: 500,
+                headers: vec![(
+                    "Content-Type".to_owned(),
+                    "text/plain; charset=utf-8".to_owned(),
+                )],
+                body: error.clone().into_bytes(),
+                delay: std::time::Duration::ZERO,
+            },
+            error: Some(error),
+            console,
+        }
+    }
+}
+
+/// One answered request, for the Mocks screen's log. Never a body: logs end up in bug
+/// reports and screenshots.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MockLogEntry {
+    pub method: String,
+    pub path: String,
+    pub status: u16,
+    pub elapsed: std::time::Duration,
+    /// Why a script gave no answer.
+    pub error: Option<String>,
+    pub console: Vec<String>,
+}
+
 /// Why a response header cannot be sent: names are tokens, values have no line breaks, and
 /// the server sets the framing headers itself.
 pub fn header_problem(name: &str, value: &str) -> Option<&'static str> {
@@ -238,9 +279,15 @@ impl MockConfig {
     }
 
     pub fn matching_route(&self, method: &str, path: &str) -> Option<&MockRoute> {
+        self.matching_index(method, path)
+            .map(|index| &self.routes[index])
+    }
+
+    /// The index of the enabled route answering `method` and `path`.
+    pub fn matching_index(&self, method: &str, path: &str) -> Option<usize> {
         self.routes
             .iter()
-            .find(|route| route.enabled && route.method == method && route.path == path)
+            .position(|route| route.enabled && route.method == method && route.path == path)
     }
 }
 

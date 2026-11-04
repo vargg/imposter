@@ -132,6 +132,11 @@ pub enum Message {
         generation: u64,
         address: String,
     },
+    /// A request the mock server answered.
+    MockLog {
+        generation: u64,
+        entry: Box<imposter_app::core::mock::MockLogEntry>,
+    },
     MockStopped {
         generation: u64,
         result: Result<(), Failure>,
@@ -1290,6 +1295,11 @@ impl ImposterApp {
                     && let Some(run) = &mut self.state.mocks.run
                 {
                     run.address = Some(address);
+                }
+            }
+            Message::MockLog { generation, entry } => {
+                if generation == self.state.mocks.generation {
+                    self.state.mocks.logged(*entry);
                 }
             }
             Message::LoadFinished { generation, result } => self.load_finished(generation, result),
@@ -3789,6 +3799,8 @@ impl ImposterApp {
                 screen.generation += 1;
                 let generation = screen.generation;
                 let notify = self.bridge.notifier();
+                // The log is called from the server's threads; the notifier is not `Sync`.
+                let log = std::sync::Mutex::new(self.bridge.notifier());
                 let run_config = config.clone();
                 let task = self.bridge.spawn(move |cancel| async move {
                     let result = imposter_app::mock::run(
@@ -3799,6 +3811,15 @@ impl ImposterApp {
                                 address: format!("http://{address}"),
                             });
                         },
+                        move |entry| {
+                            let notify = log
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            notify(Message::MockLog {
+                                generation,
+                                entry: Box::new(entry),
+                            });
+                        },
                         cancel,
                     )
                     .await
@@ -3806,6 +3827,7 @@ impl ImposterApp {
                     Message::MockStopped { generation, result }
                 });
                 screen.notice = None;
+                screen.log.clear();
                 screen.run = Some(crate::mock_screen::Run {
                     task,
                     config,

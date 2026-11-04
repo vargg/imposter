@@ -1024,6 +1024,22 @@ numbers, so both are excluded. Each logical change is its own commit.
 
 - **Host client identities match an exact normalized HTTPS host and port.** A match replaces global client credentials, then explicit request fields override individually. Each redirect selects again from the execution snapshot; CA and verification settings remain unchanged. Why: one host must never inherit another host’s selected certificate. Curl copies the initial identity and reports that it cannot switch identities across redirects. Enforced by core settings, executor, and loopback TLS tests.
 
+- **A mock route may compute its answer with a script** (`MockRoute::script`, Rhai through
+  `imposter_script::mock`), starting from its static status, headers and body; static routes
+  are unchanged and never read bodies. `imposter-http` serves scripted routes through a
+  `Responder` callback the app passes in, so the server crate needs no script engine.
+  - **Inputs:** the request (method, path, query, headers, body up to 1 MiB, else 413) and
+    `state`, one map per run, empty on every Start. Scripts run one at a time per server
+    under one lock, so counters never lose an update, each for at most 1 s
+    (`MOCK_SCRIPT_TIME`); the delay a script asks for (up to 10 s) is waited after the lock.
+    `state` changes only when the script succeeds.
+  - **Failures:** a script that fails, is stopped, or answers what the server will not send
+    (`MockReply::problem`: status, framing headers, line breaks) is answered 500 with
+    "Mock script, line 3: …" as plain text. A script that does not compile keeps the server
+    from starting (`mock::script_problem`, "Route 2: …"); a broken script can be saved.
+  - **The log:** every answered request reaches the UI through a callback (`MockLogEntry`:
+    method, path, status, time, error, console), never a body, and never `tracing`
+    (`imposter-http/tests/logging.rs`).
 - **Mocks is one saved loopback-only static HTTP/1 server, started and stopped explicitly.** Enabled routes match exact method and encoded path, ignoring query and body; unmatched requests return 404. A running server keeps its start-time configuration until restarted. Why: predictable responses and no implicit listener after startup. Configuration has its own save/reload/close guard; shutdown cancels and drains the listener and all connections before closing. Enforced by mock domain, service, loopback, and UI tests. Route problems are all found at once (`MockConfig::problems`, each tied to a field) and shown under that field while typing; saving and the server refuse with the first (`validate`), and a disabled Start says which route to fix. Why: a Start button that only greyed out left the user guessing. The screen is a list and an editor: the header puts Port ("auto" for 0) and Start or Stop first, so they never move, then the state in words ("● Stopped", "● Running at http://127.0.0.1:62543" with a copy button), with Revert and Save at the right; the list shows each route's enabled box, method in its color, path, and status or a ⚠ when it has a problem; the editor beside it has the request bar's method picker, path, status, headers, body and a two-click "Delete route". The first route is open until another is chosen. Why: the server's state was not shown, its URL pushed the buttons aside, routes were plain text, and the method was free text (the review's #47–#49).
 
 ## Enforcement gaps

@@ -44,7 +44,12 @@ pub struct MockScreen {
     selected: Option<usize>,
     /// A custom method being typed for the selected route.
     custom_method: Option<String>,
+    /// Requests the running server answered, newest first; cleared on Start.
+    pub log: std::collections::VecDeque<imposter_app::core::mock::MockLogEntry>,
 }
+
+/// How many answered requests the screen keeps.
+pub const LOG_KEPT: usize = 100;
 
 impl MockScreen {
     pub fn dirty(&self) -> bool {
@@ -55,6 +60,12 @@ impl MockScreen {
 
     pub fn loaded(&self) -> bool {
         self.baseline.is_some()
+    }
+
+    /// Keep an answered request, newest first.
+    pub fn logged(&mut self, entry: imposter_app::core::mock::MockLogEntry) {
+        self.log.push_front(entry);
+        self.log.truncate(LOG_KEPT);
     }
 }
 

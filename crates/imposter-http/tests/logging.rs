@@ -111,31 +111,54 @@ async fn nothing_secret_reaches_the_logs() {
     let mock = tokio::spawn(imposter_http::mock::serve(
         imposter_core::mock::MockConfig {
             port: 0,
-            routes: vec![imposter_core::mock::MockRoute {
-                method: "POST".into(),
-                path: "/mock".into(),
-                body: "response body-secret-value".into(),
-                headers: vec![imposter_core::model::ParamItem::new(
-                    "Set-Cookie",
-                    "header-secret",
-                )],
-                ..Default::default()
-            }],
+            routes: vec![
+                imposter_core::mock::MockRoute {
+                    method: "POST".into(),
+                    path: "/mock".into(),
+                    body: "response body-secret-value".into(),
+                    headers: vec![imposter_core::model::ParamItem::new(
+                        "Set-Cookie",
+                        "header-secret",
+                    )],
+                    ..Default::default()
+                },
+                imposter_core::mock::MockRoute {
+                    method: "POST".into(),
+                    path: "/scripted".into(),
+                    script: "echo".into(),
+                    ..Default::default()
+                },
+            ],
         },
+        // A scripted route reads the body and its console holds a secret: neither is logged.
+        Some(Arc::new(|_, request: imposter_core::mock::MockRequest| {
+            imposter_core::mock::Responded {
+                reply: imposter_core::mock::MockReply {
+                    status: 200,
+                    body: request.body,
+                    ..Default::default()
+                },
+                error: None,
+                console: vec!["printed header-secret".to_owned()],
+            }
+        })),
         move |bound| {
             listening.send(bound).unwrap();
         },
+        Arc::new(|_| {}),
         cancel.clone(),
     ));
     let address = tokio::time::timeout(Duration::from_secs(5), address)
         .await
         .unwrap()
         .unwrap();
-    let mut request = requests[0].clone();
-    request.url = format!("http://{address}/mock");
-    send(&request, &policy, &CancellationToken::new())
-        .await
-        .unwrap();
+    for path in ["mock", "scripted"] {
+        let mut request = requests[0].clone();
+        request.url = format!("http://{address}/{path}");
+        send(&request, &policy, &CancellationToken::new())
+            .await
+            .unwrap();
+    }
     cancel.cancel();
     mock.await.unwrap().unwrap();
 
