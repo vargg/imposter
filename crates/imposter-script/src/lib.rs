@@ -361,43 +361,61 @@ fn count(n: u64) -> String {
 
 /// Whether `source` compiles; the editor shows the answer under the script.
 pub fn check(source: &str) -> Result<(), ScriptError> {
+    compile(source).map(drop)
+}
+
+/// A compiled script, shared cheaply: a load run compiles once and every request runs it.
+#[derive(Clone)]
+pub struct Compiled(Arc<rhai::AST>);
+
+impl std::fmt::Debug for Compiled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Compiled")
+    }
+}
+
+/// Compile `source` once, to run with [`before_compiled`] and [`after_compiled`]. The
+/// syntax tree does not depend on the engine that runs it, so any run's engine can take it.
+pub fn compile(source: &str) -> Result<Compiled, ScriptError> {
     if source.len() > MAX_SOURCE {
         return Err(ScriptError::TooLong);
     }
-    let mut engine = Engine::new();
+    let mut engine = Engine::new_raw();
     engine.set_max_expr_depths(64, 32).disable_symbol("eval");
-    engine.compile(source).map(drop).map_err(|error| {
-        let position = error.position();
-        ScriptError::Compile {
-            line: position.line().unwrap_or(1),
-            column: position.position().unwrap_or(1),
-            message: error.err_type().to_string(),
-        }
-    })
+    engine
+        .compile(source)
+        .map(|ast| Compiled(Arc::new(ast)))
+        .map_err(|error| {
+            let position = error.position();
+            ScriptError::Compile {
+                line: position.line().unwrap_or(1),
+                column: position.position().unwrap_or(1),
+                message: error.err_type().to_string(),
+            }
+        })
 }
 
 fn execute(
     run: &Run,
     engine: &Engine,
-    source: &str,
+    script: &Compiled,
     scope: &mut Scope<'_>,
     vars: bool,
 ) -> Result<(), ScriptError> {
-    check(source)?;
-    let ast = engine.compile(source).map_err(|error| {
-        let position = error.position();
-        ScriptError::Compile {
-            line: position.line().unwrap_or(1),
-            column: position.position().unwrap_or(1),
-            message: error.err_type().to_string(),
-        }
-    })?;
     if vars {
         scope.push("vars", run.vars.clone());
     }
     engine
-        .run_ast_with_scope(scope, &ast)
+        .run_ast_with_scope(scope, &script.0)
         .map_err(|error| run_error(&error))
+}
+
+/// What a script that did not compile reports: nothing ran.
+fn not_compiled(error: ScriptError) -> Outcome {
+    Outcome {
+        error: Some(error),
+        ..Outcome::default()
+    }
 }
 
 fn new_run(values: &Variables) -> Run {
@@ -425,12 +443,25 @@ pub fn before(
     values: &Variables,
     host: Host,
 ) -> Outcome {
+    match compile(source) {
+        Ok(script) => before_compiled(&script, template, values, host),
+        Err(error) => not_compiled(error),
+    }
+}
+
+/// [`before`] with a script compiled once.
+pub fn before_compiled(
+    script: &Compiled,
+    template: &mut RequestTemplate,
+    values: &Variables,
+    host: Host,
+) -> Outcome {
     let run = new_run(values);
     let engine = engine(&run, Phase::Before, host);
     let request = ScriptRequest::new(template.clone(), true);
     let mut scope = Scope::new();
     scope.push("request", request.clone());
-    let result = execute(&run, &engine, source, &mut scope, true);
+    let result = execute(&run, &engine, script, &mut scope, true);
     if result.is_ok() {
         *template = request.template();
     }
@@ -445,12 +476,26 @@ pub fn after(
     values: &Variables,
     host: Host,
 ) -> Outcome {
+    match compile(source) {
+        Ok(script) => after_compiled(&script, template, response, values, host),
+        Err(error) => not_compiled(error),
+    }
+}
+
+/// [`after`] with a script compiled once.
+pub fn after_compiled(
+    script: &Compiled,
+    template: &RequestTemplate,
+    response: &Response,
+    values: &Variables,
+    host: Host,
+) -> Outcome {
     let run = new_run(values);
     let engine = engine(&run, Phase::After, host);
     let mut scope = Scope::new();
     scope.push("request", ScriptRequest::new(template.clone(), false));
     scope.push("response", ScriptResponse(Arc::new(response.clone())));
-    let result = execute(&run, &engine, source, &mut scope, true);
+    let result = execute(&run, &engine, script, &mut scope, true);
     finish(&run, result.err())
 }
 
@@ -475,6 +520,15 @@ pub fn mock(
     state: &mut MockState,
     host: Host,
 ) -> MockRun {
+    let script = match compile(source) {
+        Ok(script) => script,
+        Err(error) => {
+            return MockRun {
+                reply: Err(error),
+                console: Vec::new(),
+            };
+        }
+    };
     let run = new_run(&Variables::new());
     let engine = engine(&run, Phase::Mock, host);
     let out = MockOut(Arc::new(Mutex::new(reply)));
@@ -482,7 +536,7 @@ pub fn mock(
     scope.push("request", MockIn(Arc::new(request.clone())));
     scope.push("response", out.clone());
     scope.push("state", state.0.clone());
-    let result = execute(&run, &engine, source, &mut scope, false).and_then(|()| {
+    let result = execute(&run, &engine, &script, &mut scope, false).and_then(|()| {
         let kept = scope
             .get_value::<rhai::Map>("state")
             .ok_or_else(|| ScriptError::Run {

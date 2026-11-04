@@ -550,3 +550,36 @@ fn a_mock_keeps_its_console_even_when_it_fails() {
         "Mock script, line 1: after"
     );
 }
+
+#[test]
+fn a_script_compiled_once_runs_like_one_compiled_each_time() {
+    let source = r#"request.set_header("X-Id", uuid()); vars.set("n", 1);"#;
+    let script = compile(source).unwrap();
+    let mut first = template();
+    let mut second = template();
+    let once = before_compiled(&script, &mut first, &vars(), host());
+    let again = before_compiled(&script, &mut second, &vars(), host());
+    let mut plain = template();
+    let fresh = before(source, &mut plain, &vars(), host());
+    assert_eq!((once.error.clone(), again.error.clone()), (None, None));
+    assert_eq!(first, plain, "the same engine work, compiled or not");
+    assert_eq!(once.sets, fresh.sets);
+    let after_script = compile(r#"test("ok", response.status == 200);"#).unwrap();
+    let tested = after_compiled(&after_script, &template(), &response(), &vars(), host());
+    assert_eq!(tested.tests.len(), 1);
+    assert!(tested.tests[0].passed);
+}
+
+#[test]
+fn compiling_reports_where_it_failed() {
+    match compile("let a = 1;\nlet b = ;") {
+        Err(ScriptError::Compile { line, column, .. }) => assert_eq!((line, column), (2, 9)),
+        other => panic!("{other:?}"),
+    }
+    let long = "1;".repeat(MAX_SOURCE / 2 + 1);
+    assert!(matches!(compile(&long), Err(ScriptError::TooLong)));
+    let mut request = template();
+    let outcome = before("let = ;", &mut request, &vars(), host());
+    assert!(matches!(outcome.error, Some(ScriptError::Compile { .. })));
+    assert_eq!(request, template(), "nothing ran");
+}
