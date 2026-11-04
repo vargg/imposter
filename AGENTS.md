@@ -853,8 +853,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   executor does: the defining scope, else the active environment, else Global. Why:
   operators jumped between rows, a narrow pane stacked five lines per check with fields cut
   at its edge, and nothing said where a capture would write (the review's #31, #32).
-- **Scripts are Rhai** (`imposter-script`, the only crate that embeds it), pure Rust and
-  sandboxed by design: nothing reaches files, the network, the clock or the environment
+- **Scripts are Rhai** (`imposter-script`, the only crate that embeds it), for requests
+  (before sending, after the response) and for mock routes, pure Rust and sandboxed by
+  design: nothing reaches files, the network, the clock or the environment
   unless the host registers it, and it limits operations, string, array and map sizes and
   call depth. Its features are pinned in the root manifest: `sync` (a compiled script can be
   shared by threads), `no_module` (no `import`, so no file module resolver), `no_time` (the
@@ -1040,6 +1041,15 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **The log:** every answered request reaches the UI through a callback (`MockLogEntry`:
     method, path, status, time, error, console), never a body, and never `tracing`
     (`imposter-http/tests/logging.rs`).
+  - **The screen:** a route's editor ends with "Response script (optional)", the Scripts
+    tab's editor (`scripts_tab::script_editor`) with mock examples. An enabled route whose
+    script does not compile is a `RouteField::Script` problem (`mock_screen::script_problems`):
+    ⚠ in the list, Start disabled naming it. Scripted routes say "· script" after their
+    status, and screen readers hear "Status 200, answered by its script". "Answered
+    requests" under the routes (newest first, the last 100, cleared on Start) shows each
+    request with its time, status in its tone, a script's error and printed lines; it is
+    not called "Requests", which names the header's tab. Why: without it a script's errors
+    and prints would only show as a 500 in the client.
 - **Mocks is one saved loopback-only static HTTP/1 server, started and stopped explicitly.** Enabled routes match exact method and encoded path, ignoring query and body; unmatched requests return 404. A running server keeps its start-time configuration until restarted. Why: predictable responses and no implicit listener after startup. Configuration has its own save/reload/close guard; shutdown cancels and drains the listener and all connections before closing. Enforced by mock domain, service, loopback, and UI tests. Route problems are all found at once (`MockConfig::problems`, each tied to a field) and shown under that field while typing; saving and the server refuse with the first (`validate`), and a disabled Start says which route to fix. Why: a Start button that only greyed out left the user guessing. The screen is a list and an editor: the header puts Port ("auto" for 0) and Start or Stop first, so they never move, then the state in words ("● Stopped", "● Running at http://127.0.0.1:62543" with a copy button), with Revert and Save at the right; the list shows each route's enabled box, method in its color, path, and status or a ⚠ when it has a problem; the editor beside it has the request bar's method picker, path, status, headers, body and a two-click "Delete route". The first route is open until another is chosen. Why: the server's state was not shown, its URL pushed the buttons aside, routes were plain text, and the method was free text (the review's #47–#49).
 
 ## Enforcement gaps

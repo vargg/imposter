@@ -348,4 +348,14 @@ An open request copies its current edits; navigation still resolves unsaved chan
 
 Settings → **Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.
 
-Use **Mocks** to configure a local static HTTP server on `127.0.0.1` (port 8080 by default; 0 chooses an available port). Add routes by exact method and encoded path, with a response status, headers and text body. Query strings and request bodies do not affect matching; unmatched requests return 404. Save before Start; edits to a running server apply after Stop and Start. Configuration persists, but the server never starts automatically and stops when Imposter closes.
+Use **Mocks** to configure a local HTTP server on `127.0.0.1` (port 8080 by default; 0 chooses an available port). Add routes by exact method and encoded path, with a response status, headers and text body. Query strings and request bodies do not affect matching; unmatched requests return 404. Save before Start; edits to a running server apply after Stop and Start. Configuration persists, but the server never starts automatically and stops when Imposter closes.
+
+A route can also have a response script (Rhai, as request scripts are) that starts from its status, headers and body and changes them from the request: echo it, answer 400 when a field is missing, fail the first call and succeed after, or wait before answering. `state` keeps values between requests until the server stops:
+
+```rhai
+state.calls = (state.calls ?? 0) + 1;
+if state.calls == 1 { response.status = 503; }
+response.send_json(#{ calls: state.calls, item: request.json().item });
+```
+
+Scripts read request bodies up to 1 MiB, run one at a time for at most a second, and a failing one answers 500 with its line. A route whose script does not compile keeps the server from starting. While it runs, "Answered requests" lists what came in and what went out, with script errors and printed lines (never bodies).
