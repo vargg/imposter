@@ -531,8 +531,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Other messages** fade after `STATUS_SECONDS`.
   - **Wording:** results read plainly ("200 OK · 12 ms", "Couldn't connect · 3 ms", "Send
     cancelled", `viewer::outcome_summary`), never internal type names.
-  - **During a send** the bar and the response pane show "Sending… n s" with a spinner;
-    the pane never invites a send while one runs.
+  - **During a send** the response pane shows "Sending… n s" with a spinner, and the bar
+    does only while that pane is out of sight (another screen): both at once said it twice.
+    The pane never invites a send while one runs.
   - **Merging:** a failed check makes the result read "· n checks failed", and a capture
     written right after a send is added to that result (" · set token") rather than
     replacing it.

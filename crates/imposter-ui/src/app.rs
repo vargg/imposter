@@ -825,7 +825,7 @@ impl ResponsePane {
 
 struct Execution {
     task: TaskId,
-    /// When the status bar first showed it (egui time), for the elapsed time.
+    /// When it was first shown (egui time), for the elapsed time.
     shown_at: Option<f64>,
 }
 

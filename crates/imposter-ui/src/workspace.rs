@@ -104,7 +104,10 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                 layout_switch(&mut state.layout, ui);
                 ui.separator();
                 let now = ui.input(|i| i.time);
-                if let Some(seconds) = state.sending_for(now) {
+                // The response pane counts a send it shows; the bar only when that pane
+                // is out of sight, so a running send stays visible from other screens.
+                let pane_shown = state.screen == Screen::Requests && state.editor.is_some();
+                if let Some(seconds) = state.sending_for(now).filter(|_| !pane_shown) {
                     ui.add(egui::Spinner::new().size(12.0));
                     ui.label(tone_text(format!("Sending… {seconds:.1} s"), Tone::Muted).small());
                     ui.ctx()

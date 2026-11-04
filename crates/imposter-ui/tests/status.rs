@@ -120,8 +120,8 @@ fn a_running_send_shows_its_time() {
     app.harness.run_steps(3);
     assert_eq!(
         app.harness.query_all_by_label_contains("Sending… ").count(),
-        2,
-        "the status bar and the response pane"
+        1,
+        "the response pane, not the status bar as well"
     );
     assert!(
         app.harness
@@ -129,6 +129,14 @@ fn a_running_send_shows_its_time() {
             .is_none(),
         "no invitation to send while sending"
     );
+    click(&mut app.harness, "History");
+    app.harness.run_steps(2);
+    assert_eq!(
+        app.harness.query_all_by_label_contains("Sending… ").count(),
+        1,
+        "with the pane out of sight, the status bar counts it"
+    );
+    click(&mut app.harness, "Requests");
     settle(&mut app.harness);
     assert!(app.harness.query_by_label_contains("Sending… ").is_none());
     app.harness.get_by_label_contains("200 OK · ");
