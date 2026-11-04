@@ -518,7 +518,7 @@ fn main() {
                 .editor
                 .scripts;
             scripts.before = "request.set_header(\"X-Signature\", hex(hmac_sha256(\"secret\", request.body)));\n".into();
-            scripts.after = "print(`${response.status} in ${response.time_ms} ms`);\ntest(\"status is 2xx\", response.status < 300);\ntest(\"has a name\", || response.path(\"$.name\") != ());\n".into();
+            scripts.after = "print(`${response.status} in ${response.time_ms} ms`);\ntest(\"status is 2xx\", response.status < 300);\ntest(\"the first user has a name\", || response.path(\"$.users[0].name\") != ());\n".into();
         }
         tour.open_tab("Scripts");
         tour.settle();
