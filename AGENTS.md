@@ -774,7 +774,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   the expectations are in `imposter-transfer/tests/openapi.rs`.
 - **File dialogs go through one seam** (`ImposterApp::pick`); tests answer them with
   `script_file_dialogs`, since native dialogs cannot be driven headless.
-- **Every dialog ends with the same button row** (`dialogs::buttons`).
+- **Every dialog ends with the same button row** (`dialogs::buttons`), except a sheet with
+  nothing to choose (the shortcut sheet): it says "Esc to close" beside its title, since Esc
+  and a click outside close every modal, and a lone Close button only took a row. The
+  find and filter bars keep Close: Esc reaches them only while their field has focus.
   - **Order:** the choices and Cancel come first; the main action comes last, filled with
     the accent (or red when destructive) and labelled with a verb (Create, Rename, Save,
     Delete, Import).

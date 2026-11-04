@@ -490,13 +490,20 @@ impl Dialog {
                 }
                 Self::Palette(palette) => palette.show(ui, &mut outcome),
                 Self::Shortcuts => {
-                    ui.heading("Keyboard shortcuts");
+                    // A sheet to read, with nothing to choose: Esc or a click outside closes
+                    // it, as every modal, so it has no button row.
+                    ui.horizontal(|ui| {
+                        ui.heading("Keyboard shortcuts");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(tone_text("Esc to close", Tone::Muted).small());
+                        });
+                    });
                     ui.add_space(4.0);
-                    // The button row stays visible; the list scrolls in what is left.
-                    // Full width, so its scroll bar runs along the sheet's edge.
+                    // The title stays visible; the list scrolls in what is left. Full
+                    // width, so its scroll bar runs along the sheet's edge.
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, true])
-                        .max_height((max_height - 96.0).max(120.0))
+                        .max_height((max_height - 56.0).max(120.0))
                         .show(ui, |ui| {
                             // Clear of the scroll bar; descriptions wrap in what is left
                             // after the keys, whose column fits the widest row in every
@@ -531,9 +538,6 @@ impl Dialog {
                                     });
                             }
                         });
-                    if buttons(ui, &[("Close", Kind::Plain, true)], true).is_some() {
-                        outcome = Outcome::Closed;
-                    }
                 }
                 Self::Companions { .. } => {
                     ui.heading("Companion files");

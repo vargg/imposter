@@ -328,7 +328,12 @@ fn sidebar_settings_and_the_shortcut_sheet() {
         app.harness.state().state.layout.sidebar_visible,
         "shortcuts are inert while the sheet is open"
     );
-    click(&mut app.harness, "Close");
+    app.harness.key_press(Key::Escape);
+    app.harness.run_steps(2);
+    assert!(
+        app.harness.query_by_label("Keyboard shortcuts").is_none(),
+        "Esc closes the sheet"
+    );
 
     press(&mut app, Key::Comma);
     settle(&mut app.harness);

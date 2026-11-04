@@ -99,12 +99,15 @@ fn a_tall_dialog_keeps_its_button_inside_the_smallest_window() {
         egui::Key::Slash,
     );
     app.harness.run_steps(4);
-    let close = app
-        .harness
-        .get_by_role_and_label(Role::Button, "Close")
-        .rect();
+    assert!(
+        app.harness
+            .query_by_role_and_label(Role::Button, "Close")
+            .is_none(),
+        "a sheet to read has no button row"
+    );
+    let hint = app.harness.get_by_label("Esc to close").rect();
     let window = app.harness.ctx.content_rect();
-    assert!(window.contains_rect(close), "{close:?} in {window:?}");
+    assert!(window.contains_rect(hint), "{hint:?} in {window:?}");
     let title = app.harness.get_by_label("Keyboard shortcuts").rect();
     assert!(window.contains_rect(title));
     // The sheet is centred: its content ends as far from the right as the title starts
