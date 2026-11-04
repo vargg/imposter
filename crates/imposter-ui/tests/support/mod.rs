@@ -83,6 +83,17 @@ pub fn open_tab(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     click_button(harness, label);
 }
 
+/// Open the response tab named `label`, from the row or, when it did not fit, from "More".
+pub fn open_response_tab(harness: &mut Harness<'_, ImposterApp>, label: &str) {
+    if harness
+        .query_by_role_and_label(egui::accesskit::Role::Button, label)
+        .is_none()
+    {
+        click_button(harness, "More response tabs");
+    }
+    click_button(harness, label);
+}
+
 /// Click the menu item `label` of the menu just opened; the empty request pane may offer
 /// a button with the same text.
 pub fn click_menu_item(harness: &mut Harness<'_, ImposterApp>, label: &str) {

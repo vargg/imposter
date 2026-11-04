@@ -760,6 +760,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   generates and still removes, with consent, the ones it does not. Rejected: a counter (a
   database write on every send; timestamps and random values cover uniqueness) and Postman's
   fake names and addresses (large tables, little testing value).
+  The response pane's Request tab ("Request as sent") shows the request that brought the
+  shown response, generated values filled in, from `Executed::sent` or the run's record;
+  before it they could be read only in History (the user's note).
 - **Captures set variables from a response, explicitly and visibly** (`core::capture`): a
   variable name and a selector, stored with the request. The value goes to the scope whose
   definition the request saw (so the value it used is the one replaced), else to the active

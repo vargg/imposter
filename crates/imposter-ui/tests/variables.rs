@@ -588,7 +588,8 @@ fn a_dollar_suggests_generated_values_and_the_inspector_explains_them() {
         anchor: egui::pos2(100.0, 100.0),
     });
     app.harness.run_steps(2);
-    app.harness.get_by_label("Generated on each send");
+    app.harness
+        .get_by_label_contains("Generated on each send; the response's Request tab");
     let example = app
         .harness
         .get_by_label_contains("For example: ")

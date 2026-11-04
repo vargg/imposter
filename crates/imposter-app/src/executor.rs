@@ -90,6 +90,10 @@ pub struct Executed {
     /// Values the request's captures took, to write into variables. The caller writes them
     /// ([`write_captures`]) once it knows no unsaved edit to the same scope would be lost.
     pub writes: Vec<Write>,
+    /// What was sent: variables and generated values filled in, as History records it.
+    pub sent: Box<Request>,
+    /// Whether cookies were attached, to show the request as sent.
+    pub attach_cookies: bool,
 }
 
 /// Write captured values, one transaction for all of them.
@@ -283,6 +287,8 @@ pub async fn execute(
 
     let mut template = request.clone();
     template.collection_variables_snapshot = resolved.collection_variables_snapshot.clone();
+    let sent = Box::new(resolved.clone());
+    let attach_cookies = settings.attach_cookies;
     let record = ExecutionRecord {
         timestamp: now(),
         request_id: request.id,
@@ -302,6 +308,8 @@ pub async fn execute(
             response,
             record: Some(id),
             writes,
+            sent,
+            attach_cookies,
         }),
         Err(error) => {
             tracing::warn!(%error, "recording an execution failed");
@@ -310,6 +318,8 @@ pub async fn execute(
                 response,
                 record: None,
                 writes,
+                sent,
+                attach_cookies,
             })
         }
     }

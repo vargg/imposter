@@ -452,3 +452,42 @@ fn headers_show_as_a_table_with_a_copy_per_row_and_raw_on_request() {
     let raw = app.harness.get_by_label("Raw");
     assert_eq!(raw.accesskit_node().toggled(), Some(Toggled::True));
 }
+
+#[test]
+fn the_request_as_sent_shows_the_values_generated_for_it() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime.block_on(Server::start(|_, _| response("200 OK", &[], b"ok")));
+    let url = format!("{}/items/{{{{$uuid}}}}", server.url);
+    let mut app = start_with(move |store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Create", &url);
+    });
+    // Wide, so the request line is one row.
+    app.harness.set_size(egui::vec2(1800.0, 900.0));
+    click(&mut app.harness, "GET Create");
+    settle(&mut app.harness);
+    assert!(
+        app.harness.query_by_label("Request as sent").is_none(),
+        "nothing sent yet"
+    );
+    click(&mut app.harness, "Send");
+    settle(&mut app.harness);
+
+    let line = server.requests()[0].request_line.clone();
+    let uuid = line
+        .split("/items/")
+        .nth(1)
+        .and_then(|rest| rest.split(' ').next())
+        .unwrap()
+        .to_owned();
+    assert_eq!(uuid.len(), 36, "{line}");
+    support::open_response_tab(&mut app.harness, "Request as sent");
+    app.harness
+        .get_by_label_contains(&format!("GET {}/items/{uuid}", server.url));
+    app.harness.get_by_label("Copy request");
+
+    // Another send generates another value, and the tab follows it.
+    click(&mut app.harness, "Send");
+    settle(&mut app.harness);
+    assert!(app.harness.query_by_label_contains(&uuid).is_none());
+}

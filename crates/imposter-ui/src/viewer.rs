@@ -392,11 +392,36 @@ pub struct SentRequest {
     pub language: Language,
 }
 
+impl SentRequest {
+    /// The request as one text: the request line, the headers, a blank line and the body,
+    /// as it goes over the wire.
+    pub fn as_text(&self) -> String {
+        let mut text = self.summary.clone();
+        if !self.headers.is_empty() {
+            text.push('\n');
+            text.push_str(&self.headers);
+        }
+        if !self.body.is_empty() {
+            text.push_str("\n\n");
+            text.push_str(&self.body);
+        }
+        text
+    }
+}
+
 /// What `record` sent, prepared the same way the executor prepares it. Records that no longer
 /// prepare (older formats) show their method and URL with an explanation.
 pub fn sent_request(record: &ExecutionRecord) -> SentRequest {
-    let template = &record.resolved.template;
-    let prepared = match prepare::prepare(template, record.settings.attach_cookies) {
+    sent_request_of(&record.resolved, record.settings.attach_cookies)
+}
+
+/// What the resolved request `sent` went out as; see [`sent_request`].
+pub fn sent_request_of(
+    sent: &imposter_app::core::model::Request,
+    attach_cookies: bool,
+) -> SentRequest {
+    let template = &sent.template;
+    let prepared = match prepare::prepare(template, attach_cookies) {
         Ok(prepared) => prepared,
         Err(error) => {
             return SentRequest {

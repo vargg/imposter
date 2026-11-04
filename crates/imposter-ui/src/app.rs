@@ -656,6 +656,8 @@ pub enum ResponseTab {
     Headers,
     /// Results of the request's checks; offered only when the response has some.
     Tests,
+    /// The request as sent, generated values included; offered once one was sent.
+    Request,
 }
 
 pub struct ResponsePane {
@@ -676,6 +678,9 @@ pub struct ResponsePane {
     /// The last send went nowhere, and why; shown instead of a response.
     pub blocked: Option<NotSent>,
     pub filter: ResponseFilter,
+    /// The request that brought the shown response, as one text (`SentRequest::as_text`).
+    pub sent: Option<String>,
+    pub sent_view: ViewerState,
     /// Identifies the shown response, so a late filter result for another one is dropped.
     shown: u64,
 }
@@ -753,6 +758,8 @@ impl Default for ResponsePane {
             body_folds: BTreeSet::new(),
             blocked: None,
             filter: ResponseFilter::default(),
+            sent: None,
+            sent_view: ViewerState::new(),
             shown: 0,
         }
     }
@@ -773,6 +780,7 @@ impl ResponsePane {
         }
         self.response = Some(response);
         self.blocked = None;
+        self.sent = None;
         self.body_folds.clear();
         self.shown = NEXT_SHOWN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // The filter stays open with its query and runs again on the new body.
@@ -1368,7 +1376,11 @@ impl ImposterApp {
             Message::Run { generation, result } => {
                 if generation == self.state.generation {
                     match result {
-                        Ok(Some(record)) => self.state.response.show(record.response),
+                        Ok(Some(record)) => {
+                            let sent = crate::viewer::sent_request(&record).as_text();
+                            self.state.response.show(record.response);
+                            self.state.response.sent = Some(sent);
+                        }
                         Ok(None) => self.status("That run is no longer in history"),
                         Err(error) => self.error("History could not be loaded", error),
                     }
@@ -2407,6 +2419,10 @@ impl ImposterApp {
                 self.request_status(&summary, tone);
                 self.state.response.shown_run = executed.record;
                 self.state.response.show(response);
+                self.state.response.sent = Some(
+                    crate::viewer::sent_request_of(&executed.sent, executed.attach_cookies)
+                        .as_text(),
+                );
                 if let Some(kept) = kept {
                     self.state.response.notice = Some((kept, Tone::Warning));
                 }

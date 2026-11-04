@@ -1138,7 +1138,13 @@ pub fn inspector(
                     }
                     (None, None) => match imposter_app::core::generate::describe(&current.name) {
                         Some(Ok(description)) => {
-                            ui.label(tone_text("Generated on each send", Tone::Muted).small());
+                            ui.label(
+                                tone_text(
+                                    "Generated on each send; the response's Request tab shows the value sent",
+                                    Tone::Muted,
+                                )
+                                .small(),
+                            );
                             ui.label(description);
                             let sample: String = ctx.data_mut(|d| {
                                 d.get_temp_mut_or_insert_with(sample_id, || {

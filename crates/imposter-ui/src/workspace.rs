@@ -1886,6 +1886,8 @@ pub fn response_body(
         headers_view,
         headers_raw,
         tab,
+        sent,
+        sent_view,
         ..
     } = response_state;
     let Some((preview, headers)) = preview.as_ref() else {
@@ -1967,6 +1969,11 @@ pub fn response_body(
             });
         }
         ResponseTab::Tests => {}
+        ResponseTab::Request => {
+            if let Some(text) = sent.as_ref() {
+                widgets::viewer_tools(ui, sent_view, text, "Copy request");
+            }
+        }
     };
     let results = response.as_ref().map_or(&[][..], |r| r.checks.as_slice());
     let captured = response.as_ref().map_or(&[][..], |r| r.captures.as_slice());
@@ -1994,6 +2001,12 @@ pub fn response_body(
                 .named("Check results")
                 .badge(badge),
         );
+    }
+    if sent.is_some() {
+        // Where generated values ({{$uuid}}, {{$timestamp}}) can be read back.
+        tabs.push(widgets::TabSpec::new(ResponseTab::Request, "Request").named("Request as sent"));
+    } else if *tab == ResponseTab::Request {
+        *tab = ResponseTab::Body;
     }
     ui.horizontal(|ui| {
         // At least the tools' menu button stays on the row, and Raw beside the headers'.
@@ -2063,6 +2076,16 @@ pub fn response_body(
             crate::checks::results(ui, results, captured);
             None
         }
+        ResponseTab::Request => sent.as_ref().and_then(|text| {
+            widgets::code_viewer(
+                ui,
+                &format!("{id} request"),
+                sent_view,
+                text,
+                Language::Plain,
+                None,
+            )
+        }),
     };
     if close_filter {
         filter.close();
