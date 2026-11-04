@@ -858,6 +858,16 @@ numbers, so both are excluded. Each logical change is its own commit.
     and V8. Boa, pure-Rust JavaScript, was the alternative; it has no memory cap and cannot be
     stopped from another thread. JavaScript would have been familiar and kept Postman's
     `pm.*` scripts, which therefore are still removed on import, with consent.
+  - **The sandbox** (`imposter_script::{before, after}`), one engine per run: at most
+    1,000,000 operations, strings of 8 MiB (bodies are strings in scripts), arrays and
+    maps of 100,000 items, 64 call levels, 64 KiB of source, 500 tests; `eval` is disabled.
+    Every 1,024 operations the host is asked whether to stop (its deadline, or Cancel), so
+    the crate reads no clock. A limit or a stop ends the script with a plain "Stopped: …"
+    and is never taken for a failed test. `print` and `debug` go to a console capped at 200
+    lines and 64 KiB, never to stdout or `tracing`. Errors carry their line (and column when
+    compiling) without Rhai's own position suffix. Digests and HMACs give bytes, so
+    signatures can be chained (AWS Signature 4); `hex` and `base64_encode` make text. The API
+    is one table (`imposter_script::API`), and a test runs every example in its phase.
   - **Measured** (Phase 0, M-series Mac, release): the binary grows 1.9 MiB (19.3 to 21.3
     MB); Rhai compiles in about 23 s; an engine is made in about 0.13 ms; parsing and walking
     a 10,000-item JSON array takes about 12.5 ms.

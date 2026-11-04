@@ -2293,7 +2293,7 @@ dependencies = [
 
 [[package]]
 name = "imposter"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "eframe",
@@ -2306,7 +2306,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-app"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "getrandom 0.4.3",
  "imposter-core",
@@ -2325,7 +2325,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-core"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "base64",
  "indexmap",
@@ -2340,7 +2340,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-http"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "base64",
  "bytes",
@@ -2373,15 +2373,22 @@ dependencies = [
 
 [[package]]
 name = "imposter-script"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
+ "base64",
+ "hmac",
  "imposter-core",
+ "md-5",
  "rhai",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "imposter-store"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "imposter-core",
  "rusqlite",
@@ -2395,7 +2402,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-testkit"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "pkcs8",
  "rcgen",
@@ -2407,7 +2414,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-transfer"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "imposter-core",
  "indexmap",
@@ -2422,7 +2429,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-ui"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "eframe",
  "egui",

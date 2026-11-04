@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 rust-version = "1.99"
 publish = false
@@ -49,6 +49,7 @@ hyper = { version = "1.12.0", features = ["server", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
 http-body-util = "0.1.5"
 getrandom = "0.4.3"
+hmac = "0.13.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
 jsonschema = { version = "0.60.1", default-features = false }
 url = "2.5.8"

@@ -15,6 +15,17 @@ pub enum Outcome {
     Cancelled,
 }
 
+/// A test an after-response script ran, and how it ended; kept with the run like a check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptTest {
+    pub name: String,
+    pub passed: bool,
+    /// Why it failed: the script's message, or "expected 3, got 2".
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Response {
