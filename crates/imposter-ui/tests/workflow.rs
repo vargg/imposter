@@ -9,7 +9,9 @@ use imposter_app::core::settings::AppSettings;
 use imposter_app::store::{collections, executions, kv};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::CloseState;
-use support::{answer_name, click, collection, request, settle, start, start_with, type_into};
+use support::{
+    answer_name, click, collection, request, save_state, settle, start, start_with, type_into,
+};
 
 #[test]
 fn an_empty_database_offers_to_create_a_collection() {
@@ -85,13 +87,13 @@ fn new_requests_open_in_the_editor_and_autosave_edits() {
         "Request URL",
         "https://example.com/health?verbose=1",
     );
-    app.harness.get_by_label("Unsaved");
+    assert_eq!(save_state(&app.harness, "Save request"), "Unsaved");
     for _ in 0..4 {
         app.harness.step();
     }
     settle(&mut app.harness);
 
-    app.harness.get_by_label("Saved");
+    assert_eq!(save_state(&app.harness, "Save request"), "Saved");
     let id = app
         .harness
         .state()
@@ -245,7 +247,7 @@ fn saving_from_the_guard_persists_then_navigates() {
     click(&mut app.harness, "GET First");
     settle(&mut app.harness);
     type_into(&mut app.harness, "Request URL", "/saved");
-    app.harness.get_by_label("Unsaved");
+    assert_eq!(save_state(&app.harness, "Save request"), "Unsaved");
 
     click(&mut app.harness, "GET Second");
     click(&mut app.harness, "Save");
@@ -474,14 +476,15 @@ fn every_screen_saves_from_the_same_place() {
         click(&mut app.harness, screen);
         settle(&mut app.harness);
         let icon = app.harness.get_by_label(save).rect();
-        let status = app.harness.get_by_label("Saved").rect();
         assert!(
             icon.top() < 120.0 && icon.right() > size.x - 60.0,
             "{screen}: {icon:?}"
         );
+        // A muted icon already says there is nothing to save; the word is for screen readers.
+        assert_eq!(save_state(&app.harness, save), "Saved", "{screen}");
         assert!(
-            status.right() <= icon.left() && (status.center().y - icon.center().y).abs() < 4.0,
-            "{screen}: the state sits just left of the icon"
+            app.harness.query_by_label("Saved").is_none(),
+            "{screen}: no word repeats what the icon shows"
         );
     }
     assert!(

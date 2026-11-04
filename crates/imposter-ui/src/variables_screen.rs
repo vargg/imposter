@@ -7,7 +7,9 @@ use crate::app::{Action, State, VariablesAction};
 use crate::icons::{self, Icon};
 use crate::theme::{Tone, palette};
 use crate::vars::{self, Scope};
-use crate::widgets::{SaveStatus, env_option_text, env_text, name, save_controls, tone_text};
+use crate::widgets::{
+    SaveStatus, SaveWord, env_option_text, env_text, name, save_controls, tone_text,
+};
 use imposter_app::core::model::EnvColor;
 
 fn scope_label(state: &State, scope: Scope) -> String {
@@ -150,21 +152,21 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let screen = &state.variables;
             let dirty = screen.dirty();
-            let (text, tone) = match &screen.status {
-                Some((text, tone)) => (text.as_str(), *tone),
-                None if !screen.loaded => ("Loading…", Tone::Muted),
-                None if dirty => ("Unsaved", Tone::Warning),
-                None => ("Saved", Tone::Muted),
+            let word = match screen.status {
+                Some(word) => word,
+                None if !screen.loaded => SaveWord::Loading,
+                None if screen.is_saving() => SaveWord::Saving,
+                None if dirty => SaveWord::Unsaved,
+                None => SaveWord::Saved,
             };
-            let detail = match text {
-                "Unsaved" => "Unsaved variable changes",
-                "Saved" => "The variables are saved",
+            let detail = match word {
+                SaveWord::Unsaved => "Unsaved variable changes",
+                SaveWord::Saved => "The variables are saved",
                 _ => "",
             };
             let status = SaveStatus {
-                text,
+                word,
                 detail,
-                tone,
                 enabled: dirty,
             };
             if save_controls(ui, &status, "Save variables") {

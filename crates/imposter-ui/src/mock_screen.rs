@@ -7,7 +7,7 @@ use imposter_app::runtime::TaskId;
 
 use crate::app::{Action, State};
 use crate::theme::{Tone, palette};
-use crate::widgets::{self, SaveStatus};
+use crate::widgets::{self, SaveStatus, SaveWord};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MockAction {
@@ -204,28 +204,21 @@ fn header(
         server_state(ui, screen);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let status = SaveStatus {
-                text: if screen.saving {
-                    "Saving…"
+                word: if screen.saving {
+                    SaveWord::Saving
                 } else if screen.error.is_some() {
-                    "Save failed"
+                    SaveWord::Failed
                 } else if !screen.loaded() {
-                    "Loading…"
+                    SaveWord::Loading
                 } else if screen.dirty() {
-                    "Unsaved"
+                    SaveWord::Unsaved
                 } else {
-                    "Saved"
+                    SaveWord::Saved
                 },
                 detail: screen
                     .error
                     .as_deref()
                     .unwrap_or("Save the configuration; restart the server to apply changes"),
-                tone: if screen.error.is_some() {
-                    Tone::Error
-                } else if screen.dirty() {
-                    Tone::Warning
-                } else {
-                    Tone::Muted
-                },
                 enabled: screen.loaded() && screen.dirty() && !screen.saving && !screen.loading,
             };
             if widgets::save_controls(ui, &status, "Save mocks") {

@@ -10,7 +10,7 @@ use imposter_app::core::model::Variables;
 use imposter_app::core::settings::AppSettings;
 use imposter_app::store::{environments, kv};
 use imposter_ui::app::Screen;
-use support::{click, collection, request, settle, start_with, type_into};
+use support::{click, collection, request, save_state, settle, start_with, type_into};
 
 fn palette(app: &mut support::App, query: &str) {
     app.harness.key_press_modifiers(Modifiers::COMMAND, Key::K);
@@ -496,7 +496,7 @@ fn a_curl_command_pasted_over_the_whole_url_replaces_the_request() {
     assert_eq!(edited.url, "https://api.test/users?page=2");
     assert!(edited.headers.iter().any(|h| h.name == "X-Trace"));
     assert_eq!(edited.body_text, r#"{"a":1}"#);
-    app.harness.get_by_label("Unsaved");
+    assert_eq!(save_state(&app.harness, "Save request"), "Unsaved");
     app.harness
         .get_by_label("Replaced from curl — not saved yet");
 }

@@ -36,7 +36,7 @@ use crate::settings_screen::SettingsForm;
 use crate::theme::{self, Tone};
 use crate::tree::{NodeId, TreeView};
 use crate::vars::{self, Scope};
-use crate::widgets::{FileRequest, Inspection, SaveStatus, ViewerState};
+use crate::widgets::{FileRequest, Inspection, SaveStatus, SaveWord, ViewerState};
 
 /// How long shutdown waits for background work before aborting it.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
@@ -377,7 +377,9 @@ pub struct SettingsScreen {
     /// The stored settings, including those the screen does not show.
     base: AppSettings,
     baseline: Option<SettingsForm>,
-    pub status: Option<(String, Tone)>,
+    /// A problem the save controls show until the next edit; otherwise the state follows
+    /// from the form.
+    pub status: Option<SaveWord>,
     saving: bool,
     loading: bool,
     /// Saving or discarding resolves an app close.
@@ -416,11 +418,7 @@ impl SettingsScreen {
     }
 
     fn refresh_status(&mut self) {
-        self.status = Some(if self.dirty() {
-            ("Unsaved".into(), Tone::Warning)
-        } else {
-            ("Saved".into(), Tone::Muted)
-        });
+        self.status = None;
     }
 }
 
@@ -504,7 +502,9 @@ pub struct VariablesScreen {
     pub scope: Scope,
     pub rows: Vec<vars::Row>,
     baseline: Vec<vars::Entry>,
-    pub status: Option<(String, Tone)>,
+    /// A problem the save controls show until the next edit; otherwise the state follows
+    /// from the rows.
+    pub status: Option<SaveWord>,
     pub loaded: bool,
     pub confirm_clear: bool,
     /// A name to highlight after "Open definition".
@@ -518,6 +518,10 @@ pub struct VariablesScreen {
 impl VariablesScreen {
     pub fn dirty(&self) -> bool {
         self.loaded && vars::entries(&self.rows) != self.baseline
+    }
+
+    pub fn is_saving(&self) -> bool {
+        self.saving
     }
 }
 
@@ -2158,43 +2162,32 @@ impl ImposterApp {
     /// whether saving is possible now, and its tone.
     pub fn save_label(&self) -> Option<SaveStatus<'static>> {
         let pane = self.state.editor.as_ref()?;
-        let (text, detail, enabled, tone) = if !pane.invalid.is_empty() {
+        let (word, detail, enabled) = if !pane.invalid.is_empty() {
             (
-                "Invalid fields",
+                SaveWord::Invalid,
                 "Fix the highlighted fields to save",
                 false,
-                Tone::Error,
             )
         } else if let Some(id) = pane.editor.id() {
             match self.state.saver.state(id) {
-                SaveState::Saving => ("Saving…", "Saving the request", false, Tone::Muted),
+                SaveState::Saving => (SaveWord::Saving, "Saving the request", false),
                 SaveState::Failed => (
-                    "Save failed",
+                    SaveWord::Failed,
                     "The request changes could not be saved; retry or discard them",
                     true,
-                    Tone::Error,
                 ),
-                SaveState::Dirty => ("Unsaved", "Unsaved request changes", true, Tone::Warning),
-                SaveState::Saved if self.state.settings.autosave => (
-                    "Saved",
-                    "Changes are saved automatically",
-                    false,
-                    Tone::Muted,
-                ),
-                SaveState::Saved => ("Saved", "The request is saved", false, Tone::Muted),
+                SaveState::Dirty => (SaveWord::Unsaved, "Unsaved request changes", true),
+                SaveState::Saved if self.state.settings.autosave => {
+                    (SaveWord::Saved, "Changes are saved automatically", false)
+                }
+                SaveState::Saved => (SaveWord::Saved, "The request is saved", false),
             }
         } else {
-            (
-                "Draft",
-                "Not saved to a collection yet",
-                true,
-                Tone::Warning,
-            )
+            (SaveWord::Draft, "Not saved to a collection yet", true)
         };
         Some(SaveStatus {
-            text,
+            word,
             detail,
-            tone,
             enabled,
         })
     }
@@ -3147,10 +3140,11 @@ impl ImposterApp {
                 }
             }
             Err(error) => {
-                screen.status = Some((
-                    format!("Variables could not be loaded: {error}"),
+                screen.status = Some(SaveWord::Unavailable);
+                self.request_status(
+                    &format!("Variables could not be loaded: {error}"),
                     Tone::Error,
-                ));
+                );
             }
         }
     }
@@ -3354,10 +3348,11 @@ impl ImposterApp {
         let (variables, saved) = match vars::to_scope(&screen.rows) {
             Ok(scope) => scope,
             Err(error) => {
-                screen.status = Some((error.to_string(), Tone::Error));
+                screen.status = Some(SaveWord::Invalid);
                 if screen.pending.take() == Some(VarTransition::Close) {
                     self.state.close = CloseState::Open;
                 }
+                self.request_status(&error.to_string(), Tone::Error);
                 return;
             }
         };
@@ -3379,7 +3374,7 @@ impl ImposterApp {
             Ok(()) => {
                 if scope == screen.scope {
                     screen.baseline = vars::entries(&screen.rows);
-                    screen.status = Some(("Saved".into(), Tone::Muted));
+                    screen.status = None;
                 }
                 if let Some(transition) = screen.pending.take() {
                     self.variables_perform(transition);
@@ -3387,13 +3382,14 @@ impl ImposterApp {
                 self.load_snapshot();
             }
             Err(error) => {
-                screen.status = Some((
-                    format!("Save failed, changes retained: {error}"),
-                    Tone::Error,
-                ));
+                screen.status = Some(SaveWord::Failed);
                 if screen.pending.take() == Some(VarTransition::Close) {
                     self.state.close = CloseState::Open;
                 }
+                self.request_status(
+                    &format!("Variables not saved, changes kept: {error}"),
+                    Tone::Error,
+                );
             }
         }
     }
@@ -3408,10 +3404,7 @@ impl ImposterApp {
             VariablesAction::Save => self.save_variables(),
             VariablesAction::Revert => self.revert_variables(),
             VariablesAction::Edited => {
-                let screen = &mut self.state.variables;
-                screen.status = screen
-                    .dirty()
-                    .then(|| ("Unsaved".to_owned(), Tone::Warning));
+                self.state.variables.status = None;
             }
             VariablesAction::NewEnvironment => {
                 self.variables_navigate(VarTransition::NewEnvironment);
@@ -3453,8 +3446,12 @@ impl ImposterApp {
                 screen.base = settings;
                 screen.refresh_status();
             }
-            Err(_) => {
-                screen.status = Some(("Settings could not be loaded".into(), Tone::Error));
+            Err(error) => {
+                screen.status = Some(SaveWord::Unavailable);
+                self.request_status(
+                    &format!("Settings could not be loaded: {error}"),
+                    Tone::Error,
+                );
             }
         }
     }
@@ -3468,7 +3465,8 @@ impl ImposterApp {
         let form = screen.form.clone();
         let settings = form.apply(&screen.base);
         if let Err(error) = settings.validate() {
-            screen.status = Some((format!("Failed to save settings: {error}"), Tone::Error));
+            screen.status = Some(SaveWord::Invalid);
+            self.request_status(&format!("Settings not saved: {error}"), Tone::Error);
             self.settings_close_failed();
             return;
         }
@@ -3497,11 +3495,7 @@ impl ImposterApp {
             Ok(settings) => {
                 screen.baseline = Some(form);
                 screen.base = settings.clone();
-                screen.status = Some(if screen.dirty() {
-                    ("Unsaved".into(), Tone::Warning)
-                } else {
-                    ("Saved".into(), Tone::Muted)
-                });
+                screen.status = None;
                 if !settings.autosave {
                     self.state.autosave_due = None;
                 }
@@ -3514,7 +3508,8 @@ impl ImposterApp {
                 }
             }
             Err(error) => {
-                screen.status = Some((format!("Failed to save settings: {error}"), Tone::Error));
+                screen.status = Some(SaveWord::Failed);
+                self.request_status(&format!("Settings not saved: {error}"), Tone::Error);
                 self.settings_close_failed();
             }
         }

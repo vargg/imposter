@@ -1338,22 +1338,72 @@ pub fn heading_cell(ui: &mut Ui, width: f32, text: &str) {
     );
 }
 
-/// A screen's save state: one word, its explanation for the hover text, and whether Save
+/// Where a screen's saving stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveWord {
+    Saved,
+    Unsaved,
+    /// A request not in a collection yet.
+    Draft,
+    Saving,
+    Failed,
+    Invalid,
+    Loading,
+    /// The screen's data could not be loaded.
+    Unavailable,
+}
+
+impl SaveWord {
+    pub fn text(self) -> &'static str {
+        match self {
+            Self::Saved => "Saved",
+            Self::Unsaved => "Unsaved",
+            Self::Draft => "Draft",
+            Self::Saving => "Saving…",
+            Self::Failed => "Save failed",
+            Self::Invalid => "Invalid fields",
+            Self::Loading => "Loading…",
+            Self::Unavailable => "Not loaded",
+        }
+    }
+
+    pub fn tone(self) -> Tone {
+        match self {
+            Self::Saved | Self::Saving | Self::Loading => Tone::Muted,
+            Self::Unsaved | Self::Draft => Tone::Warning,
+            Self::Failed | Self::Invalid | Self::Unavailable => Tone::Error,
+        }
+    }
+
+    /// Whether the word is written beside the icon. Saved, Unsaved and Draft are already
+    /// told by the icon (in the text color while there is something to save) and, for a
+    /// draft, by its banner; the rest say what the icon cannot.
+    pub fn shown(self) -> bool {
+        !matches!(self, Self::Saved | Self::Unsaved | Self::Draft)
+    }
+}
+
+/// A screen's save state: its word, the explanation for the hover text, and whether Save
 /// can run now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SaveStatus<'a> {
-    pub text: &'a str,
+    pub word: SaveWord,
     pub detail: &'a str,
-    pub tone: Tone,
     pub enabled: bool,
 }
 
-/// The save controls every screen shares, at its top right: the state, then a disk icon named
-/// `action` with the shortcut in its hover text. Call inside a right-to-left layout. Returns
-/// whether Save was clicked.
+/// The save controls every screen shares, at its top right: the state when the icon does
+/// not tell it, then a disk icon named `action` with the shortcut in its hover text. Screen
+/// readers hear the state as the icon's description. Call inside a right-to-left layout.
+/// Returns whether Save was clicked.
 pub fn save_controls(ui: &mut Ui, status: &SaveStatus<'_>, action: &str) -> bool {
-    let hint = crate::shortcuts::hint(ui.ctx(), action, &crate::shortcuts::SAVE);
-    let clicked = ui
+    let shortcut = crate::shortcuts::hint(ui.ctx(), action, &crate::shortcuts::SAVE);
+    let hint = match (status.word.shown(), status.detail.is_empty()) {
+        (false, false) => format!("{}\n{shortcut}", status.detail),
+        (false, true) => format!("{}\n{shortcut}", status.word.text()),
+        (true, _) => shortcut,
+    };
+    let response = ui
         .add_enabled_ui(status.enabled, |ui| {
             // With something to save the icon is in the text color, apart from disabled.
             if status.enabled {
@@ -1362,13 +1412,18 @@ pub fn save_controls(ui: &mut Ui, status: &SaveStatus<'_>, action: &str) -> bool
                 icons::button_with_hint(ui, Icon::Save, action, &hint, false)
             }
         })
-        .inner
-        .clicked();
-    let label = ui.label(tone_text(status.text, status.tone));
-    if !status.detail.is_empty() {
-        label.on_hover_text(status.detail);
+        .inner;
+    let word = status.word.text().to_owned();
+    response
+        .ctx
+        .accesskit_node_builder(response.id, |node| node.set_description(word));
+    if status.word.shown() {
+        let label = ui.label(tone_text(status.word.text(), status.word.tone()));
+        if !status.detail.is_empty() {
+            label.on_hover_text(status.detail);
+        }
     }
-    clicked
+    response.clicked()
 }
 
 /// How long a remove button stays armed after its first click.
@@ -2549,6 +2604,25 @@ fn restyle(job: &mut LayoutJob, range: std::ops::Range<usize>, change: impl Fn(&
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_states_the_save_icon_cannot_show_are_written() {
+        let quiet = [SaveWord::Saved, SaveWord::Unsaved, SaveWord::Draft];
+        for word in quiet {
+            assert!(!word.shown(), "{word:?}");
+        }
+        for word in [
+            SaveWord::Saving,
+            SaveWord::Failed,
+            SaveWord::Invalid,
+            SaveWord::Loading,
+            SaveWord::Unavailable,
+        ] {
+            assert!(word.shown(), "{word:?}");
+        }
+        assert_eq!(SaveWord::Failed.tone(), Tone::Error);
+        assert_eq!(SaveWord::Unsaved.tone(), Tone::Warning);
+    }
 
     #[test]
     fn an_unknown_variable_is_tinted_and_a_known_one_is_not() {

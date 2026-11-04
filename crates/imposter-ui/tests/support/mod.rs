@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::paths::open_store;
 use imposter_app::store::Store;
 use imposter_ui::app::ImposterApp;
@@ -160,4 +160,13 @@ pub fn request(
             imposter_app::store::collections::create_request(db, collection, None, &template)
         })
         .unwrap()
+}
+
+/// The save state of the screen whose Save icon is named `save`, as screen readers hear it
+/// ("Saved", "Unsaved", "Draft", "Save failed"…): the icon's description.
+pub fn save_state(harness: &Harness<'_, ImposterApp>, save: &str) -> String {
+    harness
+        .get_all_by_label(save)
+        .find_map(|node| node.accesskit_node().description())
+        .unwrap_or_else(|| panic!("{save} has no save state"))
 }

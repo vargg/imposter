@@ -6,7 +6,7 @@ use imposter_app::core::settings::{AppSettings, HostIdentity};
 
 use crate::app::{Action, State};
 use crate::theme::Tone;
-use crate::widgets::{SaveStatus, save_controls};
+use crate::widgets::{SaveStatus, SaveWord, save_controls};
 
 const MIB: u64 = 1024 * 1024;
 
@@ -242,25 +242,21 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     let loaded = screen.is_loaded();
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let (text, tone) = match &screen.status {
-                Some((text, tone)) => (text.as_str(), *tone),
-                None if !loaded => ("Loading…", Tone::Muted),
-                None => ("Saved", Tone::Muted),
+            let word = match screen.status {
+                Some(word) => word,
+                None if !loaded => SaveWord::Loading,
+                None if screen.is_saving() => SaveWord::Saving,
+                None if screen.dirty() => SaveWord::Unsaved,
+                None => SaveWord::Saved,
             };
-            let detail = match text {
-                "Unsaved" => "Unsaved application settings",
-                "Saved" => "The application settings are saved",
+            let detail = match word {
+                SaveWord::Unsaved => "Unsaved application settings",
+                SaveWord::Saved => "The application settings are saved",
                 _ => "",
             };
-            let (text, detail) = if text.starts_with("Failed to save settings:") {
-                ("Save failed", text)
-            } else {
-                (text, detail)
-            };
             let status = SaveStatus {
-                text,
+                word,
                 detail,
-                tone,
                 enabled: screen.dirty() && !screen.is_saving(),
             };
             save = save_controls(ui, &status, "Save settings");

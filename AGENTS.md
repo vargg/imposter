@@ -564,14 +564,19 @@ numbers, so both are excluded. Each logical change is its own commit.
 
   Why: the review found raw `os error 61` text clipped at the pane edge, and an empty-state
   invitation shown right under "Request failed".
-- **Every screen saves the same way:** its state in one word and a disk icon at the top right
+- **Every screen saves the same way:** a disk icon at the top right, with its state in a word
+  when the icon cannot show it
   (`widgets::save_controls`); Variables adds a revert icon. The header logo is the app icon
   drawing, like the window and Dock icon.
-- **Save states are one word** ("Saved", "Unsaved", "Saving…", "Save failed", "Draft",
-  "Invalid fields") in the request bar, the Variables screen and Settings, colored by tone,
-  with the explanation in the hover text; Save is an icon button named by its action. Section
-  headings and explanatory subtitles are left out where tabs and controls already say it.
-  Why: user review found the longer texts noisy (the Python app's wording was kept until then).
+- **Save states are one word** (`widgets::SaveWord`: "Saving…", "Save failed", "Invalid
+  fields", "Loading…", "Not loaded") beside the Save icon, colored by tone, in the request
+  bar, Variables, Settings and Mocks. Saved, Unsaved and Draft are not written: the icon is
+  in the text color while there is something to save, and a draft has its banner. Every
+  state is the icon's accessible description, with the explanation in its hover text. A
+  longer reason (a duplicate name, a failed write) goes to the status bar, never into the
+  word. Save is an icon button named by its action. Section headings and explanatory
+  subtitles are left out where tabs and controls already say it. Why: user review found the
+  longer texts noisy, and later that "Unsaved" beside a highlighted Save said it twice.
 - **Removing a row takes two clicks** (`widgets::remove_button`): the first arms the × (red,
   "Click again to remove …"), the second removes; it disarms after a few seconds or when the
   pointer goes elsewhere. Why: one stray click must not lose a header or variable; this works

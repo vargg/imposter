@@ -10,7 +10,7 @@ use imposter_app::core::settings::AppSettings;
 use imposter_app::store::{collections, kv};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::Screen;
-use support::{click, collection, request, settle, start, start_with, type_into};
+use support::{click, collection, request, save_state, settle, start, start_with, type_into};
 
 fn press(app: &mut support::App, key: Key) {
     app.harness.key_press_modifiers(Modifiers::COMMAND, key);
@@ -190,7 +190,7 @@ fn the_save_icon_saves_and_the_status_is_one_word() {
             .collect::<Vec<_>>()
     };
     let text = imposter_ui::theme::palette().text;
-    app.harness.get_by_label("Saved");
+    assert_eq!(save_state(&app.harness, "Save request"), "Saved");
     assert!(disabled(&app), "nothing to save");
     let resting = icon_colors(&app);
     assert!(
@@ -199,7 +199,7 @@ fn the_save_icon_saves_and_the_status_is_one_word() {
     );
 
     type_into(&mut app.harness, "Request URL", "/x");
-    app.harness.get_by_label("Unsaved");
+    assert_eq!(save_state(&app.harness, "Save request"), "Unsaved");
     assert!(!disabled(&app));
     app.harness.hover_at(egui::pos2(0.0, 0.0));
     app.harness.run_steps(2);
@@ -211,7 +211,7 @@ fn the_save_icon_saves_and_the_status_is_one_word() {
     click(&mut app.harness, "Save request");
     settle(&mut app.harness);
 
-    app.harness.get_by_label("Saved");
+    assert_eq!(save_state(&app.harness, "Save request"), "Saved");
     let saved = app
         .harness
         .state()

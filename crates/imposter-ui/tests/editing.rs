@@ -12,7 +12,8 @@ use imposter_app::store::{collections, executions, kv};
 use imposter_ui::app::{CloseState, EditorTab};
 use imposter_ui::layout::{MIN_WINDOW, Orientation};
 use support::{
-    answer_name, click, click_button, collection, request, settle, start_with, type_into,
+    answer_name, click, click_button, collection, request, save_state, settle, start_with,
+    type_into,
 };
 
 fn open(app: &mut support::App, label: &str) {
@@ -173,7 +174,7 @@ fn a_restored_draft_is_saved_into_the_selected_collection() {
             .unwrap();
     });
     app.harness.get_by_label("Unsaved draft / Draft");
-    app.harness.get_by_label("Draft");
+    assert_eq!(save_state(&app.harness, "Save to collection…"), "Draft");
 
     click(&mut app.harness, "Save to collection…");
     app.harness.get_by_label("Request name in API");

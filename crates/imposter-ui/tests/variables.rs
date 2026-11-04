@@ -11,7 +11,9 @@ use imposter_app::store::{environments, executions};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::{CloseState, EditorTab, Screen};
 use imposter_ui::vars::Scope;
-use support::{click, click_button, collection, request, settle, start_with, type_into};
+use support::{
+    click, click_button, collection, request, save_state, settle, start_with, type_into,
+};
 
 fn vars(pairs: &[(&str, &str)]) -> Variables {
     pairs
@@ -82,14 +84,14 @@ fn globals_are_edited_and_saved_on_the_variables_screen() {
     assert_eq!(app.harness.state().state.screen, Screen::Variables);
 
     type_into(&mut app.harness, "Variable 1 value", "-new");
-    app.harness.get_by_label("Unsaved");
+    assert_eq!(save_state(&app.harness, "Save variables"), "Unsaved");
     click(&mut app.harness, "Add Variable");
     type_into(&mut app.harness, "Variable 2 name", "token");
     type_into(&mut app.harness, "Variable 2 value", "t");
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
 
-    app.harness.get_by_label("Saved");
+    assert_eq!(save_state(&app.harness, "Save variables"), "Saved");
     let stored = app
         .harness
         .state()
@@ -492,7 +494,7 @@ fn a_new_variable_keeps_focus_while_its_name_is_typed() {
     open_screen(&mut app);
     click(&mut app.harness, "Add Variable");
     type_into(&mut app.harness, "Variable 2 name", "t");
-    app.harness.get_by_label("Unsaved");
+    assert_eq!(save_state(&app.harness, "Save variables"), "Unsaved");
 
     // Keep typing without clicking the field again.
     app.harness.event(egui::Event::Text("oken".into()));
@@ -676,7 +678,7 @@ fn clear_all_is_in_the_menu_and_asks_before_removing() {
     click(&mut app.harness, "Clear all variables…");
     click(&mut app.harness, "Remove all");
     assert_eq!(app.harness.state().state.variables.rows.len(), 0);
-    app.harness.get_by_label("Unsaved");
+    assert_eq!(save_state(&app.harness, "Save variables"), "Unsaved");
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
     assert_eq!(
