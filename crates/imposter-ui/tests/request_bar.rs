@@ -112,3 +112,27 @@ fn the_focus_ring_goes_around_the_whole_bar() {
         "{rings:?}"
     );
 }
+
+#[test]
+fn a_save_state_word_never_moves_copy_as_curl() {
+    let mut app = opened();
+    let curl = app.harness.get_by_label("Copy as curl").rect();
+    let save = app.harness.get_by_label("Save request").rect();
+    assert!(
+        curl.right() <= save.left(),
+        "Copy as curl right before Save"
+    );
+    // A word appears, as "Saving…" does on every autosave.
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .invalid
+        .push((imposter_ui::editor::OptionField::Timeout, "bad"));
+    app.harness.run_steps(2);
+    let word = app.harness.get_by_label("Invalid fields").rect();
+    assert_eq!(app.harness.get_by_label("Copy as curl").rect(), curl);
+    assert!(word.right() <= curl.left(), "the word goes before it");
+}

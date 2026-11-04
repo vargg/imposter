@@ -611,7 +611,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   in the text color while there is something to save, and a draft has its banner. Every
   state is the icon's accessible description, with the explanation in its hover text. A
   longer reason (a duplicate name, a failed write) goes to the status bar, never into the
-  word. Save is an icon button named by its action. Section headings and explanatory
+  word. In the request bar Copy as curl sits between the icon and the word
+  (`widgets::save_controls_with`), so a word that comes and goes, as "Saving…" does on every
+  autosave, never moves it (the user's note). Save is an icon button named by its action. Section headings and explanatory
   subtitles are left out where tabs and controls already say it. Why: user review found the
   longer texts noisy, and later that "Unsaved" beside a highlighted Save said it twice.
 - **Every action that removes saved data asks first, in a dialog that names what goes**

@@ -1353,6 +1353,17 @@ pub struct SaveStatus<'a> {
 /// readers hear the state as the icon's description. Call inside a right-to-left layout.
 /// Returns whether Save was clicked.
 pub fn save_controls(ui: &mut Ui, status: &SaveStatus<'_>, action: &str) -> bool {
+    save_controls_with(ui, status, action, |_| {})
+}
+
+/// [`save_controls`] with `between` drawn after the icon and before the word, so a word
+/// that comes and goes ("Saving…") never moves the controls `between` draws.
+pub fn save_controls_with(
+    ui: &mut Ui,
+    status: &SaveStatus<'_>,
+    action: &str,
+    between: impl FnOnce(&mut Ui),
+) -> bool {
     let shortcut = crate::shortcuts::hint(ui.ctx(), action, &crate::shortcuts::SAVE);
     let hint = match (status.word.shown(), status.detail.is_empty()) {
         (false, false) => format!("{}\n{shortcut}", status.detail),
@@ -1373,6 +1384,7 @@ pub fn save_controls(ui: &mut Ui, status: &SaveStatus<'_>, action: &str) -> bool
     response
         .ctx
         .accesskit_node_builder(response.id, |node| node.set_description(word));
+    between(ui);
     if status.word.shown() {
         let label = ui.label(tone_text(status.word.text(), status.word.tone()));
         if !status.detail.is_empty() {

@@ -774,10 +774,16 @@ fn context_bar(
         // The right end first, so the path is cut to what is left rather than run under it.
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if let Some(save) = save {
-                if widgets::save_controls(ui, &save, save_text) {
+                // Copy as curl sits between the icon and the word, so a passing "Saving…"
+                // moves only the end of the path.
+                let mut curl = false;
+                let saved = widgets::save_controls_with(ui, &save, save_text, |ui| {
+                    curl = icons::button(ui, Icon::Terminal, "Copy as curl", false).clicked();
+                });
+                if saved {
                     state.actions.push(Action::Save);
                 }
-                if icons::button(ui, Icon::Terminal, "Copy as curl", false).clicked() {
+                if curl {
                     state.actions.push(Action::CopyCurl);
                 }
             }
