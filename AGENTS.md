@@ -822,6 +822,14 @@ numbers, so both are excluded. Each logical change is its own commit.
   collection instead of being dropped (user's choice); the cost is that the Python app cannot
   read new exports. Bytes are base64 with the URL-safe alphabet and padding, as Pydantic
   writes them; both alphabets are read.
+  Version 3 (still `"imposter"`) adds request scripts. An export takes the lowest version
+  that holds it (`NativeDocument::fit_version`: 3 only when a request has scripts), so
+  script-free exports stay readable by Imposter 0.4; a version 1 or 2 document with
+  scripts is refused. Postman exports list scripts as not exported (Postman's are
+  JavaScript), and Postman's own scripts are still removed on import, with consent. The
+  import review says how many requests have scripts. A script changes only its own request
+  and reads only the variables that request could already use, so it adds no way out
+  that a plain imported request lacks.
 - **Checks are data, not scripts** (`core::check`): a selector (status, a header, a JSONPath,
   the body, duration, size), an operator and an expected value that may use `{{variables}}`,
   stored in the request template. The executor evaluates them after every response with the

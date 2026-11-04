@@ -422,6 +422,28 @@ pub struct RequestTemplate {
     /// Values taken from every response into variables. Left out when empty, like `checks`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub captures: Vec<crate::capture::Capture>,
+    /// Rhai scripts run around the send. Left out when empty, so a request without them
+    /// keeps the native version 2 shape.
+    #[serde(skip_serializing_if = "Scripts::is_empty")]
+    pub scripts: Scripts,
+}
+
+/// A request's scripts: one run on the resolved request before it is sent, one on the
+/// response. Empty text means no script.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct Scripts {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub before: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub after: String,
+}
+
+impl Scripts {
+    /// Whitespace alone is no script.
+    pub fn is_empty(&self) -> bool {
+        self.before.trim().is_empty() && self.after.trim().is_empty()
+    }
 }
 
 impl Default for RequestTemplate {
@@ -443,6 +465,7 @@ impl Default for RequestTemplate {
             options: Options::default(),
             checks: Vec::new(),
             captures: Vec::new(),
+            scripts: Scripts::default(),
         }
     }
 }

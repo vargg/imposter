@@ -808,6 +808,21 @@ fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outc
         preview.environment_names.join(", ")
     };
     ui.label(format!("New environments: {environments}"));
+    // A script can only change its own request and read the variables that request could
+    // already use, so it adds no way out a plain imported request lacks; still, say so.
+    let scripted = preview
+        .document
+        .requests()
+        .iter()
+        .filter(|r| !r.scripts.is_empty())
+        .count();
+    if scripted > 0 {
+        ui.label(format!(
+            "{} {} scripts; they run when sent.",
+            counted(scripted, "request"),
+            if scripted == 1 { "has" } else { "have" }
+        ));
+    }
     ui.add_space(6.0);
     egui::ScrollArea::vertical()
         .max_height(240.0)

@@ -51,6 +51,29 @@ fn import_button_enabled(app: &support::App) -> bool {
 }
 
 #[test]
+fn the_import_review_says_which_requests_have_scripts_and_they_arrive() {
+    let mut app = start();
+    import(
+        &mut app,
+        vec![Some(fixtures().join("native/scripts.imposter.json"))],
+    );
+    app.harness
+        .get_by_label("1 request has scripts; they run when sent.");
+    click_button(&mut app.harness, "Import");
+    settle(&mut app.harness);
+    let stored = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| {
+            let id = collections::collections(db)?[0].id;
+            collections::requests(db, id)
+        })
+        .unwrap();
+    assert!(stored[0].template.scripts.after.contains("upload_id"));
+}
+
+#[test]
 fn a_native_file_is_reviewed_then_imported_and_shown() {
     let mut app = start();
     import(

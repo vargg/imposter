@@ -1,0 +1,50 @@
+{
+  "format": "imposter",
+  "version": 3,
+  "collection": {
+    "name": "Scripts",
+    "description": "",
+    "variables": {},
+    "folders": [],
+    "requests": [
+      {
+        "position": 0,
+        "name": "Signed upload",
+        "description": "",
+        "method": "POST",
+        "protocol": "",
+        "url": "{{base}}/users",
+        "path": "",
+        "auth": {
+          "type": null,
+          "basic": null,
+          "digest": null,
+          "bearer_token": null
+        },
+        "queries": [],
+        "headers": [],
+        "cookies": [],
+        "body": "",
+        "body_type": "json",
+        "options": {
+          "follow_redirects": null,
+          "verify_ssl": null,
+          "attach_cookies": null,
+          "proxy_url": null,
+          "timeout": null,
+          "ca_bundle": null,
+          "certificate_path": null,
+          "key_file": null,
+          "password": null,
+          "download_limit": null
+        },
+        "scripts": {
+          "before": "request.set_header(\"X-Signature\", hex(hmac_sha256(vars.get(\"secret\"), request.body)));",
+          "after": "test(\"created\", response.status == 201);\nvars.set(\"upload_id\", response.path(\"$.id\"));"
+        }
+      }
+    ]
+  },
+  "environments": [],
+  "globals": {}
+}

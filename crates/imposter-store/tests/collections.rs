@@ -156,6 +156,8 @@ fn requests_store_every_template_field() {
     full.body = vec![0, 159, 146, 150];
     full.body_type = BodyType::Binary;
     full.options.timeout = Some(2.5);
+    full.scripts.before = "request.set_header(\"X\", uuid());".into();
+    full.scripts.after = "test(\"ok\", response.status == 200);".into();
     let stored = full.clone();
 
     let created = store

@@ -725,6 +725,12 @@ fn export_request(
             request.name
         ));
     }
+    if !request.scripts.is_empty() {
+        warnings.push(format!(
+            "{}: scripts are not exported to Postman, whose scripts are JavaScript",
+            request.name
+        ));
+    }
     let parts = url::split(&request.url);
     let queries: Vec<ParamItem> = if request.queries.is_empty() {
         url::parse_pairs(&parts.query)

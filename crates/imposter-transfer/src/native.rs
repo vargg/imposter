@@ -1,8 +1,10 @@
 //! The native format. Version 1 (`"format": "poster"`) is the full-fidelity contract shared
 //! with the Python app; version 2 (`"format": "imposter"`) adds request checks, captures,
-//! saved variable values and environment colors. Strict:
-//! unknown fields are rejected at every level, a version 1 document may not use version 2
-//! data, and a document keeps its version when encoded again.
+//! saved variable values and environment colors; version 3 adds request scripts. Strict:
+//! unknown fields are rejected at every level, a document may not use data of a later
+//! version, and a document keeps its version when encoded again. New exports take the
+//! lowest Imposter version that holds them, so one without scripts stays readable by
+//! Imposter 0.4.
 
 use std::io::{Read as _, Write as _};
 use std::path::Path;
@@ -46,12 +48,13 @@ pub enum Format {
     Imposter,
 }
 
-/// Versions 1 and 2; anything else is rejected rather than guessed at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Versions 1 to 3; anything else is rejected rather than guessed at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum Version {
     #[default]
     V1,
     V2,
+    V3,
 }
 
 impl Serialize for Version {
@@ -59,6 +62,7 @@ impl Serialize for Version {
         serializer.serialize_u8(match self {
             Self::V1 => 1,
             Self::V2 => 2,
+            Self::V3 => 3,
         })
     }
 }
@@ -68,6 +72,7 @@ impl<'de> Deserialize<'de> for Version {
         match u64::deserialize(deserializer)? {
             1 => Ok(Self::V1),
             2 => Ok(Self::V2),
+            3 => Ok(Self::V3),
             other => Err(serde::de::Error::custom(format!(
                 "unsupported version {other}"
             ))),
@@ -149,6 +154,16 @@ impl NativeDocument {
         }
     }
 
+    /// Version 3 when a request has scripts, else 2: the lowest that holds the document, so
+    /// older Imposter versions read what they can. For new Imposter documents only.
+    pub fn fit_version(&mut self) {
+        self.version = if self.requests().iter().any(|r| !r.scripts.is_empty()) {
+            Version::V3
+        } else {
+            Version::V2
+        };
+    }
+
     /// Every request in the document, depth first.
     pub fn requests(&self) -> Vec<&RequestTemplate> {
         fn visit<'a>(folders: &'a [TransferFolder], out: &mut Vec<&'a RequestTemplate>) {
@@ -191,6 +206,8 @@ pub enum NativeError {
     SavedValuesInVersion1,
     #[error("Environment colors need format version 2")]
     ColorInVersion1,
+    #[error("Request {request:?}: scripts need format version 3")]
+    ScriptsNeedVersion3 { request: String },
     #[error("Request {request:?}: {source}")]
     Body {
         request: String,
@@ -215,8 +232,8 @@ pub fn read_document(path: &Path) -> Result<Vec<u8>, NativeError> {
 pub fn decode(data: &[u8]) -> Result<NativeDocument, NativeError> {
     let document: NativeDocument = serde_json::from_slice(data)?;
     match (document.format, document.version) {
-        (Format::Poster, Version::V1) | (Format::Imposter, Version::V2) => {}
-        (Format::Poster, Version::V2) => {
+        (Format::Poster, Version::V1) | (Format::Imposter, Version::V2 | Version::V3) => {}
+        (Format::Poster, Version::V2 | Version::V3) => {
             return Err(NativeError::Marker {
                 format: "poster",
                 expected: 1,
@@ -251,6 +268,16 @@ pub fn decode(data: &[u8]) -> Result<NativeDocument, NativeError> {
         if document.environments.iter().any(|e| e.color.is_some()) {
             return Err(NativeError::ColorInVersion1);
         }
+    }
+    if document.version < Version::V3
+        && let Some(request) = document
+            .requests()
+            .into_iter()
+            .find(|r| !r.scripts.is_empty())
+    {
+        return Err(NativeError::ScriptsNeedVersion3 {
+            request: request.name.clone(),
+        });
     }
     validate_templates(&document)?;
     Ok(document)

@@ -50,6 +50,31 @@ pub struct Response {
     /// What the request's captures took from this response.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub captures: Vec<crate::capture::Captured>,
+    /// The after-response script's tests and error; `None` without a script.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub script: Option<ScriptReport>,
+    /// What the scripts printed. Shown for the live response only: never stored, since
+    /// printed values often hold tokens.
+    #[serde(skip)]
+    pub console: Vec<String>,
+}
+
+/// What an after-response script reported.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct ScriptReport {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tests: Vec<ScriptTest>,
+    /// Why the script stopped, with its line: "Line 4: no such field".
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub error: String,
+}
+
+impl ScriptReport {
+    /// Failed tests, plus one for an error, which never passes silently.
+    pub fn failures(&self) -> usize {
+        self.tests.iter().filter(|t| !t.passed).count() + usize::from(!self.error.is_empty())
+    }
 }
 
 impl Response {
@@ -129,6 +154,32 @@ impl ExecutionRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn script_results_are_stored_but_the_console_never_is() {
+        let response = Response {
+            status: 200,
+            script: Some(ScriptReport {
+                tests: vec![ScriptTest {
+                    name: "id".into(),
+                    passed: false,
+                    message: "expected 8, got 7".into(),
+                }],
+                error: String::new(),
+            }),
+            console: vec!["token abc".into()],
+            ..Response::default()
+        };
+        let stored = serde_json::to_string(&response).unwrap();
+        assert!(!stored.contains("token abc"), "{stored}");
+        assert!(!stored.contains("console"));
+        let read: Response = serde_json::from_str(&stored).unwrap();
+        assert_eq!(read.script, response.script);
+        assert_eq!(read.console, Vec::<String>::new());
+        assert_eq!(read.script.unwrap().failures(), 1);
+        let older: Response = serde_json::from_str(r#"{"status": 204}"#).unwrap();
+        assert_eq!(older.script, None, "records from before scripts still read");
+    }
 
     #[test]
     fn timestamps_format_as_utc() {

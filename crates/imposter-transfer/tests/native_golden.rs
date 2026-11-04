@@ -67,6 +67,39 @@ fn version_2_documents_carry_checks_and_round_trip_byte_for_byte() {
 }
 
 #[test]
+fn version_3_documents_carry_scripts_and_round_trip_byte_for_byte() {
+    let original = std::fs::read(fixtures().join("native/scripts.imposter.json")).unwrap();
+    let mut document = decode(&original).unwrap();
+    assert_eq!(
+        (document.format, document.version),
+        (Format::Imposter, Version::V3)
+    );
+    let scripts = &document.requests()[0].scripts;
+    assert!(scripts.before.contains("hmac_sha256"));
+    assert!(scripts.after.contains("upload_id"));
+    assert_eq!(
+        String::from_utf8(encode(&document)).unwrap(),
+        String::from_utf8(original.clone()).unwrap()
+    );
+
+    // Scripts need version 3: a version 2 document with them is refused.
+    let as_version_2 = String::from_utf8(original)
+        .unwrap()
+        .replace("\"version\": 3", "\"version\": 2");
+    assert_eq!(
+        decode(as_version_2.as_bytes()).unwrap_err().to_string(),
+        "Request \"Signed upload\": scripts need format version 3"
+    );
+
+    // New exports take the lowest version that holds them.
+    document.fit_version();
+    assert_eq!(document.version, Version::V3);
+    document.collection.requests[0].scripts = imposter_core::model::Scripts::default();
+    document.fit_version();
+    assert_eq!(document.version, Version::V2, "readable by Imposter 0.4");
+}
+
+#[test]
 fn markers_and_versions_must_agree_and_version_1_stays_python_shaped() {
     let minimal = std::fs::read_to_string(fixtures().join("native/minimal.poster.json")).unwrap();
     let with = |format: &str, version: &str| {
@@ -76,7 +109,13 @@ fn markers_and_versions_must_agree_and_version_1_stays_python_shaped() {
     };
     assert!(decode(with("poster", "1").as_bytes()).is_ok());
     assert!(decode(with("imposter", "2").as_bytes()).is_ok());
-    for (format, version) in [("poster", "2"), ("imposter", "1"), ("imposter", "3")] {
+    assert!(decode(with("imposter", "3").as_bytes()).is_ok());
+    for (format, version) in [
+        ("poster", "2"),
+        ("poster", "3"),
+        ("imposter", "1"),
+        ("imposter", "4"),
+    ] {
         assert!(
             decode(with(format, version).as_bytes()).is_err(),
             "{format} {version}"
@@ -117,6 +156,21 @@ fn postman_exports_name_the_checks_and_captures_they_leave_out() {
     assert!(
         warnings.contains(
             &"Create user: captured variables are not exported to Postman, which sets them in scripts"
+                .to_owned()
+        ),
+        "{warnings:?}"
+    );
+}
+
+#[test]
+fn postman_exports_name_the_scripts_they_leave_out() {
+    let original = std::fs::read(fixtures().join("native/scripts.imposter.json")).unwrap();
+    let document = decode(&original).unwrap();
+    let (data, warnings) = imposter_transfer::postman::encode(&document).unwrap();
+    assert!(!data.to_string().contains("hmac_sha256"));
+    assert!(
+        warnings.contains(
+            &"Signed upload: scripts are not exported to Postman, whose scripts are JavaScript"
                 .to_owned()
         ),
         "{warnings:?}"

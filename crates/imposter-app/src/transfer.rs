@@ -190,6 +190,7 @@ pub fn snapshot(db: &Tx<'_>, scope: &ExportScope) -> Result<NativeDocument, Stor
         document.globals = globals;
         document.saved_globals = saved;
     }
+    document.fit_version();
     Ok(document)
 }
 
