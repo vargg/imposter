@@ -162,6 +162,44 @@ fn the_variables_screen_saves_and_picks_values_under_its_guard() {
 }
 
 #[test]
+fn another_value_is_typed_into_the_list_and_the_current_one_stays() {
+    let mut app = with_saved_user("http://h".into());
+    click(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Variable 2 saved values");
+    assert!(disabled(&app, "Add saved value"), "nothing typed yet");
+
+    support::type_into(&mut app.harness, "New saved value", "1001");
+    click(&mut app.harness, "Add saved value");
+    let row = &app.harness.state().state.variables.rows[1];
+    assert_eq!(row.value, "42", "the current value stays");
+    assert_eq!(row.saved, ["42", "77", "1001"]);
+    assert_eq!(
+        support::text_input(&app.harness, "New saved value")
+            .accesskit_node()
+            .value()
+            .as_deref(),
+        Some(""),
+        "ready for the next one"
+    );
+
+    // Enter adds too; a value already kept is not added twice.
+    support::type_into(&mut app.harness, "New saved value", "2002");
+    app.harness.key_press(egui::Key::Enter);
+    app.harness.run_steps(2);
+    support::type_into(&mut app.harness, "New saved value", "77");
+    assert!(disabled(&app, "Add saved value"), "77 is kept already");
+    assert_eq!(
+        app.harness.state().state.variables.rows[1].saved,
+        ["42", "77", "1001", "2002"]
+    );
+
+    click(&mut app.harness, "Save variables");
+    settle(&mut app.harness);
+    assert_eq!(stored(&app).1, saved("user", &["42", "77", "1001", "2002"]));
+}
+
+#[test]
 fn unsaved_edits_to_the_scope_block_choosing_and_a_clean_screen_follows_the_choice() {
     let mut app = with_saved_user("http://h".into());
     click(&mut app.harness, "Variables");

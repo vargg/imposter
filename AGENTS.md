@@ -443,8 +443,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   (the orange "⋯" read as selected). Each value fills its row, the current one filled and
   marked "current"; × is at the row's far end, at least 12 points from the value, and
   stays visible (and two-click) rather than appearing on hover, so keyboard and screen
-  reader users can reach it. "+ Save “42”" ends the list, naming the field's value it
-  keeps. The bookmark is as wide as a two-digit count on every row, so the remove buttons
+  reader users can reach it. "+ Save “42”" follows the list, naming the field's value it
+  keeps, and under it "Add another value" takes a new one (Enter or +) without changing
+  the current value: the only way to add one was to clear the field, type it, open the
+  list and save (the user's note). The bookmark is as wide as a two-digit count on every row, so the remove buttons
   after it stay in one column. Why: × beside the value invited removing it by mistake (the
   review's #38; Phase 5 review Q23, Q24).
 - **History search uses the sidebar's filter language** (`filter.rs`, with `status:` and

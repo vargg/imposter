@@ -215,9 +215,18 @@ impl Row {
 
     /// Keep the current value for swapping back to later; a value is saved once.
     pub fn save_current(&mut self) {
-        if !self.saved.contains(&self.value) {
-            self.saved.push(self.value.clone());
+        let value = self.value.clone();
+        self.add_saved(value);
+    }
+
+    /// Keep `value` for later without touching the current value. Returns whether it was
+    /// new; empty and already kept values are not.
+    pub fn add_saved(&mut self, value: String) -> bool {
+        if value.is_empty() || self.saved.contains(&value) {
+            return false;
         }
+        self.saved.push(value);
+        true
     }
 }
 

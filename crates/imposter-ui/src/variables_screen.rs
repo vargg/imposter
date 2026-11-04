@@ -360,6 +360,39 @@ fn saved_values(ui: &mut Ui, row: &mut vars::Row, index: usize, height: f32) -> 
                 row.save_current();
                 changed = true;
             }
+            // Another value, typed here: the field it would otherwise be typed into keeps
+            // the current one.
+            let draft_id = egui::Id::unique(("new saved value", row.key));
+            let mut draft: String = ui.data_mut(|d| d.get_temp(draft_id)).unwrap_or_default();
+            ui.horizontal(|ui| {
+                let width = ui.available_width() - height - ui.spacing().item_spacing.x;
+                let field = ui.add(
+                    egui::TextEdit::singleline(&mut draft)
+                        .hint_text("Add another value")
+                        .font(egui::TextStyle::Monospace)
+                        .desired_width(width),
+                );
+                name(&field, "New saved value");
+                let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let addable = !draft.is_empty() && !row.saved.contains(&draft);
+                let add = ui
+                    .add_enabled_ui(addable, |ui| {
+                        icons::button_with_hint(
+                            ui,
+                            Icon::Plus,
+                            "Add saved value",
+                            "Keep this value in the list (Enter)",
+                            false,
+                        )
+                    })
+                    .inner;
+                if (entered || add.clicked()) && row.add_saved(draft.clone()) {
+                    draft.clear();
+                    changed = true;
+                    field.request_focus();
+                }
+            });
+            ui.data_mut(|d| d.insert_temp(draft_id, draft));
         });
     changed
 }
