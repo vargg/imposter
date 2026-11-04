@@ -602,6 +602,30 @@ fn main() {
         tour.settle();
         tour.type_into("Mock path", " bad path");
         tour.shot("6-03-invalid-route");
+        // A scripted route and what the server answered.
+        {
+            let mocks = &mut tour.harness.state_mut().state.mocks;
+            if let Some(route) = mocks.form.routes.get_mut(1) {
+                route.path = "/orders".into();
+                route.script = "state.calls = (state.calls ?? 0) + 1;\nif state.calls == 1 {\n    response.status = 503;\n}\nresponse.send_json(#{ calls: state.calls });\n".into();
+            }
+            for (status, error) in [
+                (503, None),
+                (200, None),
+                (500, Some("Mock script, line 2: no stock")),
+            ] {
+                mocks.logged(imposter_app::core::mock::MockLogEntry {
+                    method: "POST".into(),
+                    path: "/orders".into(),
+                    status,
+                    elapsed: Duration::from_millis(4),
+                    error: error.map(str::to_owned),
+                    console: vec![format!("answered {status}")],
+                });
+            }
+        }
+        tour.settle();
+        tour.shot("6-03b-mock-script");
 
         // Task 6b: a load test of the open request.
         tour.click("Load");

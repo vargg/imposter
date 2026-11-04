@@ -316,6 +316,35 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         settle(&mut app.harness);
         check(app, screen);
     }
+    // Mocks with a scripted route and a request log holding an error and printed lines.
+    click(&mut app.harness, "Mocks");
+    settle(&mut app.harness);
+    {
+        let mocks = &mut app.harness.state_mut().state.mocks;
+        if mocks.form.routes.is_empty() {
+            mocks
+                .form
+                .routes
+                .push(imposter_app::core::mock::MockRoute::default());
+        }
+        mocks.form.routes[0].script =
+            "state.calls = (state.calls ?? 0) + 1;\nresponse.send_json(#{ calls: state.calls });"
+                .into();
+        for status in [200_u16, 500, 503] {
+            mocks.logged(imposter_app::core::mock::MockLogEntry {
+                method: "POST".into(),
+                path: "/orders/with/a/rather/long/path".into(),
+                status,
+                elapsed: std::time::Duration::from_millis(12),
+                error: (status == 500).then(|| {
+                    "Mock script, line 2: a long error message that has to wrap in the list".into()
+                }),
+                console: vec!["printed a line that is long enough to wrap".into()],
+            });
+        }
+    }
+    check(app, "Mocks with a script and a log");
+    app.harness.state_mut().state.mocks.log.clear();
     // The Load screen on the open request: idle, asking about production, running, and a
     // stopped run's summary with its error pills and tables.
     click(&mut app.harness, "Load");

@@ -45,7 +45,15 @@ pub struct MockScreen {
     /// A custom method being typed for the selected route.
     custom_method: Option<String>,
     /// Requests the running server answered, newest first; cleared on Start.
-    pub log: std::collections::VecDeque<imposter_app::core::mock::MockLogEntry>,
+    pub log: std::collections::VecDeque<LogLine>,
+}
+
+/// An answered request and the time it arrived in the screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogLine {
+    /// "14:02:03".
+    pub when: String,
+    pub entry: imposter_app::core::mock::MockLogEntry,
 }
 
 /// How many answered requests the screen keeps.
@@ -64,9 +72,32 @@ impl MockScreen {
 
     /// Keep an answered request, newest first.
     pub fn logged(&mut self, entry: imposter_app::core::mock::MockLogEntry) {
-        self.log.push_front(entry);
+        self.log.push_front(LogLine {
+            when: crate::viewer::clock_seconds(imposter_app::executor::now()),
+            entry,
+        });
         self.log.truncate(LOG_KEPT);
     }
+}
+
+/// What keeps the server from starting besides `MockConfig::problems`: an enabled route
+/// whose script does not compile, as `imposter_app::mock::script_problem` refuses it.
+pub fn script_problems(config: &MockConfig) -> Vec<RouteProblem> {
+    config
+        .routes
+        .iter()
+        .enumerate()
+        .filter(|(_, route)| route.enabled && route.is_scripted())
+        .filter_map(|(index, route)| {
+            imposter_app::script::check(&route.script)
+                .err()
+                .map(|error| RouteProblem {
+                    route: index,
+                    field: RouteField::Script,
+                    reason: error.describe(imposter_app::mock::MOCK_SCRIPT),
+                })
+        })
+        .collect()
 }
 
 fn text(ui: &mut Ui, label: &str, value: &mut String, width: f32) -> bool {
@@ -112,7 +143,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     let screen = &mut state.mocks;
     let mut edited = false;
     // Checked every frame, so a problem shows while it is typed, not only on Save.
-    let problems = screen.form.problems();
+    let mut problems = screen.form.problems();
+    problems.extend(script_problems(&screen.form));
     let mut actions = Vec::new();
     header(ui, screen, &problems, &mut edited, &mut actions);
     if let Some(notice) = &screen.notice {
@@ -286,9 +318,16 @@ fn server_state(ui: &mut Ui, screen: &MockScreen) {
 fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bool {
     let mut edited = false;
     let height = crate::theme::spacing().row;
+    // The log takes the lower half while it has something to show.
+    let list_height = if screen.log.is_empty() {
+        ui.available_height() - 40.0
+    } else {
+        (ui.available_height() * 0.45).max(3.0 * height)
+    };
     egui::ScrollArea::vertical()
+        .id_salt("mock route list")
         .auto_shrink([false, true])
-        .max_height(ui.available_height() - 40.0)
+        .max_height(list_height)
         .show(ui, |ui| {
             if screen.form.routes.is_empty() {
                 ui.label(widgets::tone_text("No routes yet", Tone::Muted));
@@ -321,6 +360,8 @@ fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bo
                     );
                     let status = if broken {
                         ("  ⚠".to_owned(), palette().error)
+                    } else if route.is_scripted() {
+                        (format!("  {} · script", route.status), palette().text_muted)
                     } else {
                         (format!("  {}", route.status), palette().text_muted)
                     };
@@ -341,6 +382,17 @@ fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bo
                         widgets::selection_bar(ui, row.rect);
                     }
                     widgets::name(&row, &format!("Mock route {}", index + 1));
+                    // What the row shows after the path, for screen readers.
+                    let described = if broken {
+                        "Has a problem".to_owned()
+                    } else if route.is_scripted() {
+                        format!("Status {}, answered by its script", route.status)
+                    } else {
+                        format!("Status {}", route.status)
+                    };
+                    ui.ctx().accesskit_node_builder(row.id, |node| {
+                        node.set_description(described);
+                    });
                     let row = if broken {
                         row.on_hover_text("This route has a problem; select it to see what")
                     } else {
@@ -361,7 +413,67 @@ fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bo
         screen.custom_method = None;
         edited = true;
     }
+    if !screen.log.is_empty() {
+        ui.add_space(8.0);
+        request_log(ui, screen);
+    }
     edited
+}
+
+/// Requests the server answered, newest first: what came in, what went out, how long it took,
+/// and a script's error and printed lines. Never bodies.
+fn request_log(ui: &mut Ui, screen: &mut MockScreen) {
+    ui.horizontal(|ui| {
+        // Not "Requests", which names the header's tab.
+        ui.label(egui::RichText::new("Answered requests").font(crate::theme::semibold(13.0)));
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let clear = ui.small_button("Clear");
+            widgets::name(&clear, "Clear the mock request log");
+            if clear.clicked() {
+                screen.log.clear();
+            }
+        });
+    });
+    egui::ScrollArea::vertical()
+        .id_salt("mock request log")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            for line in &screen.log {
+                let entry = &line.entry;
+                let tone = match entry.status {
+                    200..=299 => Tone::Ok,
+                    300..=399 => Tone::Warning,
+                    _ => Tone::Error,
+                };
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(widgets::tone_text(line.when.as_str(), Tone::Muted).small());
+                    ui.label(
+                        egui::RichText::new(format!("{} {}", entry.method, entry.path)).monospace(),
+                    );
+                    ui.label(widgets::tone_text(format!("→ {}", entry.status), tone));
+                    ui.label(
+                        widgets::tone_text(
+                            crate::viewer::format_duration(entry.elapsed.as_secs_f64()),
+                            Tone::Muted,
+                        )
+                        .small(),
+                    );
+                });
+                if let Some(error) = &entry.error {
+                    ui.add(
+                        egui::Label::new(widgets::tone_text(error.as_str(), Tone::Error)).wrap(),
+                    );
+                }
+                for printed in &entry.console {
+                    ui.add(
+                        egui::Label::new(
+                            widgets::tone_text(printed.as_str(), Tone::Muted).monospace(),
+                        )
+                        .wrap(),
+                    );
+                }
+            }
+        });
 }
 
 /// The selected route: method and path, status, headers, body, and Delete route.
@@ -490,6 +602,18 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
             );
             widgets::name(&response, "Mock response body");
             edited |= response.changed();
+            ui.add_space(8.0);
+            ui.push_id(("mock script", index), |ui| {
+                edited |= crate::scripts_tab::script_editor(
+                    ui,
+                    imposter_app::script::Phase::Mock,
+                    "Response script (optional)",
+                    "Runs for each matched request; it starts from the status, headers and body above",
+                    "Mock response script",
+                    &mut route.script,
+                );
+            });
+            // The editor says why it does not compile; the list's ⚠ and Start say it too.
         });
     if remove {
         screen.form.routes.remove(index);

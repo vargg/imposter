@@ -49,6 +49,22 @@ pub const EXAMPLES: &[(Phase, &str, &str)] = &[
         "Log a value",
         "print(`${response.status} in ${response.time_ms} ms`);\n",
     ),
+    (
+        Phase::Mock,
+        "Echo the request body",
+        "response.set_header(\"Content-Type\", request.header(\"content-type\") ?? \"text/plain\");\nresponse.body = request.body;\n",
+    ),
+    (
+        Phase::Mock,
+        "Answer 400 when a field is missing",
+        "let order = request.json();\nif order.item == () {\n    response.status = 400;\n    response.send_json(#{ error: \"item is required\" });\n}\n",
+    ),
+    (
+        Phase::Mock,
+        "Fail the first call, then succeed",
+        "state.calls = (state.calls ?? 0) + 1;\nif state.calls == 1 {\n    response.status = 503;\n}\n",
+    ),
+    (Phase::Mock, "Answer slowly", "response.delay_ms = 2000;\n"),
 ];
 
 /// The accessible name of each editor; tests and screen readers find them by it.
@@ -90,13 +106,16 @@ pub fn draw(ui: &mut Ui, scripts: &mut Scripts, actions: &mut Vec<Action>) -> bo
             &mut scripts.after,
         ),
     ] {
-        edited |= section(ui, phase, title, hint, label, text);
+        edited |= script_editor(ui, phase, title, hint, label, text);
         ui.add_space(12.0);
     }
     edited
 }
 
-fn section(
+/// One script: its title with "Insert example…" for `phase`, a hint, the highlighted editor
+/// with the typing aids, and whether it compiles. `label` names the editor for screen readers
+/// and keeps its cursor apart from other editors'.
+pub fn script_editor(
     ui: &mut Ui,
     phase: Phase,
     title: &str,

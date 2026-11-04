@@ -661,12 +661,21 @@ pub fn local_time(timestamp: imposter_app::core::execution::Timestamp) -> String
 
 /// The time of day of `timestamp` in the system time zone: "14:02".
 pub fn clock_time(timestamp: imposter_app::core::execution::Timestamp) -> String {
+    local_format(timestamp, "%H:%M")
+}
+
+/// The time of day with seconds: "14:02:03".
+pub fn clock_seconds(timestamp: imposter_app::core::execution::Timestamp) -> String {
+    local_format(timestamp, "%H:%M:%S")
+}
+
+fn local_format(timestamp: imposter_app::core::execution::Timestamp, format: &str) -> String {
     jiff::Timestamp::from_millisecond(timestamp.0).map_or_else(
         |_| String::new(),
         |instant| {
             instant
                 .to_zoned(jiff::tz::TimeZone::system())
-                .strftime("%H:%M")
+                .strftime(format)
                 .to_string()
         },
     )

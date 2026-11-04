@@ -426,3 +426,76 @@ fn routes_are_a_list_beside_the_selected_routes_editor() {
     app.harness
         .get_by_label("Add a route to answer requests with a fixed response.");
 }
+
+fn opened_with(routes: Vec<MockRoute>) -> support::App {
+    let mut app = start_with(move |store| {
+        store
+            .call_blocking(move |db| {
+                kv::set(
+                    db,
+                    Table::Settings,
+                    "mock_server",
+                    &MockConfig { port: 0, routes },
+                )
+            })
+            .unwrap();
+    });
+    click(&mut app.harness, "Mocks");
+    settle(&mut app.harness);
+    app
+}
+
+fn scripted(script: &str) -> MockRoute {
+    MockRoute {
+        script: script.into(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_route_script_compiles_or_keeps_the_server_from_starting() {
+    let mut app = opened_with(vec![scripted("response.status = 201;")]);
+    app.harness.get_by_label("Compiles");
+    let described = |app: &support::App| {
+        app.harness
+            .get_by_label("Mock route 1")
+            .accesskit_node()
+            .description()
+    };
+    assert_eq!(
+        described(&app).as_deref(),
+        Some("Status 200, answered by its script")
+    );
+    app.harness.state_mut().state.mocks.form.routes[0].script = "let x = ;".into();
+    app.harness.run_steps(3);
+    app.harness.get_by_label_contains("Line 1, column 9");
+    let start = app.harness.get_by_label("Start mock server");
+    assert!(
+        start.accesskit_node().is_disabled(),
+        "a broken script blocks Start"
+    );
+    assert_eq!(described(&app).as_deref(), Some("Has a problem"));
+}
+
+#[test]
+fn the_request_log_shows_scripted_answers_and_errors() {
+    let mut app = opened_with(vec![scripted(
+        "state.calls = (state.calls ?? 0) + 1;\nprint(`call ${state.calls}`);\nif state.calls == 1 { response.status = 503; }\nif state.calls == 3 { throw \"third time\"; }",
+    )]);
+    start(&mut app);
+    let url = address(&app);
+    for _ in 0..3 {
+        response(&url);
+    }
+    wait_for(&mut app, |app| app.state.mocks.log.len() == 3);
+    app.harness.get_by_label("Answered requests");
+    app.harness.get_by_label("→ 503");
+    app.harness.get_by_label("→ 200");
+    app.harness.get_by_label("→ 500");
+    app.harness.get_by_label("Mock script, line 4: third time");
+    app.harness.get_by_label("call 2");
+    click(&mut app.harness, "Clear the mock request log");
+    assert_eq!(app.harness.state().state.mocks.log.len(), 0);
+    click(&mut app.harness, "Stop mock server");
+    settle(&mut app.harness);
+}
