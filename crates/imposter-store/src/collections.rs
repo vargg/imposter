@@ -478,7 +478,8 @@ pub fn requests(db: &Connection, collection: CollectionId) -> Result<Vec<Request
         .collect()
 }
 
-/// Save the template of an existing request. Its place in the tree does not change.
+/// Save the template of an existing request. Its place in the tree does not change: the
+/// stored position is kept, since the editor's copy goes stale when the tree is reordered.
 pub fn update_request(
     db: &Connection,
     id: RequestId,
@@ -486,7 +487,9 @@ pub fn update_request(
 ) -> Result<(), StoreError> {
     changed(
         db.execute(
-            "UPDATE requests SET template = ?1 WHERE id = ?2",
+            "UPDATE requests
+             SET template = json_set(?1, '$.position', json_extract(template, '$.position'))
+             WHERE id = ?2",
             params![serde_json::to_string(template)?, id.0],
         )?,
         "request",

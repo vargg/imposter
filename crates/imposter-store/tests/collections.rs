@@ -220,6 +220,56 @@ fn update_rename_and_reorder_keep_one_source_of_truth() {
 }
 
 #[test]
+fn saving_a_request_keeps_its_place() {
+    // The editor holds a copy of the template; a reorder made meanwhile must survive the
+    // next save, which carries the old position.
+    let (_dir, store) = store();
+    let (collection_id, a) = store
+        .call_blocking(|db| {
+            let c = create_collection(db, "API", "", &Variables::new())?;
+            let a = create_request(db, c.id, None, &template("a"))?.id.unwrap();
+            create_request(db, c.id, None, &template("b"))?;
+            Ok((c.id, a))
+        })
+        .unwrap();
+    let stale = store
+        .call_blocking(move |db| request(db, a))
+        .unwrap()
+        .unwrap()
+        .template;
+
+    store
+        .call_blocking(move |db| {
+            db.execute(
+                "UPDATE requests SET template = json_set(template, '$.position', 5) WHERE id = ?1",
+                [a.0],
+            )?;
+            let mut edited = stale;
+            edited.url = "https://edited".into();
+            update_request(db, a, &edited)
+        })
+        .unwrap();
+
+    let read = store
+        .call_blocking(move |db| request(db, a))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (read.template.url.as_str(), read.template.position),
+        ("https://edited", 5)
+    );
+    let order: Vec<_> = store
+        .call_blocking(move |db| tree(db, collection_id))
+        .unwrap()
+        .unwrap()
+        .requests
+        .into_iter()
+        .map(|r| r.name)
+        .collect();
+    assert_eq!(order, ["b", "a"]);
+}
+
+#[test]
 fn missing_rows_are_reported() {
     let (_dir, store) = store();
     let missing = RequestId(42);

@@ -316,8 +316,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   (`imposter-store/tests/schema.rs` pins their fingerprints); schema changes are new migrations.
 - **A request row stores its template as JSON, the single source of truth.** The tree reads
   `name`, `method` and `position` through generated columns, so it never decodes bodies;
-  rename and reorder use `json_set`. Why: one copy of every field, and new template fields
-  need no migration (serde defaults).
+  rename and reorder use `json_set`, and saving a template keeps the stored position, since
+  the editor's copy goes stale when the tree is reordered (an autosave put a moved request
+  back). Why: one copy of every field, and new template fields need no migration (serde
+  defaults).
 - **Variables are ordered JSON objects** (collections, environments, the single `globals` row).
   No environment may be named `Global`, which names the globals scope. Why: order is kept for
   display and export, and saving a scope replaces it whole, as in the Python app.
