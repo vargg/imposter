@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use imposter_core::execution::{Response, Timestamp};
 use imposter_core::generate::Entropy;
+use imposter_core::mock::{MockReply, MockRequest, MockRoute};
 use imposter_core::model::{BodyType, ParamItem, RequestTemplate, Variables};
 
 use super::*;
@@ -78,14 +79,18 @@ fn after_run(source: &str) -> Outcome {
 #[test]
 fn every_reference_example_runs_in_its_phase() {
     for entry in API {
-        if matches!(entry.phase, Phase::Before | Phase::Both) {
+        if entry.phase.covers(Phase::Before) {
             let mut request = template();
             let outcome = before(entry.example, &mut request, &vars(), host());
             assert_eq!(outcome.error, None, "before: {}", entry.name);
         }
-        if matches!(entry.phase, Phase::After | Phase::Both) {
+        if entry.phase.covers(Phase::After) {
             let outcome = after_run(entry.example);
             assert_eq!(outcome.error, None, "after: {}", entry.name);
+        }
+        if entry.phase.covers(Phase::Mock) {
+            let run = mock_run(entry.example, &mut MockState::default());
+            assert!(run.reply.is_ok(), "mock: {}: {:?}", entry.name, run.reply);
         }
     }
 }
@@ -416,5 +421,132 @@ fn the_readme_lists_the_reference_as_the_app_does() {
         rows,
         readme_rows(),
         "update the README's script table from imposter_script::API"
+    );
+}
+
+fn mock_request() -> MockRequest {
+    MockRequest {
+        method: "POST".into(),
+        path: "/orders".into(),
+        query: "page=2&q=a+b".into(),
+        headers: vec![
+            ("Content-Type".into(), "application/json".into()),
+            ("X-Tag".into(), "a".into()),
+            ("x-tag".into(), "b".into()),
+        ],
+        body: br#"{"item": "pen", "qty": 2}"#.to_vec(),
+    }
+}
+
+fn static_reply() -> MockReply {
+    MockReply::from_route(&MockRoute {
+        status: 200,
+        headers: vec![ParamItem::new("X-Static", "1")],
+        body: "static".into(),
+        ..MockRoute::default()
+    })
+}
+
+fn mock_run(source: &str, state: &mut MockState) -> MockRun {
+    mock(source, &mock_request(), static_reply(), state, host())
+}
+
+fn reply(source: &str) -> MockReply {
+    let run = mock_run(source, &mut MockState::default());
+    run.reply.unwrap_or_else(|e| panic!("{source}: {e}"))
+}
+
+#[test]
+fn a_mock_reads_the_request_and_shapes_the_answer() {
+    let answer = reply(
+        r#"
+        expect(request.method, "POST");
+        expect(request.path, "/orders");
+        expect(request.query("q"), "a b");
+        expect(request.header("x-tag"), "a, b");
+        expect(request.headers["content-type"], "application/json");
+        let order = request.json();
+        response.status = 201;
+        response.set_header("Location", "/orders/" + order.item);
+        response.remove_header("x-static");
+        response.body = request.body;
+        "#,
+    );
+    assert_eq!(answer.status, 201);
+    assert_eq!(
+        answer.headers,
+        [("Location".to_owned(), "/orders/pen".to_owned())]
+    );
+    assert_eq!(answer.body, mock_request().body, "echoed");
+
+    let json = reply(r"response.send_json(#{ ok: true });");
+    assert_eq!(json.body, br#"{"ok":true}"#);
+    assert!(
+        json.headers
+            .contains(&("Content-Type".to_owned(), "application/json".to_owned()))
+    );
+    let unchanged = reply("let a = 1;");
+    assert_eq!(
+        unchanged,
+        static_reply(),
+        "a script that changes nothing gives the static answer"
+    );
+}
+
+#[test]
+fn mock_state_lasts_between_requests_only_when_a_script_succeeds() {
+    let mut state = MockState::default();
+    let script = r"state.calls = (state.calls ?? 0) + 1;
+        if state.calls == 1 { response.status = 500; }
+        response.body = `${state.calls}`;";
+    assert_eq!(mock_run(script, &mut state).reply.unwrap().status, 500);
+    let second = mock_run(script, &mut state).reply.unwrap();
+    assert_eq!((second.status, second.body.as_slice()), (200, &b"2"[..]));
+    let failing = r#"state.calls = 100; throw "boom";"#;
+    assert!(mock_run(failing, &mut state).reply.is_err());
+    assert_eq!(
+        mock_run(script, &mut state).reply.unwrap().body,
+        b"3",
+        "the failed run left state alone"
+    );
+    assert!(
+        mock_run("state = 1;", &mut state).reply.is_err(),
+        "state stays a map"
+    );
+}
+
+#[test]
+fn a_mock_cannot_send_what_the_server_will_not() {
+    let error = |source: &str| {
+        mock_run(source, &mut MockState::default())
+            .reply
+            .unwrap_err()
+            .to_string()
+    };
+    assert!(error("response.status = 99;").contains("between 200 and 599"));
+    assert!(error("response.delay_ms = 20000;").contains("10,000"));
+    assert!(
+        error(r#"response.set_header("Content-Length", "1");"#).contains("sets this header itself")
+    );
+    assert!(error(r#"response.set_header("Bad Name", "1");"#).contains("one word"));
+    assert!(error(r#"test("x", true);"#).contains("request scripts"));
+    assert!(error(r#"vars.get("x");"#).contains("vars"));
+    assert!(error("loop {}").contains("operations"));
+    assert_eq!(
+        reply("response.delay_ms = 250;").delay,
+        std::time::Duration::from_millis(250)
+    );
+}
+
+#[test]
+fn a_mock_keeps_its_console_even_when_it_fails() {
+    let run = mock_run(
+        r#"print("before"); throw "after";"#,
+        &mut MockState::default(),
+    );
+    assert_eq!(run.console, ["before"]);
+    assert_eq!(
+        run.reply.unwrap_err().describe("Mock script"),
+        "Mock script, line 1: after"
     );
 }

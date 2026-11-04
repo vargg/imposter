@@ -563,11 +563,7 @@ impl Dialog {
                         .show(ui, |ui| {
                             let width = ui.available_width() - SCROLL_BAR_ROOM;
                             ui.set_max_width(width.min(640.0));
-                            for phase in [
-                                imposter_app::script::Phase::Before,
-                                imposter_app::script::Phase::After,
-                                imposter_app::script::Phase::Both,
-                            ] {
+                            for phase in imposter_app::script::Phase::LISTED {
                                 ui.add_space(6.0);
                                 ui.label(
                                     RichText::new(phase.label())

@@ -139,8 +139,13 @@ fn examples_go_in_at_the_cursor_and_the_reference_lists_the_api() {
         Some(imposter_ui::dialogs::Dialog::ScriptReference)
     ));
     for entry in imposter_app::script::API {
+        // A name can be listed under two headings (request and mock scripts).
         assert!(
-            f.app.harness.query_by_label(entry.name).is_some(),
+            f.app
+                .harness
+                .query_all_by_label(entry.name)
+                .next()
+                .is_some(),
             "the reference lists {}",
             entry.name
         );

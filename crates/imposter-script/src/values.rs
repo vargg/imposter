@@ -4,6 +4,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use imposter_core::execution::Response;
+use imposter_core::mock::{MockReply, MockRequest, header_problem};
 use imposter_core::model::{BodyType, ParamItem, RequestTemplate, Variables};
 use imposter_core::{select, url};
 use rhai::{Array, Dynamic, Engine, EvalAltResult, ImmutableString, Map};
@@ -371,8 +372,120 @@ fn register_vars(engine: &mut Engine) {
         );
 }
 
+/// The request a mock route matched, read-only.
+#[derive(Clone)]
+pub struct MockIn(pub Arc<MockRequest>);
+
+/// The mock's answer, starting from the route's static one.
+#[derive(Clone)]
+pub struct MockOut(pub Arc<Mutex<MockReply>>);
+
+fn register_mock(engine: &mut Engine) {
+    engine
+        .register_type_with_name::<MockIn>("MockRequest")
+        .register_get("method", |r: &mut MockIn| r.0.method.clone())
+        .register_get("path", |r: &mut MockIn| r.0.path.clone())
+        .register_get("body", |r: &mut MockIn| {
+            String::from_utf8_lossy(&r.0.body).into_owned()
+        })
+        .register_fn("json", |r: &mut MockIn| parse_json(&r.0.body, false))
+        .register_fn("query", |r: &mut MockIn, name: &str| {
+            url::parse_pairs(&r.0.query)
+                .into_iter()
+                .find(|(n, _)| n == name)
+                .map_or(Dynamic::UNIT, |(_, v)| v.into())
+        })
+        .register_fn("header", |r: &mut MockIn, name: &str| {
+            let values: Vec<&str> =
+                r.0.headers
+                    .iter()
+                    .filter(|(n, _)| n.eq_ignore_ascii_case(name))
+                    .map(|(_, v)| v.as_str())
+                    .collect();
+            if values.is_empty() {
+                Dynamic::UNIT
+            } else {
+                values.join(", ").into()
+            }
+        })
+        .register_get("headers", |r: &mut MockIn| {
+            let mut map = Map::new();
+            for (name, value) in &r.0.headers {
+                let key = name.to_ascii_lowercase();
+                let joined = match map.get(key.as_str()) {
+                    Some(earlier) => format!("{earlier}, {value}"),
+                    None => value.clone(),
+                };
+                map.insert(key.into(), joined.into());
+            }
+            map
+        });
+    engine
+        .register_type_with_name::<MockOut>("MockResponse")
+        .register_get("status", |r: &mut MockOut| i64::from(lock(&r.0).status))
+        .register_set("status", |r: &mut MockOut, status: i64| -> Result<()> {
+            let status = u16::try_from(status)
+                .ok()
+                .filter(|s| (200..=599).contains(s))
+                .ok_or_else(|| format!("Status {status} is not between 200 and 599"))?;
+            lock(&r.0).status = status;
+            Ok(())
+        })
+        .register_get("body", |r: &mut MockOut| {
+            String::from_utf8_lossy(&lock(&r.0).body).into_owned()
+        })
+        .register_set("body", |r: &mut MockOut, body: ImmutableString| {
+            lock(&r.0).body = body.as_bytes().to_vec();
+        })
+        .register_get("delay_ms", |r: &mut MockOut| {
+            i64::try_from(lock(&r.0).delay.as_millis()).unwrap_or(i64::MAX)
+        })
+        .register_set("delay_ms", |r: &mut MockOut, millis: i64| -> Result<()> {
+            let delay = u64::try_from(millis)
+                .ok()
+                .map(std::time::Duration::from_millis)
+                .filter(|d| *d <= imposter_core::mock::MAX_MOCK_DELAY)
+                .ok_or_else(|| "A delay is between 0 and 10,000 ms".to_owned())?;
+            lock(&r.0).delay = delay;
+            Ok(())
+        })
+        .register_fn(
+            "set_header",
+            |r: &mut MockOut, name: &str, value: &str| -> Result<()> {
+                if let Some(problem) = header_problem(name, value) {
+                    return Err(format!("{name}: {problem}").into());
+                }
+                let mut reply = lock(&r.0);
+                reply.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(name));
+                reply.headers.push((name.to_owned(), value.to_owned()));
+                Ok(())
+            },
+        )
+        .register_fn("remove_header", |r: &mut MockOut, name: &str| {
+            lock(&r.0)
+                .headers
+                .retain(|(n, _)| !n.eq_ignore_ascii_case(name));
+        })
+        .register_fn(
+            "send_json",
+            |r: &mut MockOut, value: Dynamic| -> Result<()> {
+                let value: serde_json::Value = rhai::serde::from_dynamic(&value)?;
+                let mut reply = lock(&r.0);
+                reply.body = value.to_string().into_bytes();
+                reply
+                    .headers
+                    .retain(|(n, _)| !n.eq_ignore_ascii_case("content-type"));
+                reply
+                    .headers
+                    .push(("Content-Type".to_owned(), "application/json".to_owned()));
+                Ok(())
+            },
+        );
+}
+
 pub fn register(engine: &mut Engine) {
     register_request(engine);
     register_response(engine);
     register_vars(engine);
+    register_mock(engine);
 }

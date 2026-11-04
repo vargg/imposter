@@ -96,15 +96,21 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 | After response | `response.header(name), response.headers` | One header (every value joined with ", "), or all of them by lowercase name. |
 | After response | `response.body, response.json(), response.path(jsonpath)` | The body as text, parsed as JSON, or the value a JSONPath selects (several values as an array, none as ()). |
 | After response | `test(name, condition), test(name, \|\| { … })` | A test, shown with the checks and kept in History. A closure fails when it returns false or throws. |
-| Both | `expect(actual, expected)` | Throws "expected …, got …" when they differ: inside a test it fails the test with that message. |
-| Both | `vars.get(name), vars.set(name, value)` | Read a variable, or set one for later requests: it goes where captures go (the scope that defines it, else the active environment, else Global). |
-| Both | `sha256(data), sha512(data), sha1(data), md5(data)` | Digests of text or bytes, as bytes. |
-| Both | `hmac_sha256(key, data), hmac_sha512(key, data), hmac_sha1(key, data)` | HMACs of text or bytes, as bytes; a key may be the bytes of an earlier HMAC. |
-| Both | `hex(data), base64_encode(data), base64url_encode(data), base64_decode(text)` | Encode text or bytes; base64_decode gives bytes (`.as_string()` reads them as text). |
-| Both | `url_encode(text), url_decode(text)` | Percent-encoding as RFC 3986: everything but letters, digits and - _ . ~ is escaped. |
-| Both | `uuid(), now_ms(), now_iso(), random_int(min, max)` | Generated values, as {{$uuid}}, {{$timestampMs}}, {{$isoTimestamp}} and {{$randomInt}} make them. |
-| Both | `parse_json(text), to_json(value)` | JSON text to a value and back. |
-| Both | `print(value), debug(value)` | Write to the console under the response; it is not kept in History. |
+| Request scripts | `vars.get(name), vars.set(name, value)` | Read a variable, or set one for later requests: it goes where captures go (the scope that defines it, else the active environment, else Global). |
+| Mock responses | `request.method, request.path, request.query(name), request.header(name), request.headers` | The request the route matched, read-only; headers by name, ignoring case. |
+| Mock responses | `request.body, request.json()` | The request's body as text (up to 1 MiB), or parsed as JSON. |
+| Mock responses | `response.status, response.body, response.set_header(name, value), response.remove_header(name)` | The answer, starting from the route's status, headers and body. Statuses are 200 to 599; the server sets Content-Length itself. |
+| Mock responses | `response.send_json(value)` | Answer with a value as JSON, setting Content-Type. |
+| Mock responses | `response.delay_ms` | Wait before answering, up to 10,000 ms. |
+| Mock responses | `state` | A map kept between requests while the server runs; it starts empty on every Start. |
+| Every script | `expect(actual, expected)` | Throws "expected …, got …" when they differ: inside a test it fails the test with that message. |
+| Every script | `sha256(data), sha512(data), sha1(data), md5(data)` | Digests of text or bytes, as bytes. |
+| Every script | `hmac_sha256(key, data), hmac_sha512(key, data), hmac_sha1(key, data)` | HMACs of text or bytes, as bytes; a key may be the bytes of an earlier HMAC. |
+| Every script | `hex(data), base64_encode(data), base64url_encode(data), base64_decode(text)` | Encode text or bytes; base64_decode gives bytes (`.as_string()` reads them as text). |
+| Every script | `url_encode(text), url_decode(text)` | Percent-encoding as RFC 3986: everything but letters, digits and - _ . ~ is escaped. |
+| Every script | `uuid(), now_ms(), now_iso(), random_int(min, max)` | Generated values, as {{$uuid}}, {{$timestampMs}}, {{$isoTimestamp}} and {{$randomInt}} make them. |
+| Every script | `parse_json(text), to_json(value)` | JSON text to a value and back. |
+| Every script | `print(value), debug(value)` | Write to the console: under the response (not kept in History), or in the Mocks screen's request log. |
 
 **Load tests**
 - Send one request many times from the Load screen (its tab, a request's right-click menu,

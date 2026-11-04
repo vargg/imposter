@@ -1,7 +1,8 @@
-//! Request scripts in Rhai, run in a sandbox: no files, network, clock or environment; the
-//! host gives time and randomness. A before-sending script may change the request; an
-//! after-response script reads the response and runs tests. Both may set variables, which
-//! the caller writes as captures are written.
+//! Scripts in Rhai, run in a sandbox: no files, network, clock or environment; the host gives
+//! time and randomness. A before-sending script may change the request; an after-response
+//! script reads the response and runs tests; both may set variables, which the caller
+//! writes as captures are written. A mock route's script computes its answer from the
+//! request, with a map of state kept between requests.
 
 mod api;
 mod crypto;
@@ -11,11 +12,12 @@ use std::sync::{Arc, Mutex};
 
 use imposter_core::execution::{Response, ScriptTest};
 use imposter_core::generate::{Entropy, generate};
+use imposter_core::mock::{MockReply, MockRequest};
 use imposter_core::model::{RequestTemplate, Variables};
 use rhai::{Dynamic, Engine, EvalAltResult, FnPtr, NativeCallContext, Position, Scope};
 
 pub use api::{API, ApiEntry, Phase, readme_rows};
-use values::{ScriptRequest, ScriptResponse, Vars, lock};
+use values::{MockIn, MockOut, ScriptRequest, ScriptResponse, Vars, lock};
 
 /// Scripts longer than this are refused before compiling.
 pub const MAX_SOURCE: usize = 64 * 1024;
@@ -248,13 +250,14 @@ fn engine(run: &Run, phase: Phase, host: Host) -> Engine {
 }
 
 fn register_tests(engine: &mut Engine, run: &Run, phase: Phase) {
-    if phase == Phase::Before {
-        let refuse = |_: &str, _: Dynamic| -> Result<(), Box<EvalAltResult>> {
-            Err(
-                "Tests run on the response: put them in the after-response script"
-                    .to_owned()
-                    .into(),
-            )
+    let refusal = match phase {
+        Phase::Before => Some("Tests run on the response: put them in the after-response script"),
+        Phase::Mock => Some("Tests belong in request scripts; a mock only answers"),
+        Phase::After | Phase::Requests | Phase::All => None,
+    };
+    if let Some(refusal) = refusal {
+        let refuse = move |_: &str, _: Dynamic| -> Result<(), Box<EvalAltResult>> {
+            Err(refusal.to_owned().into())
         };
         engine.register_fn("test", refuse);
         return;
@@ -377,7 +380,8 @@ fn execute(
     run: &Run,
     engine: &Engine,
     source: &str,
-    mut scope: Scope<'_>,
+    scope: &mut Scope<'_>,
+    vars: bool,
 ) -> Result<(), ScriptError> {
     check(source)?;
     let ast = engine.compile(source).map_err(|error| {
@@ -388,9 +392,11 @@ fn execute(
             message: error.err_type().to_string(),
         }
     })?;
-    scope.push("vars", run.vars.clone());
+    if vars {
+        scope.push("vars", run.vars.clone());
+    }
     engine
-        .run_ast_with_scope(&mut scope, &ast)
+        .run_ast_with_scope(scope, &ast)
         .map_err(|error| run_error(&error))
 }
 
@@ -424,7 +430,7 @@ pub fn before(
     let request = ScriptRequest::new(template.clone(), true);
     let mut scope = Scope::new();
     scope.push("request", request.clone());
-    let result = execute(&run, &engine, source, scope);
+    let result = execute(&run, &engine, source, &mut scope, true);
     if result.is_ok() {
         *template = request.template();
     }
@@ -444,8 +450,59 @@ pub fn after(
     let mut scope = Scope::new();
     scope.push("request", ScriptRequest::new(template.clone(), false));
     scope.push("response", ScriptResponse(Arc::new(response.clone())));
-    let result = execute(&run, &engine, source, scope);
+    let result = execute(&run, &engine, source, &mut scope, true);
     finish(&run, result.err())
+}
+
+/// A mock server's state: kept between requests while it runs, empty on every start.
+#[derive(Debug, Clone, Default)]
+pub struct MockState(rhai::Map);
+
+/// What a mock route's script made of a request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MockRun {
+    /// The answer, or why there is none (the caller answers 500 with it).
+    pub reply: Result<MockReply, ScriptError>,
+    pub console: Vec<String>,
+}
+
+/// Run a mock route's script: `reply` is the route's static answer, which it may change;
+/// `state` is the server's, changed only when the script succeeds.
+pub fn mock(
+    source: &str,
+    request: &MockRequest,
+    reply: MockReply,
+    state: &mut MockState,
+    host: Host,
+) -> MockRun {
+    let run = new_run(&Variables::new());
+    let engine = engine(&run, Phase::Mock, host);
+    let out = MockOut(Arc::new(Mutex::new(reply)));
+    let mut scope = Scope::new();
+    scope.push("request", MockIn(Arc::new(request.clone())));
+    scope.push("response", out.clone());
+    scope.push("state", state.0.clone());
+    let result = execute(&run, &engine, source, &mut scope, false).and_then(|()| {
+        let kept = scope
+            .get_value::<rhai::Map>("state")
+            .ok_or_else(|| ScriptError::Run {
+                line: None,
+                message: "state must stay a map".to_owned(),
+            })?;
+        let reply = lock(&out.0).clone();
+        if let Some(problem) = reply.problem() {
+            return Err(ScriptError::Run {
+                line: None,
+                message: problem,
+            });
+        }
+        state.0 = kept;
+        Ok(reply)
+    });
+    MockRun {
+        reply: result,
+        console: lock(&run.console).lines.clone(),
+    }
 }
 
 #[cfg(test)]

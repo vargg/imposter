@@ -1,4 +1,5 @@
-//! Static local mock responses. Configuration is independent of request collections.
+//! Local mock responses, static or computed by a route's script. Configuration is independent
+//! of request collections.
 
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +30,93 @@ pub struct MockRoute {
     pub status: u16,
     pub headers: Vec<ParamItem>,
     pub body: String,
+    /// A Rhai script computing the response from the request, starting from the static
+    /// one; empty for a static route.
+    pub script: String,
+}
+
+impl MockRoute {
+    pub fn is_scripted(&self) -> bool {
+        !self.script.trim().is_empty()
+    }
+}
+
+/// What a scripted route is given about the request. Bodies are read only for these.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MockRequest {
+    pub method: String,
+    pub path: String,
+    /// The raw query, without `?`.
+    pub query: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+/// The longest delay a script may ask for.
+pub const MAX_MOCK_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// What the server answers.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MockReply {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+    /// Waited before answering, at most [`MAX_MOCK_DELAY`].
+    pub delay: std::time::Duration,
+}
+
+impl MockReply {
+    /// The route's static answer: where a script starts.
+    pub fn from_route(route: &MockRoute) -> Self {
+        Self {
+            status: route.status,
+            headers: route
+                .headers
+                .iter()
+                .filter(|h| h.is_enabled)
+                .map(|h| (h.name.clone(), h.value.clone()))
+                .collect(),
+            body: route.body.as_bytes().to_vec(),
+            delay: std::time::Duration::ZERO,
+        }
+    }
+
+    /// Why the reply cannot be sent, as a script must be told: a status out of range or a
+    /// header the server cannot or will not send.
+    pub fn problem(&self) -> Option<String> {
+        if !(200..=599).contains(&self.status) {
+            return Some(format!("Status {} is not between 200 and 599", self.status));
+        }
+        if self.delay > MAX_MOCK_DELAY {
+            return Some("A delay is at most 10,000 ms".to_owned());
+        }
+        self.headers
+            .iter()
+            .find_map(|(name, value)| header_problem(name, value).map(|p| format!("{name}: {p}")))
+    }
+}
+
+/// Why a response header cannot be sent: names are tokens, values have no line breaks, and
+/// the server sets the framing headers itself.
+pub fn header_problem(name: &str, value: &str) -> Option<&'static str> {
+    if !is_method_token(name) {
+        Some("Header names are one word without spaces")
+    } else if value.bytes().any(|b| (b < 32 && b != b'\t') || b == 127) {
+        Some("Header values can't contain line breaks")
+    } else if [
+        "content-length",
+        "transfer-encoding",
+        "connection",
+        "trailer",
+        "upgrade",
+    ]
+    .iter()
+    .any(|reserved| name.eq_ignore_ascii_case(reserved))
+    {
+        Some("The server sets this header itself")
+    } else {
+        None
+    }
 }
 
 impl Default for MockRoute {
@@ -40,6 +128,7 @@ impl Default for MockRoute {
             status: 200,
             headers: Vec::new(),
             body: String::new(),
+            script: String::new(),
         }
     }
 }
@@ -60,6 +149,9 @@ pub enum RouteField {
     Status,
     /// A response header, by its index in the route's list.
     Header(usize),
+    /// The response script (it does not compile); found by the caller, which has the
+    /// script engine.
+    Script,
     /// The route as a whole (it clashes with another).
     Route,
 }
@@ -127,26 +219,8 @@ impl MockConfig {
                 if !header.is_enabled {
                     continue;
                 }
-                let field = RouteField::Header(row);
-                if !is_method_token(&header.name) {
-                    problem(field, "Header names are one word without spaces");
-                } else if header
-                    .value
-                    .bytes()
-                    .any(|b| (b < 32 && b != b'\t') || b == 127)
-                {
-                    problem(field, "Header values can't contain line breaks");
-                } else if [
-                    "content-length",
-                    "transfer-encoding",
-                    "connection",
-                    "trailer",
-                    "upgrade",
-                ]
-                .iter()
-                .any(|name| header.name.eq_ignore_ascii_case(name))
-                {
-                    problem(field, "The server sets this header itself");
+                if let Some(reason) = header_problem(&header.name, &header.value) {
+                    problem(RouteField::Header(row), reason);
                 }
             }
             if route.enabled && !keys.insert((&route.method, &route.path)) {
