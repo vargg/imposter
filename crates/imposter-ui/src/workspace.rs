@@ -59,12 +59,13 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                     (Screen::History, "History"),
                     (Screen::Settings, "Settings"),
                     (Screen::Mocks, "Mocks"),
+                    (Screen::Load, "Load"),
                 ] {
                     let dirty = match screen {
                         Screen::Variables => variables_dirty,
                         Screen::Settings => settings_dirty,
                         Screen::Mocks => state.mocks.dirty(),
-                        Screen::Requests | Screen::History => false,
+                        Screen::Requests | Screen::History | Screen::Load => false,
                     };
                     // In the tone of the "Unsaved" state, so it differs from the green dot
                     // of a request tab that holds something.
@@ -72,6 +73,9 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                     if dirty {
                         // Over the tab's corner, so the tabs after it do not move.
                         widgets::corner_dot(ui, &tab, Tone::Warning, "Unsaved changes");
+                    }
+                    if screen == Screen::Load && state.load.running() {
+                        widgets::corner_dot(ui, &tab, Tone::Muted, "Load test running");
                     }
                     if tab.clicked() {
                         state.actions.push(Action::Screen(screen));
@@ -148,6 +152,16 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                     .inner_margin(16),
             )
             .show(ui, |ui| crate::mock_screen::draw(state, ui));
+        return;
+    }
+    if state.screen == Screen::Load {
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(palette().background)
+                    .inner_margin(16),
+            )
+            .show(ui, |ui| crate::load_screen::draw(state, ui));
         return;
     }
     if state.screen == Screen::Settings {
@@ -414,10 +428,13 @@ fn node_menu(
     actions: &mut Vec<Action>,
 ) {
     let id = node.id();
-    if let Node::Request(request) = node
-        && ui.button("Duplicate").clicked()
-    {
-        actions.push(Action::DuplicateRequest(request.id));
+    if let Node::Request(request) = node {
+        if ui.button("Duplicate").clicked() {
+            actions.push(Action::DuplicateRequest(request.id));
+        }
+        if ui.button("Load test…").clicked() {
+            actions.push(Action::LoadRequest(request.id));
+        }
     }
     if let Node::Folder { folder, .. } = node {
         if ui.button("New Request here").clicked() {

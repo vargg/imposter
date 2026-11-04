@@ -71,6 +71,17 @@ Python/PyQt6 version and imports its native collection format. New exports use `
   environment, and the next request uses it. Right-click a JSON value and choose Set variable
   to add one. Nothing is set while the Variables screen has unsaved changes to that scope.
 
+**Load tests**
+- Send one request many times from the Load screen (its tab, a request's right-click menu,
+  or the command palette), as `ab` does: total requests, concurrency, an optional time
+  limit and ramp-up, with or without keep-alive. Every request gets fresh generated values.
+- The summary: requests and bytes per second, the share of errors (failed checks count),
+  min, mean and percentiles of the whole exchange and of the time to the first byte, a
+  "served within" table, counts by status and error, and a latency histogram. The last ten
+  runs of the session stay a menu away.
+- Runs stay out of History and never set variables. With a red environment active, Start
+  asks first.
+
 **History**
 - Every execution with its environment, the request exactly as it was sent, and the full
   response.

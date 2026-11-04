@@ -659,6 +659,19 @@ pub fn local_time(timestamp: imposter_app::core::execution::Timestamp) -> String
     )
 }
 
+/// The time of day of `timestamp` in the system time zone: "14:02".
+pub fn clock_time(timestamp: imposter_app::core::execution::Timestamp) -> String {
+    jiff::Timestamp::from_millisecond(timestamp.0).map_or_else(
+        |_| String::new(),
+        |instant| {
+            instant
+                .to_zoned(jiff::tz::TimeZone::system())
+                .strftime("%H:%M")
+                .to_string()
+        },
+    )
+}
+
 /// A short, plain name for a transport failure kind (`Response::error_kind`).
 pub fn failure_title(kind: &str) -> &'static str {
     match kind {

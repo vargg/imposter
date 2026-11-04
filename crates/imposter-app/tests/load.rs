@@ -269,3 +269,32 @@ async fn a_request_that_cannot_be_sent_stops_the_run_before_sending() {
     assert!(matches!(result, Err(ExecuteError::Unresolved(names)) if names == ["missing"]));
     assert_eq!(server.requests().len(), 0);
 }
+
+#[tokio::test]
+async fn a_run_dropped_half_way_shuts_its_runtime_down_quietly() {
+    let (_dir, store) = open();
+    let server = LoadServer::start(|_, _| LoadReply {
+        body_delay: Duration::from_millis(50),
+        ..LoadReply::ok(b"ok")
+    })
+    .await;
+    let request = saved(&store, get(&server.url)).await;
+    let handle = store.handle();
+    let running = tokio::spawn(async move {
+        run(
+            &handle,
+            request,
+            plan(100_000, 2, true),
+            CancellationToken::new(),
+            Arc::new(Progress::default()),
+        )
+        .await
+    });
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while server.requests().is_empty() && tokio::time::Instant::now() < deadline {
+        tokio::task::yield_now().await;
+    }
+    running.abort();
+    let ended = running.await.unwrap_err();
+    assert!(ended.is_cancelled(), "aborted, not panicked: {ended:?}");
+}

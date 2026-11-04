@@ -1,0 +1,168 @@
+//! The Load screen: choosing the request, running, stopping, and the production question.
+#![cfg(test)]
+#![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
+
+mod support;
+
+use std::time::Duration;
+
+use egui_kittest::kittest::{NodeT, Queryable};
+use imposter_app::core::model::{EnvColor, Variables};
+use imposter_app::store::environments;
+use imposter_testkit::{LoadReply, LoadServer};
+use imposter_ui::app::Screen;
+use support::{click, click_button, collection, request, settle, start_with};
+
+struct Fixture {
+    app: support::App,
+    server: LoadServer,
+    _runtime: tokio::runtime::Runtime,
+}
+
+/// API holds "Ping" against a keep-alive server answering after `delay`.
+fn fixture(delay: Duration, red: bool) -> Fixture {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime.block_on(LoadServer::start(move |_, _| LoadReply {
+        body_delay: delay,
+        ..LoadReply::ok(b"pong")
+    }));
+    let url = format!("{}/ping", server.url);
+    let app = start_with(move |store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Ping", &url);
+        if red {
+            store
+                .call_blocking(|db| {
+                    let prod = environments::create_environment(db, "Prod", &Variables::new())?;
+                    environments::set_environment_color(db, prod.id, Some(EnvColor::Red))?;
+                    environments::set_active_environment(db, Some(prod.id))
+                })
+                .unwrap();
+        }
+    });
+    Fixture {
+        app,
+        server,
+        _runtime: runtime,
+    }
+}
+
+fn set_plan(app: &mut support::App, requests: &str, concurrency: &str) {
+    let form = &mut app.harness.state_mut().state.load.form;
+    requests.clone_into(&mut form.requests);
+    concurrency.clone_into(&mut form.concurrency);
+    app.harness.run_steps(1);
+}
+
+#[test]
+fn the_load_tab_takes_the_open_request_and_a_run_shows_its_summary() {
+    let mut f = fixture(Duration::ZERO, false);
+    click(&mut f.app.harness, "GET Ping");
+    settle(&mut f.app.harness);
+    click(&mut f.app.harness, "Load");
+    settle(&mut f.app.harness);
+    assert_eq!(f.app.harness.state().state.screen, Screen::Load);
+    f.app.harness.get_by_label("Ping");
+
+    set_plan(&mut f.app, "20", "4");
+    click(&mut f.app.harness, "Start the load test");
+    settle(&mut f.app.harness);
+
+    assert_eq!(f.server.requests().len(), 20);
+    f.app.harness.get_by_label_contains("req/s · ");
+    f.app.harness.get_by_label_contains("errors 0%");
+    f.app.harness.get_by_label("200 ×20");
+    f.app.harness.get_by_label("Served within");
+    f.app.harness.get_by_label_contains("Latency histogram: ");
+    let stored = f
+        .app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| imposter_app::store::executions::count(db))
+        .unwrap();
+    assert_eq!(stored, 0, "load runs are not history");
+}
+
+#[test]
+fn the_sidebar_menu_opens_the_screen_on_its_request_and_stop_ends_a_run() {
+    let mut f = fixture(Duration::from_millis(100), false);
+    f.app.harness.get_by_label("GET Ping").click_secondary();
+    f.app.harness.run_steps(2);
+    click(&mut f.app.harness, "Load test…");
+    settle(&mut f.app.harness);
+    assert_eq!(f.app.harness.state().state.screen, Screen::Load);
+    f.app.harness.get_by_label("Ping");
+
+    set_plan(&mut f.app, "1000", "2");
+    click(&mut f.app.harness, "Start the load test");
+    f.app.harness.get_by_label_contains("Load test progress: ");
+    let tab = f
+        .app
+        .harness
+        .get_by_label("Load")
+        .accesskit_node()
+        .description();
+    assert_eq!(tab.as_deref(), Some("Load test running"));
+    click(&mut f.app.harness, "Stop the load test");
+    settle(&mut f.app.harness);
+    f.app.harness.get_by_label_contains("Stopped after");
+    assert!(f.server.requests().len() < 1000);
+}
+
+#[test]
+fn a_red_environment_asks_before_starting() {
+    let mut f = fixture(Duration::ZERO, true);
+    click(&mut f.app.harness, "GET Ping");
+    settle(&mut f.app.harness);
+    click(&mut f.app.harness, "Load");
+    settle(&mut f.app.harness);
+    set_plan(&mut f.app, "5", "1");
+    click(&mut f.app.harness, "Start the load test");
+    f.app.harness.run_steps(2);
+    f.app
+        .harness
+        .get_by_label_contains("This sends \"Ping\" 5 times with the Prod environment.");
+    assert_eq!(f.server.requests().len(), 0, "nothing before the answer");
+    click_button(&mut f.app.harness, "Start load test");
+    settle(&mut f.app.harness);
+    assert_eq!(f.server.requests().len(), 5);
+}
+
+#[test]
+fn a_plan_that_cannot_run_says_why_and_the_palette_chooses_the_request() {
+    let mut f = fixture(Duration::ZERO, false);
+    click(&mut f.app.harness, "Load");
+    settle(&mut f.app.harness);
+    f.app.harness.get_by_label("Choose a request to load-test");
+    set_plan(&mut f.app, "5", "10");
+    f.app
+        .harness
+        .get_by_label("Concurrency must be between 1 and 256, and no more than the requests");
+
+    click(&mut f.app.harness, "Choose the request to load-test");
+    settle(&mut f.app.harness);
+    click(&mut f.app.harness, "GET API › Ping");
+    settle(&mut f.app.harness);
+    f.app.harness.get_by_label("Ping");
+    assert!(f.app.harness.state().state.load.target.is_some());
+}
+
+#[test]
+fn the_palette_load_tests_the_open_request() {
+    let mut f = fixture(Duration::ZERO, false);
+    click(&mut f.app.harness, "GET Ping");
+    settle(&mut f.app.harness);
+    f.app
+        .harness
+        .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+    settle(&mut f.app.harness);
+    click(&mut f.app.harness, "Load Test This Request");
+    settle(&mut f.app.harness);
+    assert_eq!(f.app.harness.state().state.screen, Screen::Load);
+    let target = f.app.harness.state().state.load.target.clone().unwrap();
+    assert_eq!(
+        (target.name.as_str(), target.place.as_str()),
+        ("Ping", "API")
+    );
+}

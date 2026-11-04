@@ -39,6 +39,8 @@ pub enum Mode {
     All,
     /// Requests only, recent ones first (Cmd/Ctrl+P).
     Requests,
+    /// Requests only, chosen as the Load screen's target rather than opened.
+    LoadTarget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -223,7 +225,16 @@ impl Palette {
         };
         let mut requests: Vec<&IndexedRequest> = index.iter().collect();
         requests.sort_by_key(|r| rank(r.id));
-        requests.into_iter().map(request_item).collect()
+        requests
+            .into_iter()
+            .map(|request| match self.mode {
+                Mode::LoadTarget => Item {
+                    action: Action::LoadTarget(crate::load_screen::Target::from_index(request)),
+                    ..request_item(request)
+                },
+                Mode::All | Mode::Requests => request_item(request),
+            })
+            .collect()
     }
 
     /// Draw the palette inside its modal and report a choice or a close.
@@ -251,6 +262,7 @@ impl Palette {
         let hint = match self.mode {
             Mode::All => "Search actions, requests and environments",
             Mode::Requests => "Search requests",
+            Mode::LoadTarget => "Choose a request to load-test",
         };
         let field = ui.add(
             egui::TextEdit::singleline(&mut self.query)
@@ -285,7 +297,7 @@ impl Palette {
                     }
                 }
                 if items.is_empty() {
-                    let text = if self.index.is_none() && self.mode == Mode::Requests {
+                    let text = if self.index.is_none() && self.mode != Mode::All {
                         "Loading requests…"
                     } else {
                         "Nothing matches"
@@ -495,6 +507,9 @@ fn fixed_items(state: &State) -> Vec<Item> {
             Some(&shortcuts::DUPLICATE),
             Action::DuplicateRequest(id),
         );
+        if let Some(target) = crate::load_screen::Target::from_tree(state, id) {
+            action("Load Test This Request", None, Action::LoadTarget(target));
+        }
     }
     action(
         if state.layout.sidebar_visible {
@@ -519,6 +534,7 @@ fn fixed_items(state: &State) -> Vec<Item> {
         (Screen::History, "Go to History"),
         (Screen::Settings, "Go to Settings"),
         (Screen::Mocks, "Go to Mocks"),
+        (Screen::Load, "Go to Load"),
     ] {
         if state.screen != screen {
             let shortcut = (screen == Screen::Settings).then_some(&shortcuts::SETTINGS);

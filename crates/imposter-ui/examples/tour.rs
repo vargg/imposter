@@ -581,6 +581,24 @@ fn main() {
         tour.type_into("Mock path", " bad path");
         tour.shot("6-03-invalid-route");
 
+        // Task 6b: a load test of the open request.
+        tour.click("Load");
+        tour.settle();
+        tour.shot("6-04-load");
+        {
+            let form = &mut tour.harness.state_mut().state.load.form;
+            form.requests = "200".into();
+            form.concurrency = "8".into();
+        }
+        tour.click("Start the load test");
+        tour.harness.run_steps(3);
+        if tour.harness.query_by_label("Start load test").is_some() {
+            tour.shot("6-05-load-production");
+            tour.click("Start load test");
+        }
+        tour.settle();
+        tour.shot("6-06-load-result");
+
         // Task 7: getting around.
         tour.click("Requests");
         tour.settle();

@@ -46,6 +46,8 @@ pub const AUTOSAVE_DELAY: f64 = 0.5;
 const LAST_KEY: &str = "last";
 const RECENT_KEY: &str = "recent_requests";
 const APPEARANCE_KEY: &str = "appearance";
+/// The Load screen's last plan.
+const LOAD_KEY: &str = "load_form";
 
 /// How the app looks: a UI preference, kept in UI state beside the layout rather than in the
 /// application settings the Python app shares.
@@ -77,6 +79,7 @@ pub struct Startup {
     appearance: Appearance,
     layout: Value,
     draft: Option<Request>,
+    load_form: crate::load_screen::LoadForm,
 }
 
 /// The last selection, restored at startup.
@@ -132,6 +135,10 @@ pub enum Message {
     MockStopped {
         generation: u64,
         result: Result<(), Failure>,
+    },
+    LoadFinished {
+        generation: u64,
+        result: Result<imposter_app::load::Report, NotSent>,
     },
     Collections {
         select: Option<CollectionId>,
@@ -357,6 +364,11 @@ pub enum Action {
     /// Find out whether a path typed on the Settings screen names a file.
     CheckPath(String),
     Mock(crate::mock_screen::MockAction),
+    Load(crate::load_screen::LoadAction),
+    /// Load-test this request: make it the Load screen's target and go there.
+    LoadTarget(crate::load_screen::Target),
+    /// The same for a request of the open collection's tree.
+    LoadRequest(RequestId),
     /// Copy the open request as a curl command with resolved values.
     CopyCurl,
     /// The editor changed: `url` when the URL itself was edited, `params` for the query rows.
@@ -374,6 +386,7 @@ pub enum Screen {
     History,
     Settings,
     Mocks,
+    Load,
 }
 
 /// The Settings screen: the form, the saved baseline it is compared with, and save state.
@@ -954,6 +967,7 @@ pub struct State {
     pub history: HistoryScreen,
     pub settings_screen: SettingsScreen,
     pub mocks: crate::mock_screen::MockScreen,
+    pub load: crate::load_screen::LoadScreen,
     /// Bumped by every navigation; results of older work are ignored.
     pub generation: u64,
     tree_generation: u64,
@@ -1039,6 +1053,7 @@ impl ImposterApp {
                 history: HistoryScreen::default(),
                 settings_screen: SettingsScreen::default(),
                 mocks: crate::mock_screen::MockScreen::default(),
+                load: crate::load_screen::LoadScreen::default(),
                 generation: 0,
                 tree_generation: 0,
                 autosave_due: None,
@@ -1083,6 +1098,11 @@ impl ImposterApp {
                         .unwrap_or_default(),
                     layout: kv::get(db, Table::UiState, LAYOUT_KEY)?.unwrap_or(Value::Null),
                     draft: kv::get(db, Table::UiState, DRAFT_KEY)?.flatten(),
+                    // A convenience: unreadable means the defaults.
+                    load_form: kv::get(db, Table::UiState, LOAD_KEY)
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default(),
                 })
             },
             |result| Message::Started(result.map(Box::new).map_err(failure)),
@@ -1268,6 +1288,7 @@ impl ImposterApp {
                     run.address = Some(address);
                 }
             }
+            Message::LoadFinished { generation, result } => self.load_finished(generation, result),
             Message::MockStopped { generation, result } => {
                 if generation == self.state.mocks.generation {
                     self.state.mocks.run = None;
@@ -1632,6 +1653,7 @@ impl ImposterApp {
         state.active_environment = startup.active_environment;
         state.recent = startup.recent;
         state.appearance = startup.appearance;
+        state.load.form = startup.load_form;
         if let Some(draft) = startup.draft {
             self.load_editor(&draft);
             self.request_status("Restored the draft you left open", Tone::Muted);
@@ -2637,6 +2659,14 @@ impl ImposterApp {
                 self.state.close = CloseState::Ready;
             }
             ConfirmPurpose::PostmanExport => self.pick_postman_destination(),
+            // Through the actions, which carry the time the run starts at.
+            ConfirmPurpose::StartLoad => {
+                self.state
+                    .actions
+                    .push(Action::Load(crate::load_screen::LoadAction::Start {
+                        confirmed: true,
+                    }));
+            }
         }
     }
 
@@ -2764,9 +2794,22 @@ impl ImposterApp {
                 Screen::Settings => self.save_settings(),
                 Screen::Mocks => self.save_mocks(),
                 Screen::Requests if self.state.guard.is_none() => self.save_current(),
-                Screen::Requests | Screen::History => {}
+                Screen::Requests | Screen::History | Screen::Load => {}
             },
             Action::Mock(action) => self.mock_action(action),
+            Action::Load(action) => self.load_action(action, now),
+            Action::LoadRequest(id) => {
+                if let Some(target) = crate::load_screen::Target::from_tree(&self.state, id) {
+                    self.handle(Action::LoadTarget(target), now);
+                }
+            }
+            Action::LoadTarget(target) => {
+                if self.state.load.run.is_none() {
+                    self.state.load.target = Some(target);
+                    self.state.load.error = None;
+                }
+                self.state.screen = Screen::Load;
+            }
             Action::SettingsEdited => self.state.settings_screen.refresh_status(),
             Action::CheckPath(path) => {
                 self.state.settings_screen.paths.insert(path.clone(), None);
@@ -3769,6 +3812,153 @@ impl ImposterApp {
         }
     }
 
+    // ---- load tests ------------------------------------------------------------------------
+
+    fn load_action(&mut self, action: crate::load_screen::LoadAction, now: f64) {
+        use crate::load_screen::LoadAction;
+        match action {
+            LoadAction::Choose => {
+                let palette =
+                    crate::palette::Palette::open(&self.state, crate::palette::Mode::LoadTarget);
+                self.state.dialog = Some(Dialog::Palette(Box::new(palette)));
+                self.load_request_index();
+            }
+            LoadAction::Show(index) => {
+                if index < self.state.load.runs.len() {
+                    self.state.load.shown = index;
+                }
+            }
+            LoadAction::Stop => {
+                if let Some(run) = &mut self.state.load.run {
+                    run.stopping = true;
+                    self.bridge.cancel(run.task);
+                }
+            }
+            LoadAction::Start { confirmed } => self.load_start(confirmed, now),
+        }
+    }
+
+    fn load_start(&mut self, confirmed: bool, now: f64) {
+        if self.state.close != CloseState::Open || self.state.load.run.is_some() {
+            return;
+        }
+        let Some(target) = self.state.load.target.clone() else {
+            return;
+        };
+        let plan = match self.state.load.form.plan() {
+            Ok(plan) => plan,
+            Err(reason) => {
+                self.state.load.error = Some(reason);
+                return;
+            }
+        };
+        // Many requests to production are worth a second look.
+        let environment = self
+            .state
+            .active_environment
+            .and_then(|id| self.state.environments.iter().find(|e| e.id == id));
+        if !confirmed
+            && let Some(environment) = environment.filter(|e| e.color == Some(EnvColor::Red))
+        {
+            self.state.dialog = Some(Dialog::start_load(
+                &environment.name,
+                plan.requests(),
+                &target.name,
+            ));
+            return;
+        }
+        // What Send would send now when it is open; otherwise as stored.
+        let open = if let Some(pane) = &self.state.editor
+            && pane.editor.id() == Some(target.id)
+        {
+            if let Ok(request) = pane.editor.to_request() {
+                Some(request)
+            } else {
+                self.state.load.error =
+                    Some("Fix the request's settings on its Settings tab first".to_owned());
+                return;
+            }
+        } else {
+            None
+        };
+        let screen = &mut self.state.load;
+        screen.generation += 1;
+        screen.error = None;
+        let generation = screen.generation;
+        let progress = Arc::new(imposter_app::load::Progress::default());
+        let shared = progress.clone();
+        let db = self.db.clone();
+        let id = target.id;
+        let task = self.bridge.spawn(move |cancel| async move {
+            let request = match open {
+                Some(request) => request,
+                None => match db.call(move |db| collections::request(db, id)).await {
+                    Ok(Some(request)) => request,
+                    Ok(None) => {
+                        return Message::LoadFinished {
+                            generation,
+                            result: Err(NotSent {
+                                message: "The request no longer exists".to_owned(),
+                                unresolved: Vec::new(),
+                            }),
+                        };
+                    }
+                    Err(error) => {
+                        return Message::LoadFinished {
+                            generation,
+                            result: Err(ExecuteError::Store(error).into()),
+                        };
+                    }
+                },
+            };
+            let result = imposter_app::load::run(&db, request, plan, cancel, shared).await;
+            Message::LoadFinished {
+                generation,
+                result: result.map_err(NotSent::from),
+            }
+        });
+        screen.run = Some(crate::load_screen::Running {
+            task,
+            progress,
+            started: now,
+            plan,
+            target,
+            stopping: false,
+        });
+        let form = serde_json::to_value(&self.state.load.form).unwrap_or(Value::Null);
+        self.write_ui_state(LOAD_KEY, form);
+    }
+
+    fn load_finished(
+        &mut self,
+        generation: u64,
+        result: Result<imposter_app::load::Report, NotSent>,
+    ) {
+        let screen = &mut self.state.load;
+        if generation != screen.generation {
+            return;
+        }
+        let Some(run) = screen.run.take() else {
+            return;
+        };
+        match result {
+            Ok(report) => {
+                let text = format!(
+                    "Load test finished · {}",
+                    crate::load_screen::rate_text(report.summary.per_second)
+                );
+                screen.finished(crate::load_screen::Finished {
+                    target: run.target,
+                    plan: run.plan,
+                    report,
+                    when: crate::viewer::clock_time(executor::now()),
+                });
+                self.status(&text);
+            }
+            Err(not_sent) => screen.error = Some(not_sent.message),
+        }
+    }
+
     fn mocks_transition(&mut self, next: crate::mock_screen::Transition) {
         if self.state.mocks.dirty() {
             self.state.mocks.pending = Some(next);
@@ -3980,6 +4170,7 @@ impl ImposterApp {
             return;
         }
         self.mock_action(crate::mock_screen::MockAction::Stop);
+        self.load_action(crate::load_screen::LoadAction::Stop, 0.0);
         self.state.close = CloseState::Draining;
         self.state.autosave_due = None;
         if let Some(execution) = &self.state.execution {

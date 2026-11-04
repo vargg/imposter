@@ -68,6 +68,28 @@ struct Run {
     stop: CancellationToken,
 }
 
+/// The run's own runtime, shut down in the background however `run` ends: dropping a
+/// runtime normally blocks, which an async context must not do (a run dropped half way, as
+/// when the app's runtime shuts down, panicked).
+struct OwnRuntime(Option<tokio::runtime::Runtime>);
+
+impl OwnRuntime {
+    fn handle(&self) -> &tokio::runtime::Handle {
+        self.0
+            .as_ref()
+            .expect("the runtime is only taken when dropped")
+            .handle()
+    }
+}
+
+impl Drop for OwnRuntime {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.0.take() {
+            runtime.shutdown_background();
+        }
+    }
+}
+
 /// Whether a check reads the body, which then has to be kept up to the capture limit.
 fn reads_body(checks: &[Check]) -> bool {
     checks.iter().filter(|c| c.enabled).any(|c| {
@@ -110,11 +132,13 @@ pub async fn run(
     } else {
         0
     };
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .thread_name("imposter-load")
-        .enable_all()
-        .build()
-        .map_err(|e| ExecuteError::Invalid(format!("Cannot start the load run: {e}")))?;
+    let runtime = OwnRuntime(Some(
+        tokio::runtime::Builder::new_multi_thread()
+            .thread_name("imposter-load")
+            .enable_all()
+            .build()
+            .map_err(|e| ExecuteError::Invalid(format!("Cannot start the load run: {e}")))?,
+    ));
     let stop = cancel.child_token();
     let timed_out = Arc::new(AtomicBool::new(false));
     let run = Arc::new(Run {
@@ -130,7 +154,7 @@ pub async fn run(
     let started = Instant::now();
     if let Some(limit) = plan.time_limit() {
         let (stop, timed_out) = (stop.clone(), timed_out.clone());
-        runtime.spawn(async move {
+        runtime.handle().spawn(async move {
             tokio::select! {
                 () = stop.cancelled() => {}
                 () = tokio::time::sleep(limit) => {
@@ -140,7 +164,7 @@ pub async fn run(
             }
         });
     }
-    let workers = runtime.spawn(async move {
+    let workers = runtime.handle().spawn(async move {
         let mut workers = tokio::task::JoinSet::new();
         for index in 0..plan.concurrency() {
             workers.spawn(worker(run.clone(), index));
@@ -154,8 +178,7 @@ pub async fn run(
     let samples = workers.await;
     let wall = started.elapsed();
     stop.cancel();
-    // Not dropped: dropping a runtime blocks, which an async context must not do.
-    runtime.shutdown_background();
+    drop(runtime);
     let samples = samples
         .map_err(|_| ExecuteError::Invalid("The load run failed unexpectedly".to_owned()))?;
     Ok(Report {

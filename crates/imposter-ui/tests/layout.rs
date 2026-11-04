@@ -13,7 +13,7 @@ use imposter_testkit::{Server, response};
 use imposter_ui::app::{Action, Appearance, Screen};
 use imposter_ui::layout::MIN_WINDOW;
 use imposter_ui::theme::{Density, ThemeChoice};
-use support::{click, collection, request, settle, start_with, type_into};
+use support::{click, click_button, collection, request, settle, start_with, type_into};
 
 /// The status bar's own controls.
 const STATUS_BAR: [&str; 4] = [
@@ -285,6 +285,23 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         settle(&mut app.harness);
         check(app, screen);
     }
+    // The Load screen on the open request: idle, asking about production, running, and a
+    // stopped run's summary with its error pills and tables.
+    click(&mut app.harness, "Load");
+    settle(&mut app.harness);
+    check(app, "Load");
+    {
+        let form = &mut app.harness.state_mut().state.load.form;
+        form.requests = "1000000".into();
+        form.concurrency = "2".into();
+    }
+    click(&mut app.harness, "Start the load test");
+    check(app, "Load production question");
+    click_button(&mut app.harness, "Start load test");
+    check(app, "Load running");
+    click(&mut app.harness, "Stop the load test");
+    settle(&mut app.harness);
+    check(app, "Load result");
     click(&mut app.harness, "History");
     settle(&mut app.harness);
     if let Some(row) = app

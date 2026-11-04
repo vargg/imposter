@@ -35,6 +35,8 @@ pub enum ConfirmPurpose {
     DiscardOnClose,
     /// Write a Postman export despite the listed limitations.
     PostmanExport,
+    /// Start a load test against a red (production) environment.
+    StartLoad,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -664,6 +666,19 @@ impl Dialog {
             confirm: confirm.to_owned(),
             purpose,
         }
+    }
+
+    /// Many requests against a red environment, which usually means production.
+    pub fn start_load(environment: &str, requests: u32, request: &str) -> Self {
+        Self::confirm(
+            &format!("Load test {environment}?"),
+            format!(
+                "This sends \"{request}\" {} times with the {environment} environment.",
+                crate::load_screen::count_text(u64::from(requests))
+            ),
+            "Start load test",
+            ConfirmPurpose::StartLoad,
+        )
     }
 
     /// `roots` are the collection's top-level nodes, when its tree is loaded.

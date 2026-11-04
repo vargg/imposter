@@ -10,6 +10,7 @@ pub mod history_screen;
 pub mod icons;
 pub mod json_typing;
 pub mod layout;
+pub mod load_screen;
 pub mod palette;
 pub mod settings_screen;
 pub mod shortcuts;

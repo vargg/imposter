@@ -344,6 +344,18 @@ numbers, so both are excluded. Each logical change is its own commit.
     error, not a fast request.
   - **Stopping** (the user or the time limit) drops the requests in flight and sums up
     what finished.
+  - **The Load screen** (`load_screen.rs`) is its own header tab, reached also from a
+    request's right-click "Load test…" and the palette ("Load Test This Request", and
+    "Change…" opens the palette to choose any saved request). Opened with nothing chosen
+    it takes the open request. The request bar does not change: a Send menu whose one
+    item only switched screens would add a click and cost the URL width. A run sends what
+    Send would send now when the request is open, edits included, else the stored one.
+    Target and plan come first so Start and Stop never move; why a plan cannot run is
+    written beside Start. With a red environment active, Start asks first ("Load test
+    Prod?"), since red marks production. The tab has a dot while a run goes on, and the
+    last ten runs of the session are kept in memory, nothing stored but the plan's values.
+    Plan fields are spoken with their unit ("Time limit in seconds"); "Requests" alone was
+    also the header's tab.
   - **Closed loop:** each worker waits for its response before the next request, as `ab`
     does, so when the server slows down fewer requests go out and tail latency reads
     lower than users would see. Left for later: a fixed-rate mode, CSV test data,
