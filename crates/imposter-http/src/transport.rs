@@ -202,13 +202,17 @@ impl From<reqwest::Error> for SendError {
     }
 }
 
-fn client(policy: &Policy, tls: rustls::ClientConfig) -> Result<reqwest::Client, SendError> {
+fn client(
+    policy: &Policy,
+    tls: rustls::ClientConfig,
+    idle_per_host: usize,
+) -> Result<reqwest::Client, SendError> {
     let mut builder = reqwest::Client::builder()
         .use_preconfigured_tls(tls)
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(policy.timeout)
         .read_timeout(policy.timeout)
-        .pool_max_idle_per_host(0)
+        .pool_max_idle_per_host(idle_per_host)
         .user_agent(concat!("Imposter/", env!("CARGO_PKG_VERSION")));
     builder = match &policy.proxy {
         Some(url) => builder.proxy(reqwest::Proxy::all(url.as_str()).map_err(|e| {
@@ -389,19 +393,86 @@ async fn capture(
     })
 }
 
-async fn client_for(policy: &Policy, url: &Url) -> Result<reqwest::Client, SendError> {
-    let mut settings = policy.tls.clone();
-    if let Some(routing) = &policy.identity_routing {
-        routing.apply(url, &mut settings)?;
-    }
-    let tls = tokio::task::spawn_blocking(move || tls::client_config(&settings))
-        .await
-        .map_err(|_| SendError::new(ErrorKind::Tls, "Loading certificates failed unexpectedly"))?
-        .map_err(|e| SendError::new(ErrorKind::Tls, e.to_string()))?;
-    client(policy, tls)
+/// The clients of one execution, or of one load run shared by all its workers. Each set of
+/// TLS settings (host identities can pick another per host) gets one client, built once.
+/// A single send keeps no idle connection; a load run keeps them to reuse.
+pub struct Session {
+    policy: Policy,
+    idle_per_host: usize,
+    clients: std::sync::Mutex<Vec<(TlsSettings, reqwest::Client)>>,
 }
 
-async fn exchange(prepared: &Prepared, policy: &Policy) -> Result<Response, SendError> {
+impl Session {
+    /// `idle_per_host` connections stay open for reuse after a response; 0 closes each.
+    pub fn new(policy: Policy, idle_per_host: usize) -> Self {
+        Self {
+            policy,
+            idle_per_host,
+            clients: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn policy(&self) -> &Policy {
+        &self.policy
+    }
+
+    async fn client_for(&self, url: &Url) -> Result<reqwest::Client, SendError> {
+        let mut settings = self.policy.tls.clone();
+        if let Some(routing) = &self.policy.identity_routing {
+            routing.apply(url, &mut settings)?;
+        }
+        if let Some(client) = self.cached(&settings) {
+            return Ok(client);
+        }
+        let config = settings.clone();
+        let tls = tokio::task::spawn_blocking(move || tls::client_config(&config))
+            .await
+            .map_err(|_| {
+                SendError::new(ErrorKind::Tls, "Loading certificates failed unexpectedly")
+            })?
+            .map_err(|e| SendError::new(ErrorKind::Tls, e.to_string()))?;
+        let client = client(&self.policy, tls, self.idle_per_host)?;
+        // Workers starting together may build the same client; the first one stored wins.
+        let mut clients = self
+            .clients
+            .lock()
+            .map_err(|_| SendError::new(ErrorKind::Protocol, "Client cache is unusable"))?;
+        if let Some((_, existing)) = clients.iter().find(|(s, _)| *s == settings) {
+            return Ok(existing.clone());
+        }
+        clients.push((settings, client.clone()));
+        Ok(client)
+    }
+
+    fn cached(&self, settings: &TlsSettings) -> Option<reqwest::Client> {
+        let clients = self.clients.lock().ok()?;
+        clients
+            .iter()
+            .find(|(s, _)| s == settings)
+            .map(|(_, client)| client.clone())
+    }
+
+    /// Send `prepared` and capture the response up to the policy's limit. Cancelling drops
+    /// the connection at once.
+    pub async fn send(
+        &self,
+        prepared: &Prepared,
+        cancel: &CancellationToken,
+    ) -> Result<Response, SendError> {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(SendError::Cancelled),
+            result = async {
+                let response = exchange(prepared, self).await?;
+                capture(response, self.policy.capture_limit).await
+            } => result,
+        }
+    }
+}
+
+/// Send through redirects and Digest challenges; the final response, body unread.
+async fn exchange(prepared: &Prepared, session: &Session) -> Result<reqwest::Response, SendError> {
+    let policy = &session.policy;
     match &prepared.body {
         PreparedBody::Multipart(fields) => {
             upload::validate(upload::multipart_files(fields)).await?;
@@ -430,7 +501,7 @@ async fn exchange(prepared: &Prepared, policy: &Policy) -> Result<Response, Send
     let url = Url::parse(&prepared.url)
         .map_err(|e| SendError::new(ErrorKind::InvalidUrl, format!("Invalid URL: {e}")))?;
     let mut attempt = Attempt {
-        client: client_for(policy, &url).await?,
+        client: session.client_for(&url).await?,
         method,
         url,
         headers,
@@ -450,7 +521,7 @@ async fn exchange(prepared: &Prepared, policy: &Policy) -> Result<Response, Send
             response.status().is_redirection(),
             location,
         ) else {
-            return capture(response, policy.capture_limit).await;
+            return Ok(response);
         };
         redirects += 1;
         if redirects > MAX_REDIRECTS {
@@ -477,23 +548,20 @@ async fn exchange(prepared: &Prepared, policy: &Policy) -> Result<Response, Send
         }
         // As httpx does: explicit cookies are not carried to the next location.
         remove_header(&mut attempt.headers, "cookie");
-        attempt.client = client_for(policy, &next).await?;
+        attempt.client = session.client_for(&next).await?;
         attempt.method = method;
         attempt.url = next;
     }
 }
 
-/// Send `prepared` and capture the response. Cancelling drops the connection at once.
+/// Send `prepared` once and capture the response, with no connection kept afterwards.
+/// Cancelling drops the connection at once.
 pub async fn send(
     prepared: &Prepared,
     policy: &Policy,
     cancel: &CancellationToken,
 ) -> Result<Response, SendError> {
-    tokio::select! {
-        biased;
-        () = cancel.cancelled() => Err(SendError::Cancelled),
-        result = exchange(prepared, policy) => result,
-    }
+    Session::new(policy.clone(), 0).send(prepared, cancel).await
 }
 
 /// Collect a body stream; for tests and previews of what an upload sends.

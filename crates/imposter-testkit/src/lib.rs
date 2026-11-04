@@ -4,7 +4,9 @@
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use rcgen::{BasicConstraints, CertificateParams, CertifiedIssuer, IsCa, KeyPair};
 use rustls::server::WebPkiClientVerifier;
@@ -257,6 +259,149 @@ impl Server {
 impl Drop for Server {
     fn drop(&mut self) {
         self.task.abort();
+    }
+}
+
+/// How [`LoadServer`] answers one request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadReply {
+    pub status: u16,
+    pub body: Vec<u8>,
+    /// Sent after the head, so the time to the first byte differs from the whole exchange.
+    pub body_delay: Duration,
+    /// Hold the response until this many requests are in flight (or two seconds pass),
+    /// so the peak shows how many a client keeps open at once. 0 holds nothing.
+    pub gate: usize,
+}
+
+impl LoadReply {
+    pub fn ok(body: &[u8]) -> Self {
+        Self {
+            status: 200,
+            body: body.to_vec(),
+            body_delay: Duration::ZERO,
+            gate: 0,
+        }
+    }
+}
+
+/// How a [`LoadServer`] picks its answer for the `n`th request.
+type Reply = dyn Fn(usize, &Received) -> LoadReply + Send + Sync;
+
+#[derive(Default)]
+struct LoadStats {
+    connections: AtomicUsize,
+    in_flight: AtomicUsize,
+    peak: AtomicUsize,
+    requests: Mutex<Vec<(Instant, Received)>>,
+    changed: tokio::sync::Notify,
+}
+
+/// A keep-alive server for load tests: connections are served concurrently, each for as
+/// many requests as the client sends, and it counts connections and requests in flight.
+pub struct LoadServer {
+    pub url: String,
+    stats: Arc<LoadStats>,
+    task: JoinHandle<()>,
+}
+
+impl LoadServer {
+    pub async fn start(
+        reply: impl Fn(usize, &Received) -> LoadReply + Send + Sync + 'static,
+    ) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let stats = Arc::new(LoadStats::default());
+        let shared = stats.clone();
+        let reply = Arc::new(reply);
+        let task = tokio::spawn(async move {
+            let mut connections = tokio::task::JoinSet::new();
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    return;
+                };
+                shared.connections.fetch_add(1, Ordering::SeqCst);
+                connections.spawn(serve(stream, shared.clone(), reply.clone()));
+            }
+        });
+        Self {
+            url: format!("http://127.0.0.1:{port}"),
+            stats,
+            task,
+        }
+    }
+
+    /// Connections accepted so far.
+    pub fn connections(&self) -> usize {
+        self.stats.connections.load(Ordering::SeqCst)
+    }
+
+    /// The most requests that were in flight at once.
+    pub fn peak(&self) -> usize {
+        self.stats.peak.load(Ordering::SeqCst)
+    }
+
+    /// Requests received, with when each arrived.
+    pub fn requests(&self) -> Vec<(Instant, Received)> {
+        self.stats.requests.lock().unwrap().clone()
+    }
+}
+
+impl Drop for LoadServer {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+async fn serve(mut stream: tokio::net::TcpStream, stats: Arc<LoadStats>, reply: Arc<Reply>) {
+    loop {
+        let raw = read_request(&mut stream).await;
+        if raw.is_empty() {
+            return;
+        }
+        let received = Received::parse(&raw);
+        let index = {
+            let mut all = stats.requests.lock().unwrap();
+            all.push((Instant::now(), received.clone()));
+            all.len() - 1
+        };
+        let answer = reply(index, &received);
+        let now = stats.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+        stats.peak.fetch_max(now, Ordering::SeqCst);
+        stats.changed.notify_waiters();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while stats.in_flight.load(Ordering::SeqCst) < answer.gate {
+            // Registered before the check, so a change between the two is not missed.
+            let changed = stats.changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            if stats.in_flight.load(Ordering::SeqCst) >= answer.gate
+                || tokio::time::timeout_at(deadline, changed).await.is_err()
+            {
+                break;
+            }
+        }
+        let close = received
+            .header("connection")
+            .is_some_and(|v| v.eq_ignore_ascii_case("close"));
+        let head = format!(
+            "HTTP/1.1 {} X\r\nContent-Length: {}\r\nConnection: {}\r\n\r\n",
+            answer.status,
+            answer.body.len(),
+            if close { "close" } else { "keep-alive" }
+        );
+        let written =
+            stream.write_all(head.as_bytes()).await.is_ok() && stream.flush().await.is_ok();
+        if written && !answer.body_delay.is_zero() {
+            tokio::time::sleep(answer.body_delay).await;
+        }
+        let written = written && stream.write_all(&answer.body).await.is_ok();
+        stats.in_flight.fetch_sub(1, Ordering::SeqCst);
+        stats.changed.notify_waiters();
+        if !written || close {
+            stream.shutdown().await.ok();
+            return;
+        }
     }
 }
 

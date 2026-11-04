@@ -303,6 +303,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   every reqwest client with `use_preconfigured_tls`, including plain-HTTP clients (reqwest
   panics without a provider). Why: no OpenSSL, cmake or system library on any OS; full control
   of roots, verification and client keys. A custom CA bundle replaces the platform roots.
+  Clients belong to a `transport::Session`, one per set of TLS settings: a single send's
+  session keeps no idle connection (as before), so each send connects afresh; a session
+  shared by a load run keeps them and reuses them.
 - **Client keys: PKCS#8 (plain or encrypted, PBES2), PKCS#1 and SEC1. Legacy encrypted PEM
   (`Proc-Type: 4,ENCRYPTED`) is rejected** with advice to run `openssl pkcs8 -topk8`. Why:
   rustls and RustCrypto do not implement the legacy OpenSSL scheme. PBKDF2-HMAC-SHA1 is enabled
