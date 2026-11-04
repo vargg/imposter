@@ -106,6 +106,7 @@ pub fn decode(data: &Value) -> Result<(NativeDocument, Vec<String>), OpenApiErro
     let folders = folders(data, tagged);
     let offset = folders.len();
     let collection = TransferCollection {
+        scripts: imposter_core::model::Scripts::default(),
         name,
         description: text(info.and_then(|i| i.get("description"))),
         variables: walk.variables,
@@ -150,6 +151,7 @@ fn folders(
         .enumerate()
         .filter_map(|(index, (name, description, requests))| {
             Some(TransferFolder {
+                scripts: imposter_core::model::Scripts::default(),
                 name: Name::new(name)?,
                 description,
                 position: position(index),

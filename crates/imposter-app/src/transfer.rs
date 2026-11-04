@@ -130,6 +130,7 @@ pub fn snapshot(db: &Tx<'_>, scope: &ExportScope) -> Result<NativeDocument, Stor
                 position: folder.position,
                 folders: Vec::new(),
                 requests: Vec::new(),
+                scripts: folder.scripts.clone(),
             },
         );
     }
@@ -174,6 +175,7 @@ pub fn snapshot(db: &Tx<'_>, scope: &ExportScope) -> Result<NativeDocument, Stor
         folders: root_folders,
         requests: root_requests,
         saved_values: scopes::saved_values(db, Scope::Collection(id))?,
+        scripts: collection.scripts,
     });
     for environment in environments::environments(db)? {
         if scope.environments.contains(&environment.id) {
@@ -266,6 +268,9 @@ fn create_tree(
             &folder.description,
             folder.position,
         )?;
+        if !folder.scripts.is_empty() {
+            collections::set_folder_scripts(db, created.id, &folder.scripts)?;
+        }
         create_tree(
             db,
             collection,
@@ -293,6 +298,9 @@ pub fn commit(db: &Tx<'_>, preview: &ImportPreview) -> Result<CollectionId, Stor
         &document.collection.description,
         &document.collection.variables,
     )?;
+    if !document.collection.scripts.is_empty() {
+        collections::set_collection_scripts(db, collection.id, &document.collection.scripts)?;
+    }
     if !document.collection.saved_values.is_empty() {
         scopes::write(
             db,

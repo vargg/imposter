@@ -825,6 +825,39 @@ impl Dialog {
     }
 }
 
+/// What an import brings that runs code: "The collection, 2 folders and 1 request have
+/// scripts; they run when sent."
+fn scripted_line(document: &imposter_app::formats::native::NativeDocument) -> Option<String> {
+    let total = document.scripted_count();
+    if total == 0 {
+        return None;
+    }
+    let requests = document
+        .requests()
+        .iter()
+        .filter(|r| !r.scripts.is_empty())
+        .count();
+    let collection = usize::from(!document.collection.scripts.is_empty());
+    let folders = total - requests - collection;
+    let mut parts = Vec::new();
+    if collection == 1 {
+        parts.push("The collection".to_owned());
+    }
+    if folders > 0 {
+        parts.push(counted(folders, "folder"));
+    }
+    if requests > 0 {
+        parts.push(counted(requests, "request"));
+    }
+    let what = match parts.as_slice() {
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        [] => return None,
+    };
+    let verb = if total == 1 { "has" } else { "have" };
+    Some(format!("{what} {verb} scripts; they run when sent."))
+}
+
 /// "1 request", "7 requests".
 fn counted(count: usize, noun: &str) -> String {
     if count == 1 {
@@ -853,18 +886,8 @@ fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outc
     ui.label(format!("New environments: {environments}"));
     // A script can only change its own request and read the variables that request could
     // already use, so it adds no way out a plain imported request lacks; still, say so.
-    let scripted = preview
-        .document
-        .requests()
-        .iter()
-        .filter(|r| !r.scripts.is_empty())
-        .count();
-    if scripted > 0 {
-        ui.label(format!(
-            "{} {} scripts; they run when sent.",
-            counted(scripted, "request"),
-            if scripted == 1 { "has" } else { "have" }
-        ));
+    if let Some(line) = scripted_line(&preview.document) {
+        ui.label(line);
     }
     ui.add_space(6.0);
     egui::ScrollArea::vertical()

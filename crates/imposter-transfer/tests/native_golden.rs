@@ -225,3 +225,49 @@ fn environment_colors_need_version_2_and_are_left_out_when_unset() {
         "only known colors"
     );
 }
+
+#[test]
+fn collection_and_folder_scripts_need_version_3_and_round_trip() {
+    let original = std::fs::read(fixtures().join("native/folder-scripts.imposter.json")).unwrap();
+    let mut document = decode(&original).unwrap();
+    assert!(document.collection.scripts.before.contains("hmac_sha256"));
+    assert!(
+        document.collection.folders[0]
+            .scripts
+            .before
+            .contains("X-Folder")
+    );
+    assert_eq!(document.scripted_count(), 2);
+    assert_eq!(
+        String::from_utf8(encode(&document)).unwrap(),
+        String::from_utf8(original.clone()).unwrap()
+    );
+    let as_version_2 = String::from_utf8(original)
+        .unwrap()
+        .replace("\"version\": 3", "\"version\": 2");
+    assert_eq!(
+        decode(as_version_2.as_bytes()).unwrap_err().to_string(),
+        "Collection \"Signed API\": scripts need format version 3"
+    );
+    document.collection.scripts = imposter_core::model::Scripts::default();
+    document.fit_version();
+    assert_eq!(
+        document.version,
+        Version::V3,
+        "the folder's scripts still need it"
+    );
+    document.collection.folders[0].scripts = imposter_core::model::Scripts::default();
+    document.fit_version();
+    assert_eq!(document.version, Version::V2);
+
+    let original = std::fs::read(fixtures().join("native/folder-scripts.imposter.json")).unwrap();
+    let (_, warnings) = imposter_transfer::postman::encode(&decode(&original).unwrap()).unwrap();
+    for owner in ["Collection \"Signed API\"", "Folder \"Users\""] {
+        assert!(
+            warnings.contains(&format!(
+                "{owner}: scripts are not exported to Postman, whose scripts are JavaScript"
+            )),
+            "{warnings:?}"
+        );
+    }
+}

@@ -834,10 +834,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   collection instead of being dropped (user's choice); the cost is that the Python app cannot
   read new exports. Bytes are base64 with the URL-safe alphabet and padding, as Pydantic
   writes them; both alphabets are read.
-  Version 3 (still `"imposter"`) adds request scripts. An export takes the lowest version
-  that holds it (`NativeDocument::fit_version`: 3 only when a request has scripts), so
-  script-free exports stay readable by Imposter 0.4; a version 1 or 2 document with
-  scripts is refused. Postman exports list scripts as not exported (Postman's are
+  Version 3 (still `"imposter"`) adds scripts, on requests and on the collection and its
+  folders. An export takes the lowest version that holds it (`NativeDocument::fit_version`:
+  3 only when something has scripts), so script-free exports stay readable by Imposter
+  0.4; a version 1 or 2 document with scripts is refused, naming what has them. Postman exports list scripts as not exported (Postman's are
   JavaScript), and Postman's own scripts are still removed on import, with consent. The
   import review says how many requests have scripts. A script changes only its own request
   and reads only the variables that request could already use, so it adds no way out

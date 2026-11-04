@@ -74,6 +74,17 @@ fn the_import_review_says_which_requests_have_scripts_and_they_arrive() {
 }
 
 #[test]
+fn the_import_review_counts_collection_and_folder_scripts() {
+    let mut app = start();
+    import(
+        &mut app,
+        vec![Some(fixtures().join("native/folder-scripts.imposter.json"))],
+    );
+    app.harness
+        .get_by_label("The collection and 1 folder have scripts; they run when sent.");
+}
+
+#[test]
 fn a_native_file_is_reviewed_then_imported_and_shown() {
     let mut app = start();
     import(

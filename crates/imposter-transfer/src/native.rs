@@ -9,7 +9,9 @@
 use std::io::{Read as _, Write as _};
 use std::path::Path;
 
-use imposter_core::model::{EnvColor, RequestTemplate, SavedValues, Variables, is_method_token};
+use imposter_core::model::{
+    EnvColor, RequestTemplate, SavedValues, Scripts, Variables, is_method_token,
+};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Imports larger than this are rejected before parsing.
@@ -92,6 +94,9 @@ pub struct TransferFolder {
     pub folders: Vec<TransferFolder>,
     #[serde(default)]
     pub requests: Vec<RequestTemplate>,
+    /// Version 3: run around every request inside the folder.
+    #[serde(default, skip_serializing_if = "Scripts::is_empty")]
+    pub scripts: Scripts,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -109,6 +114,9 @@ pub struct TransferCollection {
     /// Version 2: values saved to swap the collection's variables with.
     #[serde(default, skip_serializing_if = "SavedValues::is_empty")]
     pub saved_values: SavedValues,
+    /// Version 3: run around every request in the collection.
+    #[serde(default, skip_serializing_if = "Scripts::is_empty")]
+    pub scripts: Scripts,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -157,11 +165,49 @@ impl NativeDocument {
     /// Version 3 when a request has scripts, else 2: the lowest that holds the document, so
     /// older Imposter versions read what they can. For new Imposter documents only.
     pub fn fit_version(&mut self) {
-        self.version = if self.requests().iter().any(|r| !r.scripts.is_empty()) {
+        self.version = if self.scripted().is_some() {
             Version::V3
         } else {
             Version::V2
         };
+    }
+
+    /// The first thing with scripts, named for errors: a request, a folder or the
+    /// collection.
+    pub fn scripted(&self) -> Option<String> {
+        fn folder(folders: &[TransferFolder]) -> Option<String> {
+            folders.iter().find_map(|f| {
+                if f.scripts.is_empty() {
+                    folder(&f.folders)
+                } else {
+                    Some(format!("Folder {:?}", f.name.as_str()))
+                }
+            })
+        }
+        if !self.collection.scripts.is_empty() {
+            return Some(format!("Collection {:?}", self.collection.name.as_str()));
+        }
+        self.requests()
+            .into_iter()
+            .find(|r| !r.scripts.is_empty())
+            .map(|r| format!("Request {:?}", r.name))
+            .or_else(|| folder(&self.collection.folders))
+    }
+
+    /// How many requests, folders and collections have scripts.
+    pub fn scripted_count(&self) -> usize {
+        fn folders(list: &[TransferFolder]) -> usize {
+            list.iter()
+                .map(|f| usize::from(!f.scripts.is_empty()) + folders(&f.folders))
+                .sum()
+        }
+        usize::from(!self.collection.scripts.is_empty())
+            + folders(&self.collection.folders)
+            + self
+                .requests()
+                .iter()
+                .filter(|r| !r.scripts.is_empty())
+                .count()
     }
 
     /// Every request in the document, depth first.
@@ -206,8 +252,8 @@ pub enum NativeError {
     SavedValuesInVersion1,
     #[error("Environment colors need format version 2")]
     ColorInVersion1,
-    #[error("Request {request:?}: scripts need format version 3")]
-    ScriptsNeedVersion3 { request: String },
+    #[error("{owner}: scripts need format version 3")]
+    ScriptsNeedVersion3 { owner: String },
     #[error("Request {request:?}: {source}")]
     Body {
         request: String,
@@ -270,14 +316,9 @@ pub fn decode(data: &[u8]) -> Result<NativeDocument, NativeError> {
         }
     }
     if document.version < Version::V3
-        && let Some(request) = document
-            .requests()
-            .into_iter()
-            .find(|r| !r.scripts.is_empty())
+        && let Some(owner) = document.scripted()
     {
-        return Err(NativeError::ScriptsNeedVersion3 {
-            request: request.name.clone(),
-        });
+        return Err(NativeError::ScriptsNeedVersion3 { owner });
     }
     validate_templates(&document)?;
     Ok(document)
@@ -359,6 +400,7 @@ mod tests {
 
     fn folder(name: &str, folders: Vec<TransferFolder>, requests: usize) -> TransferFolder {
         TransferFolder {
+            scripts: Scripts::default(),
             name: Name::new(name).unwrap(),
             description: String::new(),
             position: 0,
@@ -370,6 +412,7 @@ mod tests {
     #[test]
     fn requests_and_folders_are_counted_at_every_depth() {
         let mut document = NativeDocument::new(TransferCollection {
+            scripts: Scripts::default(),
             name: Name::new("API").unwrap(),
             description: String::new(),
             variables: Variables::new(),

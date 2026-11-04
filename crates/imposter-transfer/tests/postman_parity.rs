@@ -87,6 +87,7 @@ fn companions_match_python() {
         let name = case["name"].as_str().unwrap();
         let mut decoder = Decoder::default();
         let mut document = NativeDocument::new(TransferCollection {
+            scripts: imposter_core::model::Scripts::default(),
             name: imposter_transfer::native::Name::new("C").unwrap(),
             description: String::new(),
             variables: imposter_core::model::Variables::new(),

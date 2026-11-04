@@ -716,3 +716,36 @@ async fn is_file_tells_files_from_folders_and_missing_paths() {
     );
     assert!(!is_file(dir.path().join("missing.pem")).await);
 }
+
+#[tokio::test]
+async fn collection_and_folder_scripts_survive_import_and_export() {
+    let (dir, store) = open();
+    let out = dir.path().join("again.imposter.json");
+    round_trip(
+        &store,
+        fixtures().join("native/folder-scripts.imposter.json"),
+        out.clone(),
+    )
+    .await;
+    let (collection, folders) = store
+        .call(|db| {
+            let collection = collections::collections(db)?.remove(0);
+            let folders = collections::folders(db, collection.id)?;
+            Ok((collection, folders))
+        })
+        .await
+        .unwrap();
+    assert!(collection.scripts.after.contains("not a server error"));
+    assert!(folders[0].scripts.before.contains("X-Folder"));
+    let original = json(&fixtures().join("native/folder-scripts.imposter.json"));
+    let exported = json(&out);
+    assert_eq!(exported["version"], 3);
+    assert_eq!(
+        exported["collection"]["scripts"],
+        original["collection"]["scripts"]
+    );
+    assert_eq!(
+        exported["collection"]["folders"][0]["scripts"],
+        original["collection"]["folders"][0]["scripts"]
+    );
+}

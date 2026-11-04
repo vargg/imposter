@@ -503,6 +503,7 @@ impl Decoder {
                     self.loss(&path, "folder variables", true);
                 }
                 let mut folder = TransferFolder {
+                    scripts: imposter_core::model::Scripts::default(),
                     name: Name::new(name).ok_or(PostmanError::EmptyName)?,
                     description: description(item.get("description")),
                     position,
@@ -580,6 +581,7 @@ impl Decoder {
         let variables = self.variables(array(data.get("variable")), "Collection");
         let name = literal(info.get("name"));
         let mut collection = TransferCollection {
+            scripts: imposter_core::model::Scripts::default(),
             name: Name::new(name.clone()).ok_or(PostmanError::EmptyName)?,
             description: description(info.get("description")),
             variables,
@@ -838,7 +840,26 @@ pub fn encode(document: &NativeDocument) -> Result<(Value, Vec<String>), Postman
         "variable": collection.variables.iter().map(|(k, v)| json!({"key": k, "value": v, "type": "string"})).collect::<Vec<_>>(),
     });
     validate(&data)?;
+    if !collection.scripts.is_empty() {
+        warnings.push(format!(
+            "Collection {:?}: scripts are not exported to Postman, whose scripts are JavaScript",
+            collection.name.as_str()
+        ));
+    }
+    folder_script_warnings(&collection.folders, &mut warnings);
     Ok((data, warnings))
+}
+
+fn folder_script_warnings(folders: &[TransferFolder], warnings: &mut Vec<String>) {
+    for folder in folders {
+        if !folder.scripts.is_empty() {
+            warnings.push(format!(
+                "Folder {:?}: scripts are not exported to Postman, whose scripts are JavaScript",
+                folder.name.as_str()
+            ));
+        }
+        folder_script_warnings(&folder.folders, warnings);
+    }
 }
 
 /// Pretty JSON with a trailing newline, as the Python app writes exports.
