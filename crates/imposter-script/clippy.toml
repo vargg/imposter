@@ -1,0 +1,23 @@
+# imposter-script does no IO (AGENTS.md). Clippy uses only the nearest clippy.toml, so the root
+# settings are repeated here.
+allow-unwrap-in-tests = true
+doc-valid-idents = ["OpenAPI", "JSONPath", "JMeter", ".."]
+
+disallowed-types = [
+    { path = "std::fs::File", reason = "imposter-script does no IO" },
+    { path = "std::net::TcpStream", reason = "imposter-script does no IO" },
+    { path = "std::net::TcpListener", reason = "imposter-script does no IO" },
+    { path = "std::net::UdpSocket", reason = "imposter-script does no IO" },
+    { path = "std::time::Instant", reason = "imposter-script reads no clock; the host gives time" },
+    { path = "std::time::SystemTime", reason = "imposter-script reads no clock; the host gives time" },
+]
+disallowed-methods = [
+    { path = "std::fs::read", reason = "imposter-script does no IO" },
+    { path = "std::fs::read_to_string", reason = "imposter-script does no IO" },
+    { path = "std::fs::write", reason = "imposter-script does no IO" },
+    { path = "std::fs::read_dir", reason = "imposter-script does no IO" },
+    { path = "std::fs::metadata", reason = "imposter-script does no IO" },
+    { path = "std::env::var", reason = "imposter-script reads no environment" },
+    { path = "std::env::var_os", reason = "imposter-script reads no environment" },
+    { path = "std::thread::sleep", reason = "imposter-script does no IO" },
+]

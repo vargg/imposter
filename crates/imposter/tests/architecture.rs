@@ -10,6 +10,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("imposter-http", &["imposter-core"]),
     ("imposter-store", &["imposter-core"]),
     ("imposter-transfer", &["imposter-core"]),
+    ("imposter-script", &["imposter-core"]),
     (
         "imposter-app",
         &[
@@ -17,6 +18,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "imposter-http",
             "imposter-store",
             "imposter-transfer",
+            "imposter-script",
         ],
     ),
     ("imposter-ui", &["imposter-core", "imposter-app"]),

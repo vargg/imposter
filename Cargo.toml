@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 rust-version = "1.99"
 publish = false
@@ -11,6 +11,7 @@ publish = false
 [workspace.dependencies]
 imposter-core = { path = "crates/imposter-core" }
 imposter-http = { path = "crates/imposter-http" }
+imposter-script = { path = "crates/imposter-script" }
 imposter-store = { path = "crates/imposter-store" }
 imposter-transfer = { path = "crates/imposter-transfer" }
 imposter-app = { path = "crates/imposter-app" }
@@ -34,6 +35,8 @@ pkcs5 = { version = "0.8.1", features = ["sha1-insecure"] }
 pkcs8 = { version = "0.11.0", features = ["encryption", "pem", "std", "getrandom"] }
 # Regular expressions for checks; pure Rust, linear time.
 regex = "1.13.1"
+# Scripts (AGENTS.md "Scripts are Rhai"): no module system, no clock, never `unchecked`.
+rhai = { version = "1.27", default-features = false, features = ["std", "sync", "no_module", "no_time", "no_custom_syntax", "serde"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "pem", "ring"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "gzip", "deflate", "brotli"] }
 rfd = "0.17.2"

@@ -65,7 +65,7 @@ numbers, so both are excluded. Each logical change is its own commit.
 
 ## Architecture principles
 
-- **Dependency direction: `core` <- `http`, `store`, `transfer` <- `app` <- `ui` <- `imposter`.**
+- **Dependency direction: `core` <- `http`, `store`, `transfer`, `script` <- `app` <- `ui` <- `imposter`.**
   Never add an edge against it.
   Why: each layer stays testable without the ones above it, and `ui` can change without touching
   the domain.
@@ -831,8 +831,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   undecidable check never passes or fails silently, and it never blocks a send. Strings
   compare as text and numbers by value (`19.50` equals `19.5`); status also accepts `2xx`.
   OpenAPI import adds a status check for the lowest documented success code and none when
-  there is no documented success. Postman export lists checks as not exported. Rejected: a
-  JavaScript engine (Postman's `pm.test`), a large dependency with an open-ended surface.
+  there is no documented success. Postman export lists checks as not exported. Logic that
+  data cannot say goes in a script (below); checks stay the plain way to test a value.
 - **The Tests and Captures tabs edit checks and captures in a fixed grid** (`checks.rs`):
   every row has
   the same cells, and a source without a path (status, body, duration, size) or an
@@ -845,6 +845,22 @@ numbers, so both are excluded. Each logical change is its own commit.
   executor does: the defining scope, else the active environment, else Global. Why:
   operators jumped between rows, a narrow pane stacked five lines per check with fields cut
   at its edge, and nothing said where a capture would write (the review's #31, #32).
+- **Scripts are Rhai** (`imposter-script`, the only crate that embeds it), pure Rust and
+  sandboxed by design: nothing reaches files, the network, the clock or the environment
+  unless the host registers it, and it limits operations, string, array and map sizes and
+  call depth. Its features are pinned in the root manifest: `sync` (a compiled script can be
+  shared by threads), `no_module` (no `import`, so no file module resolver), `no_time` (the
+  host gives time), `no_custom_syntax`, `serde`; never `unchecked`, which removes every limit,
+  or `internals`. The crate repeats core's no-IO clippy lists.
+  - **Engines must not compile C of their own** (stricter than the rule for other
+    dependencies, which lets rusqlite build its vendored SQLite) and must not ship prebuilt
+    binaries: that rules out QuickJS (rquickjs, or as WASM run by wasmi), Lua (mlua, Luau)
+    and V8. Boa, pure-Rust JavaScript, was the alternative; it has no memory cap and cannot be
+    stopped from another thread. JavaScript would have been familiar and kept Postman's
+    `pm.*` scripts, which therefore are still removed on import, with consent.
+  - **Measured** (Phase 0, M-series Mac, release): the binary grows 1.9 MiB (19.3 to 21.3
+    MB); Rhai compiles in about 23 s; an engine is made in about 0.13 ms; parsing and walking
+    a 10,000-item JSON array takes about 12.5 ms.
 - **Generated values are placeholders named `$function args`** (`core::generate`): `$uuid`
   (and Postman's `$guid`, `$randomUUID`), `$timestamp`, `$timestampMs`, `$isoTimestamp`, `$date`
   with a strftime format, each with an optional offset (`-1d`, `+2h`), `$randomInt [min max]`
