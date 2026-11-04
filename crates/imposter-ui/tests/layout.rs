@@ -213,6 +213,14 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, SEND);
     settle(&mut app.harness);
     check(app, "error response");
+    // A binary body: described, with Save body… in the tools.
+    click(&mut app.harness, "GET Logo");
+    settle(&mut app.harness);
+    click(&mut app.harness, SEND);
+    settle(&mut app.harness);
+    check(app, "binary response");
+    click(&mut app.harness, "GET Broken");
+    settle(&mut app.harness);
     // The Tests tab: checks with and without a path, one without an expected value, and a
     // capture, in whatever layout the pane's width calls for.
     {
@@ -330,6 +338,9 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
         if received.request_line.contains("/broken") {
             return response("500 Internal Server Error", &[], b"oops");
         }
+        if received.request_line.contains("/logo") {
+            return response("200 OK", &[("Content-Type", "image/png")], &[0x89, 0, 1, 2]);
+        }
         response(
             "200 OK",
             &[("Content-Type", "application/json")],
@@ -364,6 +375,7 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
                     request(store, api.id, "Users", &url);
                     request(store, api.id, "Health", "http://127.0.0.1:9/");
                     request(store, api.id, "Broken", &format!("{url}/broken"));
+                    request(store, api.id, "Logo", &format!("{url}/logo"));
                 });
                 app.harness.set_size(size);
                 appearance(&mut app, theme, density);

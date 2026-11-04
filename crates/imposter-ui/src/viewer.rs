@@ -30,6 +30,61 @@ pub struct Preview {
     pub limited: bool,
     /// Paths and folds of formatted JSON, when the whole body is shown formatted.
     pub outline: Option<Outline>,
+    /// The body is not text ([`is_binary`]): it is described and saved, never shown.
+    pub binary: bool,
+}
+
+/// The content type's essence, lowercased: `image/png` of `Image/PNG; q=1`.
+fn essence(content_type: &str) -> String {
+    content_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+}
+
+/// Whether `response`'s body is binary: a content type that is not text (an image, a PDF,
+/// an archive, `application/octet-stream`), or, without one that says, a NUL byte early on.
+/// Text that is not UTF-8 is still text, decoded as Latin-1.
+pub fn is_binary(response: &Response) -> bool {
+    if response.body.is_empty() {
+        return false;
+    }
+    let essence = essence(content_type(&response.headers));
+    let textual = essence.starts_with("text/")
+        || [
+            "json",
+            "xml",
+            "javascript",
+            "html",
+            "urlencoded",
+            "yaml",
+            "csv",
+        ]
+        .iter()
+        .any(|kind| essence.contains(kind));
+    if textual {
+        return false;
+    }
+    let binary_kind = ["image/", "audio/", "video/", "font/"]
+        .iter()
+        .any(|prefix| essence.starts_with(prefix))
+        || [
+            "application/octet-stream",
+            "application/pdf",
+            "application/zip",
+            "application/gzip",
+            "application/x-gzip",
+            "application/x-tar",
+            "application/x-7z-compressed",
+            "application/wasm",
+            "application/protobuf",
+            "application/x-protobuf",
+            "application/msgpack",
+        ]
+        .contains(&essence.as_str());
+    binary_kind || response.body[..response.body.len().min(8192)].contains(&0)
 }
 
 pub fn content_type(headers: &[(String, String)]) -> &str {
@@ -200,6 +255,16 @@ fn reindent(text: &str) -> String {
 }
 
 pub fn preview(response: &Response) -> Preview {
+    if is_binary(response) {
+        // Bytes shown as text are noise; the pane describes the body and offers to save it.
+        return Preview {
+            text: String::new(),
+            language: Language::Plain,
+            limited: response.truncated,
+            outline: None,
+            binary: true,
+        };
+    }
     let content_type = content_type(&response.headers);
     let mut language = language(content_type);
     let shown = &response.body[..response.body.len().min(PREVIEW_LIMIT)];
@@ -237,6 +302,7 @@ pub fn preview(response: &Response) -> Preview {
         language,
         limited,
         outline,
+        binary: false,
     }
 }
 
@@ -726,6 +792,27 @@ pub fn notice(response: &Response, preview: &Preview) -> String {
 
 /// The file name offered when saving `response`'s body, by its content type.
 pub fn body_file_name(response: &Response) -> &'static str {
+    let by_type = match essence(content_type(&response.headers)).as_str() {
+        "image/png" => Some("response.png"),
+        "image/jpeg" => Some("response.jpg"),
+        "image/gif" => Some("response.gif"),
+        "image/webp" => Some("response.webp"),
+        "image/svg+xml" => Some("response.svg"),
+        "image/x-icon" | "image/vnd.microsoft.icon" => Some("response.ico"),
+        "application/pdf" => Some("response.pdf"),
+        "application/zip" => Some("response.zip"),
+        "application/gzip" | "application/x-gzip" => Some("response.gz"),
+        "application/x-tar" => Some("response.tar"),
+        "text/csv" => Some("response.csv"),
+        "application/yaml" | "application/x-yaml" | "text/yaml" => Some("response.yaml"),
+        _ => None,
+    };
+    if let Some(name) = by_type {
+        return name;
+    }
+    if is_binary(response) {
+        return "response.bin";
+    }
     match language(content_type(&response.headers)) {
         Language::Json => "response.json",
         Language::Xml => "response.xml",
@@ -920,6 +1007,44 @@ pub fn find_all(haystack: &str, needle: &str) -> Vec<Range<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binary_bodies_are_told_by_type_or_by_a_nul_byte() {
+        let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0];
+        assert!(is_binary(&response(&png, "image/png")));
+        assert!(is_binary(&response(b"%PDF-1.7", "application/pdf")));
+        assert!(is_binary(&response(&png, "")), "no type, but a NUL byte");
+        assert!(
+            !is_binary(&response(b"<svg/>", "image/svg+xml")),
+            "SVG is XML"
+        );
+        assert!(!is_binary(&response(b"{}", "application/problem+json")));
+        // Text that is not UTF-8 stays text, as Latin-1.
+        assert!(!is_binary(&response(
+            &[b'c', b'a', b'f', 0xe9],
+            "text/plain"
+        )));
+        assert!(!is_binary(&response(&[b'c', 0xe9], "")));
+        assert!(
+            !is_binary(&response(b"", "application/octet-stream")),
+            "empty"
+        );
+
+        let shown = preview(&response(&png, "image/png"));
+        assert!(shown.binary && shown.text.is_empty() && !shown.limited);
+    }
+
+    #[test]
+    fn a_saved_body_is_named_for_its_type() {
+        let name = |content_type: &str, body: &[u8]| body_file_name(&response(body, content_type));
+        assert_eq!(name("image/png", b"x"), "response.png");
+        assert_eq!(name("image/jpeg; q=1", b"x"), "response.jpg");
+        assert_eq!(name("application/pdf", b"x"), "response.pdf");
+        assert_eq!(name("application/octet-stream", b"x"), "response.bin");
+        assert_eq!(name("application/json", b"{}"), "response.json");
+        assert_eq!(name("text/csv", b"a,b"), "response.csv");
+        assert_eq!(name("", b"plain"), "response.txt");
+    }
 
     #[test]
     fn a_body_with_placeholders_is_json_once_they_are_filled() {

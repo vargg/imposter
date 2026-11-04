@@ -153,6 +153,15 @@ numbers, so both are excluded. Each logical change is its own commit.
   still re-indented as far as it goes (`viewer::pretty_json_start`, when the parser only
   ran out of input), without folding, which needs the whole document: one minified line
   wrapped mid-token (#26).
+  Every response body can be saved as received: Save body… ends the Body tab's tools
+  (beside the notice instead when the preview is cut), named for its content type
+  (`viewer::body_file_name`: `.png`, `.pdf`, `.bin` for unknown bytes). A binary body
+  (`viewer::is_binary`: an image, audio, video, font, PDF, archive or
+  `application/octet-stream` type, or a NUL byte in the first 8 KiB without a type that
+  says text) is described ("Binary body", its size and type) instead of shown as Latin-1
+  noise, with no Find, Wrap or Copy, since bytes copied as text are damaged. Text that is
+  not UTF-8 is still text. Why: small binary bodies could not be saved at all, and showed
+  as garbage (the user's note). Not done: showing images.
 - **Response headers are a table by default** (`widgets::headers_table`): names muted,
   values selectable and wrapping at words, a copy button on the row under the pointer.
   Where values would get under 160 points, each goes under its name: narrow columns broke

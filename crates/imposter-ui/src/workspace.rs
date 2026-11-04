@@ -1861,7 +1861,12 @@ pub fn response_body(
         ui.horizontal(|ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if partial && let Some(response) = &response_state.response {
-                    if icons::button(ui, Icon::Copy, "Copy full body", false).clicked() {
+                    let binary = response_state
+                        .preview
+                        .as_ref()
+                        .is_some_and(|(preview, _)| preview.binary);
+                    // Bytes that are not text would be damaged as text.
+                    if !binary && icons::button(ui, Icon::Copy, "Copy full body", false).clicked() {
                         ui.ctx()
                             .copy_text(String::from_utf8_lossy(&response.body).into_owned());
                     }
@@ -1933,19 +1938,34 @@ pub fn response_body(
         "Copy headers"
     };
     let mut toggle_filter = false;
+    // Every body can be saved as received; a cut one offers it beside its notice instead.
+    let body_saved_here = !partial
+        && response
+            .as_ref()
+            .is_some_and(|r| r.outcome == imposter_app::core::execution::Outcome::Response);
+    let mut save_from_tools = false;
     let mut tools = |ui: &mut Ui, shown: ResponseTab| match shown {
-        ResponseTab::Body => widgets::viewer_tools_with(
-            ui,
-            body_view,
-            body,
-            copy_body,
-            outline.map(|outline| widgets::Folding {
-                outline,
-                folded: &mut *folds,
-                add_check: false,
-            }),
-            filterable.then_some((filter.open, &mut toggle_filter)),
-        ),
+        ResponseTab::Body => {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if body_saved_here {
+                    save_from_tools = icons::button(ui, Icon::Save, "Save body…", false).clicked();
+                }
+                if !preview.binary {
+                    widgets::viewer_tools_with(
+                        ui,
+                        body_view,
+                        body,
+                        copy_body,
+                        outline.map(|outline| widgets::Folding {
+                            outline,
+                            folded: &mut *folds,
+                            add_check: false,
+                        }),
+                        filterable.then_some((filter.open, &mut toggle_filter)),
+                    );
+                }
+            });
+        }
         // Raw sits at the right end, framed like a button: drawn after the tabs in their
         // style, it read as a fourth tab.
         ResponseTab::Headers => {
@@ -2012,6 +2032,9 @@ pub fn response_body(
         // At least the tools' menu button stays on the row, and Raw beside the headers'.
         let gap = ui.spacing().item_spacing.x;
         let mut reserve = icons::size() + gap;
+        if *tab == ResponseTab::Body && body_saved_here {
+            reserve += icons::size() + gap;
+        }
         if *tab == ResponseTab::Headers {
             reserve += widgets::button_width(ui, RichText::new(RAW)) + gap;
         }
@@ -2042,7 +2065,14 @@ pub fn response_body(
             }
         });
     }
+    if save_from_tools {
+        return Some(PaneAction::SaveBody);
+    }
     let action = match *tab {
+        ResponseTab::Body if preview.binary => {
+            binary_body(ui, response.as_ref());
+            None
+        }
         ResponseTab::Body => widgets::code_viewer(
             ui,
             &format!("{id} body"),
@@ -2097,6 +2127,31 @@ pub fn response_body(
         }
     }
     action.map(PaneAction::Row)
+}
+
+/// A body that is not text: what it is and how big, instead of its bytes as characters.
+fn binary_body(ui: &mut Ui, response: Option<&imposter_app::core::execution::Response>) {
+    let Some(response) = response else {
+        return;
+    };
+    let kind = viewer::content_type(&response.headers);
+    let kind = if kind.is_empty() {
+        "no content type"
+    } else {
+        kind
+    };
+    ui.add_space(20.0);
+    ui.vertical_centered(|ui| {
+        ui.label(RichText::new("Binary body").strong());
+        ui.label(tone_text(
+            format!("{} · {kind}", viewer::format_size(response.body.len())),
+            Tone::Muted,
+        ));
+        ui.label(tone_text(
+            "Save body… keeps it as received, to open in another app.",
+            Tone::Muted,
+        ));
+    });
 }
 
 /// What the filter bar says about the current query.

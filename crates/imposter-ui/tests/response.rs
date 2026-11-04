@@ -491,3 +491,53 @@ fn the_request_as_sent_shows_the_values_generated_for_it() {
     settle(&mut app.harness);
     assert!(app.harness.query_by_label_contains(&uuid).is_none());
 }
+
+#[test]
+fn a_binary_body_is_described_and_saved_as_received() {
+    const PNG: &[u8] = &[
+        0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0xff,
+    ];
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime.block_on(Server::start(|_, _| {
+        response("200 OK", &[("Content-Type", "image/png")], PNG)
+    }));
+    let url = format!("{}/logo.png", server.url);
+    let mut app = start_with(move |store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Logo", &url);
+    });
+    click(&mut app.harness, "GET Logo");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Send");
+    settle(&mut app.harness);
+
+    app.harness.get_by_label("Binary body");
+    app.harness.get_by_label("13 B · image/png");
+    assert!(
+        app.harness.query_by_label("Copy body").is_none(),
+        "bytes are not copied as text"
+    );
+    assert!(app.harness.query_by_label("Find").is_none());
+
+    let out = app.dir.path().join("logo.png");
+    app.harness
+        .state_mut()
+        .script_file_dialogs([Some(out.clone())]);
+    click(&mut app.harness, "Save body…");
+    settle(&mut app.harness);
+    assert_eq!(std::fs::read(&out).unwrap(), PNG, "byte for byte");
+    drop(server);
+}
+
+#[test]
+fn a_small_text_body_can_be_saved_too() {
+    let mut fixture = sent("application/json", BODY);
+    let app = &mut fixture.app;
+    let out = app.dir.path().join("small.json");
+    app.harness
+        .state_mut()
+        .script_file_dialogs([Some(out.clone())]);
+    click(&mut app.harness, "Save body…");
+    settle(&mut app.harness);
+    assert_eq!(std::fs::read(&out).unwrap(), BODY.as_bytes());
+}
