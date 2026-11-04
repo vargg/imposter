@@ -233,6 +233,9 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         pane.tab = imposter_ui::app::EditorTab::Tests;
     }
     check(app, "tests tab");
+    app.harness.state_mut().state.editor.as_mut().unwrap().tab =
+        imposter_ui::app::EditorTab::Captures;
+    check(app, "captures tab");
     // Auth: a label column, fields to the pane's edge, an eye on secrets.
     for kind in [
         imposter_app::core::model::AuthKind::Basic,

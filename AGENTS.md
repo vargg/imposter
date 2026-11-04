@@ -499,7 +499,7 @@ numbers, so both are excluded. Each logical change is its own commit.
     wider than a target needs; the selected tab always stays, in place of the last one that
     fitted. Tabs come before tools.
   - **Badges** say what a tab holds without opening it (`Editor::badge`): Query, Headers,
-    Cookies and Tests count rows in use (enabled and named); Auth, Body and Docs show a
+    Cookies, Tests and Captures count rows in use (enabled and named); Auth, Body and Docs show a
     small green dot raised to the top of the line when set (a muted "•" at mid-height read
     as a separator, Q2). The request's badges describe the request, never its last
     response; the response's Headers are counted, and its Tests show "✗1" in red when
@@ -699,14 +699,15 @@ numbers, so both are excluded. Each logical change is its own commit.
   OpenAPI import adds a status check for the lowest documented success code and none when
   there is no documented success. Postman export lists checks as not exported. Rejected: a
   JavaScript engine (Postman's `pm.test`), a large dependency with an open-ended surface.
-- **The Tests tab edits checks and captures in a fixed grid** (`checks.rs`): every row has
+- **The Tests and Captures tabs edit checks and captures in a fixed grid** (`checks.rs`):
+  every row has
   the same cells, and a source without a path (status, body, duration, size) or an
   operator without a value leaves its cell empty, so the columns stay put. By the pane's
   width a row takes one line, two (what to read, then the comparison), or one line per
   part, as at 720 points with the sidebar shown. The last field of a line takes what the
   line has left when drawn, since a picker grows past its width for a long label ("does not
-  contain"), and the check box is as wide as a control in the density. The sections are "Checks" and "Captures"
-  ("Add capture"), and each capture shows the scope it writes to ("→ Dev"), computed as the
+  contain"), and the check box is as wide as a control in the density. Each capture shows
+  the scope it writes to ("→ Dev"), computed as the
   executor does: the defining scope, else the active environment, else Global. Why:
   operators jumped between rows, a narrow pane stacked five lines per check with fields cut
   at its edge, and nothing said where a capture would write (the review's #31, #32).
@@ -811,7 +812,7 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Toolchain pinned in `rust-toolchain.toml`, `Cargo.lock` committed, CI uses `--locked`.**
   Why: every machine and CI run builds the same thing.
 
-- **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks. Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document. Enforced by `imposter-ui/tests/editing.rs`.
+- **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests, Captures.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks and Captures the variables it sets from a response, each tab counting its own rows ("Set variable" from a JSON row opens Captures). Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document; checks and captures in one tab under two headings made captures hard to find (user's note). The response keeps one Tests tab for check results and capture writes, both results of the run. Enforced by `imposter-ui/tests/editing.rs`.
 
 - **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `imposter-ui/tests/editing.rs`. `{{variables}}` in a name are drawn in the accent, as in the editor, and the sidebar's edge has a grip like the splits', since it can be dragged wider (200–400 points, remembered) and nothing said so (the review's #59).
 

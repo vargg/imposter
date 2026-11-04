@@ -11,8 +11,8 @@ use imposter_ui::app::EditorTab;
 use imposter_ui::layout::MIN_WINDOW;
 use support::{click, collection, request, settle, start_with};
 
-const EDITOR_TABS: [&str; 7] = [
-    "Body", "Auth", "Query", "Headers", "Cookies", "Docs", "Tests",
+const EDITOR_TABS: [&str; 8] = [
+    "Body", "Auth", "Query", "Headers", "Cookies", "Docs", "Tests", "Captures",
 ];
 
 fn small() -> support::App {
@@ -79,7 +79,7 @@ fn a_wide_window_shows_every_request_tab() {
     let mut app = small();
     app.harness.set_size(egui::vec2(1500.0, 850.0));
     app.harness.run_steps(3);
-    assert_eq!(editor_tab_tops(&app).len(), 8);
+    assert_eq!(editor_tab_tops(&app).len(), EDITOR_TABS.len() + 1);
     assert!(app.harness.query_by_label("More request tabs").is_none());
 }
 

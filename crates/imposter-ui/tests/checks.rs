@@ -15,7 +15,7 @@ use imposter_app::core::variables::Scope;
 use imposter_app::store::{collections, scopes};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::{EditorTab, HistoryTab};
-use support::{click, collection, request, settle, start_with, text_input, type_into};
+use support::{click, collection, open_tab, request, settle, start_with, text_input, type_into};
 
 struct Fixture {
     app: support::App,
@@ -101,7 +101,11 @@ fn choose(app: &mut support::App, combo: &str, option: &str) {
 fn checks_are_edited_saved_and_run_after_each_response() {
     let mut fixture = opened(Vec::new());
     let app = &mut fixture.app;
-    click(&mut app.harness, "Tests");
+    open_tab(&mut app.harness, "Tests");
+    assert!(
+        app.harness.query_by_label("Add capture").is_none(),
+        "captures have their own tab"
+    );
     click(&mut app.harness, "Add check");
     click(&mut app.harness, "Add check");
     choose(app, "Check 2 source", "JSON path");
@@ -227,7 +231,7 @@ fn globals(app: &support::App) -> imposter_app::core::model::Variables {
 fn captures_set_variables_that_the_next_send_uses() {
     let mut fixture = opened(Vec::new());
     let app = &mut fixture.app;
-    click(&mut app.harness, "Tests");
+    open_tab(&mut app.harness, "Captures");
     click(&mut app.harness, "Add capture");
     type_into(&mut app.harness, "Capture 1 variable", "user_id");
     replace(app, "Capture 1 JSON path", "$.id");
@@ -243,6 +247,15 @@ fn captures_set_variables_that_the_next_send_uses() {
             Capture::new("missing", Selector::Json("$.nope".into())),
         ]
     );
+    // Each tab counts its own rows.
+    let description = |app: &support::App, label: &str| {
+        app.harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, label)
+            .accesskit_node()
+            .description()
+    };
+    assert_eq!(description(app, "Captures").as_deref(), Some("2 in use"));
+    assert_eq!(description(app, "Tests"), None);
 
     send(app);
     assert_eq!(globals(app).get("user_id").map(String::as_str), Some("7"));
@@ -334,7 +347,7 @@ fn a_json_value_becomes_a_variable_named_after_it() {
     click(&mut app.harness, "Set variable");
     settle(&mut app.harness);
     let pane = app.harness.state().state.editor.as_ref().unwrap();
-    assert_eq!(pane.tab, EditorTab::Tests);
+    assert_eq!(pane.tab, EditorTab::Captures);
     assert_eq!(
         pane.editor.captures,
         [Capture::new("id", Selector::Json("$.id".into()))]
@@ -349,6 +362,11 @@ fn a_json_value_becomes_a_variable_named_after_it() {
 
 fn tests_tab(app: &mut support::App) {
     app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Tests;
+    app.harness.run_steps(2);
+}
+
+fn captures_tab(app: &mut support::App) {
+    app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Captures;
     app.harness.run_steps(2);
 }
 
@@ -476,7 +494,7 @@ fn a_capture_says_which_scope_it_writes_to() {
     click(&mut app.harness, "Environment");
     click(&mut app.harness, "Global (no environment)");
     settle(&mut app.harness);
-    tests_tab(app);
+    captures_tab(app);
     assert_eq!(targets(app), ["→ Global", "→ Global"]);
 
     app.harness

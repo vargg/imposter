@@ -336,7 +336,8 @@ impl Editor {
             EditorTab::Params => count(in_use(&self.queries)),
             EditorTab::Headers => count(in_use(&self.headers)),
             EditorTab::Cookies => count(in_use(&self.cookies)),
-            EditorTab::Tests => count(self.checks.len() + self.captures.len()),
+            EditorTab::Tests => count(self.checks.len()),
+            EditorTab::Captures => count(self.captures.len()),
             EditorTab::Auth => dot(self.auth.kind.is_some()),
             EditorTab::Docs => dot(!self.description.trim().is_empty()),
             EditorTab::Body => dot(match self.body_type {

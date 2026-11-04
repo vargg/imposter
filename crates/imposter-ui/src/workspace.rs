@@ -1343,11 +1343,13 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
             }
             EditorTab::Auth => edited = widgets::auth_form(ui, &mut pane.editor.auth, &mut vars),
             EditorTab::Tests => {
-                edited = crate::checks::tests_tab(
+                edited = crate::checks::checks_table(ui, &mut pane.editor.checks, &mut vars);
+            }
+            EditorTab::Captures => {
+                edited = crate::checks::captures_table(
                     ui,
-                    &mut pane.editor.checks,
                     &mut pane.editor.captures,
-                    &mut vars,
+                    vars.snapshot,
                     capture_fallback.as_deref(),
                 );
             }

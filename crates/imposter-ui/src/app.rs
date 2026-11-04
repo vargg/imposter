@@ -599,10 +599,11 @@ pub enum EditorTab {
     Settings,
     Docs,
     Tests,
+    Captures,
 }
 
 impl EditorTab {
-    pub const ALL: [(Self, &'static str); 8] = [
+    pub const ALL: [(Self, &'static str); 9] = [
         (Self::Body, "Body"),
         (Self::Auth, "Auth"),
         (Self::Params, "Query"),
@@ -611,6 +612,7 @@ impl EditorTab {
         (Self::Settings, "Settings"),
         (Self::Docs, "Docs"),
         (Self::Tests, "Tests"),
+        (Self::Captures, "Captures"),
     ];
 }
 
@@ -2691,7 +2693,7 @@ impl ImposterApp {
             Action::AddCapture(capture) => {
                 if let Some(pane) = &mut self.state.editor {
                     pane.editor.captures.push(capture);
-                    pane.tab = EditorTab::Tests;
+                    pane.tab = EditorTab::Captures;
                     self.edited(false, false, now);
                 }
             }

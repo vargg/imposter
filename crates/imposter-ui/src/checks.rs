@@ -182,24 +182,6 @@ fn argument_field(
     }
 }
 
-/// The request's Tests tab: its checks, then the captures that set variables from each
-/// response. `fallback` is the active environment, where a capture of a name nobody defines
-/// goes (Global without one). Returns whether anything changed.
-pub fn tests_tab(
-    ui: &mut Ui,
-    checks: &mut Vec<Check>,
-    captures: &mut Vec<Capture>,
-    vars: &mut VarUi,
-    fallback: Option<&str>,
-) -> bool {
-    ui.label(egui::RichText::new("Checks").font(crate::theme::semibold(13.0)));
-    let mut changed = checks_table(ui, checks, vars);
-    ui.add_space(12.0);
-    ui.label(egui::RichText::new("Captures").font(crate::theme::semibold(13.0)));
-    changed |= captures_table(ui, captures, vars.snapshot, fallback);
-    changed
-}
-
 /// How a table's rows are laid out, by the width they have: every cell on one line; what
 /// to read on one line and the rest under it; or each part on a line of its own, as in a
 /// narrow pane. Text fields keep a usable width in each, and cells keep their columns.
@@ -226,8 +208,9 @@ fn line<R>(ui: &mut Ui, indent: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
 }
 
 /// Checks in a fixed grid: enabled, what to read, its path or header (an empty cell for
-/// status, body, duration and size), operator, expected value, remove.
-fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool {
+/// status, body, duration and size), operator, expected value, remove: the Tests tab.
+/// Returns whether anything changed.
+pub fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> bool {
     let mut changed = false;
     let mut remove = None;
     let spacing = ui.spacing().item_spacing.x;
@@ -410,8 +393,9 @@ fn capture_target(
 }
 
 /// Captures in a fixed grid: enabled, variable, where it goes, what to read and its path,
-/// remove.
-fn captures_table(
+/// remove: the Captures tab. `fallback` is the active environment, where a capture of a
+/// name nobody defines goes (Global without one). Returns whether anything changed.
+pub fn captures_table(
     ui: &mut Ui,
     captures: &mut Vec<Capture>,
     snapshot: Option<&Snapshot>,

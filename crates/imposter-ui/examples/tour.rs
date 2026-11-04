@@ -486,6 +486,9 @@ fn main() {
         tour.open_from("More response tabs", "Check results");
         tour.settle();
         tour.shot("4-01-checks-and-results");
+        tour.open_tab("Captures");
+        tour.settle();
+        tour.shot("4-01b-captures");
         tour.harness.state_mut().state.response.tab = ResponseTab::Body;
         tour.settle();
         if let Some(node) = tour.harness.query_by_label_contains("\"name\": \"Ann\"") {
