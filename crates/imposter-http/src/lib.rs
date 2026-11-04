@@ -5,6 +5,6 @@ pub mod tls;
 pub mod transport;
 pub mod upload;
 
-pub use transport::{ErrorKind, Policy, SendError, Session, send};
+pub use transport::{ErrorKind, Measured, Policy, SendError, Session, send};
 
 pub mod mock;

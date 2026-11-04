@@ -315,6 +315,40 @@ numbers, so both are excluded. Each logical change is its own commit.
   made `encrypted_key_errors_are_specific` flaky).
 - **HTTP/1.1 only.** Why: matches the Python app (httpx default) and keeps the wire format the
   tests pin; HTTP/2 settings are out of scope.
+- **Load runs send one request many times, apart from Send** (`imposter_app::load`,
+  `imposter_core::load`), as `ab` does with JMeter's measures.
+  - **Plan** (`LoadPlan`, checked when built): requests in total (1 to 1,000,000, as `ab`
+    counts them, not per worker), concurrency (1 to 256, no more than the requests), an
+    optional time limit (1 s to 1 h), an optional ramp-up that starts the workers evenly
+    over it (under 10 min and the time limit), and keep-alive.
+  - **Each request** gets fresh generated values (`{{$uuid}}` differs every time), from
+    one variable and settings snapshot read at the start. The request is checked once
+    first: one that cannot be sent stops the run as it stops Send, before anything goes.
+  - **Kept apart:** nothing goes to History (a run would push everything else out through
+    retention) and captures are never written. Checks run on every response; the body is
+    kept up to the capture limit only when a check reads it, and is otherwise counted
+    and dropped, but always read to its end so the connection can be reused.
+  - **One session per run** (`transport::Session`): with keep-alive, up to the
+    concurrency idle connections are kept and reused; the pool may open one more while a
+    finished connection is on its way back, so tests check reuse, not an exact count.
+    Without keep-alive every request connects afresh.
+  - **Its own runtime per run**, shut down at its end, so the UI, the database thread and
+    other background work do not skew the timings (JMeter's advice not to load-test from
+    its GUI). Progress is two counters the UI reads each frame.
+  - **Measures** (`Summary`, after JMeter's Aggregate Report and `ab`): requests and body
+    bytes per second; errors are transport errors plus responses failing a check, as
+    JMeter counts a failed assertion; min, mean, p50, p90, p95, p99 and max (nearest
+    rank) of the whole exchange and of the time to the response's head (JMeter's
+    "latency"); `ab`'s "served within" table; counts by status and error kind; a 1-2-5
+    millisecond histogram. Latency counts responses only: a refused connection is an
+    error, not a fast request.
+  - **Stopping** (the user or the time limit) drops the requests in flight and sums up
+    what finished.
+  - **Closed loop:** each worker waits for its response before the next request, as `ab`
+    does, so when the server slows down fewer requests go out and tail latency reads
+    lower than users would see. Left for later: a fixed-rate mode, CSV test data,
+    multi-request scenarios, pass/fail thresholds, an over-time chart. Rejected:
+    distributed load, other protocols, JMeter's test-plan trees.
 - **Header order: values of one name keep their order; names go out in first-occurrence order,
   lowercased.** So `A, B, A` is sent as `a, a, b`. Why: hyper stores headers in a `HeaderMap`
   and its order-preserving extensions are private; writing our own HTTP/1.1 client is not

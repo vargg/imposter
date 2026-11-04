@@ -2,6 +2,7 @@
 //! re-exports only (see the architecture test).
 
 pub mod executor;
+pub mod load;
 pub mod ops;
 pub mod paths;
 pub mod runtime;

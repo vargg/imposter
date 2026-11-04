@@ -7,6 +7,7 @@ pub mod curl;
 pub mod execution;
 pub mod generate;
 pub mod ids;
+pub mod load;
 pub mod model;
 pub mod prepare;
 pub mod select;

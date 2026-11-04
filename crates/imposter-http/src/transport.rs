@@ -355,10 +355,18 @@ fn redirect_method(status: StatusCode, method: &Method) -> Method {
     if to_get { Method::GET } else { method.clone() }
 }
 
-async fn capture(
+async fn capture(response: reqwest::Response, limit: Option<u64>) -> Result<Response, SendError> {
+    Ok(read_body(response, limit, false).await?.0)
+}
+
+/// The response with up to `limit` bytes of body kept, and how many bytes arrived. With
+/// `to_end` the rest is read and counted, so the connection can be reused; otherwise
+/// reading stops at the limit.
+async fn read_body(
     mut response: reqwest::Response,
     limit: Option<u64>,
-) -> Result<Response, SendError> {
+    to_end: bool,
+) -> Result<(Response, u64), SendError> {
     let status = response.status();
     let headers = response
         .headers()
@@ -373,24 +381,46 @@ async fn capture(
     let limit = limit.map(|limit| usize::try_from(limit).unwrap_or(usize::MAX));
     let mut body = Vec::new();
     let mut truncated = false;
+    let mut received = 0_u64;
     while let Some(chunk) = response.chunk().await? {
+        received += chunk.len() as u64;
+        if truncated {
+            continue;
+        }
         if let Some(limit) = limit
             && body.len() + chunk.len() > limit
         {
             body.extend_from_slice(&chunk[..limit - body.len()]);
             truncated = true;
-            break;
+            if !to_end {
+                break;
+            }
+            continue;
         }
         body.extend_from_slice(&chunk);
     }
-    Ok(Response {
+    let response = Response {
         status: status.as_u16(),
         reason: status.canonical_reason().unwrap_or_default().to_owned(),
         headers,
         body,
         truncated,
         ..Response::default()
-    })
+    };
+    Ok((response, received))
+}
+
+/// One request of a load run, timed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Measured {
+    /// The body kept only up to the limit given; `elapsed` is `total`.
+    pub response: Response,
+    /// From sending to the final response's head, after any redirects and Digest retry.
+    pub first_byte: Duration,
+    /// From sending to the body's last byte.
+    pub total: Duration,
+    /// Body bytes received, kept or not.
+    pub bytes: u64,
 }
 
 /// The clients of one execution, or of one load run shared by all its workers. Each set of
@@ -450,6 +480,24 @@ impl Session {
             .iter()
             .find(|(s, _)| s == settings)
             .map(|(_, client)| client.clone())
+    }
+
+    /// Send `prepared` for a load run: the body is read to its end, so the connection can
+    /// be reused, but only `keep` bytes of it are kept (checks may need them). Dropping the
+    /// future drops the connection.
+    pub async fn measure(&self, prepared: &Prepared, keep: u64) -> Result<Measured, SendError> {
+        let started = std::time::Instant::now();
+        let response = exchange(prepared, self).await?;
+        let first_byte = started.elapsed();
+        let (mut response, bytes) = read_body(response, Some(keep), true).await?;
+        let total = started.elapsed();
+        response.elapsed = total.as_secs_f64();
+        Ok(Measured {
+            response,
+            first_byte,
+            total,
+            bytes,
+        })
     }
 
     /// Send `prepared` and capture the response up to the policy's limit. Cancelling drops
