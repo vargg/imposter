@@ -26,6 +26,7 @@ pub const FIND: KeyboardShortcut = key(Modifiers::COMMAND, Key::F);
 pub const INSPECT: KeyboardShortcut = key(Modifiers::ALT, Key::Enter);
 pub const ESCAPE: KeyboardShortcut = key(Modifiers::NONE, Key::Escape);
 pub const FOCUS_URL: KeyboardShortcut = key(Modifiers::COMMAND, Key::L);
+pub const FORMAT_BODY: KeyboardShortcut = key(COMMAND_SHIFT, Key::F);
 pub const DUPLICATE: KeyboardShortcut = key(Modifiers::COMMAND, Key::D);
 pub const RENAME: KeyboardShortcut = key(Modifiers::NONE, Key::F2);
 /// F2 needs Fn on most Mac keyboards; Yaak's alternative.
@@ -46,6 +47,7 @@ pub enum Command {
     Save,
     New,
     FocusUrl,
+    FormatBody,
     Duplicate,
     Rename,
     Settings,
@@ -155,6 +157,12 @@ pub const ALL: &[Shortcut] = &[
         keys: &[FOCUS_URL],
         command: Command::FocusUrl,
         description: "Select the request URL",
+        group: Group::Edit,
+    },
+    Shortcut {
+        keys: &[FORMAT_BODY],
+        command: Command::FormatBody,
+        description: "Format the JSON body",
         group: Group::Edit,
     },
     Shortcut {
@@ -299,6 +307,9 @@ fn run(state: &mut State, command: Command) {
             }
         }
         Command::FocusUrl if requests && state.editor.is_some() => state.focus_url = true,
+        Command::FormatBody if requests && state.editor.is_some() => {
+            state.actions.push(Action::FormatBody);
+        }
         Command::ToggleSidebar if requests => {
             state.layout.sidebar_visible = !state.layout.sidebar_visible;
         }

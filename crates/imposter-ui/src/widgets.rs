@@ -1904,6 +1904,7 @@ const BODY_FOOTER: f32 = 24.0;
 const MIN_BODY_HEIGHT: f32 = 96.0;
 
 pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi) -> bool {
+    let was_empty = text.trim().is_empty();
     let width = ui.available_width();
     let response = var_edit_with(
         ui,
@@ -1914,19 +1915,55 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
         vars,
         Some((json, "Enter request body (JSON, XML, etc.)")),
     );
+    let mut changed = response.changed();
+    // A document pasted into an empty body is laid out at once; one typed is left alone,
+    // since re-indenting under the cursor would fight it.
+    let pasted = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Paste(_))));
+    if json
+        && changed
+        && was_empty
+        && pasted
+        && let Some(formatted) = viewer::format_json_body(text)
+    {
+        *text = formatted;
+    }
     if json && !text.trim().is_empty() {
-        match serde_json::from_str::<serde::de::IgnoredAny>(text) {
-            Ok(_) => ui.label(tone_text("Valid JSON", Tone::Ok)),
-            Err(error) => ui.label(tone_text(
-                format!("Invalid JSON, line {}: {error}", error.line()),
-                Tone::Error,
-            )),
-        };
+        ui.horizontal(|ui| {
+            let formatted = viewer::format_json_body(text).filter(|f| f != text);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let hint = crate::shortcuts::hint(
+                    ui.ctx(),
+                    "Re-indent the body, keeping every value as typed",
+                    &crate::shortcuts::FORMAT_BODY,
+                );
+                let format = ui
+                    .add_enabled(formatted.is_some(), egui::Button::new("Format"))
+                    .on_hover_text(&hint)
+                    .on_disabled_hover_text("Already formatted, or not valid JSON");
+                if format.clicked()
+                    && let Some(formatted) = formatted
+                {
+                    *text = formatted;
+                    changed = true;
+                }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    // Placeholders stand for values: `{"n": {{n}}}` is valid.
+                    let status = match viewer::check_json_template(text) {
+                        Ok(()) => tone_text("Valid JSON", Tone::Ok),
+                        Err(error) => tone_text(
+                            format!("Invalid JSON, line {}: {error}", error.line()),
+                            Tone::Error,
+                        ),
+                    };
+                    ui.add(egui::Label::new(status).truncate());
+                });
+            });
+        });
     }
     if text.len() > HIGHLIGHT_LIMIT {
         ui.label(tone_text("Large body: highlighting is off", Tone::Muted).small());
     }
-    response.changed()
+    changed
 }
 
 /// Find state and options of one code viewer.

@@ -468,6 +468,17 @@ fn fixed_items(state: &State) -> Vec<Item> {
         action("Send Request", Some(&shortcuts::SEND), Action::Send);
         action("Save Request", Some(&shortcuts::SAVE), Action::Save);
     }
+    if state
+        .editor
+        .as_ref()
+        .is_some_and(|p| p.editor.body_type == imposter_app::core::model::BodyType::Json)
+    {
+        action(
+            "Format JSON Body",
+            Some(&shortcuts::FORMAT_BODY),
+            Action::FormatBody,
+        );
+    }
     if let Some((id, name)) = open {
         action(
             "Rename Request",

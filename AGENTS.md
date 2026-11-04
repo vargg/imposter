@@ -260,7 +260,14 @@ numbers, so both are excluded. Each logical change is its own commit.
   choice is never stored. Why: labels were indented differently, the field had a fixed width,
   and a typed secret could not be checked (the review's #25).
 - **The body editor fills its pane**, above a one-line footer ("Valid JSON" or the parse
-  error with its line), and is never shorter than about four lines. Why: a fixed ten rows
+  error with its line, then Format), and is never shorter than about four lines. A
+  `{{placeholder}}` outside a string stands for a value, so `{"n": {{n}}}` is valid
+  (`viewer::check_json_template`). Format (the button, Cmd/Ctrl+Shift+F or the palette)
+  re-indents with two spaces, keeping every token and placeholder as typed
+  (`viewer::format_json_body`), and a JSON document pasted into an empty body is formatted
+  at once. Typing is never reformatted: re-indenting under the cursor fights it. Why: a
+  pasted minified body stayed one line, and the footer called every templated body
+  invalid (the user's note). Why: a fixed ten rows
   left most of a large pane empty (the review's #20).
 - **Body editor: egui `TextEdit`; `{{var}}`/JSON highlighting only up to 64 KiB.** Why: per
   interactive frame the editor costs about 4 ms at 64 KiB, 24 ms at 256 KiB and 130 ms at 1 MiB

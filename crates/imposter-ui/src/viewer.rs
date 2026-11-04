@@ -87,36 +87,96 @@ pub fn pretty_json_start(text: &str) -> Option<String> {
     }
 }
 
+/// The byte length of a `{{name}}` placeholder at the start of `rest` (the editor's
+/// highlight pattern: no braces or line breaks inside), if one starts there.
+fn placeholder_len(rest: &str) -> Option<usize> {
+    let inner = rest.strip_prefix("{{")?;
+    let end = inner.find("}}")?;
+    let name = &inner[..end];
+    (!name.is_empty() && !name.contains(['{', '}', '\n'])).then_some(end + 4)
+}
+
+/// Check a request body as JSON once its `{{placeholders}}` are filled: one outside a string
+/// (`{"n": {{n}}}`) stands for a value, so it reads as `0`. Line numbers stay as typed.
+pub fn check_json_template(text: &str) -> Result<(), serde_json::Error> {
+    let mut filled = String::with_capacity(text.len());
+    let mut in_string = false;
+    let mut rest = text;
+    while let Some(c) = rest.chars().next() {
+        if !in_string && let Some(len) = placeholder_len(rest) {
+            filled.push('0');
+            rest = &rest[len..];
+            continue;
+        }
+        match c {
+            '"' => in_string = !in_string,
+            '\\' if in_string => {
+                filled.push(c);
+                rest = &rest[1..];
+                if let Some(escaped) = rest.chars().next() {
+                    filled.push(escaped);
+                    rest = &rest[escaped.len_utf8()..];
+                }
+                continue;
+            }
+            _ => {}
+        }
+        filled.push(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    serde_json::from_str::<serde::de::IgnoredAny>(&filled).map(drop)
+}
+
+/// A request body re-indented with two spaces, its tokens and placeholders as typed; `None`
+/// when it is not JSON even with its placeholders filled.
+pub fn format_json_body(text: &str) -> Option<String> {
+    check_json_template(text).ok()?;
+    Some(reindent(text))
+}
+
 fn reindent(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + text.len() / 2);
     let mut depth = 0_usize;
-    let mut chars = text.chars().peekable();
     let newline = |out: &mut String, depth: usize| {
         out.push('\n');
         out.extend(std::iter::repeat_n("  ", depth));
     };
-    while let Some(c) = chars.next() {
+    let mut rest = text;
+    while let Some(c) = rest.chars().next() {
+        // A placeholder standing for a value is copied as typed, not opened as an object.
+        if let Some(len) = placeholder_len(rest) {
+            out.push_str(&rest[..len]);
+            rest = &rest[len..];
+            continue;
+        }
+        rest = &rest[c.len_utf8()..];
         match c {
             '"' => {
                 out.push('"');
-                while let Some(c) = chars.next() {
-                    out.push(c);
+                let mut chars = rest.char_indices();
+                let mut end = rest.len();
+                while let Some((at, c)) = chars.next() {
                     match c {
-                        '\\' => out.extend(chars.next()),
-                        '"' => break,
+                        '\\' => {
+                            chars.next();
+                        }
+                        '"' => {
+                            end = at + 1;
+                            break;
+                        }
                         _ => {}
                     }
                 }
+                out.push_str(&rest[..end]);
+                rest = &rest[end..];
             }
             '{' | '[' => {
                 out.push(c);
                 let close = if c == '{' { '}' } else { ']' };
-                while chars.peek().is_some_and(|c| c.is_whitespace()) {
-                    chars.next();
-                }
-                if chars.peek() == Some(&close) {
-                    chars.next();
+                rest = rest.trim_start();
+                if let Some(after) = rest.strip_prefix(close) {
                     out.push(close);
+                    rest = after;
                 } else {
                     depth += 1;
                     newline(&mut out, depth);
@@ -835,6 +895,32 @@ pub fn find_all(haystack: &str, needle: &str) -> Vec<Range<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_body_with_placeholders_is_json_once_they_are_filled() {
+        assert!(check_json_template(r#"{"n": {{n}}, "s": "{{s}}"}"#).is_ok());
+        assert!(check_json_template("[{{a}}, {{b}}]").is_ok());
+        assert!(check_json_template(r#"{"s": "a \" {{x}}"}"#).is_ok());
+        // Braces that are no placeholder stay errors, on the line typed.
+        let error = check_json_template("{\n\"a\": {{}}\n}").unwrap_err();
+        assert_eq!(error.line(), 2);
+        assert!(check_json_template(r#"{"n": {{n}} "m": 1}"#).is_err());
+    }
+
+    #[test]
+    fn formatting_a_body_keeps_tokens_and_placeholders_as_typed() {
+        assert_eq!(
+            format_json_body(r#"{"id":{{id}},"price":19.50,"tags":["a\"b",{}],"s":"{{x}}"}"#)
+                .as_deref(),
+            Some(
+                "{\n  \"id\": {{id}},\n  \"price\": 19.50,\n  \"tags\": [\n    \"a\\\"b\",\n    {}\n  ],\n  \"s\": \"{{x}}\"\n}"
+            )
+        );
+        assert_eq!(format_json_body("{\"a\": 1,}"), None, "not JSON");
+        // Formatting twice changes nothing.
+        let once = format_json_body(r#"{"a":[1,2]}"#).unwrap();
+        assert_eq!(format_json_body(&once).as_deref(), Some(once.as_str()));
+    }
     use imposter_app::core::model::{
         BodyType, FormItem, ParamItem, Request, RequestAuth, RequestTemplate,
     };

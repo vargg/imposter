@@ -105,6 +105,84 @@ fn dragging_a_request_onto_a_folder_moves_it() {
     assert_eq!(tree.requests[0].folder_id, Some(target));
 }
 
+fn json_body(app: &mut support::App) -> String {
+    app.harness
+        .state()
+        .state
+        .editor
+        .as_ref()
+        .unwrap()
+        .editor
+        .body_text
+        .clone()
+}
+
+#[test]
+fn a_json_body_with_placeholders_is_valid_and_formats_on_request_or_paste() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Create", "http://x");
+    });
+    open(&mut app, "GET Create");
+    {
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.tab = EditorTab::Body;
+        pane.editor.body_type = BodyType::Json;
+        pane.editor.body_text = r#"{"id":{{id}},"price":19.50}"#.into();
+    }
+    app.harness.run_steps(2);
+    // A placeholder stands for a value, so this is not an error.
+    app.harness.get_by_label("Valid JSON");
+
+    click(&mut app.harness, "Format");
+    assert_eq!(
+        json_body(&mut app),
+        "{\n  \"id\": {{id}},\n  \"price\": 19.50\n}"
+    );
+    assert_eq!(save_state(&app.harness, "Save request"), "Unsaved");
+    assert!(
+        app.harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, "Format")
+            .accesskit_node()
+            .is_disabled(),
+        "already formatted"
+    );
+
+    // The shortcut, from anywhere on the Requests screen.
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .body_text = r#"[1,{"a":[]}]"#.into();
+    app.harness.run_steps(1);
+    app.harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::F,
+    );
+    app.harness.run_steps(2);
+    assert_eq!(json_body(&mut app), "[\n  1,\n  {\n    \"a\": []\n  }\n]");
+
+    // Pasted into an empty body, a document is laid out at once.
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .body_text = String::new();
+    app.harness.run_steps(1);
+    app.harness.get_by_label("Request body").focus();
+    app.harness.run_steps(1);
+    app.harness
+        .event(egui::Event::Paste(r#"{"token":"{{t}}"}"#.into()));
+    app.harness.run_steps(2);
+    assert_eq!(json_body(&mut app), "{\n  \"token\": \"{{t}}\"\n}");
+}
+
 #[test]
 fn body_types_and_invalid_settings_reach_the_saved_request() {
     let mut app = start_with(|store| {

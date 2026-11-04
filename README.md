@@ -174,6 +174,7 @@ Cmd on macOS, Ctrl elsewhere. Shortcuts do nothing while a dialog is open.
 | Cmd/Ctrl+D | Duplicate the open request |
 | F2, Ctrl+Shift+R | Rename the open request |
 | Cmd/Ctrl+L | Select the request URL |
+| Cmd/Ctrl+Shift+F | Format the JSON body |
 | Cmd/Ctrl+B | Show or hide the collections sidebar |
 | Cmd/Ctrl+, | Open Settings |
 | Cmd/Ctrl+Shift+/ | Show keyboard shortcuts |

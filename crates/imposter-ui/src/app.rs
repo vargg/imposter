@@ -327,6 +327,8 @@ pub enum Action {
     SetAppearance(Appearance),
     /// A curl command pasted over the whole URL: it replaces the open request's contents.
     PasteCurl(String),
+    /// Re-indent a JSON body, its tokens and placeholders as typed.
+    FormatBody,
     /// Switch the active execution environment (`None`: globals only).
     SetEnvironment(Option<EnvironmentId>),
     /// Open the Variables screen on the active environment (Global without one).
@@ -2696,6 +2698,20 @@ impl ImposterApp {
                 }
             }
             Action::PasteCurl(command) => self.paste_curl(&command, now),
+            Action::FormatBody => {
+                let formatted = self.state.editor.as_mut().and_then(|pane| {
+                    let editor = &mut pane.editor;
+                    let json = editor.body_type == imposter_app::core::model::BodyType::Json;
+                    let formatted = crate::viewer::format_json_body(&editor.body_text)
+                        .filter(|f| json && *f != editor.body_text)?;
+                    editor.body_text = formatted;
+                    pane.tab = EditorTab::Body;
+                    Some(())
+                });
+                if formatted.is_some() {
+                    self.edited(false, false, now);
+                }
+            }
             Action::AddCheck(check) => {
                 if let Some(pane) = &mut self.state.editor {
                     pane.editor.checks.push(check);
