@@ -466,3 +466,33 @@ async fn a_run_dropped_half_way_shuts_its_runtime_down_quietly() {
     let ended = running.await.unwrap_err();
     assert!(ended.is_cancelled(), "aborted, not panicked: {ended:?}");
 }
+
+#[tokio::test]
+async fn a_collection_script_runs_for_every_request_of_a_load_run() {
+    let (_dir, store) = open();
+    let server = LoadServer::start(|_, _| LoadReply::ok(b"")).await;
+    let url = server.url.clone();
+    let request = store
+        .call(move |db| {
+            let collection = collections::create_collection(db, "API", "", &Variables::new())?;
+            collections::set_collection_scripts(
+                db,
+                collection.id,
+                &imposter_core::model::Scripts {
+                    before: r#"request.set_header("X-Signed", uuid());"#.into(),
+                    after: r#"test("ok", response.status == 200);"#.into(),
+                },
+            )?;
+            collections::create_request(db, collection.id, None, &get(&url))
+        })
+        .await
+        .unwrap();
+    let report = go(&store, request, plan(6, 2, true)).await;
+    let signed: HashSet<String> = server
+        .requests()
+        .iter()
+        .map(|(_, r)| r.header("x-signed").unwrap().to_owned())
+        .collect();
+    assert_eq!(signed.len(), 6);
+    assert_eq!(report.summary.checks.passed, 6);
+}

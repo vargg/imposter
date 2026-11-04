@@ -8,21 +8,17 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
 use imposter_core::check::{self, Check};
-use imposter_core::execution::Response;
 use imposter_core::load::{CheckTally, LoadPlan, Sample, SampleOutcome, Summary, micros};
-use imposter_core::model::{Request, RequestTemplate, Variables};
+use imposter_core::model::Request;
 use imposter_core::prepare::prepare;
 use imposter_core::select::Selector;
 use imposter_http::transport::IdentityRouting;
 use imposter_http::{Policy, SendError, Session};
-use imposter_script::Compiled;
 use imposter_store::StoreHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::executor::{
-    AFTER_SCRIPT, BEFORE_SCRIPT, ExecuteError, Inputs, SCRIPT_TIME, SystemEntropy, inputs,
-    resolve_with, script_host,
-};
+use crate::executor::{ExecuteError, Inputs, SystemEntropy, inputs, resolve_with};
+use crate::scripts::{After, CompiledChain};
 
 /// How far a run has got, read by the UI while it runs (plain counters, never a lock).
 #[derive(Debug, Default)]
@@ -75,9 +71,9 @@ struct Run {
     progress: Arc<Progress>,
     /// Cancelled by the user or the time limit; requests in flight are dropped.
     stop: CancellationToken,
-    /// The request's scripts, compiled once for every request.
-    before: Option<Compiled>,
-    after: Option<Compiled>,
+    /// The scripts around the request (collection, folders, its own), compiled once for
+    /// every request.
+    scripts: CompiledChain,
     script_error: Mutex<Option<String>>,
 }
 
@@ -90,42 +86,6 @@ impl Run {
             .unwrap_or_else(PoisonError::into_inner);
         first.get_or_insert(message);
     }
-}
-
-/// `source` compiled, or `None` without a script; a script that does not compile stops the
-/// run as it stops Send.
-fn compiled(source: &str, name: &str) -> Result<Option<Compiled>, ExecuteError> {
-    if source.trim().is_empty() {
-        return Ok(None);
-    }
-    imposter_script::compile(source)
-        .map(Some)
-        .map_err(|error| ExecuteError::Script(error.describe(name)))
-}
-
-/// Run the before-sending script on `template` off the async workers; its error in words.
-async fn run_before(
-    script: &Compiled,
-    template: RequestTemplate,
-    values: Variables,
-    stop: CancellationToken,
-) -> Result<RequestTemplate, String> {
-    let script = script.clone();
-    tokio::task::spawn_blocking(move || {
-        let mut template = template;
-        let outcome = imposter_script::before_compiled(
-            &script,
-            &mut template,
-            &values,
-            script_host(stop, SCRIPT_TIME),
-        );
-        match outcome.error {
-            Some(error) => Err(error.describe(BEFORE_SCRIPT)),
-            None => Ok(template),
-        }
-    })
-    .await
-    .unwrap_or_else(|_| Err(format!("{BEFORE_SCRIPT} failed unexpectedly")))
 }
 
 /// The run's own runtime, shut down in the background however `run` ends: dropping a
@@ -172,18 +132,15 @@ pub async fn run(
     progress: Arc<Progress>,
 ) -> Result<Report, ExecuteError> {
     let inputs = inputs(store, &request).await?;
-    let before = compiled(&request.template.scripts.before, BEFORE_SCRIPT)?;
-    let after = compiled(&request.template.scripts.after, AFTER_SCRIPT)?;
+    let scripts = inputs.scripts.with_request(&request).compile()?;
     let (resolved, settings, values) =
         resolve_with(&request, &inputs, &mut SystemEntropy::default())?;
-    // The first request is checked whole, its before-sending script included, as Send would.
-    let template = match &before {
-        Some(script) => run_before(script, resolved.template, values.clone(), cancel.clone())
-            .await
-            .map_err(ExecuteError::Script)?,
-        None => resolved.template,
-    };
-    prepare(&template, settings.attach_cookies)
+    // The first request is checked whole, its before-sending scripts included, as Send would.
+    let checked = scripts
+        .before(resolved.template, values.clone(), cancel.clone())
+        .await
+        .map_err(ExecuteError::Script)?;
+    prepare(&checked.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
     let mut policy = Policy::from_settings(&settings);
     policy.identity_routing = Some(Box::new(IdentityRouting {
@@ -191,7 +148,7 @@ pub async fn run(
         options: request.template.options.clone(),
         variables: values,
     }));
-    let keep = if reads_body(&request.template.checks) || after.is_some() {
+    let keep = if reads_body(&request.template.checks) || scripts.has_after() {
         policy.capture_limit.unwrap_or(u64::MAX)
     } else {
         0
@@ -219,8 +176,7 @@ pub async fn run(
         next: AtomicU32::new(0),
         progress,
         stop: stop.clone(),
-        before,
-        after,
+        scripts,
         script_error: Mutex::new(None),
     });
     let shared = Arc::clone(&run);
@@ -298,21 +254,27 @@ async fn one(run: &Run, entropy: &mut SystemEntropy) -> Sample {
         bytes: 0,
         checks: CheckTally::default(),
     };
-    let Ok((resolved, settings, values)) = resolve_with(&run.request, &run.inputs, entropy) else {
+    let Ok((resolved, settings, mut values)) = resolve_with(&run.request, &run.inputs, entropy)
+    else {
         return failed("InvalidRequest");
     };
     // Script time is not the server's: latency is measured around the exchange only.
-    let template = match &run.before {
-        Some(script) => {
-            match run_before(script, resolved.template, values.clone(), run.stop.clone()).await {
-                Ok(template) => template,
-                Err(message) => {
-                    run.script_failed(message);
-                    return failed("ScriptError");
-                }
+    let template = match run
+        .scripts
+        .before(resolved.template, values.clone(), run.stop.clone())
+        .await
+    {
+        Ok(before) => {
+            // The after scripts see what the before ones set, as after a Send.
+            for (name, value) in before.sets {
+                values.insert(name, value);
             }
+            before.template
         }
-        None => resolved.template,
+        Err(message) => {
+            run.script_failed(message);
+            return failed("ScriptError");
+        }
     };
     let Ok(prepared) = prepare(&template, settings.attach_cookies) else {
         return failed("InvalidRequest");
@@ -322,16 +284,17 @@ async fn one(run: &Run, entropy: &mut SystemEntropy) -> Sample {
             let results =
                 check::evaluate(&run.request.template.checks, &measured.response, &values);
             let mut checks = CheckTally::of(&results);
-            if let Some(script) = &run.after {
-                after_tally(
-                    run,
-                    script,
-                    template,
-                    &measured.response,
-                    values,
-                    &mut checks,
-                )
-                .await;
+            if run.scripts.has_after() {
+                let after = run
+                    .scripts
+                    .after(
+                        template,
+                        measured.response.clone(),
+                        values,
+                        run.stop.clone(),
+                    )
+                    .await;
+                tally_after(run, &after, &mut checks);
             }
             Sample {
                 total_us: micros(measured.total),
@@ -346,37 +309,14 @@ async fn one(run: &Run, entropy: &mut SystemEntropy) -> Sample {
     }
 }
 
-/// Run the after-response script and count its tests with the checks; an error counts as a
-/// failure, as it does after a Send. Variables it sets and what it prints are dropped.
-async fn after_tally(
-    run: &Run,
-    script: &Compiled,
-    template: RequestTemplate,
-    response: &Response,
-    values: Variables,
-    checks: &mut CheckTally,
-) {
-    let (script, response, stop) = (script.clone(), response.clone(), run.stop.clone());
-    let outcome = tokio::task::spawn_blocking(move || {
-        imposter_script::after_compiled(
-            &script,
-            &template,
-            &response,
-            &values,
-            script_host(stop, SCRIPT_TIME),
-        )
-    })
-    .await;
-    let Ok(outcome) = outcome else {
-        checks.failed += 1;
-        run.script_failed(format!("{AFTER_SCRIPT} failed unexpectedly"));
-        return;
-    };
-    let passed = outcome.tests.iter().filter(|t| t.passed).count() as u64;
+/// Count the after-response scripts' tests with the checks; each script that failed counts
+/// as one failure, as after a Send. Variables they set and what they print are dropped.
+fn tally_after(run: &Run, after: &After, checks: &mut CheckTally) {
+    let passed = after.tests.iter().filter(|t| t.passed).count() as u64;
     checks.passed += passed;
-    checks.failed += outcome.tests.len() as u64 - passed;
-    if let Some(error) = outcome.error {
-        checks.failed += 1;
-        run.script_failed(error.describe(AFTER_SCRIPT));
+    checks.failed += after.tests.len() as u64 - passed;
+    checks.failed += after.errors.len() as u64;
+    if let Some(first) = after.errors.first() {
+        run.script_failed(first.clone());
     }
 }

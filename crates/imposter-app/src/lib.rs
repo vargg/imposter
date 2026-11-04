@@ -7,6 +7,7 @@ pub mod ops;
 pub mod paths;
 pub mod runtime;
 pub mod saver;
+pub mod scripts;
 pub mod transfer;
 
 pub use imposter_core as core;

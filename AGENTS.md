@@ -898,6 +898,16 @@ numbers, so both are excluded. Each logical change is its own commit.
   after-response script; record. So the before script sees real values and what it
   changes is what goes out, what "Request as sent", History and Copy as curl show
   (user's choice over Postman's order, where scripts see `{{placeholders}}`).
+  - **The chain** (`imposter_app::scripts`): the collection's scripts, then each enclosing
+    folder's from the outermost, then the request's, in that order in both phases
+    (Postman's order, user's choice over unwinding the after scripts). Each before script
+    runs on what the one before left and sees its variables; after scripts all run, one
+    failing does not stop the others, their tests are pooled and each failure is one line
+    of the report's error naming its script ("Folder \"Users\" after-response script, line
+    2: …"). The chain is read with the variables in `executor::inputs`, so it is the same
+    snapshot; a folder that no longer exists, as for a History draft, adds nothing, and
+    its collection's scripts still run. Send, Copy as curl and load runs all compile and
+    run it through this one module.
   - **Failures:** a before-script error or stop is the request's "not sent" reason
     ("Before-sending script, line 3: …"), and nothing is recorded. An after-script error
     is reported with the response, its tests so far kept, and counts as a failure. The

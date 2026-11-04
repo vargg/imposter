@@ -65,15 +65,15 @@ pub struct Response {
 pub struct ScriptReport {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tests: Vec<ScriptTest>,
-    /// Why the script stopped, with its line: "Line 4: no such field".
+    /// Why scripts stopped, one line per script, each naming it and its line.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub error: String,
 }
 
 impl ScriptReport {
-    /// Failed tests, plus one for an error, which never passes silently.
+    /// Failed tests, plus one for each script that failed, which never passes silently.
     pub fn failures(&self) -> usize {
-        self.tests.iter().filter(|t| !t.passed).count() + usize::from(!self.error.is_empty())
+        self.tests.iter().filter(|t| !t.passed).count() + self.error.lines().count()
     }
 }
 

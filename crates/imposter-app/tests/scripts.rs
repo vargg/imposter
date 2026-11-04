@@ -295,3 +295,204 @@ async fn script_output_never_reaches_the_logs() {
         assert!(!logs.contains(secret), "{secret} reached the logs");
     }
 }
+
+fn scripts(before: &str, after: &str) -> imposter_core::model::Scripts {
+    imposter_core::model::Scripts {
+        before: before.into(),
+        after: after.into(),
+    }
+}
+
+/// API (collection) > Outer > Inner > "nested" request, each level with `levels` scripts.
+async fn nested(store: &Store, url: &str, levels: [imposter_core::model::Scripts; 4]) -> Request {
+    let url = url.to_owned();
+    store
+        .call(move |db| {
+            let [collection, outer, inner, own] = levels;
+            let api = collections::create_collection(db, "API", "", &Variables::new())?;
+            collections::set_collection_scripts(db, api.id, &collection)?;
+            let first = collections::create_folder(db, api.id, None, "Outer", "", 0)?;
+            collections::set_folder_scripts(db, first.id, &outer)?;
+            let second = collections::create_folder(db, api.id, Some(first.id), "Inner", "", 0)?;
+            collections::set_folder_scripts(db, second.id, &inner)?;
+            let template = RequestTemplate {
+                name: "nested".into(),
+                url: format!("{url}/items"),
+                scripts: own,
+                ..RequestTemplate::default()
+            };
+            collections::create_request(db, api.id, Some(second.id), &template)
+        })
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn collection_and_folder_scripts_run_outer_first_around_the_requests_own() {
+    let (_dir, store) = open();
+    let server = ok_server().await;
+    let request = nested(
+        &store,
+        &server.url,
+        [
+            scripts(
+                r#"print("collection"); request.set_header("X-Collection", "1"); vars.set("token", "t1");"#,
+                r#"print("collection after"); test("from the collection", true);"#,
+            ),
+            scripts(
+                r#"print("outer"); request.set_header("X-Outer", request.header("X-Collection") + "2");"#,
+                "",
+            ),
+            scripts(
+                r#"print("inner"); request.set_header("X-Inner", vars.get("token"));"#,
+                r#"print("inner after");"#,
+            ),
+            scripts(
+                r#"print("request");"#,
+                r#"print("request after"); test("own", response.status == 201);"#,
+            ),
+        ],
+    )
+    .await;
+    let executed = send(&store, request).await.unwrap();
+    let arrived = received(&server);
+    assert_eq!(arrived.header("x-collection"), Some("1"));
+    assert_eq!(
+        arrived.header("x-outer"),
+        Some("12"),
+        "inner levels see outer changes"
+    );
+    assert_eq!(arrived.header("x-inner"), Some("t1"), "and outer variables");
+    assert_eq!(
+        executed.response.console,
+        [
+            "collection",
+            "outer",
+            "inner",
+            "request",
+            "collection after",
+            "inner after",
+            "request after"
+        ]
+    );
+    let tests: Vec<&str> = executed
+        .response
+        .script
+        .as_ref()
+        .unwrap()
+        .tests
+        .iter()
+        .map(|t| t.name.as_str())
+        .collect();
+    assert_eq!(tests, ["from the collection", "own"], "pooled in run order");
+}
+
+#[tokio::test]
+async fn a_failing_folder_script_is_named_and_nothing_is_sent() {
+    let (_dir, store) = open();
+    let server = ok_server().await;
+    let request = nested(
+        &store,
+        &server.url,
+        [
+            scripts("", ""),
+            scripts("", ""),
+            scripts("let a = 1;\nthrow \"no key\";", ""),
+            scripts(r#"request.set_header("X", "1");"#, ""),
+        ],
+    )
+    .await;
+    match send(&store, request).await {
+        Err(ExecuteError::Script(message)) => assert_eq!(
+            message,
+            "Folder \"Inner\" before-sending script, line 2: no key"
+        ),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(server.requests().len(), 0);
+}
+
+#[tokio::test]
+async fn a_failing_after_script_does_not_stop_the_others() {
+    let (_dir, store) = open();
+    let server = ok_server().await;
+    let request = nested(
+        &store,
+        &server.url,
+        [
+            scripts("", "throw \"collection says no\";"),
+            scripts("", "response.nope();"),
+            scripts("", ""),
+            scripts("", r#"test("own", true);"#),
+        ],
+    )
+    .await;
+    let executed = send(&store, request).await.unwrap();
+    let report = executed.response.script.unwrap();
+    assert_eq!(report.tests.len(), 1, "the request's own test still ran");
+    let errors: Vec<&str> = report.error.lines().collect();
+    assert_eq!(errors.len(), 2);
+    assert_eq!(
+        errors[0],
+        "Collection \"API\" after-response script, line 1: collection says no"
+    );
+    assert!(errors[1].starts_with("Folder \"Outer\" after-response script"));
+    assert_eq!(report.failures(), 2);
+}
+
+#[tokio::test]
+async fn copy_as_curl_runs_the_whole_chain() {
+    let (_dir, store) = open();
+    let request = nested(
+        &store,
+        "http://example.test",
+        [
+            scripts(r#"request.set_header("X-Collection", "1");"#, ""),
+            scripts("", ""),
+            scripts(r#"request.set_header("X-Inner", "2");"#, ""),
+            scripts("", ""),
+        ],
+    )
+    .await;
+    let command = curl_command(&store.handle(), &request).await.unwrap();
+    assert!(
+        command.contains("X-Collection: 1") && command.contains("X-Inner: 2"),
+        "{command}"
+    );
+}
+
+#[tokio::test]
+async fn a_request_whose_folder_is_gone_keeps_its_collections_scripts() {
+    let (_dir, store) = open();
+    let server = ok_server().await;
+    let request = nested(
+        &store,
+        &server.url,
+        [
+            scripts(r#"request.set_header("X-Collection", "1");"#, ""),
+            scripts(r#"request.set_header("X-Outer", "1");"#, ""),
+            scripts("", ""),
+            scripts("", ""),
+        ],
+    )
+    .await;
+    // As a History draft would be: the request and its folders deleted, the collection kept.
+    let folder = request.folder_id.unwrap();
+    store
+        .call(move |db| {
+            let outer = collections::folder(db, folder)?.unwrap().parent_id.unwrap();
+            collections::delete_folder(db, outer)
+        })
+        .await
+        .unwrap();
+    let mut draft = request;
+    draft.id = None;
+    send(&store, draft).await.unwrap();
+    let arrived = received(&server);
+    assert_eq!(arrived.header("x-collection"), Some("1"));
+    assert_eq!(
+        arrived.header("x-outer"),
+        None,
+        "a deleted folder's scripts are gone"
+    );
+}

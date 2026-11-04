@@ -7,7 +7,7 @@ use imposter_core::capture::Write;
 use imposter_core::execution::{ExecutionRecord, Outcome, Response, Timestamp};
 use imposter_core::generate::Entropy;
 use imposter_core::ids::ExecutionId;
-use imposter_core::model::{Request, RequestTemplate, SavedValues, Variables};
+use imposter_core::model::{Request, SavedValues, Variables};
 use imposter_core::prepare::prepare;
 use imposter_core::settings::AppSettings;
 use imposter_core::variables::{
@@ -25,12 +25,16 @@ pub struct Inputs {
     pub settings: AppSettings,
     pub context: VariableContext,
     pub snapshot: Snapshot,
+    /// The collection's and enclosing folders' scripts, outermost first; the request's own
+    /// are added by the caller (`ScriptChain::with_request`).
+    pub scripts: crate::scripts::ScriptChain,
 }
 
 /// Read the inputs for `request`. Inspection uses this too, so it explains exactly what an
 /// execution would use.
 pub async fn inputs(store: &StoreHandle, request: &Request) -> Result<Inputs, StoreError> {
     let collection_id = request.collection_id;
+    let folder_id = request.folder_id;
     let captured = request.collection_variables_snapshot.clone();
     store
         .call(move |db| {
@@ -59,13 +63,50 @@ pub async fn inputs(store: &StoreHandle, request: &Request) -> Result<Inputs, St
                 None => None,
             };
             let snapshot = Snapshot::build(&context, scope);
+            let scripts = match &collection {
+                Some(collection) => script_levels(db, collection, folder_id)?,
+                None => crate::scripts::ScriptChain::default(),
+            };
             Ok(Inputs {
                 settings,
                 context,
                 snapshot,
+                scripts,
             })
         })
         .await
+}
+
+/// The collection's scripts, then those of each folder from the outermost down to the
+/// request's own folder. A folder that no longer exists, or belongs elsewhere, adds none.
+fn script_levels(
+    db: &imposter_store::Tx<'_>,
+    collection: &collections::Collection,
+    folder: Option<imposter_core::ids::FolderId>,
+) -> Result<crate::scripts::ScriptChain, StoreError> {
+    use crate::scripts::Level;
+    let mut folders = Vec::new();
+    let mut next = folder;
+    while let Some(id) = next {
+        let Some(found) = collections::folder(db, id)? else {
+            break;
+        };
+        // Parents form a tree (moves refuse cycles); the bound only guards a corrupt file.
+        if found.collection_id != collection.id || folders.len() > 1000 {
+            break;
+        }
+        next = found.parent_id;
+        folders.push(Level {
+            name: format!("Folder \"{}\"", found.name),
+            scripts: found.scripts,
+        });
+    }
+    let mut levels = vec![Level {
+        name: format!("Collection \"{}\"", collection.name),
+        scripts: collection.scripts.clone(),
+    }];
+    levels.extend(folders.into_iter().rev());
+    Ok(crate::scripts::ScriptChain(levels))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -234,12 +275,15 @@ pub async fn curl_with_identity_notice(
     request: &Request,
 ) -> Result<(String, bool), ExecuteError> {
     let inputs = inputs(store, request).await?;
+    let chain = inputs.scripts.with_request(request).compile()?;
     let (resolved, settings, values) =
         resolve_with(request, &inputs, &mut SystemEntropy::default())?;
-    // What Send would send includes the before-sending script's changes.
-    let (template, _) =
-        before_script(request, resolved.template, values, CancellationToken::new()).await?;
-    let prepared = prepare(&template, settings.attach_cookies)
+    // What Send would send includes the before-sending scripts' changes.
+    let before = chain
+        .before(resolved.template, values, CancellationToken::new())
+        .await
+        .map_err(ExecuteError::Script)?;
+    let prepared = prepare(&before.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
     Ok((
         imposter_core::curl::to_command(&prepared, &settings),
@@ -272,61 +316,6 @@ pub fn script_host(cancel: CancellationToken, time: std::time::Duration) -> impo
     }
 }
 
-/// Run `request`'s before-sending script on the resolved template, off the async workers.
-/// A failure is the request's "not sent" reason.
-async fn before_script(
-    request: &Request,
-    mut resolved: RequestTemplate,
-    values: Variables,
-    cancel: CancellationToken,
-) -> Result<(RequestTemplate, imposter_script::Outcome), ExecuteError> {
-    let source = request.template.scripts.before.clone();
-    if source.trim().is_empty() {
-        return Ok((resolved, imposter_script::Outcome::default()));
-    }
-    let (resolved, outcome) = tokio::task::spawn_blocking(move || {
-        let outcome = imposter_script::before(
-            &source,
-            &mut resolved,
-            &values,
-            script_host(cancel, SCRIPT_TIME),
-        );
-        (resolved, outcome)
-    })
-    .await
-    .map_err(|_| ExecuteError::Script(format!("{BEFORE_SCRIPT} failed unexpectedly")))?;
-    match &outcome.error {
-        Some(error) => Err(ExecuteError::Script(error.describe(BEFORE_SCRIPT))),
-        None => Ok((resolved, outcome)),
-    }
-}
-
-/// Run the after-response script; its error is reported with the response, never instead.
-async fn after_script(
-    source: String,
-    sent: RequestTemplate,
-    response: Response,
-    values: Variables,
-    cancel: CancellationToken,
-) -> imposter_script::Outcome {
-    tokio::task::spawn_blocking(move || {
-        imposter_script::after(
-            &source,
-            &sent,
-            &response,
-            &values,
-            script_host(cancel, SCRIPT_TIME),
-        )
-    })
-    .await
-    .unwrap_or_else(|_| imposter_script::Outcome {
-        error: Some(imposter_script::ScriptError::Stopped(
-            "Stopped: the script failed unexpectedly".to_owned(),
-        )),
-        ..imposter_script::Outcome::default()
-    })
-}
-
 /// A recorded execution as the curl command of what it sent.
 pub fn recorded_curl(record: &ExecutionRecord) -> Result<String, ExecuteError> {
     let prepared = prepare(&record.resolved.template, record.settings.attach_cookies)
@@ -342,11 +331,14 @@ pub async fn execute(
     cancel: CancellationToken,
 ) -> Result<Executed, ExecuteError> {
     let inputs = inputs(store, &request).await?;
+    let chain = inputs.scripts.with_request(&request).compile()?;
     let (mut resolved, settings, mut values) =
         resolve_with(&request, &inputs, &mut SystemEntropy::default())?;
-    let (template, before) =
-        before_script(&request, resolved.template, values.clone(), cancel.clone()).await?;
-    resolved.template = template;
+    let before = chain
+        .before(resolved.template, values.clone(), cancel.clone())
+        .await
+        .map_err(ExecuteError::Script)?;
+    resolved.template = before.template;
     let prepared = prepare(&resolved.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
 
@@ -379,26 +371,23 @@ pub async fn execute(
     // response, as checks do.
     let mut sets = before.sets;
     response.console = before.console;
-    let after_source = request.template.scripts.after.clone();
-    if !after_source.trim().is_empty() && response.outcome == Outcome::Response {
+    if chain.has_after() && response.outcome == Outcome::Response {
         for (name, value) in &sets {
             values.insert(name.clone(), value.clone());
         }
-        let after = after_script(
-            after_source,
-            resolved.template.clone(),
-            response.clone(),
-            values.clone(),
-            cancel.clone(),
-        )
-        .await;
+        let after = chain
+            .after(
+                resolved.template.clone(),
+                response.clone(),
+                values.clone(),
+                cancel.clone(),
+            )
+            .await;
         response.console.extend(after.console);
         response.script = Some(imposter_core::execution::ScriptReport {
             tests: after.tests,
-            error: after
-                .error
-                .map(|e| e.describe(AFTER_SCRIPT))
-                .unwrap_or_default(),
+            // One line per script that failed, each naming its script.
+            error: after.errors.join("\n"),
         });
         sets.extend(after.sets);
     }
