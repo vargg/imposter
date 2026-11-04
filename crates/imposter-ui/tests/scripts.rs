@@ -11,7 +11,7 @@ use imposter_app::store::{collections, executions};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::{EditorTab, ResponseTab};
 use imposter_ui::scripts_tab::{AFTER_EDITOR, BEFORE_EDITOR};
-use support::{click, collection, request, settle, start_with};
+use support::{click, click_button, collection, request, settle, start_with};
 
 struct Fixture {
     app: support::App,
@@ -217,4 +217,120 @@ fn a_failing_before_script_is_not_sent_and_says_where() {
         .call_blocking(|db| executions::count(db))
         .unwrap();
     assert_eq!(count, 0);
+}
+
+/// API > Users > "Items", opened.
+fn in_folder() -> Fixture {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime.block_on(Server::start(|_, _| response("200 OK", &[], b"{}")));
+    let url = format!("{}/items", server.url);
+    let mut app = start_with(move |store| {
+        let api = collection(store, "API");
+        store
+            .call_blocking(move |db| {
+                let users = collections::create_folder(db, api.id, None, "Users", "", 0)?;
+                let template = imposter_app::core::model::RequestTemplate {
+                    name: "Items".into(),
+                    url,
+                    ..Default::default()
+                };
+                collections::create_request(db, api.id, Some(users.id), &template).map(drop)
+            })
+            .unwrap();
+    });
+    click(&mut app.harness, "GET Items");
+    settle(&mut app.harness);
+    Fixture {
+        app,
+        server,
+        _runtime: runtime,
+    }
+}
+
+fn stored_scripts(
+    app: &support::App,
+) -> (
+    imposter_app::core::model::Scripts,
+    imposter_app::core::model::Scripts,
+) {
+    app.harness
+        .state()
+        .store()
+        .call_blocking(|db| {
+            let collection = collections::collections(db)?.remove(0);
+            let folder = collections::folders(db, collection.id)?.remove(0);
+            Ok((collection.scripts, folder.scripts))
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_folders_scripts_are_edited_in_a_dialog_and_run_around_its_requests() {
+    let mut f = in_folder();
+    f.app.harness.get_by_label("Folder Users").click_secondary();
+    f.app.harness.run_steps(2);
+    click(&mut f.app.harness, "Scripts…");
+    f.app.harness.run_steps(3);
+    support::type_into(
+        &mut f.app.harness,
+        "Folder \"Users\" before-sending script",
+        "request.set_header(\"X-Folder\", \"users\");",
+    );
+    click_button(&mut f.app.harness, "Save");
+    settle(&mut f.app.harness);
+    let (_, folder) = stored_scripts(&f.app);
+    assert_eq!(
+        folder.before,
+        "request.set_header(\"X-Folder\", \"users\");"
+    );
+    let row = f.app.harness.get_by_label("Folder Users");
+    assert_eq!(
+        row.accesskit_node().description().as_deref(),
+        Some("Has scripts")
+    );
+
+    open_scripts(&mut f.app);
+    f.app
+        .harness
+        .get_by_label("Open the scripts of Folder \"Users\"");
+    send(&mut f.app);
+    assert_eq!(f.server.requests()[0].header("x-folder"), Some("users"));
+}
+
+#[test]
+fn the_collection_menu_edits_its_scripts_and_cancel_keeps_nothing() {
+    let mut f = in_folder();
+    click(&mut f.app.harness, "Collection actions");
+    click(&mut f.app.harness, "Collection Scripts…");
+    f.app.harness.run_steps(3);
+    support::type_into(
+        &mut f.app.harness,
+        "Collection \"API\" after-response script",
+        "test(\"ok\", true);",
+    );
+    click_button(&mut f.app.harness, "Cancel");
+    settle(&mut f.app.harness);
+    assert!(stored_scripts(&f.app).0.is_empty(), "Cancel keeps nothing");
+
+    click(&mut f.app.harness, "Collection actions");
+    click(&mut f.app.harness, "Collection Scripts…");
+    f.app.harness.run_steps(3);
+    support::type_into(
+        &mut f.app.harness,
+        "Collection \"API\" after-response script",
+        "test(\"from the collection\", true);",
+    );
+    click_button(&mut f.app.harness, "Save");
+    settle(&mut f.app.harness);
+    assert_eq!(
+        stored_scripts(&f.app).0.after,
+        "test(\"from the collection\", true);"
+    );
+    open_scripts(&mut f.app);
+    click(&mut f.app.harness, "Open the scripts of Collection \"API\"");
+    f.app.harness.run_steps(3);
+    assert!(matches!(
+        f.app.harness.state().state.dialog,
+        Some(imposter_ui::dialogs::Dialog::Scripts { .. })
+    ));
 }

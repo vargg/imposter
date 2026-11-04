@@ -528,6 +528,27 @@ fn main() {
         tour.harness.state_mut().state.response.tab = ResponseTab::Tests;
         tour.settle();
         tour.shot("4-01d-script-results");
+        // A collection's scripts, which run around every request inside it.
+        {
+            let state = &mut tour.harness.state_mut().state;
+            if let Some(id) = state.collection
+                && let Some(collection) = state.collections.iter().find(|c| c.id == id)
+            {
+                state.dialog = Some(imposter_ui::dialogs::Dialog::Scripts {
+                    target: imposter_ui::dialogs::ScriptTarget::Collection(id),
+                    owner: format!("Collection \"{}\"", collection.name),
+                    scripts: imposter_app::core::model::Scripts {
+                        before: "request.set_header(\"X-Api-Key\", vars.get(\"api_key\"));\n"
+                            .into(),
+                        after: "test(\"no server error\", response.status < 500);\n".into(),
+                    },
+                });
+            }
+        }
+        tour.settle();
+        tour.shot("4-01e-collection-scripts");
+        tour.harness.state_mut().state.dialog = None;
+        tour.settle();
         tour.harness.state_mut().state.response.tab = ResponseTab::Body;
         tour.settle();
         if let Some(node) = tour.harness.query_by_label_contains("\"name\": \"Ann\"") {

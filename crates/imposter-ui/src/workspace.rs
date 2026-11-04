@@ -336,6 +336,15 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                         NamePurpose::RenameCollection(id),
                     )));
                 }
+                if ui.button("Collection Scripts…").clicked()
+                    && let Some(collection) = state.collections.iter().find(|c| c.id == id)
+                {
+                    state.actions.push(Action::Prompt(Dialog::Scripts {
+                        target: crate::dialogs::ScriptTarget::Collection(id),
+                        owner: format!("Collection \"{}\"", collection.name),
+                        scripts: collection.scripts.clone(),
+                    }));
+                }
                 if ui.button("Export Collection…").clicked() {
                     state.actions.push(Action::Export);
                 }
@@ -456,6 +465,13 @@ fn node_menu(
                     parent: Some(folder.id),
                 },
             )));
+        }
+        if ui.button("Scripts…").clicked() {
+            actions.push(Action::Prompt(Dialog::Scripts {
+                target: crate::dialogs::ScriptTarget::Folder(folder.id),
+                owner: format!("Folder \"{}\"", folder.name),
+                scripts: folder.scripts.clone(),
+            }));
         }
         ui.separator();
     }
@@ -815,6 +831,11 @@ fn nodes(
                         .sense(Sense::click_and_drag());
                         let response = ui.add(button);
                         name(&response, &format!("Folder {}", folder.name));
+                        if !folder.scripts.is_empty() {
+                            ui.ctx().accesskit_node_builder(response.id, |node| {
+                                node.set_description("Has scripts");
+                            });
+                        }
                         response
                     })
                     .body(|ui| nodes(ui, children, Some(folder.id), inner, actions));
@@ -1490,9 +1511,52 @@ fn pane_frame(ui: &Ui, rect: Rect) {
 
 const PANE_RADIUS: f32 = 12.0;
 
+/// The collection's and enclosing folders' scripts around the open request, outermost
+/// first, as the executor runs them; only levels that have scripts.
+fn outer_scripts(state: &State) -> Vec<crate::scripts_tab::Outer> {
+    use crate::dialogs::ScriptTarget;
+    use crate::scripts_tab::Outer;
+    let Some(identity) = state.editor.as_ref().map(|p| p.editor.identity()) else {
+        return Vec::new();
+    };
+    let Some(collection) = identity
+        .collection_id
+        .and_then(|id| state.collections.iter().find(|c| c.id == id))
+    else {
+        return Vec::new();
+    };
+    let mut levels = vec![Outer {
+        owner: format!("Collection \"{}\"", collection.name),
+        target: ScriptTarget::Collection(collection.id),
+        scripts: collection.scripts.clone(),
+    }];
+    let mut folders = Vec::new();
+    let mut next = identity.folder_id;
+    let tree = state
+        .tree
+        .as_ref()
+        .filter(|t| t.source.collection.id == collection.id);
+    while let (Some(id), Some(tree)) = (next, tree) {
+        let Some(folder) = tree.folder(id) else { break };
+        if folders.len() > tree.source.folders.len() {
+            break;
+        }
+        folders.push(Outer {
+            owner: format!("Folder \"{}\"", folder.name),
+            target: ScriptTarget::Folder(folder.id),
+            scripts: folder.scripts.clone(),
+        });
+        next = folder.parent_id;
+    }
+    levels.extend(folders.into_iter().rev());
+    levels.retain(|level| !level.scripts.is_empty());
+    levels
+}
+
 fn request_pane(state: &mut State, ui: &mut Ui) {
     // Where captures of names nobody defines go: the active environment, else Global.
     let capture_fallback = active_environment(state).map(|e| e.name.clone());
+    let outer = outer_scripts(state);
     let State {
         editor,
         snapshot,
@@ -1567,7 +1631,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                 edited = crate::checks::checks_table(ui, &mut pane.editor.checks, &mut vars);
             }
             EditorTab::Scripts => {
-                edited = crate::scripts_tab::draw(ui, &mut pane.editor.scripts, actions);
+                edited = crate::scripts_tab::draw(ui, &mut pane.editor.scripts, &outer, actions);
             }
             EditorTab::Captures => {
                 edited = crate::checks::captures_table(

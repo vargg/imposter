@@ -39,6 +39,13 @@ pub enum ConfirmPurpose {
     StartLoad,
 }
 
+/// Whose scripts a scripts dialog edits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptTarget {
+    Collection(CollectionId),
+    Folder(FolderId),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GuardChoice {
     Save,
@@ -107,6 +114,13 @@ pub enum Dialog {
     Shortcuts,
     /// What scripts can use, from `imposter_script::API`.
     ScriptReference,
+    /// A collection's or folder's scripts, run around every request inside it.
+    Scripts {
+        target: ScriptTarget,
+        /// `Collection "API"`, `Folder "Users"`.
+        owner: String,
+        scripts: imposter_app::core::model::Scripts,
+    },
     /// Fuzzy search over actions, requests and environments.
     Palette(Box<crate::palette::Palette>),
     /// What an export includes. Environments and globals are opt-in.
@@ -142,6 +156,8 @@ pub enum Outcome {
     Curl,
     /// Run the palette's choice; the dialog still holds it.
     Palette,
+    /// Save the scripts the dialog holds.
+    Scripts,
     /// Cancelled, closed or acknowledged.
     Closed,
 }
@@ -588,6 +604,51 @@ impl Dialog {
                                 }
                             }
                         });
+                }
+                Self::Scripts { owner, scripts, .. } => {
+                    ui.set_min_width(560.0);
+                    ui.heading(format!("Scripts: {owner}"));
+                    ui.add(
+                        egui::Label::new(tone_text(
+                            "They run around every request inside, before the request's own, outer ones first.",
+                            Tone::Muted,
+                        ))
+                        .wrap(),
+                    );
+                    ui.add_space(6.0);
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, true])
+                        .max_height((max_height - 150.0).max(160.0))
+                        .show(ui, |ui| {
+                            ui.set_max_width(ui.available_width() - SCROLL_BAR_ROOM);
+                            crate::scripts_tab::script_editor(
+                                ui,
+                                imposter_app::script::Phase::Before,
+                                "Before sending",
+                                "Runs on every request inside, with its variables filled in",
+                                &format!("{owner} before-sending script"),
+                                &mut scripts.before,
+                            );
+                            ui.add_space(10.0);
+                            crate::scripts_tab::script_editor(
+                                ui,
+                                imposter_app::script::Phase::After,
+                                "After response",
+                                "Runs on every response; its tests show with the request's",
+                                &format!("{owner} after-response script"),
+                                &mut scripts.after,
+                            );
+                        });
+                    // Enter belongs to the editors, which take new lines.
+                    match buttons(
+                        ui,
+                        &[("Cancel", Kind::Plain, true), ("Save", Kind::Primary, true)],
+                        false,
+                    ) {
+                        Some(0) => outcome = Outcome::Closed,
+                        Some(_) => outcome = Outcome::Scripts,
+                        None => {}
+                    }
                 }
                 Self::Companions { .. } => {
                     ui.heading("Companion files");

@@ -926,6 +926,14 @@ numbers, so both are excluded. Each logical change is its own commit.
     example…" for its phase; "Script reference" opens a sheet drawn from
     `imposter_script::API`, as is the README's table (a test keeps them equal). In a narrow
     pane the rows wrap rather than widen the pane (found by the layout lint at 720 points).
+  - **Collection and folder scripts are edited in a dialog** (`Dialog::Scripts`, from
+    "Collection Scripts…" in the collection's "⋯" menu and "Scripts…" in a folder's), with
+    the same two editors and Save; the request's Scripts tab lists the levels that also run
+    ("Also runs, before this request's:", outer first), each a button opening its dialog,
+    and a folder with scripts is described "Has scripts" to screen readers. Why: folders and
+    collections have no editor of their own, and a pane for them would need the navigation
+    guard and the saver; a dialog saves in one command. The label sits on its own line, as
+    beside the buttons it ran into them at 720 points (the layout lint).
   - **Results:** the response's Tests tab lists the script's error, failed tests, checks,
     passed tests, captures, then the console; script failures count with failed checks in
     the tab's badge, the status line's "✗n" and "n checks failed".

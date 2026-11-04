@@ -74,7 +74,21 @@ pub const AFTER_EDITOR: &str = "After-response script";
 /// Scripts this long or longer are not highlighted, like large bodies.
 const HIGHLIGHT_LIMIT: usize = 64 * 1024;
 
-pub fn draw(ui: &mut Ui, scripts: &mut Scripts, actions: &mut Vec<Action>) -> bool {
+/// A collection's or folder's scripts that also run around the open request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Outer {
+    /// `Collection "API"`, `Folder "Users"`.
+    pub owner: String,
+    pub target: crate::dialogs::ScriptTarget,
+    pub scripts: Scripts,
+}
+
+pub fn draw(
+    ui: &mut Ui,
+    scripts: &mut Scripts,
+    outer: &[Outer],
+    actions: &mut Vec<Action>,
+) -> bool {
     let mut edited = false;
     // The tab scrolls both ways; holding everything to the pane's width keeps a narrow pane
     // from widening as rows are laid out.
@@ -88,6 +102,27 @@ pub fn draw(ui: &mut Ui, scripts: &mut Scripts, actions: &mut Vec<Action>) -> bo
     );
     if ui.button("Script reference").clicked() {
         actions.push(Action::Prompt(Dialog::ScriptReference));
+    }
+    // What else runs, outer first, each opening its own scripts.
+    if !outer.is_empty() {
+        ui.add_space(4.0);
+        // On its own line: beside the buttons, a wrapped label ran into them in a narrow pane.
+        ui.add(
+            egui::Label::new(tone_text("Also runs, before this request's:", Tone::Muted)).wrap(),
+        );
+        ui.horizontal_wrapped(|ui| {
+            for level in outer {
+                let open = ui.small_button(level.owner.as_str());
+                name(&open, &format!("Open the scripts of {}", level.owner));
+                if open.clicked() {
+                    actions.push(Action::Prompt(Dialog::Scripts {
+                        target: level.target,
+                        owner: level.owner.clone(),
+                        scripts: level.scripts.clone(),
+                    }));
+                }
+            }
+        });
     }
     ui.add_space(8.0);
     for (phase, title, hint, label, text) in [

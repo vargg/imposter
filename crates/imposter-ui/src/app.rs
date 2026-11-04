@@ -1720,6 +1720,31 @@ impl ImposterApp {
 
     // ---- loading --------------------------------------------------------------------------
 
+    /// Store a collection's or folder's scripts, then reload what shows them.
+    fn save_scripts(
+        &mut self,
+        target: crate::dialogs::ScriptTarget,
+        scripts: imposter_app::core::model::Scripts,
+    ) {
+        use crate::dialogs::ScriptTarget;
+        match target {
+            ScriptTarget::Collection(id) => self.task(
+                move |db| collections::set_collection_scripts(db, id, &scripts),
+                |result| Message::Changed {
+                    reload_collections: true,
+                    result: result.map_err(failure),
+                },
+            ),
+            ScriptTarget::Folder(id) => self.task(
+                move |db| collections::set_folder_scripts(db, id, &scripts),
+                |result| Message::Changed {
+                    reload_collections: false,
+                    result: result.map_err(failure),
+                },
+            ),
+        }
+    }
+
     fn reload_collections(&mut self, select: Option<CollectionId>) {
         self.task(
             |db| collections::collections(db),
@@ -2989,6 +3014,14 @@ impl ImposterApp {
                     && let Some(action) = palette.chosen
                 {
                     self.state.actions.push(action);
+                }
+            }
+            Outcome::Scripts => {
+                if let Some(Dialog::Scripts {
+                    target, scripts, ..
+                }) = self.state.dialog.take()
+                {
+                    self.save_scripts(target, scripts);
                 }
             }
             Outcome::Curl => {

@@ -83,6 +83,11 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 - Scripts never touch files, the network or the environment. Each may run 2 seconds and a
   million operations; Cancel stops one. A failing before-sending script stops the send and
   says which line failed. What scripts print shows under the response and is not kept.
+- A collection or folder can have the same two scripts, run around every request inside it:
+  shared signing, an API key header, common tests. Open them from the collection's "⋯" menu
+  (**Collection Scripts…**) or a folder's right-click menu (**Scripts…**). Before sending,
+  the collection's run first, then each folder's from the outermost, then the request's;
+  after the response, in the same order. A request's Scripts tab lists what else runs.
 - "Insert example…" adds a ready-made script; "Script reference" lists everything below.
 
 | When | Use | What it does |

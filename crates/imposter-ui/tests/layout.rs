@@ -256,6 +256,39 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         pane.tab = imposter_ui::app::EditorTab::Scripts;
     }
     check(app, "scripts tab");
+    // Collection scripts listed above the request's, and their dialog.
+    {
+        let state = &mut app.harness.state_mut().state;
+        let id = state.collection.unwrap();
+        let collection = state.collections.iter_mut().find(|c| c.id == id).unwrap();
+        collection.scripts.before = "request.set_header(\"X-Collection\", \"1\");".into();
+    }
+    check(app, "scripts tab with collection scripts");
+    {
+        let state = &mut app.harness.state_mut().state;
+        let id = state.collection.unwrap();
+        let collection = state.collections.iter().find(|c| c.id == id).unwrap();
+        state.dialog = Some(imposter_ui::dialogs::Dialog::Scripts {
+            target: imposter_ui::dialogs::ScriptTarget::Collection(id),
+            owner: format!("Collection \"{}\"", collection.name),
+            scripts: imposter_app::core::model::Scripts {
+                before: "request.set_header(\"X-Signature\", hex(hmac_sha256(vars.get(\"secret\"), request.body)));".into(),
+                after: "let broken = ;".into(),
+            },
+        });
+    }
+    check(app, "collection scripts dialog");
+    {
+        let state = &mut app.harness.state_mut().state;
+        state.dialog = None;
+        let id = state.collection.unwrap();
+        state
+            .collections
+            .iter_mut()
+            .find(|c| c.id == id)
+            .unwrap()
+            .scripts = imposter_app::core::model::Scripts::default();
+    }
     app.harness
         .state_mut()
         .state
