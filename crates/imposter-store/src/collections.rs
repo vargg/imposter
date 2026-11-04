@@ -369,12 +369,22 @@ pub fn delete_folder(db: &Connection, id: FolderId) -> Result<(), StoreError> {
     )
 }
 
-/// Move within the same collection; a folder cannot move into itself or its descendants.
+/// Move within the same collection, to the end of `parent`; a folder cannot move into itself
+/// or its descendants.
 pub fn move_folder(
     db: &Connection,
     id: FolderId,
     parent: Option<FolderId>,
 ) -> Result<(), StoreError> {
+    place(db, Item::Folder(id), parent, usize::MAX)
+}
+
+/// Set a folder's parent after checking it stays in the collection and out of itself.
+fn reparent_folder(
+    db: &Connection,
+    id: FolderId,
+    parent: Option<FolderId>,
+) -> Result<CollectionId, StoreError> {
     let moving = folder(db, id)?.ok_or(StoreError::NotFound("folder"))?;
     let all = folders(db, moving.collection_id)?;
     let mut ancestor = parent;
@@ -392,7 +402,7 @@ pub fn move_folder(
         "UPDATE folders SET parent_folder_id = ?1 WHERE id = ?2",
         params![parent.map(|p| p.0), id.0],
     )?;
-    Ok(())
+    Ok(moving.collection_id)
 }
 
 fn to_request(
@@ -515,61 +525,113 @@ pub fn delete_request(db: &Connection, id: RequestId) -> Result<(), StoreError> 
     )
 }
 
-/// Move within the same collection, to a folder or the collection root.
+/// Move within the same collection, to the end of a folder or the collection root.
 pub fn move_request(
     db: &Connection,
     id: RequestId,
     folder: Option<FolderId>,
 ) -> Result<(), StoreError> {
-    let collection: i64 = db
-        .query_row(
+    place(db, Item::Request(id), folder, usize::MAX)
+}
+
+/// Set a request's folder after checking it stays in the collection.
+fn refile_request(
+    db: &Connection,
+    id: RequestId,
+    folder: Option<FolderId>,
+) -> Result<CollectionId, StoreError> {
+    let collection = CollectionId(
+        db.query_row(
             "SELECT collection_id FROM requests WHERE id = ?1",
             [id.0],
             |row| row.get(0),
         )
         .optional()?
-        .ok_or(StoreError::NotFound("request"))?;
+        .ok_or(StoreError::NotFound("request"))?,
+    );
     if let Some(folder) = folder {
-        folder_in(
-            db,
-            folder,
-            CollectionId(collection),
-            Conflict::CrossCollection,
-        )?;
+        folder_in(db, folder, collection, Conflict::CrossCollection)?;
     }
     db.execute(
         "UPDATE requests SET folder_id = ?1 WHERE id = ?2",
         params![folder.map(|f| f.0), id.0],
     )?;
-    Ok(())
+    Ok(collection)
 }
 
-/// Set positions for siblings in the given order (drag and drop reordering).
-pub fn reorder(
+/// A folder or a request: what can be placed among siblings in the tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Item {
+    Folder(FolderId),
+    Request(RequestId),
+}
+
+/// Put `item` under `parent` (a folder, or the collection root) at `index` among its new
+/// siblings, counted without it; an index past the end puts it last. The siblings are then
+/// numbered 0, 1, 2… in the order the tree shows (position, then id; folders and requests
+/// mixed), so no two share a position.
+pub fn place(
     db: &Connection,
-    folders: &[FolderId],
-    requests: &[RequestId],
+    item: Item,
+    parent: Option<FolderId>,
+    index: usize,
 ) -> Result<(), StoreError> {
-    let mut position = 0_i64;
-    for id in folders {
-        changed(
-            db.execute(
+    let collection = match item {
+        Item::Folder(id) => reparent_folder(db, id, parent)?,
+        Item::Request(id) => refile_request(db, id, parent)?,
+    };
+    let mut siblings = siblings(db, collection, parent)?;
+    siblings.retain(|(_, sibling)| *sibling != item);
+    siblings.insert(index.min(siblings.len()), (0, item));
+    for (position, (stored, sibling)) in siblings.into_iter().enumerate() {
+        let position = i64::try_from(position).unwrap_or(i64::MAX);
+        if stored == position && sibling != item {
+            continue;
+        }
+        match sibling {
+            Item::Folder(id) => db.execute(
                 "UPDATE folders SET position = ?1 WHERE id = ?2",
                 params![position, id.0],
             )?,
-            "folder",
-        )?;
-        position += 1;
-    }
-    for id in requests {
-        changed(
-            db.execute(
+            Item::Request(id) => db.execute(
                 "UPDATE requests SET template = json_set(template, '$.position', ?1) WHERE id = ?2",
                 params![position, id.0],
             )?,
-            "request",
-        )?;
-        position += 1;
+        };
     }
     Ok(())
+}
+
+/// The children of `parent` with their stored positions, in the order the tree shows them.
+fn siblings(
+    db: &Connection,
+    collection: CollectionId,
+    parent: Option<FolderId>,
+) -> Result<Vec<(i64, Item)>, StoreError> {
+    let parent = parent.map(|id| id.0);
+    let mut keyed: Vec<((i64, i64, u8), Item)> = Vec::new();
+    let mut statement = db.prepare(
+        "SELECT id, position FROM requests WHERE collection_id = ?1 AND folder_id IS ?2",
+    )?;
+    for row in statement.query_map(params![collection.0, parent], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })? {
+        let (id, position) = row?;
+        keyed.push(((position, id, 0), Item::Request(RequestId(id))));
+    }
+    let mut statement = db.prepare(
+        "SELECT id, position FROM folders WHERE collection_id = ?1 AND parent_folder_id IS ?2",
+    )?;
+    for row in statement.query_map(params![collection.0, parent], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })? {
+        let (id, position) = row?;
+        keyed.push(((position, id, 1), Item::Folder(FolderId(id))));
+    }
+    // Requests before folders on a full tie, as the sidebar's stable sort leaves them.
+    keyed.sort_by_key(|(key, _)| *key);
+    Ok(keyed
+        .into_iter()
+        .map(|((position, _, _), item)| (position, item))
+        .collect())
 }

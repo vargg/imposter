@@ -296,9 +296,12 @@ pub enum Action {
     OpenRequest(RequestId),
     DuplicateRequest(RequestId),
     Prompt(Dialog),
+    /// Put `node` under `target` (a folder, or the collection root) at `index` among its
+    /// new siblings, counted without it; `usize::MAX` puts it last.
     Move {
         node: NodeId,
         target: Option<FolderId>,
+        index: usize,
     },
     Save,
     Send,
@@ -2637,7 +2640,7 @@ impl ImposterApp {
         }
     }
 
-    fn move_node(&mut self, node: NodeId, target: Option<FolderId>) {
+    fn move_node(&mut self, node: NodeId, target: Option<FolderId>, index: usize) {
         if let (NodeId::Folder(id), Some(target)) = (node, target)
             && id == target
         {
@@ -2647,23 +2650,21 @@ impl ImposterApp {
             reload_collections: false,
             result: result.map_err(failure),
         };
-        match node {
-            NodeId::Folder(id) => {
-                self.task(move |db| collections::move_folder(db, id, target), reload);
+        if let NodeId::Request(id) = node {
+            if let Some(pane) = &mut self.state.editor
+                && pane.editor.id() == Some(id)
+            {
+                let name = pane.editor.name().to_owned();
+                pane.editor.adopt_metadata(&name, target);
             }
-            NodeId::Request(id) => {
-                if let Some(pane) = &mut self.state.editor
-                    && pane.editor.id() == Some(id)
-                {
-                    let name = pane.editor.name().to_owned();
-                    pane.editor.adopt_metadata(&name, target);
-                }
-                self.state
-                    .saver
-                    .adopt_metadata(id, |request| request.folder_id = target);
-                self.task(move |db| collections::move_request(db, id, target), reload);
-            }
+            self.state
+                .saver
+                .adopt_metadata(id, |request| request.folder_id = target);
         }
+        self.task(
+            move |db| collections::place(db, node, target, index),
+            reload,
+        );
     }
 
     // ---- actions ----------------------------------------------------------------------------------
@@ -2753,7 +2754,11 @@ impl ImposterApp {
             Action::ToggleLayout => {
                 self.state.layout.orientation = self.state.layout.orientation.switched();
             }
-            Action::Move { node, target } => self.move_node(node, target),
+            Action::Move {
+                node,
+                target,
+                index,
+            } => self.move_node(node, target, index),
             Action::Save => match self.state.screen {
                 Screen::Variables => self.save_variables(),
                 Screen::Settings => self.save_settings(),
@@ -2893,7 +2898,7 @@ impl ImposterApp {
             }
             Outcome::Move(node, target) => {
                 self.state.dialog = None;
-                self.move_node(node, target);
+                self.move_node(node, target, usize::MAX);
             }
             Outcome::Companions(include) => {
                 let Some(Dialog::Companions { path }) = self.state.dialog.take() else {

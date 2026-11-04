@@ -192,7 +192,7 @@ fn update_rename_and_reorder_keep_one_source_of_truth() {
             edited.url = "https://changed".into();
             update_request(db, a, &edited)?;
             rename_request(db, a, "renamed")?;
-            reorder(db, &[], &[b, a])
+            place(db, Item::Request(b), None, 0)
         })
         .unwrap();
 
@@ -217,6 +217,121 @@ fn update_rename_and_reorder_keep_one_source_of_truth() {
         .map(|r| r.name)
         .collect();
     assert_eq!(order, ["b", "renamed"]);
+}
+
+/// Names of `parent`'s children in the order the sidebar shows them.
+fn children(
+    store: &imposter_store::Store,
+    collection: CollectionId,
+    parent: Option<FolderId>,
+) -> Vec<String> {
+    let tree = store
+        .call_blocking(move |db| tree(db, collection))
+        .unwrap()
+        .unwrap();
+    let mut keyed: Vec<((i64, i64, u8), String)> = tree
+        .requests
+        .iter()
+        .filter(|r| r.folder_id == parent)
+        .map(|r| ((r.position, r.id.0, 0), r.name.clone()))
+        .chain(
+            tree.folders
+                .iter()
+                .filter(|f| f.parent_id == parent)
+                .map(|f| ((f.position, f.id.0, 1), f.name.clone())),
+        )
+        .collect();
+    keyed.sort();
+    keyed.into_iter().map(|(_, name)| name).collect()
+}
+
+#[test]
+fn placing_orders_folders_and_requests_together() {
+    let (_dir, store) = store();
+    let (c, r1, f, r2) = store
+        .call_blocking(|db| {
+            let c = create_collection(db, "API", "", &Variables::new())?.id;
+            let at = |db, folder| next_position(db, c, folder);
+            let mut one = template("r1");
+            one.position = at(db, None)?;
+            let r1 = create_request(db, c, None, &one)?.id.unwrap();
+            let f = create_folder(db, c, None, "f", "", at(db, None)?)?.id;
+            let mut two = template("r2");
+            two.position = at(db, None)?;
+            let r2 = create_request(db, c, None, &two)?.id.unwrap();
+            create_request(db, c, Some(f), &template("r3"))?;
+            Ok((c, r1, f, r2))
+        })
+        .unwrap();
+    assert_eq!(children(&store, c, None), ["r1", "f", "r2"]);
+
+    let place_at = |item, parent, index| {
+        store
+            .call_blocking(move |db| place(db, item, parent, index))
+            .unwrap();
+    };
+    place_at(Item::Request(r2), None, 0);
+    assert_eq!(
+        children(&store, c, None),
+        ["r2", "r1", "f"],
+        "before the first"
+    );
+    place_at(Item::Folder(f), None, 1);
+    assert_eq!(
+        children(&store, c, None),
+        ["r2", "f", "r1"],
+        "a folder between requests"
+    );
+    place_at(Item::Request(r2), None, usize::MAX);
+    assert_eq!(
+        children(&store, c, None),
+        ["f", "r1", "r2"],
+        "past the end is last"
+    );
+
+    place_at(Item::Request(r1), Some(f), 0);
+    assert_eq!(
+        children(&store, c, Some(f)),
+        ["r1", "r3"],
+        "into a folder, first"
+    );
+    assert_eq!(children(&store, c, None), ["f", "r2"]);
+    let positions: Vec<i64> = store
+        .call_blocking(move |db| tree(db, c))
+        .unwrap()
+        .unwrap()
+        .requests
+        .iter()
+        .filter(|r| r.folder_id == Some(f))
+        .map(|r| r.position)
+        .collect();
+    assert_eq!(positions, [0, 1], "siblings are renumbered without ties");
+}
+
+#[test]
+fn placing_refuses_cycles_and_other_collections() {
+    let (_dir, store) = store();
+    let (a, b, foreign_request) = store
+        .call_blocking(|db| {
+            let one = create_collection(db, "one", "", &Variables::new())?;
+            let two = create_collection(db, "two", "", &Variables::new())?;
+            let a = create_folder(db, one.id, None, "a", "", 0)?;
+            let b = create_folder(db, one.id, Some(a.id), "b", "", 0)?;
+            let r = create_request(db, two.id, None, &template("r"))?;
+            Ok((a.id, b.id, r.id.unwrap()))
+        })
+        .unwrap();
+    let result = store.call_blocking(move |db| place(db, Item::Folder(a), Some(b), 0));
+    assert!(matches!(
+        result,
+        Err(StoreError::Conflict(Conflict::MoveIntoItself))
+    ));
+    let result =
+        store.call_blocking(move |db| place(db, Item::Request(foreign_request), Some(a), 0));
+    assert!(matches!(
+        result,
+        Err(StoreError::Conflict(Conflict::CrossCollection))
+    ));
 }
 
 #[test]

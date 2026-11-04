@@ -7,12 +7,9 @@ use imposter_app::store::collections::{Folder, RequestSummary, Tree};
 
 use crate::filter::{Candidate, Query};
 
-/// Something in the tree that can be renamed, moved or deleted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum NodeId {
-    Folder(FolderId),
-    Request(RequestId),
-}
+/// Something in the tree that can be renamed, moved or deleted: the store's own item, so a
+/// drop goes to [`imposter_app::store::collections::place`] as it is.
+pub use imposter_app::store::collections::Item as NodeId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
@@ -62,6 +59,27 @@ impl Node {
             Self::Folder { folder, .. } => (folder.position, folder.id.0),
             Self::Request(request) => (request.position, request.id.0),
         }
+    }
+}
+
+/// A node's place among its siblings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Place {
+    pub parent: Option<FolderId>,
+    pub index: usize,
+    pub count: usize,
+}
+
+impl Place {
+    /// The index to give `place` to move one step up, unless it is first.
+    pub fn up(self) -> Option<usize> {
+        self.index.checked_sub(1)
+    }
+
+    /// The index to give `place` to move one step down, unless it is last. Indexes count
+    /// the siblings without the moved node, so the one below it takes its index.
+    pub fn down(self) -> Option<usize> {
+        (self.index + 1 < self.count).then_some(self.index + 1)
     }
 }
 
@@ -118,6 +136,25 @@ impl TreeView {
         let mut out = vec![("Collection root".to_owned(), None)];
         visit(&self.roots, self, &mut out);
         out
+    }
+
+    /// Where `node` sits: its parent, its index among its siblings and how many siblings
+    /// there are, itself included.
+    pub fn place_of(&self, node: NodeId) -> Option<Place> {
+        fn find(nodes: &[Node], parent: Option<FolderId>, node: NodeId) -> Option<Place> {
+            if let Some(index) = nodes.iter().position(|n| n.id() == node) {
+                return Some(Place {
+                    parent,
+                    index,
+                    count: nodes.len(),
+                });
+            }
+            nodes.iter().find_map(|n| match n {
+                Node::Folder { folder, children } => find(children, Some(folder.id), node),
+                Node::Request(_) => None,
+            })
+        }
+        find(&self.roots, None, node)
     }
 
     /// The tree with only the requests `query` matches and the folders that lead to them.
@@ -279,6 +316,29 @@ mod tests {
         let view = view();
         let names: Vec<&str> = view.roots.iter().map(Node::name).collect();
         assert_eq!(names, ["health", "Users", "late", "Users"]);
+    }
+
+    #[test]
+    fn places_and_steps_among_siblings() {
+        let view = view();
+        let first = view.place_of(NodeId::Request(RequestId(1))).unwrap();
+        assert_eq!(
+            first,
+            Place {
+                parent: None,
+                index: 0,
+                count: 4
+            }
+        );
+        assert_eq!((first.up(), first.down()), (None, Some(1)));
+        let last = view.place_of(NodeId::Folder(FolderId(12))).unwrap();
+        assert_eq!((last.index, last.up(), last.down()), (3, Some(2), None));
+        let nested = view.place_of(NodeId::Request(RequestId(2))).unwrap();
+        assert_eq!(
+            (nested.parent, nested.index, nested.count),
+            (Some(FolderId(11)), 0, 1)
+        );
+        assert_eq!(view.place_of(NodeId::Request(RequestId(99))), None);
     }
 
     #[test]

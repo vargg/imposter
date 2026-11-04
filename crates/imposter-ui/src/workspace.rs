@@ -11,7 +11,7 @@ use crate::editor::BODY_CHOICES;
 use crate::icons::{self, Icon};
 use crate::layout::{Orientation, SIDEBAR_WIDTH, WorkspaceLayout};
 use crate::theme::{Tone, method_color, palette};
-use crate::tree::{Node, NodeId};
+use crate::tree::{Node, NodeId, Place};
 use crate::viewer::{self, Language};
 use crate::widgets::{self, FileRequest, VarUi, name, tone_text};
 
@@ -370,12 +370,15 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                 selected: state.selected,
                 destinations: &destinations,
                 filtering,
+                dragged: egui::DragAndDrop::payload::<NodeId>(ui.ctx()).map(|node| *node),
+                within_dragged: false,
             };
             // Rows as tall as the density says, with a hairline between them.
             ui.spacing_mut().interact_size.y = crate::theme::spacing().row;
             ui.spacing_mut().item_spacing.y = 2.0;
-            nodes(ui, &roots, &view, &mut actions);
-            if egui::DragAndDrop::has_payload_of_type::<NodeId>(ui.ctx()) {
+            nodes(ui, &roots, None, view, &mut actions);
+            if view.dragged.is_some() {
+                scroll_while_dragging(ui);
                 let (_, dropped) =
                     ui.dnd_drop_zone::<NodeId, _>(egui::Frame::default().inner_margin(6.0), |ui| {
                         ui.set_width(ui.available_width());
@@ -388,6 +391,7 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                     actions.push(Action::Move {
                         node: *node,
                         target: None,
+                        index: usize::MAX,
                     });
                 }
             }
@@ -405,6 +409,7 @@ pub(crate) fn selected_folder(state: &State) -> Option<FolderId> {
 fn node_menu(
     ui: &mut Ui,
     node: &Node,
+    place: Option<Place>,
     destinations: &[(String, Option<FolderId>)],
     actions: &mut Vec<Action>,
 ) {
@@ -445,6 +450,27 @@ fn node_menu(
             NamePurpose::Rename(id),
         )));
     }
+    // Not while filtering: hidden siblings would make a step look like nothing happened.
+    if let Some(place) = place {
+        for (label, index) in [("Move up", place.up()), ("Move down", place.down())] {
+            let hint = match label {
+                "Move up" => &crate::shortcuts::MOVE_UP,
+                _ => &crate::shortcuts::MOVE_DOWN,
+            };
+            let button = ui
+                .add_enabled(index.is_some(), egui::Button::new(label))
+                .on_hover_text(crate::shortcuts::hint(ui.ctx(), label, hint));
+            if button.clicked()
+                && let Some(index) = index
+            {
+                actions.push(Action::Move {
+                    node: id,
+                    target: place.parent,
+                    index,
+                });
+            }
+        }
+    }
     if ui.button("Move…").clicked() {
         let options: Vec<_> = destinations
             .iter()
@@ -470,12 +496,135 @@ fn folder_of(node: &Node) -> Option<FolderId> {
 }
 
 /// How the tree is drawn this frame.
+#[derive(Clone, Copy)]
 struct NodesView<'a> {
     selected: Option<NodeId>,
     destinations: &'a [(String, Option<FolderId>)],
     /// Filtered folders are drawn open under their own ids, so the user's open and closed
     /// folders are as they left them when the filter is cleared.
     filtering: bool,
+    /// The node being dragged, if any.
+    dragged: Option<NodeId>,
+    /// Drawing the inside of the dragged folder, where nothing may be dropped.
+    within_dragged: bool,
+}
+
+/// Where a dragged node would go, by the part of a row under the pointer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Drop {
+    Before,
+    After,
+    /// Into a folder: first when dropped under an open folder's header, else last.
+    Into {
+        first: bool,
+    },
+}
+
+/// The drop for a pointer at `fraction` of a row's height (0 at the top). On a folder the top
+/// and bottom quarters go before and after it (under an open folder's header: first inside
+/// it), the middle into it; a request has halves. While filtering only "into" is offered,
+/// since hidden siblings make "before" ambiguous.
+fn drop_zone(fraction: f32, folder: bool, open: bool, filtering: bool) -> Option<Drop> {
+    let into = Drop::Into { first: false };
+    if filtering {
+        return folder.then_some(into);
+    }
+    Some(if !folder {
+        if fraction < 0.5 {
+            Drop::Before
+        } else {
+            Drop::After
+        }
+    } else if fraction < 0.25 {
+        Drop::Before
+    } else if fraction <= 0.75 {
+        into
+    } else if open {
+        Drop::Into { first: true }
+    } else {
+        Drop::After
+    })
+}
+
+/// The drop under the pointer on `rect`, for a node of `list` at `index` under `parent`, as
+/// the target folder and the index among its children counted without the dragged node.
+fn drop_target(
+    ui: &Ui,
+    rect: Rect,
+    node: &Node,
+    open: bool,
+    (list, index, parent): (&[Node], usize, Option<FolderId>),
+    view: NodesView<'_>,
+) -> Option<(Drop, Option<FolderId>, usize)> {
+    let dragged = view.dragged?;
+    if view.within_dragged || dragged == node.id() {
+        return None;
+    }
+    let pointer = ui.input(|i| i.pointer.interact_pos())?;
+    let fraction = (pointer.y - rect.top()) / rect.height().max(1.0);
+    let drop = drop_zone(fraction, folder_of(node).is_some(), open, view.filtering)?;
+    // The dragged node's own slot above this row closes up once it leaves.
+    let among = |at: usize| {
+        let earlier = list[..at.min(list.len())]
+            .iter()
+            .any(|sibling| sibling.id() == dragged);
+        if earlier { at - 1 } else { at }
+    };
+    Some(match (drop, folder_of(node)) {
+        (Drop::Before, _) => (drop, parent, among(index)),
+        (Drop::After, _) => (drop, parent, among(index + 1)),
+        (Drop::Into { first }, Some(folder)) => {
+            (drop, Some(folder), if first { 0 } else { usize::MAX })
+        }
+        (Drop::Into { .. }, None) => return None,
+    })
+}
+
+/// Show where a drop would land: a line between rows, or an outline around a folder.
+fn paint_drop(ui: &Ui, rect: Rect, drop: Drop) {
+    let stroke = egui::Stroke::new(2.0, palette().accent);
+    // Rows are 2 points apart: the line sits in the gap.
+    match drop {
+        Drop::Before => {
+            ui.painter().hline(rect.x_range(), rect.top() - 1.0, stroke);
+        }
+        Drop::After | Drop::Into { first: true } => {
+            ui.painter()
+                .hline(rect.x_range(), rect.bottom() + 1.0, stroke);
+        }
+        Drop::Into { first: false } => {
+            ui.painter().rect_stroke(
+                rect,
+                4.0,
+                egui::Stroke::new(1.5, palette().accent),
+                egui::StrokeKind::Inside,
+            );
+        }
+    }
+}
+
+/// Scroll the tree while a node is dragged near its top or bottom edge, so a long tree can
+/// be crossed in one drag.
+fn scroll_while_dragging(ui: &mut Ui) {
+    let Some(pointer) = ui.ctx().pointer_hover_pos() else {
+        return;
+    };
+    let view = ui.clip_rect();
+    let edge = crate::theme::spacing().row;
+    if !view.x_range().contains(pointer.x) {
+        return;
+    }
+    // Points per second, faster the closer to the edge.
+    let speed = 600.0 * ui.input(|i| i.stable_dt).min(0.1);
+    let delta = if (view.top() - edge..view.top() + edge).contains(&pointer.y) {
+        speed * (1.0 - (pointer.y - view.top() + edge) / (2.0 * edge))
+    } else if (view.bottom() - edge..view.bottom() + edge).contains(&pointer.y) {
+        -speed * ((pointer.y - view.bottom() + edge) / (2.0 * edge))
+    } else {
+        return;
+    };
+    ui.scroll_with_delta(vec2(0.0, delta.max(-speed).min(speed)));
+    ui.ctx().request_repaint();
 }
 
 /// The filter field above the tree. Cmd/Ctrl+F over the sidebar focuses it; Esc or × clear.
@@ -602,14 +751,22 @@ fn request_bar_height() -> f32 {
     crate::theme::spacing().control + 8.0
 }
 
-fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Action>) {
+fn nodes(
+    ui: &mut Ui,
+    list: &[Node],
+    parent: Option<FolderId>,
+    view: NodesView<'_>,
+    actions: &mut Vec<Action>,
+) {
     let NodesView {
         selected,
         destinations,
         filtering,
-    } = *view;
-    for node in list {
+        ..
+    } = view;
+    for (index, node) in list.iter().enumerate() {
         let id = node.id();
+        let mut open = false;
         let response = match node {
             Node::Folder { folder, children } => {
                 let key = if filtering {
@@ -626,6 +783,11 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
                 if filtering {
                     collapsing.set_open(true);
                 }
+                open = collapsing.is_open();
+                let inner = NodesView {
+                    within_dragged: view.within_dragged || view.dragged == Some(id),
+                    ..view
+                };
                 let (_, header, _) = collapsing
                     .show_header(ui, |ui| {
                         let button = egui::Button::selectable(
@@ -638,23 +800,8 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
                         name(&response, &format!("Folder {}", folder.name));
                         response
                     })
-                    .body(|ui| nodes(ui, children, view, actions));
-                let response = header.inner;
-                if response.dnd_hover_payload::<NodeId>().is_some() {
-                    ui.painter().rect_stroke(
-                        response.rect,
-                        4.0,
-                        egui::Stroke::new(1.5, palette().accent),
-                        egui::StrokeKind::Inside,
-                    );
-                }
-                if let Some(dropped) = response.dnd_release_payload::<NodeId>() {
-                    actions.push(Action::Move {
-                        node: *dropped,
-                        target: Some(folder.id),
-                    });
-                }
-                response
+                    .body(|ui| nodes(ui, children, Some(folder.id), inner, actions));
+                header.inner
             }
             Node::Request(request) => {
                 let mut text = egui::text::LayoutJob::default();
@@ -705,6 +852,21 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
         if selected == Some(id) {
             widgets::selection_bar(ui, response.rect);
         }
+        let slot = (list, index, parent);
+        if response.dnd_hover_payload::<NodeId>().is_some()
+            && let Some((drop, _, _)) = drop_target(ui, response.rect, node, open, slot, view)
+        {
+            paint_drop(ui, response.rect, drop);
+        }
+        if let Some(dropped) = response.dnd_release_payload::<NodeId>()
+            && let Some((_, target, index)) = drop_target(ui, response.rect, node, open, slot, view)
+        {
+            actions.push(Action::Move {
+                node: *dropped,
+                target,
+                index,
+            });
+        }
         response.dnd_set_drag_payload(id);
         if response.clicked() {
             actions.push(match node {
@@ -712,7 +874,12 @@ fn nodes(ui: &mut Ui, list: &[Node], view: &NodesView<'_>, actions: &mut Vec<Act
                 Node::Request(request) => Action::OpenRequest(request.id),
             });
         }
-        response.context_menu(|ui| node_menu(ui, node, destinations, actions));
+        let place = (!filtering).then_some(Place {
+            parent,
+            index,
+            count: list.len(),
+        });
+        response.context_menu(|ui| node_menu(ui, node, place, destinations, actions));
     }
 }
 
@@ -2235,5 +2402,46 @@ mod branding_tests {
             assert_eq!(job.sections[0].format.color, palette().text);
             assert_eq!(job.sections[2].format.color, palette().text);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Drop, drop_zone};
+
+    #[test]
+    fn drop_zones_split_rows_by_height() {
+        let zones = |folder, open, filtering| -> Vec<Option<Drop>> {
+            [0.1, 0.4, 0.6, 0.9]
+                .into_iter()
+                .map(|fraction| drop_zone(fraction, folder, open, filtering))
+                .collect()
+        };
+        let into = Some(Drop::Into { first: false });
+        assert_eq!(
+            zones(false, false, false),
+            [
+                Some(Drop::Before),
+                Some(Drop::Before),
+                Some(Drop::After),
+                Some(Drop::After)
+            ]
+        );
+        assert_eq!(
+            zones(true, false, false),
+            [Some(Drop::Before), into, into, Some(Drop::After)]
+        );
+        assert_eq!(
+            zones(true, true, false),
+            [
+                Some(Drop::Before),
+                into,
+                into,
+                Some(Drop::Into { first: true })
+            ],
+            "under an open folder's header is its first child"
+        );
+        assert_eq!(zones(true, true, true), [into; 4], "filtered: into only");
+        assert_eq!(zones(false, false, true), [None; 4]);
     }
 }

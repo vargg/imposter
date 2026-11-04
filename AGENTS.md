@@ -399,6 +399,26 @@ numbers, so both are excluded. Each logical change is its own commit.
   UI state (layout, last selection, window) and closes; any failure keeps the window open.
 - **The tree is refreshed after a save that changed a request's method or name** (the Python app
   left it stale).
+- **The tree is reordered by dragging, by Move up and Move down, or by Alt+↑/↓.**
+  - **Drop zones** (`workspace::drop_zone`): on a folder, the top and bottom quarters drop
+    before and after it and the middle into it (last); under an open folder's header the
+    drop goes first inside it. A request row has halves. A 2-point accent line between rows
+    shows before and after, and an outline shows into.
+  - **Store:** one command (`collections::place`) moves the node and numbers its new
+    siblings 0, 1, 2… in the order the tree shows, folders and requests mixed, so no two
+    share a position. Move… and a drop on the collection root put it last. The unused
+    `reorder`, which numbered folders before requests, is gone.
+  - **While filtering** only drops into folders work, and Move up and down are off:
+    hidden siblings make "before X" ambiguous, and a step past a hidden one looked like
+    nothing happened.
+  - **Keyboard:** Alt+↑/↓ move the selected node, except while a text field has focus,
+    where they move the cursor (a field is recognised by its stored edit state, since
+    egui reports any focused widget as wanting the keyboard).
+  - **Long trees** scroll while a node is held within a row of the tree's top or bottom.
+
+  Why: drags only went into folders, so the order inside one could not be changed, and
+  dragging cannot be done from a keyboard or screen reader. Checked by
+  `imposter-ui/tests/editing.rs` and the store's `placing_*` tests.
 - **The layout lint gates every screen** (`imposter-ui/tests/layout.rs`).
   - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
     walks the screens, a sent response, a History run and the dialogs.

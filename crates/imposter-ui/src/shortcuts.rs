@@ -39,6 +39,10 @@ pub const RECENT: KeyboardShortcut = key(Modifiers::COMMAND, Key::P);
 /// The real Ctrl key on every platform, as in editors and browsers.
 pub const SWITCH_BACK: KeyboardShortcut = key(Modifiers::CTRL, Key::Tab);
 pub const SWITCH_FORWARD: KeyboardShortcut = key(CTRL_SHIFT, Key::Tab);
+/// As in editors' "move line"; ignored while a text field has focus, where Alt+arrows move
+/// the cursor.
+pub const MOVE_UP: KeyboardShortcut = key(Modifiers::ALT, Key::ArrowUp);
+pub const MOVE_DOWN: KeyboardShortcut = key(Modifiers::ALT, Key::ArrowDown);
 
 /// What a shortcut does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +61,8 @@ pub enum Command {
     Recent,
     SwitchBack,
     SwitchForward,
+    MoveUp,
+    MoveDown,
     /// Handled by the viewer under the pointer.
     Find,
     /// Handled by the focused variable field.
@@ -154,6 +160,18 @@ pub const ALL: &[Shortcut] = &[
         group: Group::Edit,
     },
     Shortcut {
+        keys: &[MOVE_UP],
+        command: Command::MoveUp,
+        description: "Move the selected request or folder up among its siblings",
+        group: Group::Edit,
+    },
+    Shortcut {
+        keys: &[MOVE_DOWN],
+        command: Command::MoveDown,
+        description: "Move the selected request or folder down among its siblings",
+        group: Group::Edit,
+    },
+    Shortcut {
         keys: &[FOCUS_URL],
         command: Command::FocusUrl,
         description: "Select the request URL",
@@ -237,6 +255,9 @@ pub fn keys(ctx: &egui::Context, shortcut: &KeyboardShortcut) -> Vec<&'static st
 fn key_name(key: Key) -> &'static str {
     match key {
         Key::Escape => "Esc",
+        // egui's own symbols are triangles ("⏶"); keyboards print arrows.
+        Key::ArrowUp => "↑",
+        Key::ArrowDown => "↓",
         other => other.symbol_or_name(),
     }
 }
@@ -253,9 +274,15 @@ fn specificity(shortcut: KeyboardShortcut) -> usize {
 
 /// The app-owned shortcuts pressed this frame, consumed most specific first.
 fn pressed(ctx: &egui::Context) -> Vec<Command> {
+    // Alt+arrows belong to a focused text field, which moves its cursor with them. Any
+    // focused widget wants the keyboard in egui's terms; only text fields keep an edit state.
+    let typing = ctx
+        .memory(egui::Memory::focused)
+        .is_some_and(|id| egui::TextEdit::load_state(ctx, id).is_some());
     let mut keys: Vec<(KeyboardShortcut, Command)> = ALL
         .iter()
         .filter(|s| s.command.is_global())
+        .filter(|s| !(typing && matches!(s.command, Command::MoveUp | Command::MoveDown)))
         .flat_map(|s| s.keys.iter().map(move |k| (*k, s.command)))
         .collect();
     keys.sort_by_key(|(k, _)| std::cmp::Reverse(specificity(*k)));
@@ -304,6 +331,23 @@ fn run(state: &mut State, command: Command) {
                     &name,
                     NamePurpose::Rename(NodeId::Request(id)),
                 )));
+            }
+        }
+        Command::MoveUp | Command::MoveDown if requests && state.sidebar_filter.is_empty() => {
+            let Some(node) = state.selected else { return };
+            let Some(place) = state.tree.as_ref().and_then(|t| t.place_of(node)) else {
+                return;
+            };
+            let index = match command {
+                Command::MoveUp => place.up(),
+                _ => place.down(),
+            };
+            if let Some(index) = index {
+                state.actions.push(Action::Move {
+                    node,
+                    target: place.parent,
+                    index,
+                });
             }
         }
         Command::FocusUrl if requests && state.editor.is_some() => state.focus_url = true,

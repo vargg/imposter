@@ -105,6 +105,155 @@ fn dragging_a_request_onto_a_folder_moves_it() {
     assert_eq!(tree.requests[0].folder_id, Some(target));
 }
 
+/// Drag the row named `from` to `fraction` of the height of the row named `to` (0 is its top).
+fn drag_row(app: &mut support::App, from: &str, to: &str, fraction: f32) {
+    let from = app.harness.get_by_label(from).rect().center();
+    let rect = app.harness.get_by_label(to).rect();
+    let to = egui::pos2(rect.center().x, rect.top() + rect.height() * fraction);
+    app.harness.drag_at(from);
+    app.harness.run_steps(1);
+    for step in 1..=6 {
+        #[allow(clippy::cast_precision_loss)] // six small steps
+        app.harness
+            .hover_at(from + (to - from) * (step as f32 / 6.0));
+        app.harness.run_steps(1);
+    }
+    app.harness.drop_at(to);
+    app.harness.run_steps(2);
+    settle(&mut app.harness);
+}
+
+/// The root requests' names in the order the store gives the tree.
+fn root_order(app: &support::App) -> Vec<String> {
+    let tree = app.harness.state().store().call_blocking(|db| {
+        let api = collections::collections(db)?[0].id;
+        collections::tree(db, api)
+    });
+    let mut requests = tree.unwrap().unwrap().requests;
+    requests.retain(|r| r.folder_id.is_none());
+    requests.sort_by_key(|r| (r.position, r.id.0));
+    requests.into_iter().map(|r| r.name).collect()
+}
+
+fn three_requests() -> support::App {
+    start_with(|store| {
+        let api = collection(store, "API");
+        for name in ["Alpha", "Bravo", "Charlie"] {
+            request(store, api.id, name, "http://x");
+        }
+    })
+}
+
+#[test]
+fn dragging_a_request_onto_a_rows_edges_reorders_it() {
+    let mut app = three_requests();
+    drag_row(&mut app, "GET Charlie", "GET Alpha", 0.2);
+    assert_eq!(root_order(&app), ["Charlie", "Alpha", "Bravo"], "before");
+    drag_row(&mut app, "GET Charlie", "GET Bravo", 0.8);
+    assert_eq!(root_order(&app), ["Alpha", "Bravo", "Charlie"], "after");
+}
+
+#[test]
+fn dragging_near_the_trees_bottom_edge_scrolls_it() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        for n in 0..40 {
+            request(store, api.id, &format!("r{n:02}"), "http://x");
+        }
+    });
+    let first = || "GET r00";
+    let before = app.harness.get_by_label(first()).rect().top();
+    // The tree ends a little above the status bar's controls.
+    let bottom = app.harness.get_by_label("Hide Collections").rect().top() - 12.0;
+    let from = app.harness.get_by_label(first()).rect().center();
+    let to = egui::pos2(from.x, bottom);
+    app.harness.drag_at(from);
+    app.harness.run_steps(1);
+    for step in 1..=20 {
+        #[allow(clippy::cast_precision_loss)] // a few small steps, then holding still
+        app.harness
+            .hover_at(from + (to - from) * (f32::min(step as f32, 6.0) / 6.0));
+        app.harness.run_steps(1);
+    }
+    let during = app.harness.get_by_label(first()).rect().top();
+    app.harness.drop_at(to);
+    app.harness.run_steps(2);
+    assert!(
+        during < before - 20.0,
+        "the tree scrolled down while held at its edge: {before} -> {during}"
+    );
+}
+
+#[test]
+fn reordering_is_off_while_the_tree_is_filtered() {
+    let mut app = three_requests();
+    type_into(&mut app.harness, "Filter requests", "url:x");
+    settle(&mut app.harness);
+    drag_row(&mut app, "GET Charlie", "GET Alpha", 0.2);
+    assert_eq!(root_order(&app), ["Alpha", "Bravo", "Charlie"]);
+}
+
+#[test]
+fn alt_arrows_and_the_menu_move_the_selected_request() {
+    let mut app = three_requests();
+    open(&mut app, "GET Alpha");
+    // The tree row, not a text field, has the keyboard.
+    app.harness.get_by_label("GET Alpha").focus();
+    app.harness.run_steps(1);
+    app.harness
+        .key_press_modifiers(egui::Modifiers::ALT, egui::Key::ArrowDown);
+    app.harness.run_steps(2);
+    settle(&mut app.harness);
+    assert_eq!(root_order(&app), ["Bravo", "Alpha", "Charlie"]);
+
+    // In a text field Alt+arrows move the cursor, never the request.
+    support::text_input(&app.harness, "Request URL").click();
+    app.harness.run_steps(1);
+    app.harness
+        .key_press_modifiers(egui::Modifiers::ALT, egui::Key::ArrowDown);
+    app.harness.run_steps(2);
+    settle(&mut app.harness);
+    assert_eq!(root_order(&app), ["Bravo", "Alpha", "Charlie"]);
+
+    app.harness.get_by_label("GET Charlie").click_secondary();
+    app.harness.run_steps(2);
+    let down = app
+        .harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Move down");
+    assert!(
+        down.accesskit_node().is_disabled(),
+        "the last request cannot go down"
+    );
+    click(&mut app.harness, "Move up");
+    settle(&mut app.harness);
+    assert_eq!(root_order(&app), ["Bravo", "Charlie", "Alpha"]);
+}
+
+#[test]
+fn a_reordered_open_request_keeps_its_place_after_an_edit_is_saved() {
+    let mut app = three_requests();
+    open(&mut app, "GET Alpha");
+    drag_row(&mut app, "GET Alpha", "GET Charlie", 0.8);
+    assert_eq!(root_order(&app), ["Bravo", "Charlie", "Alpha"]);
+
+    type_into(&mut app.harness, "Request URL", "/edited");
+    click(&mut app.harness, "Save request");
+    settle(&mut app.harness);
+    let stored = app.harness.state().store().call_blocking(|db| {
+        let api = collections::collections(db)?[0].id;
+        collections::tree(db, api)
+    });
+    let alpha = stored
+        .unwrap()
+        .unwrap()
+        .requests
+        .into_iter()
+        .find(|r| r.name == "Alpha")
+        .unwrap();
+    assert_eq!(alpha.url, "http://x/edited", "the edit was saved");
+    assert_eq!(root_order(&app), ["Bravo", "Charlie", "Alpha"]);
+}
+
 fn json_body(app: &mut support::App) -> String {
     app.harness
         .state()

@@ -13,7 +13,7 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 ## Features
 
 **Requests**
-- Collections with nested folders. Move requests and folders by dragging, or with Move.
+- Collections with nested folders. Drag requests and folders to reorder them or move them into a folder, or use Move up, Move down (Alt+↑/↓) and Move….
 - Any method, custom methods included; query parameters kept in sync with the URL.
 - Headers, cookies, and bodies as JSON, plain text, URL-encoded form, multipart (text fields
   and file uploads) or a binary file. Uploads are streamed from disk.
@@ -173,6 +173,8 @@ Cmd on macOS, Ctrl elsewhere. Shortcuts do nothing while a dialog is open.
 | Cmd/Ctrl+N | New request (a new collection when there is none) |
 | Cmd/Ctrl+D | Duplicate the open request |
 | F2, Ctrl+Shift+R | Rename the open request |
+| Alt+↑ | Move the selected request or folder up among its siblings |
+| Alt+↓ | Move the selected request or folder down among its siblings |
 | Cmd/Ctrl+L | Select the request URL |
 | Cmd/Ctrl+Shift+F | Format the JSON body |
 | Cmd/Ctrl+B | Show or hide the collections sidebar |
