@@ -9,7 +9,7 @@ use imposter_app::core::model::{
 use imposter_app::core::settings::AppSettings;
 
 use crate::editor::{
-    AUTH_CHOICES, AuthForm, OPTION_GROUPS, OptionField, OptionsForm, Override, default_hint,
+    AUTH_CHOICES, AuthForm, OPTION_GROUPS, OptionField, OptionsForm, Override, default_value,
 };
 use crate::highlight::{self, Spans};
 use crate::icons::{self, Icon};
@@ -813,6 +813,19 @@ pub fn var_edit(
     var_edit_with(ui, text, label, width, password, vars, None)
 }
 
+/// [`var_edit`] showing `hint` in muted text while it is empty.
+pub fn var_edit_hinted(
+    ui: &mut Ui,
+    text: &mut String,
+    label: &str,
+    width: f32,
+    password: bool,
+    vars: &mut VarUi,
+    hint: &str,
+) -> egui::Response {
+    var_edit_with(ui, text, label, width, password, vars, Some((None, hint)))
+}
+
 /// The id of the variable field named `label` drawn next in `ui`.
 pub fn var_edit_id(ui: &Ui, label: &str) -> egui::Id {
     ui.make_persistent_id(("variable field", label))
@@ -860,8 +873,11 @@ fn var_edit_with(
     width: f32,
     password: bool,
     vars: &mut VarUi,
-    multiline: Option<(bool, &str)>,
+    // `Some(Some(json))` is the multi-line body editor; `Some(None)` a single line with a hint.
+    hinted: Option<(Option<bool>, &str)>,
 ) -> egui::Response {
+    let multiline = hinted.and_then(|(json, hint)| json.map(|json| (json, hint)));
+    let hint = hinted.map(|(_, hint)| hint);
     let id = var_edit_id(ui, label);
     let ctx = ui.ctx().clone();
     let completion: Option<Completion> = ctx.data(|d| d.get_temp(id));
@@ -914,7 +930,7 @@ fn var_edit_with(
             .desired_rows(4)
             .min_size(egui::vec2(0.0, fill))
             .hint_text(hint),
-        None => egui::TextEdit::singleline(text),
+        None => egui::TextEdit::singleline(text).hint_text(hint.unwrap_or_default()),
     }
     .id(id)
     .desired_width(width)
@@ -1758,50 +1774,102 @@ fn secret_edit(ui: &mut Ui, text: &mut String, label: &str, width: f32, vars: &m
     changed
 }
 
+/// The width of the request settings' label column, which fits "Client certificate".
+const OPTION_LABELS: f32 = 150.0;
+
+/// A text setting in one line: the field shows the default while it is inherited, and
+/// typing makes it the request's own; the reset icon after it goes back to the default.
 fn override_text(
     ui: &mut Ui,
     field: OptionField,
     value: &mut Override<String>,
+    default: &str,
+    width: f32,
     vars: &mut VarUi,
 ) -> bool {
+    let password = field == OptionField::Password;
+    let reset_room = icons::size() + ui.spacing().item_spacing.x;
     let mut changed = false;
-    ui.horizontal(|ui| {
-        let inherit = ui.checkbox(&mut value.inherit, "Use application default");
-        name(
-            &inherit,
-            &format!("Use application default for {}", field.label()),
+    if value.inherit {
+        let mut draft = String::new();
+        let hint = format!("Default: {default}");
+        let typed = var_edit_hinted(
+            ui,
+            &mut draft,
+            field.label(),
+            width - reset_room,
+            password,
+            vars,
+            &hint,
         );
-        changed |= inherit.changed();
-        let width = ui.available_width();
-        let password = field == OptionField::Password;
-        ui.add_enabled_ui(!value.inherit, |ui| {
-            changed |=
-                var_edit(ui, &mut value.value, field.label(), width, password, vars).changed();
+        if typed.changed() && !draft.is_empty() {
+            value.value = draft;
+            value.inherit = false;
+            changed = true;
+        }
+    } else {
+        changed |= var_edit(
+            ui,
+            &mut value.value,
+            field.label(),
+            width - reset_room,
+            password,
+            vars,
+        )
+        .changed();
+        let reset = icons::button_with_hint(
+            ui,
+            Icon::Revert,
+            &format!("Use application default for {}", field.label()),
+            &format!("Back to the application default: {default}"),
+            false,
+        );
+        if reset.clicked() {
+            value.inherit = true;
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// An on/off setting as a choice of three: the default (saying what it is), On or Off.
+fn override_bool(
+    ui: &mut Ui,
+    field: OptionField,
+    value: &mut Override<bool>,
+    default: &str,
+) -> bool {
+    let on_off = |on: bool| if on { "On" } else { "Off" };
+    let inherited = format!("Default ({default})");
+    let selected = if value.inherit {
+        inherited.clone()
+    } else {
+        on_off(value.value).to_owned()
+    };
+    let mut changed = false;
+    let combo = egui::ComboBox::from_id_salt(("request option", field.label()))
+        .selected_text(selected)
+        .width(140.0)
+        .show_ui(ui, |ui| {
+            if option(ui, value.inherit, inherited.as_str()).clicked() && !value.inherit {
+                value.inherit = true;
+                changed = true;
+            }
+            for on in [true, false] {
+                let chosen = !value.inherit && value.value == on;
+                if option(ui, chosen, on_off(on)).clicked() && !chosen {
+                    value.inherit = false;
+                    value.value = on;
+                    changed = true;
+                }
+            }
         });
-    });
+    name(&combo.response, field.label());
     changed
 }
 
-fn override_bool(ui: &mut Ui, field: OptionField, value: &mut Override<bool>) -> bool {
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        let inherit = ui.checkbox(&mut value.inherit, "Use application default");
-        name(
-            &inherit,
-            &format!("Use application default for {}", field.label()),
-        );
-        changed |= inherit.changed();
-        let response = ui.add_enabled(
-            !value.inherit,
-            egui::Checkbox::new(&mut value.value, "Enabled"),
-        );
-        name(&response, field.label());
-        changed |= response.changed();
-    });
-    changed
-}
-
-/// The request's settings overrides, each with a hint showing what it inherits.
+/// The request's settings: one row per setting under a heading per group, each showing
+/// what it inherits until the request sets its own.
 pub fn options_form(
     ui: &mut Ui,
     options: &mut OptionsForm,
@@ -1810,43 +1878,80 @@ pub fn options_form(
     vars: &mut VarUi,
 ) -> bool {
     let mut changed = false;
-    for (title, fields) in OPTION_GROUPS {
-        ui.group(|ui| {
-            ui.set_width(ui.available_width());
-            ui.label(RichText::new(title).strong());
-            for &field in fields {
-                ui.label(field.label());
+    // Beside their labels where the pane has room; in a narrow one each control goes under
+    // its label, so nothing runs past the pane's edge.
+    let stacked = ui.available_width() < OPTION_LABELS + 12.0 + 200.0;
+    // Fields take the rest of the pane; inside a grid cell the cell is all a field would see.
+    let width = if stacked {
+        ui.available_width()
+    } else {
+        ui.available_width() - OPTION_LABELS - 12.0
+    };
+    let mut control = |ui: &mut Ui, field: OptionField| {
+        let default = default_value(field, defaults);
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                let text = |ui: &mut Ui, value: &mut Override<String>, vars: &mut VarUi| {
+                    override_text(ui, field, value, &default, width, vars)
+                };
                 changed |= match field {
-                    OptionField::Timeout => override_text(ui, field, &mut options.timeout, vars),
-                    OptionField::DownloadLimit => {
-                        override_text(ui, field, &mut options.download_limit, vars)
-                    }
-                    OptionField::ProxyUrl => override_text(ui, field, &mut options.proxy_url, vars),
-                    OptionField::CaBundle => override_text(ui, field, &mut options.ca_bundle, vars),
-                    OptionField::CertificatePath => {
-                        override_text(ui, field, &mut options.certificate_path, vars)
-                    }
-                    OptionField::KeyFile => override_text(ui, field, &mut options.key_file, vars),
-                    OptionField::Password => override_text(ui, field, &mut options.password, vars),
                     OptionField::FollowRedirects => {
-                        override_bool(ui, field, &mut options.follow_redirects)
+                        override_bool(ui, field, &mut options.follow_redirects, &default)
                     }
                     OptionField::AttachCookies => {
-                        override_bool(ui, field, &mut options.attach_cookies)
+                        override_bool(ui, field, &mut options.attach_cookies, &default)
                     }
-                    OptionField::VerifySsl => override_bool(ui, field, &mut options.verify_ssl),
+                    OptionField::VerifySsl => {
+                        override_bool(ui, field, &mut options.verify_ssl, &default)
+                    }
+                    OptionField::Timeout => text(ui, &mut options.timeout, vars),
+                    OptionField::DownloadLimit => text(ui, &mut options.download_limit, vars),
+                    OptionField::ProxyUrl => text(ui, &mut options.proxy_url, vars),
+                    OptionField::CaBundle => text(ui, &mut options.ca_bundle, vars),
+                    OptionField::CertificatePath => text(ui, &mut options.certificate_path, vars),
+                    OptionField::KeyFile => text(ui, &mut options.key_file, vars),
+                    OptionField::Password => text(ui, &mut options.password, vars),
                 };
-                let hint = if options.is_inherited(field) {
-                    default_hint(field, defaults)
-                } else {
-                    "Request override".to_owned()
-                };
-                ui.label(tone_text(hint, Tone::Muted).small());
-                if let Some((_, message)) = errors.iter().find(|(f, _)| *f == field) {
-                    ui.label(tone_text(*message, Tone::Error));
-                }
+            });
+            if let Some((_, message)) = errors.iter().find(|(f, _)| *f == field) {
+                ui.label(tone_text(*message, Tone::Error));
             }
         });
+    };
+    for (index, (title, fields)) in OPTION_GROUPS.iter().enumerate() {
+        if index > 0 {
+            ui.add_space(10.0);
+        }
+        ui.label(
+            RichText::new(*title)
+                .font(crate::theme::semibold(13.0))
+                .color(palette().text_muted),
+        );
+        if stacked {
+            for &field in *fields {
+                ui.add(egui::Label::new(field.label()).wrap());
+                control(ui, field);
+                ui.add_space(4.0);
+            }
+            continue;
+        }
+        egui::Grid::new(("request settings", *title))
+            .num_columns(2)
+            .min_col_width(OPTION_LABELS)
+            .max_col_width(OPTION_LABELS.max(width))
+            .spacing([12.0, 6.0])
+            .show(ui, |ui| {
+                for &field in *fields {
+                    // Left-aligned and cut with "…" past the column, its whole text on hover.
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(OPTION_LABELS, crate::theme::spacing().control),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| ui.add(egui::Label::new(field.label()).truncate()),
+                    );
+                    control(ui, field);
+                    ui.end_row();
+                }
+            });
     }
     changed
 }
@@ -1931,7 +2036,7 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
         width,
         false,
         vars,
-        Some((json, "Enter request body (JSON, XML, etc.)")),
+        Some((Some(json), "Enter request body (JSON, XML, etc.)")),
     );
     let mut changed = response.changed();
     // A document pasted into an empty body is laid out at once; one typed is left alone,

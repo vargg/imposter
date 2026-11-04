@@ -184,6 +184,71 @@ fn a_json_body_with_placeholders_is_valid_and_formats_on_request_or_paste() {
 }
 
 #[test]
+fn request_settings_take_one_row_each_and_show_what_they_inherit() {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Get", "http://x");
+    });
+    open(&mut app, "GET Get");
+    app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Settings;
+    app.harness.run_steps(2);
+    // Each label shares its row with its control.
+    for label in [
+        "Timeout (seconds)",
+        "Follow redirects",
+        "Proxy URL",
+        "Key password",
+    ] {
+        let rows: Vec<egui::Rect> = app
+            .harness
+            .query_all_by_label(label)
+            .map(|node| node.rect())
+            .collect();
+        assert_eq!(rows.len(), 2, "{label}: its caption and its control");
+        assert!(
+            (rows[0].center().y - rows[1].center().y).abs() < 4.0,
+            "{label}: {rows:?}"
+        );
+    }
+    let options = |app: &support::App| {
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .options
+            .clone()
+    };
+
+    // An on/off setting: the default says what it is; On or Off overrides it.
+    app.harness
+        .get_by_role_and_label(egui::accesskit::Role::ComboBox, "Follow redirects")
+        .click();
+    app.harness.run_steps(3);
+    click(&mut app.harness, "Off");
+    assert!(!options(&app).follow_redirects.inherit);
+    assert!(!options(&app).follow_redirects.value);
+    app.harness
+        .get_by_role_and_label(egui::accesskit::Role::ComboBox, "Follow redirects")
+        .click();
+    app.harness.run_steps(3);
+    click(&mut app.harness, "Default (On)");
+    assert!(options(&app).follow_redirects.inherit);
+
+    // A text setting: typing overrides, the reset icon goes back.
+    type_into(&mut app.harness, "Timeout (seconds)", "5");
+    assert!(!options(&app).timeout.inherit);
+    assert_eq!(options(&app).timeout.value, "5");
+    click(
+        &mut app.harness,
+        "Use application default for Timeout (seconds)",
+    );
+    assert!(options(&app).timeout.inherit);
+}
+
+#[test]
 fn body_types_and_invalid_settings_reach_the_saved_request() {
     let mut app = start_with(|store| {
         let api = collection(store, "API");
@@ -207,9 +272,12 @@ fn body_types_and_invalid_settings_reach_the_saved_request() {
 
     app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Settings;
     app.harness.run_steps(2);
-    click(
-        &mut app.harness,
-        "Use application default for Timeout (seconds)",
+    // Typing over the default makes it the request's own; no box to untick first.
+    assert!(
+        app.harness
+            .query_by_label("Use application default for Timeout (seconds)")
+            .is_none(),
+        "nothing to reset yet"
     );
     type_into(&mut app.harness, "Timeout (seconds)", "abc");
     app.harness.get_by_label("Invalid fields");
@@ -610,10 +678,6 @@ fn closing_with_invalid_edits_asks_and_cancel_keeps_the_window_open() {
     open(&mut app, "GET Edited");
     app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Settings;
     app.harness.run_steps(2);
-    click(
-        &mut app.harness,
-        "Use application default for Timeout (seconds)",
-    );
     type_into(&mut app.harness, "Timeout (seconds)", "x");
 
     app.harness.state_mut().request_close();

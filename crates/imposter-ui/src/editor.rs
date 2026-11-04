@@ -256,8 +256,9 @@ fn format_number(value: f64) -> String {
     text.strip_suffix(".0").map_or(text.clone(), str::to_owned)
 }
 
-/// How an inherited setting reads in its hint: "Application default · 30 seconds".
-pub fn default_hint(field: OptionField, defaults: &AppSettings) -> String {
+/// What a request inherits for `field` from the application settings, in words: "30
+/// seconds", "Unlimited", "Not configured", "On".
+pub fn default_value(field: OptionField, defaults: &AppSettings) -> String {
     let on_off = |value: bool| if value { "On" } else { "Off" }.to_owned();
     let text = |value: &str| {
         if value.is_empty() {
@@ -266,7 +267,7 @@ pub fn default_hint(field: OptionField, defaults: &AppSettings) -> String {
             value.to_owned()
         }
     };
-    let shown = match field {
+    match field {
         OptionField::Timeout => format!("{} seconds", format_number(defaults.timeout)),
         OptionField::FollowRedirects => on_off(defaults.follow_redirects),
         OptionField::AttachCookies => on_off(defaults.attach_cookies),
@@ -279,8 +280,7 @@ pub fn default_hint(field: OptionField, defaults: &AppSettings) -> String {
         OptionField::KeyFile => text(&defaults.key_file),
         OptionField::Password if defaults.password.is_empty() => "Not configured".to_owned(),
         OptionField::Password => "••••••••".to_owned(),
-    };
-    format!("Application default · {shown}")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -707,32 +707,18 @@ mod tests {
     }
 
     #[test]
-    fn hints_describe_the_inherited_defaults() {
+    fn defaults_are_described_in_words() {
         let defaults = AppSettings {
             password: "secret".into(),
             download_limit: 0,
             ..AppSettings::default()
         };
-        assert_eq!(
-            default_hint(OptionField::Timeout, &defaults),
-            "Application default · 30 seconds"
-        );
-        assert_eq!(
-            default_hint(OptionField::DownloadLimit, &defaults),
-            "Application default · Unlimited"
-        );
-        assert_eq!(
-            default_hint(OptionField::Password, &defaults),
-            "Application default · ••••••••"
-        );
-        assert_eq!(
-            default_hint(OptionField::ProxyUrl, &defaults),
-            "Application default · Not configured"
-        );
-        assert_eq!(
-            default_hint(OptionField::VerifySsl, &defaults),
-            "Application default · On"
-        );
+        let value = |field| default_value(field, &defaults);
+        assert_eq!(value(OptionField::Timeout), "30 seconds");
+        assert_eq!(value(OptionField::DownloadLimit), "Unlimited");
+        assert_eq!(value(OptionField::Password), "••••••••");
+        assert_eq!(value(OptionField::ProxyUrl), "Not configured");
+        assert_eq!(value(OptionField::VerifySsl), "On");
     }
 
     #[test]

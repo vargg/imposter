@@ -268,6 +268,15 @@ numbers, so both are excluded. Each logical change is its own commit.
   button after each secret (password, token) that shows or hides it for the session; the
   choice is never stored. Why: labels were indented differently, the field had a fixed width,
   and a typed secret could not be checked (the review's #25).
+- **The request's Settings tab is one row per setting** (`widgets::options_form`), under a
+  muted heading per group: the label in a 150-point column, then the control. A text
+  setting shows the application default in its empty field ("Default: 30 seconds");
+  typing makes it the request's own, and a reset icon after it ("Use application default
+  for …") goes back. An on/off setting is a choice of "Default (On)", On and Off. In a
+  pane too narrow for the column each control goes under its label. Why: each setting took
+  three or four rows (label, a "Use application default" box, the field greyed out, a
+  hint), about 35 rows for ten settings, and the useful value sat in the small grey hint
+  (the user's note).
 - **The body editor fills its pane**, above a one-line footer ("Valid JSON" or the parse
   error with its line, then Format), and is never shorter than about four lines. A
   `{{placeholder}}` outside a string stands for a value, so `{"n": {{n}}}` is valid

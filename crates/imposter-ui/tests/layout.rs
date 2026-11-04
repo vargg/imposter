@@ -247,6 +247,15 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     app.harness.state_mut().state.editor.as_mut().unwrap().tab =
         imposter_ui::app::EditorTab::Captures;
     check(app, "captures tab");
+    // The request's settings: one row each, with a reset icon on an override.
+    {
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.tab = imposter_ui::app::EditorTab::Settings;
+        pane.editor.options.timeout.inherit = false;
+        pane.editor.options.timeout.value = "5".into();
+        pane.editor.options.verify_ssl.inherit = false;
+    }
+    check(app, "request settings tab");
     // Auth: a label column, fields to the pane's edge, an eye on secrets.
     for kind in [
         imposter_app::core::model::AuthKind::Basic,

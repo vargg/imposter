@@ -387,6 +387,8 @@ fn main() {
         tour.shot("2-02-json-body");
         tour.open_tab("Auth");
         tour.shot("2-03-auth");
+        tour.open_tab("Request settings");
+        tour.shot("2-03b-request-settings");
         tour.click("GET Slow report");
         tour.settle();
         tour.send();
