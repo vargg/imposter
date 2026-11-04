@@ -379,6 +379,9 @@ fn values_inspected_from_a_password_field_stay_masked_until_revealed() {
     app.harness.get_by_label("s3cr3t");
     click(&mut app.harness, "Hide value");
     assert!(app.harness.query_by_label("s3cr3t").is_none());
+    // Copy and close are icons, as everywhere else.
+    support::assert_icon_button(&app.harness, "Copy value");
+    support::assert_icon_button(&app.harness, "Close");
     click(&mut app.harness, "Close");
     assert!(app.harness.state().state.inspect.is_none());
 }

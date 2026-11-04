@@ -1115,10 +1115,8 @@ pub fn inspector(
                 ui.horizontal(|ui| {
                     ui.heading(current.name.as_str());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let close_button = ui
-                            .add(egui::Button::new("×").frame_when_inactive(false))
-                            .on_hover_text("Close (Esc)");
-                        name(&close_button, "Close");
+                        let close_button =
+                            icons::button_with_hint(ui, Icon::Close, "Close", "Close (Esc)", false);
                         if close_button.clicked() {
                             close = true;
                         }
@@ -1208,8 +1206,12 @@ pub fn inspector(
                     let value = definitions.and_then(|d| d.first()).filter(|_| error.is_none());
                     if let Some(value) = value {
                         // Copying is explicit, so a masked value is copied as it is.
-                        let copy = ui.button("Copy value").on_hover_text(
+                        let copy = icons::button_with_hint(
+                            ui,
+                            Icon::Copy,
+                            "Copy value",
                             "Copy the value a send would use",
+                            false,
                         );
                         if copy.clicked() {
                             ui.ctx().copy_text(value.value.clone());
@@ -2384,15 +2386,17 @@ pub fn code_viewer(
             if field.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 state.find_open = false;
             }
+            let next =
+                icons::button_with_hint(ui, Icon::ChevronDown, "Next", "Next (Enter)", false);
             if (field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                || ui.button("Next").clicked()
+                || next.clicked()
             {
                 state.step(true);
             }
-            if ui.button("Previous").clicked() {
+            if icons::button(ui, Icon::ChevronUp, "Previous", false).clicked() {
                 state.step(false);
             }
-            if ui.button("Close").clicked() {
+            if icons::button(ui, Icon::Close, "Close", false).clicked() {
                 state.find_open = false;
             }
             ui.label(state.match_status());

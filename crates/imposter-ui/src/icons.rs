@@ -33,6 +33,17 @@ pub enum Icon {
     Eye,
     /// Hide a shown value: the eye, struck through.
     EyeOff,
+    /// One chevron each way: previous and next, newer and older.
+    ChevronUp,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    /// A cross: close a bar or popup.
+    Close,
+    /// Choose a file.
+    Folder,
+    /// A clockwise arrow: load again.
+    Refresh,
 }
 
 /// The side of an icon button: as tall as the other controls, so they line up in a row.
@@ -300,6 +311,67 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
             if icon == Icon::EyeOff {
                 line((2.0, 14.0), (14.0, 2.0));
             }
+        }
+        Icon::ChevronUp => {
+            painter.add(egui::Shape::line(
+                vec![point(3.0, 10.5), point(8.0, 5.5), point(13.0, 10.5)],
+                stroke,
+            ));
+        }
+        Icon::ChevronDown => {
+            painter.add(egui::Shape::line(
+                vec![point(3.0, 5.5), point(8.0, 10.5), point(13.0, 5.5)],
+                stroke,
+            ));
+        }
+        Icon::ChevronLeft => {
+            painter.add(egui::Shape::line(
+                vec![point(10.5, 3.0), point(5.5, 8.0), point(10.5, 13.0)],
+                stroke,
+            ));
+        }
+        Icon::ChevronRight => {
+            painter.add(egui::Shape::line(
+                vec![point(5.5, 3.0), point(10.5, 8.0), point(5.5, 13.0)],
+                stroke,
+            ));
+        }
+        Icon::Close => {
+            line((3.5, 3.5), (12.5, 12.5));
+            line((12.5, 3.5), (3.5, 12.5));
+        }
+        Icon::Folder => {
+            painter.add(egui::Shape::closed_line(
+                vec![
+                    point(1.5, 3.0),
+                    point(6.0, 3.0),
+                    point(7.5, 5.0),
+                    point(14.5, 5.0),
+                    point(14.5, 13.5),
+                    point(1.5, 13.5),
+                ],
+                stroke,
+            ));
+        }
+        Icon::Refresh => {
+            // A clockwise arrow, the mirror of Revert.
+            let center = point(8.0, 8.5);
+            let arc: Vec<Pos2> = (0..=12_u8)
+                .map(|step| {
+                    let angle = std::f32::consts::PI * (1.15 - 1.25 * f32::from(step) / 12.0);
+                    center + vec2(angle.cos(), -angle.sin()) * 5.5
+                })
+                .collect();
+            let tip = arc[arc.len() - 1];
+            painter.add(egui::Shape::line(arc, stroke));
+            line(
+                (tip.x - origin.x, tip.y - origin.y),
+                (tip.x - origin.x + 0.5, tip.y - origin.y - 4.0),
+            );
+            line(
+                (tip.x - origin.x, tip.y - origin.y),
+                (tip.x - origin.x - 3.8, tip.y - origin.y - 1.5),
+            );
         }
         Icon::Bookmark => {
             painter.add(egui::Shape::closed_line(

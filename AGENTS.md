@@ -573,6 +573,16 @@ numbers, so both are excluded. Each logical change is its own commit.
 
   Why: the review found raw `os error 61` text clipped at the pane edge, and an empty-state
   invitation shown right under "Request failed".
+- **Common actions in a toolbar or row are icons; menus are words.** Copy, Copy as curl,
+  Refresh, Newer and Older (chevrons), the find bar's Next and Previous, Close (a painted
+  ×), Browse (a folder) and Save are icon buttons (`icons.rs`, painted, no icon font),
+  each named for screen readers and tests and with its words in the hover text. Menu items
+  stay text, and so do actions that start a flow (Restore as draft, Retry, Add check,
+  "+ Environment"), whose words say more than a glyph could. Why: the same action was an
+  icon in one place and a word in another ("Copy as curl" in the request bar and in
+  History, the inspector's "Copy value"; the user's note), and text buttons crowded the
+  toolbars. Checked by `support::assert_icon_button` in the History, find and inspector
+  tests.
 - **Every screen saves the same way:** a disk icon at the top right, with its state in a word
   when the icon cannot show it
   (`widgets::save_controls`); Variables adds a revert icon. The header logo is the app icon

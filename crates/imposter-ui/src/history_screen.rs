@@ -188,7 +188,7 @@ fn toolbar(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut V
         if ui.checkbox(&mut only, "Current request only").changed() {
             actions.push(Action::History(HistoryAction::OnlyCurrent(only)));
         }
-        if ui.button("Refresh").clicked() {
+        if crate::icons::button(ui, crate::icons::Icon::Refresh, "Refresh", false).clicked() {
             actions.push(Action::History(HistoryAction::Refresh));
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -353,19 +353,16 @@ fn pager(
         }
         ui.add(egui::Label::new(tone_text(format!("· {retention}"), Tone::Muted)).truncate());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .add_enabled(
-                    history.rows.len() as u64 == HISTORY_PAGE,
-                    egui::Button::new("Older"),
-                )
-                .clicked()
-            {
+            let older = ui.add_enabled_ui(history.rows.len() as u64 == HISTORY_PAGE, |ui| {
+                crate::icons::button(ui, crate::icons::Icon::ChevronRight, "Older", false)
+            });
+            if older.inner.clicked() {
                 actions.push(Action::History(HistoryAction::Older));
             }
-            if ui
-                .add_enabled(history.offset > 0, egui::Button::new("Newer"))
-                .clicked()
-            {
+            let newer = ui.add_enabled_ui(history.offset > 0, |ui| {
+                crate::icons::button(ui, crate::icons::Icon::ChevronLeft, "Newer", false)
+            });
+            if newer.inner.clicked() {
                 actions.push(Action::History(HistoryAction::Newer));
             }
         });
@@ -392,11 +389,15 @@ fn detail(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Ve
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .button("Copy as curl")
-                .on_hover_text("Copy the request as it was sent, as a curl command")
-                .clicked()
-            {
+            // The request bar's icon for the same action.
+            let curl = crate::icons::button_with_hint(
+                ui,
+                crate::icons::Icon::Terminal,
+                "Copy as curl",
+                "Copy the request as it was sent, as a curl command",
+                false,
+            );
+            if curl.clicked() {
                 actions.push(Action::History(HistoryAction::CopyCurl));
             }
             if ui

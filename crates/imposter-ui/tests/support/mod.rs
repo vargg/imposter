@@ -170,3 +170,15 @@ pub fn save_state(harness: &Harness<'_, ImposterApp>, save: &str) -> String {
         .find_map(|node| node.accesskit_node().description())
         .unwrap_or_else(|| panic!("{save} has no save state"))
 }
+
+/// The button named `label` is an icon: square, a control high, its name for screen
+/// readers and its words in the hover text.
+pub fn assert_icon_button(harness: &Harness<'_, ImposterApp>, label: &str) {
+    let rect = harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, label)
+        .rect();
+    assert!(
+        (rect.width() - rect.height()).abs() < 0.5 && rect.width() <= 32.0,
+        "{label} is not an icon button: {rect:?}"
+    );
+}

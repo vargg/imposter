@@ -47,6 +47,10 @@ fn executions_are_listed_with_their_request_and_response() {
     app.harness.run_steps(1);
     settle(&mut app.harness);
 
+    // Common toolbar actions are icons, as the request bar's.
+    for label in ["Refresh", "Older", "Newer", "Copy as curl"] {
+        support::assert_icon_button(&app.harness, label);
+    }
     // The response first, as that is what a run is looked up for.
     assert_eq!(app.harness.state().state.history.tab, HistoryTab::Response);
     // One line: the request as sent, how it went and how long it took.

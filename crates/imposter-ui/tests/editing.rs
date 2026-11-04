@@ -268,6 +268,9 @@ fn the_viewer_finds_text_in_the_response() {
         .type_text("alpha");
     app.harness.run_steps(2);
     app.harness.get_by_label("Match 1 of 3");
+    for label in ["Next", "Previous", "Close"] {
+        support::assert_icon_button(&app.harness, label);
+    }
     click(&mut app.harness, "Next");
     app.harness.get_by_label("Match 2 of 3");
     click(&mut app.harness, "Previous");

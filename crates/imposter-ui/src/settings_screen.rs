@@ -217,17 +217,20 @@ fn path(
 ) -> egui::Response {
     let response = ui
         .horizontal(|ui| {
-            let browse_width = 80.0;
+            let browse_width = crate::icons::size() + ui.spacing().item_spacing.x;
             let response = ui.add(
                 egui::TextEdit::singleline(value)
                     .hint_text("Path to a PEM file")
                     .desired_width((ui.available_width() - browse_width).max(120.0)),
             );
             crate::widgets::name(&response, name);
-            let browse = ui
-                .button("Browse…")
-                .on_hover_text(format!("Choose the {} file", name.to_lowercase()));
-            crate::widgets::name(&browse, &format!("Browse for {}", name.to_lowercase()));
+            let browse = crate::icons::button_with_hint(
+                ui,
+                crate::icons::Icon::Folder,
+                &format!("Browse for {}", name.to_lowercase()),
+                &format!("Choose the {} file", name.to_lowercase()),
+                false,
+            );
             if browse.clicked() {
                 actions.push(Action::PickFile(crate::widgets::FileRequest::Setting(
                     field,

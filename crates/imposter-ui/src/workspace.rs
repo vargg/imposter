@@ -2021,7 +2021,7 @@ pub fn response_body(
             if field.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 close_filter = true;
             }
-            if ui.button("Close").clicked() {
+            if icons::button(ui, Icon::Close, "Close", false).clicked() {
                 close_filter = true;
             }
             if let Some((text, tone)) = &filter_status {
