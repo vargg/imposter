@@ -283,10 +283,18 @@ numbers, so both are excluded. Each logical change is its own commit.
   (`viewer::check_json_template`). Format (the button, Cmd/Ctrl+Shift+F or the palette)
   re-indents with two spaces, keeping every token and placeholder as typed
   (`viewer::format_json_body`), and a JSON document pasted into an empty body is formatted
-  at once. Typing is never reformatted: re-indenting under the cursor fights it. Why: a
-  pasted minified body stayed one line, and the footer called every templated body
-  invalid (the user's note). Why: a fixed ten rows
-  left most of a large pane empty (the review's #20).
+  at once. Typing is never reformatted, since re-indenting under the cursor fights it, but
+  it is helped locally as code editors do (`json_typing`, JSON bodies up to 64 KiB):
+  `{`, `[` and `"` close themselves where there is room and outside strings (so `{{`
+  becomes `{{}}` and the name suggestions still open), wrap a selection, and a typed
+  closer steps over the one there; Backspace removes an empty pair; Enter keeps the
+  indent, one level more after an opener, with the closer on its own line; a closer on a
+  line of indent goes one level out. The help is computed from the text before the key
+  and applied only when egui made exactly the plain edit, so a paste, IME or an accepted
+  suggestion is left as egui made it, and undo never stops at a half pair. Why: a pasted
+  minified body stayed one line, and the footer called every templated body invalid; JSON
+  typed by hand needed every closer and indent typed too (the user's notes). Why: a fixed
+  ten rows left most of a large pane empty (the review's #20).
 - **Body editor: egui `TextEdit`; `{{var}}`/JSON highlighting only up to 64 KiB.** Why: per
   interactive frame the editor costs about 4 ms at 64 KiB, 24 ms at 256 KiB and 130 ms at 1 MiB
   (plain), and highlighting adds about 30%. Larger bodies stay editable but slow; a custom

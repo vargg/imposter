@@ -13,6 +13,7 @@ use crate::editor::{
 };
 use crate::highlight::{self, Spans};
 use crate::icons::{self, Icon};
+use crate::json_typing;
 use crate::theme::{Tone, palette, token_color};
 use crate::vars;
 use crate::viewer::{self, Language};
@@ -2029,6 +2030,11 @@ const MIN_BODY_HEIGHT: f32 = 96.0;
 pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi) -> bool {
     let was_empty = text.trim().is_empty();
     let width = ui.available_width();
+    let id = var_edit_id(ui, "Request body");
+    let typing = (json && text.len() <= HIGHLIGHT_LIMIT)
+        .then(|| typing_input(ui, id, text))
+        .flatten()
+        .map(|(input, selection)| (text.clone(), selection, input));
     let response = var_edit_with(
         ui,
         text,
@@ -2039,6 +2045,24 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
         Some((Some(json), "Enter request body (JSON, XML, etc.)")),
     );
     let mut changed = response.changed();
+    // Help only where egui made the plain edit: an accepted suggestion, IME or anything
+    // else stays as egui left it.
+    if let Some((before, selection, input)) = typing
+        && changed
+        && *text == json_typing::plain(&before, selection.clone(), input).text
+        && let Some(edit) = json_typing::assisted(&before, selection, input)
+    {
+        *text = edit.text;
+        let at = |byte: usize| egui::text::CCursor::new(text[..byte].chars().count());
+        let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                at(edit.selection.start),
+                at(edit.selection.end),
+            )));
+        state.store(ui.ctx(), id);
+    }
     // A document pasted into an empty body is laid out at once; one typed is left alone,
     // since re-indenting under the cursor would fight it.
     let pasted = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Paste(_))));
@@ -2087,6 +2111,72 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
         ui.label(tone_text("Large body: highlighting is off", Tone::Muted).small());
     }
     changed
+}
+
+/// The key the focused body field `id` gets this frame, when it is the only edit and one
+/// the JSON aids may help with, and the field's selection before it (byte offsets).
+fn typing_input(
+    ui: &Ui,
+    id: egui::Id,
+    text: &str,
+) -> Option<(json_typing::Input, std::ops::Range<usize>)> {
+    use egui::{Event, Key};
+    use json_typing::Input;
+    if !ui.ctx().memory(|m| m.has_focus(id)) {
+        return None;
+    }
+    let (mut edits, mut input) = (0, None);
+    ui.input(|i| {
+        for event in &i.events {
+            match event {
+                Event::Text(typed) => {
+                    edits += 1;
+                    let mut chars = typed.chars();
+                    input = match (chars.next(), chars.next()) {
+                        (Some(c @ ('{' | '[' | '"' | '}' | ']')), None) => Some(Input::Char(c)),
+                        _ => None,
+                    };
+                }
+                Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => match key {
+                    Key::Enter | Key::Backspace => {
+                        edits += 1;
+                        input = (modifiers.is_none()).then_some(if *key == Key::Enter {
+                            Input::Enter
+                        } else {
+                            Input::Backspace
+                        });
+                    }
+                    Key::Delete
+                    | Key::Tab
+                    | Key::ArrowLeft
+                    | Key::ArrowRight
+                    | Key::ArrowUp
+                    | Key::ArrowDown
+                    | Key::Home
+                    | Key::End
+                    | Key::PageUp
+                    | Key::PageDown => edits += 1,
+                    _ => {}
+                },
+                Event::Paste(_) | Event::Cut | Event::Ime(_) => edits += 1,
+                _ => {}
+            }
+        }
+    });
+    let input = input.filter(|_| edits == 1)?;
+    let range = egui::TextEdit::load_state(ui.ctx(), id)?
+        .cursor
+        .char_range()?;
+    let [start, end] = range.sorted_cursors();
+    Some((
+        input,
+        char_to_byte(text, start.index.0)..char_to_byte(text, end.index.0),
+    ))
 }
 
 /// Find state and options of one code viewer.

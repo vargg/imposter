@@ -282,6 +282,45 @@ fn typing_an_open_brace_pair_suggests_names_and_enter_completes() {
 }
 
 #[test]
+fn a_placeholder_typed_in_a_json_body_closes_and_still_suggests() {
+    let mut app = with_request();
+    {
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.tab = EditorTab::Body;
+        pane.editor.body_type = imposter_app::core::model::BodyType::Json;
+        pane.editor.body_text = "{\"n\": }".into();
+    }
+    app.harness.run_steps(2);
+    support::text_input(&app.harness, "Request body").focus();
+    app.harness.run_steps(1);
+    // Before the closing brace.
+    app.harness.key_press(egui::Key::End);
+    app.harness.run_steps(1);
+    app.harness.key_press(egui::Key::ArrowLeft);
+    app.harness.run_steps(1);
+    for typed in ["{", "{", "h"] {
+        app.harness.event(egui::Event::Text(typed.into()));
+        app.harness.run_steps(1);
+    }
+    let body = |app: &support::App| {
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .body_text
+            .clone()
+    };
+    assert_eq!(body(&app), "{\"n\": {{h}}}");
+    app.harness.get_by_label("host · Global · Global");
+    app.harness.key_press(egui::Key::Enter);
+    app.harness.run_steps(2);
+    assert_eq!(body(&app), "{\"n\": {{host}}}", "no stray braces");
+}
+
+#[test]
 fn clicking_a_token_inspects_it_and_open_definition_goes_to_its_scope() {
     let mut app = with_request();
     app.harness

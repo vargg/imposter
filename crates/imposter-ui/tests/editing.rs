@@ -266,6 +266,84 @@ fn json_body(app: &mut support::App) -> String {
         .clone()
 }
 
+/// Open "Create" on its Body tab as an empty JSON body with the editor focused.
+fn empty_json_body() -> support::App {
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Create", "http://x");
+    });
+    open(&mut app, "GET Create");
+    {
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.tab = EditorTab::Body;
+        pane.editor.body_type = BodyType::Json;
+    }
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Request body").focus();
+    app.harness.run_steps(1);
+    app
+}
+
+fn type_key(app: &mut support::App, text: &str) {
+    for c in text.chars() {
+        app.harness.event(egui::Event::Text(c.to_string()));
+        app.harness.run_steps(1);
+    }
+}
+
+#[test]
+fn typing_json_closes_pairs_and_indents_new_lines() {
+    let mut app = empty_json_body();
+    type_key(&mut app, "{");
+    assert_eq!(json_body(&mut app), "{}");
+    app.harness.key_press(egui::Key::Backspace);
+    app.harness.run_steps(1);
+    assert_eq!(json_body(&mut app), "", "Backspace removes the empty pair");
+    type_key(&mut app, "{");
+    app.harness.key_press(egui::Key::Enter);
+    app.harness.run_steps(1);
+    assert_eq!(json_body(&mut app), "{\n  \n}");
+    type_key(&mut app, "\"id\": [");
+    assert_eq!(
+        json_body(&mut app),
+        "{\n  \"id\": []\n}",
+        "the quote stepped over"
+    );
+    type_key(&mut app, "1]");
+    assert_eq!(json_body(&mut app), "{\n  \"id\": [1]\n}", "] stepped over");
+}
+
+#[test]
+fn undo_steps_back_over_a_closed_pair_as_typed() {
+    let mut app = empty_json_body();
+    // egui keeps an undo point once the text has stood still for a second.
+    let pause = |app: &mut support::App| app.harness.run_steps(90);
+    let undo = |app: &mut support::App| {
+        app.harness
+            .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        app.harness.run_steps(2);
+    };
+    pause(&mut app);
+    type_key(&mut app, "[");
+    pause(&mut app);
+    type_key(&mut app, "1");
+    pause(&mut app);
+    assert_eq!(json_body(&mut app), "[1]");
+    undo(&mut app);
+    assert_eq!(json_body(&mut app), "[]", "the pair, never a lone [");
+    undo(&mut app);
+    assert_eq!(json_body(&mut app), "");
+}
+
+#[test]
+fn a_paste_into_the_body_is_never_paired() {
+    let mut app = empty_json_body();
+    type_key(&mut app, "[");
+    app.harness.event(egui::Event::Paste("{".into()));
+    app.harness.run_steps(2);
+    assert_eq!(json_body(&mut app), "[{]");
+}
+
 #[test]
 fn a_json_body_with_placeholders_is_valid_and_formats_on_request_or_paste() {
     let mut app = start_with(|store| {
