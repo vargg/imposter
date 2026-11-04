@@ -67,6 +67,26 @@ pub enum ScriptError {
 }
 
 impl ScriptError {
+    /// The error in a sentence naming the script: "Before-sending script, line 3: no key".
+    pub fn describe(&self, script: &str) -> String {
+        match self {
+            Self::Compile {
+                line,
+                column,
+                message,
+            } => format!("{script}, line {line}, column {column}: {message}"),
+            Self::Run {
+                line: Some(line),
+                message,
+            } => format!("{script}, line {line}: {message}"),
+            Self::Run {
+                line: None,
+                message,
+            } => format!("{script}: {message}"),
+            Self::TooLong | Self::Stopped(_) => format!("{script}: {self}"),
+        }
+    }
+
     /// The line the error points at, if any.
     pub const fn line(&self) -> Option<usize> {
         match self {

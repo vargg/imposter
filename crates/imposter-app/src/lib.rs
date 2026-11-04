@@ -11,6 +11,7 @@ pub mod transfer;
 
 pub use imposter_core as core;
 pub use imposter_http as http;
+pub use imposter_script as script;
 pub use imposter_store as store;
 pub use imposter_transfer as formats;
 

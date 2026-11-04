@@ -7,7 +7,7 @@ use imposter_core::capture::Write;
 use imposter_core::execution::{ExecutionRecord, Outcome, Response, Timestamp};
 use imposter_core::generate::Entropy;
 use imposter_core::ids::ExecutionId;
-use imposter_core::model::{Request, SavedValues, Variables};
+use imposter_core::model::{Request, RequestTemplate, SavedValues, Variables};
 use imposter_core::prepare::prepare;
 use imposter_core::settings::AppSettings;
 use imposter_core::variables::{
@@ -78,6 +78,10 @@ pub enum ExecuteError {
     /// them. Nothing was sent.
     #[error("Unresolved variables: {}", .0.join(", "))]
     Unresolved(Vec<String>),
+    /// The before-sending script failed or was stopped, in words naming it and its line.
+    /// Nothing was sent.
+    #[error("{0}")]
+    Script(String),
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -230,13 +234,97 @@ pub async fn curl_with_identity_notice(
     request: &Request,
 ) -> Result<(String, bool), ExecuteError> {
     let inputs = inputs(store, request).await?;
-    let (resolved, settings) = resolve(request, &inputs)?;
-    let prepared = prepare(&resolved.template, settings.attach_cookies)
+    let (resolved, settings, values) =
+        resolve_with(request, &inputs, &mut SystemEntropy::default())?;
+    // What Send would send includes the before-sending script's changes.
+    let (template, _) =
+        before_script(request, resolved.template, values, CancellationToken::new()).await?;
+    let prepared = prepare(&template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
     Ok((
         imposter_core::curl::to_command(&prepared, &settings),
         !settings.host_identities.is_empty(),
     ))
+}
+
+/// How long one script may run before it is stopped.
+pub const SCRIPT_TIME: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The words naming each script in errors.
+pub const BEFORE_SCRIPT: &str = "Before-sending script";
+pub const AFTER_SCRIPT: &str = "After-response script";
+
+/// What a script may use: the system's randomness and clock, stopped by Cancel or once
+/// [`SCRIPT_TIME`] has passed since it started.
+pub fn script_host(cancel: CancellationToken, time: std::time::Duration) -> imposter_script::Host {
+    let deadline = Instant::now() + time;
+    imposter_script::Host {
+        entropy: Box::new(SystemEntropy::default()),
+        stop: std::sync::Arc::new(move || {
+            if cancel.is_cancelled() {
+                Some(imposter_script::Stop::Cancelled)
+            } else if Instant::now() >= deadline {
+                Some(imposter_script::Stop::TimeLimit)
+            } else {
+                None
+            }
+        }),
+    }
+}
+
+/// Run `request`'s before-sending script on the resolved template, off the async workers.
+/// A failure is the request's "not sent" reason.
+async fn before_script(
+    request: &Request,
+    mut resolved: RequestTemplate,
+    values: Variables,
+    cancel: CancellationToken,
+) -> Result<(RequestTemplate, imposter_script::Outcome), ExecuteError> {
+    let source = request.template.scripts.before.clone();
+    if source.trim().is_empty() {
+        return Ok((resolved, imposter_script::Outcome::default()));
+    }
+    let (resolved, outcome) = tokio::task::spawn_blocking(move || {
+        let outcome = imposter_script::before(
+            &source,
+            &mut resolved,
+            &values,
+            script_host(cancel, SCRIPT_TIME),
+        );
+        (resolved, outcome)
+    })
+    .await
+    .map_err(|_| ExecuteError::Script(format!("{BEFORE_SCRIPT} failed unexpectedly")))?;
+    match &outcome.error {
+        Some(error) => Err(ExecuteError::Script(error.describe(BEFORE_SCRIPT))),
+        None => Ok((resolved, outcome)),
+    }
+}
+
+/// Run the after-response script; its error is reported with the response, never instead.
+async fn after_script(
+    source: String,
+    sent: RequestTemplate,
+    response: Response,
+    values: Variables,
+    cancel: CancellationToken,
+) -> imposter_script::Outcome {
+    tokio::task::spawn_blocking(move || {
+        imposter_script::after(
+            &source,
+            &sent,
+            &response,
+            &values,
+            script_host(cancel, SCRIPT_TIME),
+        )
+    })
+    .await
+    .unwrap_or_else(|_| imposter_script::Outcome {
+        error: Some(imposter_script::ScriptError::Stopped(
+            "Stopped: the script failed unexpectedly".to_owned(),
+        )),
+        ..imposter_script::Outcome::default()
+    })
 }
 
 /// A recorded execution as the curl command of what it sent.
@@ -254,8 +342,11 @@ pub async fn execute(
     cancel: CancellationToken,
 ) -> Result<Executed, ExecuteError> {
     let inputs = inputs(store, &request).await?;
-    let (resolved, settings, values) =
+    let (mut resolved, settings, mut values) =
         resolve_with(&request, &inputs, &mut SystemEntropy::default())?;
+    let (template, before) =
+        before_script(&request, resolved.template, values.clone(), cancel.clone()).await?;
+    resolved.template = template;
     let prepared = prepare(&resolved.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
 
@@ -277,13 +368,46 @@ pub async fn execute(
     };
     response.elapsed = started.elapsed().as_secs_f64();
     response.checks = imposter_core::check::evaluate(&request.template.checks, &response, &values);
-    let (captured, writes) = imposter_core::capture::evaluate(
+    let (captured, mut writes) = imposter_core::capture::evaluate(
         &request.template.captures,
         &response,
         &inputs.snapshot,
         &inputs.context,
     );
     response.captures = captured;
+    // The after-response script sees the before-sending script's sets, and runs only on a
+    // response, as checks do.
+    let mut sets = before.sets;
+    response.console = before.console;
+    let after_source = request.template.scripts.after.clone();
+    if !after_source.trim().is_empty() && response.outcome == Outcome::Response {
+        for (name, value) in &sets {
+            values.insert(name.clone(), value.clone());
+        }
+        let after = after_script(
+            after_source,
+            resolved.template.clone(),
+            response.clone(),
+            values.clone(),
+            cancel.clone(),
+        )
+        .await;
+        response.console.extend(after.console);
+        response.script = Some(imposter_core::execution::ScriptReport {
+            tests: after.tests,
+            error: after
+                .error
+                .map(|e| e.describe(AFTER_SCRIPT))
+                .unwrap_or_default(),
+        });
+        sets.extend(after.sets);
+    }
+    // Scripts set variables where captures would, after the captures.
+    writes.extend(sets.into_iter().map(|(name, value)| Write {
+        scope: imposter_core::capture::target(&inputs.snapshot, &inputs.context, &name).0,
+        name,
+        value,
+    }));
 
     let mut template = request.clone();
     template.collection_variables_snapshot = resolved.collection_variables_snapshot.clone();

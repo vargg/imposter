@@ -436,7 +436,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   await: an environment switch queued before Send applies, a later one cannot change a running
   request. The variable inspector uses the same function (`executor::inputs`).
 - **Requests that cannot be sent are not history.** Unresolved variables, a bad URL, auth or
-  cookie conflicts are reported and nothing is recorded (the Python app recorded URL errors as
+  cookie conflicts, a failed before-sending script are reported and nothing is recorded (the Python app recorded URL errors as
   transport errors). Cancelled and failed sends are recorded with their outcome. A failed
   history write keeps the response and says so (`history_error`).
 - **The saver is plain UI-side state** (`imposter_app::saver`): one write in flight at a time,
@@ -879,6 +879,26 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Measured** (Phase 0, M-series Mac, release): the binary grows 1.9 MiB (19.3 to 21.3
     MB); Rhai compiles in about 23 s; an engine is made in about 0.13 ms; parsing and walking
     a 10,000-item JSON array takes about 12.5 ms.
+- **Request scripts run around the send** (`executor::execute`), in this order: resolve
+  variables and generated values; the before-sending script on the resolved template;
+  prepare (auth headers are added here, after the script); send; checks; captures; the
+  after-response script; record. So the before script sees real values and what it
+  changes is what goes out, what "Request as sent", History and Copy as curl show
+  (user's choice over Postman's order, where scripts see `{{placeholders}}`).
+  - **Failures:** a before-script error or stop is the request's "not sent" reason
+    ("Before-sending script, line 3: …"), and nothing is recorded. An after-script error
+    is reported with the response, its tests so far kept, and counts as a failure. The
+    after script runs only when a response arrived, as checks do.
+  - **Time:** each script may run 2 s (`SCRIPT_TIME`); Cancel stops it too. Scripts run on
+    `spawn_blocking`, so a slow one never holds an async worker.
+  - **Variables:** the after script sees the before script's sets. Every `vars.set` becomes
+    a capture-style write (`capture::target`: the defining scope, else the active
+    environment, else Global), after the captures, so a scope with unsaved edits on the
+    Variables screen is protected exactly as for captures.
+  - **Console:** shown with the live response only, never stored (`Response.console` is
+    `serde(skip)`: printed values often hold tokens; user's choice) and never logged
+    (`imposter-app/tests/scripts.rs` captures trace-level logs). Script tests are stored
+    with the run, like check results.
 - **Generated values are placeholders named `$function args`** (`core::generate`): `$uuid`
   (and Postman's `$guid`, `$randomUUID`), `$timestamp`, `$timestampMs`, `$isoTimestamp`, `$date`
   with a strftime format, each with an optional offset (`-1d`, `+2h`), `$randomInt [min max]`
