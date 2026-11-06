@@ -15,9 +15,12 @@ Python/PyQt6 prototype at `~/dev/pystman`, which stays the reference implementat
 - **A rule that a tool can check is checked by a tool**, and the rule names that check. Prose is
   the fallback for what tools cannot express. Rules not yet checked are listed in
   [Enforcement gaps](#enforcement-gaps). Why: agents and people forget prose; CI does not.
-- **This file is the durable record; plans and roadmaps are not kept in the repository.** When
-  work settles an open question, record the outcome and its reason under
-  [Decisions](#decisions) in the same commit. User-facing documentation is `README.md`.
+- **This file records engineering rules and shipped decisions; [ROADMAP.md](ROADMAP.md)
+  records product direction and planned work.** Keep one roadmap, not parallel drafts or
+  task lists, so priorities have one source of truth. Planned guarantees are not shipped
+  behavior. When work settles an open question, record the outcome and its reason under
+  [Decisions](#decisions) in the same commit and update the roadmap. User-facing
+  documentation is `README.md`.
 - **Changing a rule or decision updates this file in the same commit.** Replace a superseded
   decision rather than keeping both; mention the rejected option in the reason when that stops
   someone from proposing it again. Git keeps the history.
@@ -368,9 +371,11 @@ numbers, so both are excluded. Each logical change is its own commit.
     also the header's tab.
   - **Closed loop:** each worker waits for its response before the next request, as `ab`
     does, so when the server slows down fewer requests go out and tail latency reads
-    lower than users would see. Left for later: a fixed-rate mode, CSV test data,
-    multi-request scenarios, pass/fail thresholds, an over-time chart. Rejected:
-    distributed load, other protocols, JMeter's test-plan trees.
+    lower than users would see. Expansion is frozen by [ROADMAP.md](ROADMAP.md):
+    fixed-rate mode, CSV test data, multi-request scenarios, pass/fail thresholds and
+    an over-time chart are out of scope, as are distributed load, other protocols and
+    JMeter's test-plan trees. Why: capacity testing belongs in specialist tools; this
+    app keeps a one-request probe and fixes to its current behavior.
 - **Header order: values of one name keep their order; names go out in first-occurrence order,
   lowercased.** So `A, B, A` is sent as `a, a, b`. Why: hyper stores headers in a `HeaderMap`
   and its order-preserving extensions are private; writing our own HTTP/1.1 client is not

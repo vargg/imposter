@@ -7,3 +7,4 @@
 *.profraw
 
 .DS_Store
+.dev
