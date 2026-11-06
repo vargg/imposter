@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+"${PYTHON:-python3}" -B -m unittest discover -s scripts -p 'test_*.py'
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo llvm-cov --workspace --locked --fail-under-lines 85 --fail-under-regions 70 \

@@ -56,7 +56,7 @@ Python/PyQt6 prototype at `~/dev/pystman`, which stays the reference implementat
   passed: the script stops at the first failure, so never chain a commit after it with `;`.
 
 ```sh
-scripts/check.sh     # fmt, clippy (-D warnings), all tests under the coverage floor; as CI
+scripts/check.sh     # Python tooling tests, fmt, clippy, Rust tests under coverage floors; as CI
 cargo test -p <crate>
 cargo run -p imposter
 ```
@@ -835,6 +835,14 @@ numbers, so both are excluded. Each logical change is its own commit.
   flow is covered by `imposter-ui/tests/smoke.rs`, CI runs the script on Linux on every push. The script
   checks the User-Agent against the workspace version, so release bumps remain verified
   without maintaining a second version string.
+- **Release measurements use the packaged smoke workflow, with one excluded warm-up and
+  ten successful runs, each in a fresh temporary profile.** Launch-to-request is measured
+  before spawning the process through receipt at the loopback server, not first-frame time;
+  macOS `time -l` supplies peak resident bytes for the whole workflow, not idle memory.
+  Failed or incomplete series yield no report. Why: figures need a repeatable workload
+  and honest boundaries, not an unexplained startup or memory claim. Sample validation,
+  warm-up exclusion and failure handling are checked by `scripts/test_smoke.py`, run by
+  `scripts/check.sh` and CI; timing values are evidence, never CI performance thresholds.
 - **The app icon is drawn in code** (`icons::app_icon`): the window icon at runtime and the
   packaging PNGs, which a test compares with the drawing. Why: no design files to lose, and
   the icon cannot drift from the theme.

@@ -87,7 +87,6 @@ In milestone order. MCP is not in this table; it is an experiment below.
 
 | Work | Why it is core | When |
 |---|---|---|
-| README and screenshots match the app | The introduction still says native version 2, and "Not supported" still lists pre-request and test scripts, which the Scripts section documents. | M0 |
 | `imposter send` on one saved request, headless | Agents and CI cannot depend on the window. | M1 |
 | Project folder: YAML, one file per request and per folder | Teams review definitions next to the code. | M2 |
 | A runner for a folder or the collection, in the app and the CLI | A check pays off when the set runs together. | M2 |
@@ -287,27 +286,14 @@ any exported result.
 
 ## Milestones
 
-Each one finishes a slice before the next direction opens. M0 is documentation and
+Each one finishes a slice before the next direction opens. M0 completed documentation and
 emphasis. M1 and M3 cross existing boundaries. M2 and M4 change persistence or
 permissions and should land as several commits. No calendar dates.
 
-### M0 — Say what the app actually is
+### M0 — Complete: say what the app actually is
 
-- Correct the README: scripts, native version 3, and the limits of mocks and load.
-  Refresh screenshots against the current build.
-- Publish startup and memory figures for a release build, with the machine and the
-  build named.
-- Done: Requests, Variables and History stay together in the header, with Mocks and
-  Load in Tools and Settings behind a gear. Variables belongs to everyday request work;
-  History is useful across requests, while each request already has Runs. Named menu
-  entries make the two supporting tools discoverable without guessing icons. Request
-  context and palette access to Load remain, and running tools have clickable statuses.
-  Keyboard access, unsaved markers and minimum-window layout are checked with `egui_kittest`.
-- Done with roadmap adoption: `AGENTS.md` points to this plan and records the freeze
-  on load-probe expansion.
-
-Exit: a new reader can tell what exists and what a mock or a load probe does not do.
-The send-and-inspect path still works. No saved data is migrated or dropped.
+Completed 7 November 2026: navigation, accurate README and refreshed screenshots,
+explicit mock/load limits, and [packaged 0.6.0 launch-to-request and peak-memory evidence](docs/validation.md#packaged-060-measurements).
 
 ### M1 — One request, headless
 

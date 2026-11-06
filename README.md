@@ -8,7 +8,13 @@ sent. It runs as one native binary per OS, with no account, no cloud and no tele
 
 I’mposter is written in Rust with [egui](https://github.com/emilk/egui). It replaces an earlier
 Python/PyQt6 version and imports its native collection format. New exports use `.imposter.json`
-(native version 2); existing `.poster.json` files still import.
+(native version 3 when scripts are present, otherwise version 2); existing `.poster.json`
+files still import.
+
+On one M3 Pro Mac, the packaged 0.6.0 smoke workflow measured **218.6 ms median
+launch-to-request** and **106.1 MiB median peak resident memory** across ten runs after
+a warm-up. These are warm-cache, fresh-profile measurements, not first-frame or idle-memory
+figures. See the [machine, method and all samples](docs/validation.md#packaged-060-measurements).
 
 ## Features
 
@@ -29,8 +35,8 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 - Three scopes: global, per collection, and environments. The active environment overrides
   the collection, which overrides globals.
 - Give an environment a color (a new one named "prod", "production" or "live" is offered
-  red). The active environment's name shows right above Send, in its color, so a production
-  send is recognisable before it goes out.
+  red). Its name appears in the header's environment picker, tinted in its color, and Send
+  names a colored environment (for example, **Send to Prod**) before anything goes out.
 - Placeholders are highlighted: defined names in orange, unknown ones in red. Typing `{{`
   suggests names. Clicking a placeholder, or pressing Alt+Enter, shows where its value comes
   from. Values from password fields stay masked until revealed.
@@ -50,7 +56,8 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 - JSON, XML and HTML highlighting, formatted JSON, find, wrap and copy. Large bodies stay
   responsive (the viewer only lays out what is visible; previews stop at 256 KiB).
 - Fold formatted JSON by object or array, or collapse everything below the top level.
-  Right-click a line to copy its JSONPath (`$.data.items[3].id`) or its value.
+  Hover a line and open its **⋯** menu, or right-click, to copy its JSONPath
+  (`$.data.items[3].id`) or its value.
 - Filter a JSON response with JSONPath (RFC 9535), for example `$.items[?@.active == true].id`.
   The filter reads the whole captured body, not just the preview, and stays set when you send
   again. Copying the path of a result gives its path in the full body.
@@ -61,9 +68,9 @@ Python/PyQt6 version and imports its native collection format. New exports use `
   status (`= 200`, `= 2xx`), a header, a JSONPath into the body, the body text, the duration
   or the size, compared with `=`, `≠`, `<`, `≤`, `>`, `≥`, contains, matches (a regular
   expression), exists or is of type. Expected values can use `{{variables}}`.
-- Results appear as a badge (`3/4 passed`) and in the response's Tests tab, with what was
-  read for each check, and stay with the run in History. A check that cannot be decided says
-  why instead of failing.
+- Results appear beside the response status (for example, `✓3 ✗1`) and in its Tests tab,
+  with what was read for each check, and stay with the run in History. A check that cannot
+  be decided says **Not checked** with the reason.
 - Right-click a JSON value and choose Add check to check for it. OpenAPI import adds a status
   check for each operation's documented success.
 - Set variables from a response, for example a login's `token` from `$.access_token` or a
@@ -130,10 +137,14 @@ Python/PyQt6 version and imports its native collection format. New exports use `
   response time, and the first script error is shown on the result.
 - Runs stay out of History and never set variables, from captures or scripts. With a red
   environment active, Start asks first.
+- This is a **closed-loop, single-request probe**: each worker waits for its response before
+  sending again. A slow server therefore receives fewer requests, which can understate tail
+  latency compared with independent arrivals. These results do not establish production
+  capacity; use a specialist load-testing tool for that work.
 
 **History**
-- Every execution with its environment, the request exactly as it was sent, and the full
-  response.
+- Every execution with its environment, the request exactly as it was sent, and the
+  captured response, subject to the configured capture and history limits.
 - Search it with the sidebar's filter language plus `status:404`, `status:4xx`,
   `status:failed` and `env:Dev`; words match the request name and URL (bodies are not
   searched).
@@ -143,13 +154,17 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 ![History: executions, and the request as it was sent](docs/images/history.png)
 
 **Import and export**
-- Native `.imposter.json` (version 2, `"format": "imposter"`), which carries request checks,
-  saved variable values and environment colors.
+- Native `.imposter.json` (`"format": "imposter"`) carries request checks, captures, saved
+  variable values and environment colors. Exports use **version 3** when a request, folder
+  or collection has scripts, and **version 2** otherwise. Script-free exports remain
+  readable by Imposter 0.4.
   `.poster.json` files from the Python version (version 1) import unchanged; the Python
-  version cannot read version 2.
+  version cannot read Imposter versions 2 or 3.
 - Postman Collection v2.1 import and export, validated against the official schema, with
   environment and globals files. Anything Postman features Imposter cannot represent is listed
-  before import; changes to how a request runs need explicit consent.
+  before import; changes to how a request runs need explicit consent. Postman JavaScript
+  scripts are removed only with consent; Postman exports report Rhai scripts they cannot
+  preserve.
 - OpenAPI 3.0, 3.1 and 3.2 import (JSON or YAML): one request per operation, grouped by tag,
   with the server URL in a `baseUrl` collection variable, path parameters as variables,
   example bodies from the document's examples or schemas, and its security schemes as auth
@@ -175,20 +190,24 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 
 ## Not supported
 
-Pre-request and test scripts; WebSocket, gRPC and GraphQL-specific tools; HTTP/2 (requests
-use HTTP/1.1); cloud sync and sharing; a persistent cookie jar (cookies are sent as you list
-them).
+Postman JavaScript (`pm.*`) compatibility; WebSocket, gRPC and GraphQL-specific tools;
+HTTP/2 (requests use HTTP/1.1); cloud sync; a persistent cookie jar (cookies are sent as you
+list them). Before-sending and after-response scripts are supported in Rhai. Collections
+can be shared through native exports; repository project folders and a headless CLI are
+planned, not shipped.
 
 ## Installation
 
 ### Packages
 
 Release packages are built by CI from version tags: a `.dmg` for macOS (Apple Silicon), a
-`.deb` and an `.AppImage` for Linux (x86_64), and an installer for Windows (x86_64). Until
-the first release is published, build from source.
+`.deb` and an `.AppImage` for Linux (x86_64), and an installer for Windows (x86_64).
+Download published packages from [GitHub Releases](https://github.com/vargg/imposter/releases),
+or build from source below. The release workflow creates a draft first; its packages become
+public when the release is published.
 
-The packages are not signed with an Apple or Microsoft developer certificate yet, so the first
-launch needs one extra step:
+For packages without an Apple or Microsoft developer certificate, the first launch needs
+one extra step (macOS bundles still carry an ad-hoc signature):
 - **macOS 15 and later:** open Imposter once and dismiss the warning, then go to System Settings
   → Privacy & Security and click **Open Anyway** next to the Imposter message.
 - **macOS 14 and earlier:** right-click Imposter in Applications, choose Open, then Open again.
@@ -220,7 +239,8 @@ and xkbcommon. File dialogs go through the XDG desktop portal
 3. Put shared values on the **Variables** screen (globals, an environment, or the
    collection) and use them as `{{name}}`. Choose the active environment at the top right.
 4. Find any earlier execution on the **History** screen.
-5. Application defaults (timeout, proxy, TLS, history limits, autosave) are on **Settings**.
+5. Application defaults (timeout, proxy, TLS, history limits, autosave) are behind the
+   **Settings** gear in the header.
 
 ### Keyboard shortcuts
 
@@ -310,8 +330,8 @@ make package                              # local packages for the host OS
 make clean                                # remove build artifacts, keep application data
 ```
 
-`make check` and `make coverage` both run `scripts/check.sh`; coverage thresholds and
-exclusions remain defined there. Install its prerequisites with
+`make check` and `make coverage` both run `scripts/check.sh`, including the Python smoke-tool
+tests; coverage thresholds and exclusions remain defined there. Install its prerequisites with
 `cargo install cargo-llvm-cov` and `rustup component add llvm-tools`. CI also checks macOS,
 Linux and Windows. Cargo and rustup must be on `PATH`; the repository pins the toolchain.
 
@@ -352,8 +372,9 @@ Further reading:
 `cargo run -p imposter-ui --example screenshot -- <dir>` renders the app with sample data to
 PNG files, without a display.
 
-Request tabs open on **Body**, followed by Auth, Query, Headers, Cookies, Settings and Docs.
-Use Docs to edit the request description; it saves and exports with the request.
+Request tabs open on **Body**, followed by Auth, Query, Headers, Cookies, Settings, Docs,
+Tests, Captures and Scripts. Tabs that do not fit are in **More**. Use Docs to edit the
+request description; it saves and exports with the request.
 
 Right-click a request and choose **Duplicate** to create and open a saved sibling copy.
 An open request copies its current edits; navigation still resolves unsaved changes.
@@ -361,6 +382,9 @@ An open request copies its current edits; navigation still resolves unsaved chan
 Settings → **Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.
 
 Use **Tools → Mocks** to configure a local HTTP server on `127.0.0.1` (port 8080 by default; 0 chooses an available port). Add routes by exact method and encoded path, with a response status, headers and text body. Query strings and request bodies do not affect matching; unmatched requests return 404. Save before Start; edits to a running server apply after Stop and Start. Configuration persists, but the server never starts automatically and stops when Imposter closes.
+
+A mock answers locally from the routes and scripts you define. A passing check against
+that answer does **not verify the live API**.
 
 A route can also have a response script (Rhai, as request scripts are) that starts from its status, headers and body and changes them from the request: echo it, answer 400 when a field is missing, fail the first call and succeed after, or wait before answering. `state` keeps values between requests until the server stops:
 
