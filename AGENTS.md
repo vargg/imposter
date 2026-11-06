@@ -253,6 +253,20 @@ numbers, so both are excluded. Each logical change is its own commit.
 
   Why: an orange outline on every hover diluted the accent until it meant nothing (the
   review's #60). Checked in `theme.rs` tests.
+- **The header keeps Requests, Variables and History together.** Mocks and Load live in
+  a named Tools menu; application Settings is a gear at the far right, beside Tools and
+  the environment picker. Why: variables belong to everyday request work, while the two
+  supporting tools need less prominence and settings is application configuration.
+  Tools is selected while either tool is open, and each screen has its own title.
+  Unsaved mock edits mark Tools even when its menu is closed; the menu names running,
+  stopping and unsaved states. Settings keeps its own unsaved marker. Running tools are
+  clickable in the status bar, including while starting or stopping, with room reserved
+  before the latest result (which truncates with its full text on hover). Load remains
+  available from a request's context menu and the palette, keeping its connection to the
+  chosen request. No speculative future features determine this menu's shape. Long
+  environment names truncate with their full name on hover, so the picker cannot overlap
+  navigation. Checked by `imposter-ui/tests/header.rs`, the load and mock UI tests, and
+  the layout lint.
 - **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
   256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
   dependency.
@@ -357,7 +371,7 @@ numbers, so both are excluded. Each logical change is its own commit.
     says so for an open request with scripts.
   - **Stopping** (the user or the time limit) drops the requests in flight and sums up
     what finished.
-  - **The Load screen** (`load_screen.rs`) is its own header tab, reached also from a
+  - **The Load screen** (`load_screen.rs`) opens from Tools → Load, reached also from a
     request's right-click "Load test…" and the palette ("Load Test This Request", and
     "Change…" opens the palette to choose any saved request). Opened with nothing chosen
     it takes the open request. The request bar does not change: a Send menu whose one
@@ -365,7 +379,7 @@ numbers, so both are excluded. Each logical change is its own commit.
     Send would send now when the request is open, edits included, else the stored one.
     Target and plan come first so Start and Stop never move; why a plan cannot run is
     written beside Start. With a red environment active, Start asks first ("Load test
-    Prod?"), since red marks production. The tab has a dot while a run goes on, and the
+    Prod?"), since red marks production. The status bar opens its screen while a run goes on, and the
     last ten runs of the session are kept in memory, nothing stored but the plan's values.
     Plan fields are spoken with their unit ("Time limit in seconds"); "Requests" alone was
     also the header's tab.

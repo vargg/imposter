@@ -289,6 +289,8 @@ pub const SCRIPTS_RUN: &str =
 const FIELD_WIDTH: f32 = 90.0;
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
+    ui.label(RichText::new("Load").font(crate::theme::semibold(15.0)));
+    ui.add_space(6.0);
     // Opened with nothing chosen, the request in the editor is the natural target.
     if state.load.target.is_none()
         && let Some(id) = state.editor.as_ref().and_then(|p| p.editor.id())

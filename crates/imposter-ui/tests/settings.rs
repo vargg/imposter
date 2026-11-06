@@ -187,6 +187,7 @@ fn discarding_settings_on_close_keeps_the_stored_ones() {
 fn host_certificates_save_only_on_save_and_validate_duplicates() {
     let mut app = start();
     app.harness.set_size(egui::vec2(1200.0, 1500.0));
+    app.harness.run_steps(2);
     open_settings(&mut app);
     click(&mut app.harness, "Add host certificate");
     type_into(&mut app.harness, "Host certificate 1 Host", "Example.COM");
@@ -302,6 +303,7 @@ fn every_section_puts_its_fields_in_one_column() {
     let mut app = start();
     // Tall enough that every section is on screen at once.
     app.harness.set_size(egui::vec2(1200.0, 1500.0));
+    app.harness.run_steps(2);
     open_settings(&mut app);
     click(&mut app.harness, "Add host certificate");
     let lefts: Vec<(String, f32)> = ["Proxy server", "CA bundle", "Host certificate 1 Host"]

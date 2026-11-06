@@ -140,6 +140,8 @@ fn problem_lines(ui: &mut Ui, problems: &[RouteProblem], route: usize, field: Ro
 const LIST_WIDTH: f32 = 260.0;
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
+    ui.label(egui::RichText::new("Mocks").font(crate::theme::semibold(15.0)));
+    ui.add_space(6.0);
     let screen = &mut state.mocks;
     let mut edited = false;
     // Checked every frame, so a problem shows while it is typed, not only on Save.

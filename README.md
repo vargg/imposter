@@ -118,7 +118,7 @@ Python/PyQt6 version and imports its native collection format. New exports use `
 | Every script | `print(value), debug(value)` | Write to the console: under the response (not kept in History), or in the Mocks screen's request log. |
 
 **Load tests**
-- Send one request many times from the Load screen (its tab, a request's right-click menu,
+- Send one request many times from the Load screen (Tools → Load, a request's right-click menu,
   or the command palette), as `ab` does: total requests, concurrency, an optional time
   limit and ramp-up, with or without keep-alive. Every request gets fresh generated values.
 - The summary: requests and bytes per second, the share of errors (failed checks count),
@@ -160,6 +160,10 @@ Python/PyQt6 version and imports its native collection format. New exports use `
   paste) to replace the open request; copy any request as a ready-to-run curl command.
 
 **Interface**
+- Requests, Variables and History stay in the header. Tools opens Mocks and Load; the
+  gear opens application Settings. Running tools stay visible in the status bar: click
+  their status to return to the screen. Unsaved mock edits mark Tools, even with its menu
+  closed; unsaved application settings mark the gear.
 - Command palette (Cmd/Ctrl+K) over actions, the requests of every collection and
   environments; recent requests with Cmd/Ctrl+P, and Ctrl+Tab back to the previous one.
 - Sidebar filter: text, `"phrases"`, `method:POST`, `url:users`, `name:…`, `-word`, OR.
@@ -356,7 +360,7 @@ An open request copies its current edits; navigation still resolves unsaved chan
 
 Settings → **Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.
 
-Use **Mocks** to configure a local HTTP server on `127.0.0.1` (port 8080 by default; 0 chooses an available port). Add routes by exact method and encoded path, with a response status, headers and text body. Query strings and request bodies do not affect matching; unmatched requests return 404. Save before Start; edits to a running server apply after Stop and Start. Configuration persists, but the server never starts automatically and stops when Imposter closes.
+Use **Tools → Mocks** to configure a local HTTP server on `127.0.0.1` (port 8080 by default; 0 chooses an available port). Add routes by exact method and encoded path, with a response status, headers and text body. Query strings and request bodies do not affect matching; unmatched requests return 404. Save before Start; edits to a running server apply after Stop and Start. Configuration persists, but the server never starts automatically and stops when Imposter closes.
 
 A route can also have a response script (Rhai, as request scripts are) that starts from its status, headers and body and changes them from the request: echo it, answer 400 when a field is missing, fail the first call and succeed after, or wait before answering. `state` keeps values between requests until the server stops:
 

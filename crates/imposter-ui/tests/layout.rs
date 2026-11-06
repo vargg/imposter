@@ -16,11 +16,15 @@ use imposter_ui::theme::{Density, ThemeChoice};
 use support::{click, click_button, collection, request, settle, start_with, type_into};
 
 /// The status bar's own controls.
-const STATUS_BAR: [&str; 4] = [
+const STATUS_BAR: [&str; 8] = [
     "Hide Collections",
     "Show Collections",
     "Stack request and response",
     "Put request and response side by side",
+    "Load running",
+    "Load stopping…",
+    "Mocks starting…",
+    "Mocks stopping…",
 ];
 
 const ROLES: [Role; 5] = [
@@ -59,7 +63,11 @@ fn controls(app: &support::App) -> Vec<(Role, String, Rect)> {
         .filter(|(_, _, rect)| rect.intersects(window) && rect.area() > 0.0)
         .filter(|(_, _, rect)| !crosses(rect, header_bottom) && !crosses(rect, status_top))
         // Below the status bar's top only its own controls show; the rest is scrolled under.
-        .filter(|(_, label, rect)| rect.top() < status_top || STATUS_BAR.contains(&label.as_str()))
+        .filter(|(_, label, rect)| {
+            rect.top() < status_top
+                || STATUS_BAR.contains(&label.as_str())
+                || label.starts_with("Mocks :")
+        })
         .collect()
 }
 
@@ -345,12 +353,12 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         .custom_method = None;
     app.harness.run_steps(2);
     for screen in ["Variables", "History", "Settings", "Mocks"] {
-        click(&mut app.harness, screen);
+        support::open_screen(&mut app.harness, screen);
         settle(&mut app.harness);
         check(app, screen);
     }
     // Mocks with a scripted route and a request log holding an error and printed lines.
-    click(&mut app.harness, "Mocks");
+    support::open_screen(&mut app.harness, "Mocks");
     settle(&mut app.harness);
     {
         let mocks = &mut app.harness.state_mut().state.mocks;
@@ -380,7 +388,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     app.harness.state_mut().state.mocks.log.clear();
     // The Load screen on the open request: idle, asking about production, running, and a
     // stopped run's summary with its error pills and tables.
-    click(&mut app.harness, "Load");
+    support::open_screen(&mut app.harness, "Load");
     settle(&mut app.harness);
     check(app, "Load");
     {

@@ -297,9 +297,12 @@ permissions and should land as several commits. No calendar dates.
   Refresh screenshots against the current build.
 - Publish startup and memory figures for a release build, with the machine and the
   build named.
-- Give Requests and History the primary navigation, while keeping direct and palette
-  access, keyboard access, and a visible running state for both Mocks and Load. Verify
-  the change with `egui_kittest`.
+- Done: Requests, Variables and History stay together in the header, with Mocks and
+  Load in Tools and Settings behind a gear. Variables belongs to everyday request work;
+  History is useful across requests, while each request already has Runs. Named menu
+  entries make the two supporting tools discoverable without guessing icons. Request
+  context and palette access to Load remain, and running tools have clickable statuses.
+  Keyboard access, unsaved markers and minimum-window layout are checked with `egui_kittest`.
 - Done with roadmap adoption: `AGENTS.md` points to this plan and records the freeze
   on load-probe expansion.
 

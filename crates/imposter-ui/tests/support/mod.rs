@@ -72,6 +72,14 @@ pub fn click(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     harness.run_steps(2);
 }
 
+/// Navigate through the visible header, including the supporting tools' menu.
+pub fn open_screen(harness: &mut Harness<'_, ImposterApp>, label: &str) {
+    if matches!(label, "Mocks" | "Load") {
+        click(harness, "Tools");
+    }
+    click_button(harness, label);
+}
+
 /// Open the request tab named `label`, from the row or, when it did not fit, from "More".
 pub fn open_tab(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     if harness

@@ -44,6 +44,7 @@ pub enum Icon {
     Folder,
     /// A clockwise arrow: load again.
     Refresh,
+    Settings,
 }
 
 /// The side of an icon button: as tall as the other controls, so they line up in a row.
@@ -176,6 +177,18 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
         );
     };
     match icon {
+        Icon::Settings => {
+            // The teeth and central hole distinguish application settings from a status sun.
+            let points = (0..32_u8)
+                .map(|step| {
+                    let angle = std::f32::consts::TAU * f32::from(step) / 32.0;
+                    let radius = if matches!(step % 4, 1 | 2) { 7.0 } else { 5.2 };
+                    point(8.0 + radius * angle.cos(), 8.0 + radius * angle.sin())
+                })
+                .collect();
+            painter.add(egui::Shape::closed_line(points, stroke));
+            painter.circle_stroke(point(8.0, 8.0), 2.2, stroke);
+        }
         Icon::Sidebar => {
             // A window with a list down its left side, unlike the two layout icons.
             rectangle((1.0, 2.0), (15.0, 14.0));

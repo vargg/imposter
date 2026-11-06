@@ -16,13 +16,13 @@ use crate::viewer::{self, Language};
 use crate::widgets::{self, FileRequest, VarUi, name, tone_text};
 
 const SEPARATOR: f32 = 12.0;
+const ENVIRONMENT_WIDTH: f32 = 200.0;
 
 pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
     let save = app.save_label();
     let save_text = app.save_button_text();
     let executing = app.is_executing();
     let variables_dirty = app.variables_dirty();
-    let settings_dirty = app.state.settings_screen.dirty();
     let state = &mut app.state;
     crate::shortcuts::handle(state, ui.ctx());
 
@@ -57,33 +57,44 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                     (Screen::Requests, "Requests"),
                     (Screen::Variables, "Variables"),
                     (Screen::History, "History"),
-                    (Screen::Settings, "Settings"),
-                    (Screen::Mocks, "Mocks"),
-                    (Screen::Load, "Load"),
                 ] {
-                    let dirty = match screen {
-                        Screen::Variables => variables_dirty,
-                        Screen::Settings => settings_dirty,
-                        Screen::Mocks => state.mocks.dirty(),
-                        Screen::Requests | Screen::History | Screen::Load => false,
-                    };
                     // In the tone of the "Unsaved" state, so it differs from the green dot
                     // of a request tab that holds something.
                     let tab = widgets::tab_with(ui, state.screen == screen, label, None);
-                    if dirty {
+                    if screen == Screen::Variables && variables_dirty {
                         // Over the tab's corner, so the tabs after it do not move.
                         widgets::corner_dot(ui, &tab, Tone::Warning, "Unsaved changes");
-                    }
-                    if screen == Screen::Load && state.load.running() {
-                        widgets::corner_dot(ui, &tab, Tone::Muted, "Load test running");
                     }
                     if tab.clicked() {
                         state.actions.push(Action::Screen(screen));
                     }
                 }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    environment_picker(state, ui);
-                });
+                // Draw in reading order so Tab follows the visible controls, even though
+                // this group is aligned to the right edge.
+                let width = ENVIRONMENT_WIDTH
+                    + 8.0
+                    + icons::size()
+                    + widgets::menu_text_button_width(ui, tools_text(state.screen))
+                    + 2.0 * ui.spacing().item_spacing.x;
+                ui.add_space((ui.available_width() - width).max(0.0));
+                ui.allocate_ui(
+                    vec2(ENVIRONMENT_WIDTH, crate::theme::spacing().control),
+                    |ui| environment_picker(state, ui),
+                );
+                ui.add_space(8.0);
+                tools_menu(state, ui);
+                let settings = icons::button(
+                    ui,
+                    Icon::Settings,
+                    "Settings",
+                    state.screen == Screen::Settings,
+                );
+                if state.settings_screen.dirty() {
+                    widgets::corner_dot(ui, &settings, Tone::Warning, "Unsaved changes");
+                }
+                if settings.clicked() {
+                    state.actions.push(Action::Screen(Screen::Settings));
+                }
             });
         });
     egui::Panel::bottom("status")
@@ -107,20 +118,32 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                 ui.separator();
                 layout_switch(&mut state.layout, ui);
                 ui.separator();
-                let now = ui.input(|i| i.time);
-                // The response pane counts a send it shows; the bar only when that pane
-                // is out of sight, so a running send stays visible from other screens.
-                let pane_shown = state.screen == Screen::Requests && state.editor.is_some();
-                if let Some(seconds) = state.sending_for(now).filter(|_| !pane_shown) {
-                    ui.add(egui::Spinner::new().size(12.0));
-                    ui.label(tone_text(format!("Sending… {seconds:.1} s"), Tone::Muted).small());
-                    ui.ctx()
-                        .request_repaint_after(std::time::Duration::from_millis(100));
-                } else if let Some(line) = state.status_line(now) {
-                    ui.label(tone_text(line.text.as_str(), line.tone).small());
-                }
+                // Reserve the running tools first: a long result must not push Stop's
+                // way back to its screen outside the window.
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     status_context(state, ui);
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        let now = ui.input(|i| i.time);
+                        let pane_shown = state.screen == Screen::Requests && state.editor.is_some();
+                        if let Some(seconds) = state.sending_for(now).filter(|_| !pane_shown) {
+                            ui.add(egui::Spinner::new().size(12.0));
+                            ui.add(
+                                egui::Label::new(
+                                    tone_text(format!("Sending… {seconds:.1} s"), Tone::Muted)
+                                        .small(),
+                                )
+                                .truncate(),
+                            );
+                            ui.ctx()
+                                .request_repaint_after(std::time::Duration::from_millis(100));
+                        } else if let Some(line) = state.status_line(now) {
+                            ui.add(
+                                egui::Label::new(tone_text(line.text.as_str(), line.tone).small())
+                                    .truncate(),
+                            )
+                            .on_hover_text(&line.text);
+                        }
+                    });
                 });
             });
         });
@@ -1000,20 +1023,131 @@ fn context_bar(
     });
 }
 
-/// The right end of the status bar: where a send goes and whether mocks are serving.
-fn status_context(state: &State, ui: &mut Ui) {
-    // The environment is in the header's picker and on Send; said a third time here it
-    // only added noise.
-    if let Some(address) = state
-        .mocks
-        .run
-        .as_ref()
-        .and_then(|run| run.address.as_deref())
-    {
-        let port = address.rsplit(':').next().unwrap_or(address);
-        ui.label(tone_text(format!("Mocks :{port}"), Tone::Ok).small())
-            .on_hover_text(format!("Mock server running at {address}"));
+fn tools_text(screen: Screen) -> RichText {
+    if matches!(screen, Screen::Mocks | Screen::Load) {
+        RichText::new("Tools")
+            .font(crate::theme::semibold(13.0))
+            .color(palette().accent)
+    } else {
+        RichText::new("Tools").color(palette().text_muted)
     }
+}
+
+fn tools_menu(state: &mut State, ui: &mut Ui) {
+    let selected = matches!(state.screen, Screen::Mocks | Screen::Load);
+    let button = widgets::menu_text_button(ui, tools_text(state.screen), "Tools");
+    button
+        .ctx
+        .accesskit_node_builder(button.id, |node| node.set_selected(selected));
+    if state.mocks.dirty() {
+        widgets::corner_dot(ui, &button, Tone::Warning, "Unsaved mocks");
+    }
+    egui::Popup::menu(&button).show(|ui| {
+        for (screen, label, running, stopping, dirty) in [
+            (
+                Screen::Mocks,
+                "Mocks",
+                state.mocks.run.is_some(),
+                state.mocks.run.as_ref().is_some_and(|run| run.stopping),
+                state.mocks.dirty(),
+            ),
+            (
+                Screen::Load,
+                "Load",
+                state.load.running(),
+                state.load.run.as_ref().is_some_and(|run| run.stopping),
+                false,
+            ),
+        ] {
+            let mut details = Vec::new();
+            if stopping {
+                details.push("Stopping…");
+            } else if running {
+                details.push("Running");
+            }
+            if dirty {
+                details.push("Unsaved changes");
+            }
+            let description = details.join(" · ");
+            let mut job = egui::text::LayoutJob::default();
+            job.append(
+                label,
+                0.0,
+                egui::TextFormat::simple(
+                    egui::TextStyle::Button.resolve(ui.style()),
+                    palette().text,
+                ),
+            );
+            if !description.is_empty() {
+                job.append(
+                    &format!("    {description}"),
+                    0.0,
+                    egui::TextFormat::simple(
+                        egui::TextStyle::Small.resolve(ui.style()),
+                        palette().text_muted,
+                    ),
+                );
+            }
+            let item = widgets::option(ui, state.screen == screen, job);
+            name(&item, label);
+            item.ctx.accesskit_node_builder(item.id, |node| {
+                node.set_description(description);
+            });
+            if item.clicked() {
+                state.actions.push(Action::Screen(screen));
+                ui.close();
+            }
+        }
+    });
+}
+
+/// Running tools remain reachable without opening their menu, including during shutdown.
+fn status_context(state: &mut State, ui: &mut Ui) {
+    if let Some(run) = &state.load.run {
+        let (label, hint) = if run.stopping {
+            ("Load stopping…", "Load test stopping")
+        } else {
+            ("Load running", "Load test running")
+        };
+        if activity_button(ui, label, hint).clicked() {
+            state.actions.push(Action::Screen(Screen::Load));
+        }
+    }
+    if let Some(run) = &state.mocks.run {
+        let (label, hint) = if run.stopping {
+            (
+                "Mocks stopping…".to_owned(),
+                "Mock server stopping".to_owned(),
+            )
+        } else if let Some(address) = &run.address {
+            let port = address.rsplit(':').next().unwrap_or(address);
+            (
+                format!("Mocks :{port}"),
+                format!("Mock server running at {address}"),
+            )
+        } else {
+            (
+                "Mocks starting…".to_owned(),
+                "Mock server starting".to_owned(),
+            )
+        };
+        if activity_button(ui, &label, &hint).clicked() {
+            state.actions.push(Action::Screen(Screen::Mocks));
+        }
+    }
+}
+
+fn activity_button(ui: &mut Ui, label: &str, hint: &str) -> egui::Response {
+    let button = ui.add(
+        egui::Button::new(tone_text(format!("● {label}"), Tone::Muted).small())
+            .frame(false)
+            .min_size(vec2(24.0, crate::theme::spacing().control)),
+    );
+    name(&button, label);
+    button
+        .ctx
+        .accesskit_node_builder(button.id, |node| node.set_description(hint));
+    button.on_hover_text(format!("{hint}. Open its screen."))
 }
 
 fn active_environment(state: &State) -> Option<&imposter_app::store::environments::Environment> {
@@ -1054,7 +1188,8 @@ fn environment_picker(state: &mut State, ui: &mut Ui) {
                 looks.open.weak_bg_fill = tint;
             }
             egui::ComboBox::from_id_salt("environment")
-                .width(170.0)
+                .width(ENVIRONMENT_WIDTH)
+                .truncate()
                 .selected_text(selected)
                 .show_ui(ui, |ui| {
                     let global = widgets::option(
