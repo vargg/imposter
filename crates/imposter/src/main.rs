@@ -1,6 +1,7 @@
-//! Imposter desktop app entry point.
+//! Imposter entry point: the desktop app, or the command line when given a command.
 
 use std::io::IsTerminal as _;
+use std::process::ExitCode;
 use std::sync::{Arc, OnceLock};
 
 use anyhow::Context as _;
@@ -15,22 +16,48 @@ fn smoke_url() -> anyhow::Result<Option<String>> {
     match args.next().as_deref() {
         None => Ok(None),
         Some("--smoke-test") => args.next().map(Some).context("--smoke-test needs a URL"),
-        Some(other) => {
-            anyhow::bail!("unknown argument {other:?}; usage: imposter [--smoke-test <url>]")
-        }
+        Some(other) => anyhow::bail!("unknown argument {other:?}; see imposter --help"),
     }
 }
 
-fn main() -> anyhow::Result<()> {
+/// Logs go to stderr; the command line keeps them to warnings, since stderr is where it
+/// writes its summary.
+fn init_logging(default: &str) {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_new(paths::log_filter())
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            tracing_subscriber::EnvFilter::try_new(paths::log_filter(default))
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default)),
         )
         .with_writer(std::io::stderr)
         .with_ansi(std::io::stderr().is_terminal())
         .init();
+}
 
+fn main() -> ExitCode {
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if imposter_cli::wants_command_line(&args) {
+        init_logging("warn");
+        let status = imposter_cli::main(
+            args,
+            &mut imposter_cli::Io {
+                stdout: &mut std::io::stdout(),
+                stderr: &mut std::io::stderr(),
+                var: &|name| std::env::var(name).ok(),
+            },
+        );
+        return ExitCode::from(status);
+    }
+    init_logging("info");
+    match desktop() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Error: {error:?}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn desktop() -> anyhow::Result<()> {
     let smoke = smoke_url()?;
     let store = paths::open_profile()?;
     let mut viewport = egui::ViewportBuilder::default()

@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.6.3"
+version = "0.6.4"
 edition = "2024"
 rust-version = "1.99"
 publish = false
@@ -15,6 +15,7 @@ imposter-script = { path = "crates/imposter-script" }
 imposter-store = { path = "crates/imposter-store" }
 imposter-transfer = { path = "crates/imposter-transfer" }
 imposter-app = { path = "crates/imposter-app" }
+imposter-cli = { path = "crates/imposter-cli" }
 imposter-ui = { path = "crates/imposter-ui" }
 imposter-testkit = { path = "crates/imposter-testkit" }
 
@@ -51,6 +52,8 @@ http-body-util = "0.1.5"
 getrandom = "0.4.3"
 hmac = "0.13.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
+# Arguments for the command line: a small tokenizer; usage and help are written by us.
+lexopt = "0.3.2"
 jsonschema = { version = "0.60.1", default-features = false }
 url = "2.5.8"
 jiff = "0.2.38"
@@ -65,7 +68,7 @@ sha1 = "0.11.0"
 sha2 = "0.11.1"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "fs"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "fs", "signal"] }
 tokio-util = "0.7.20"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

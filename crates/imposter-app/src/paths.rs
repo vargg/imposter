@@ -5,9 +5,10 @@ use std::path::PathBuf;
 pub const DATA_DIR_VARIABLE: &str = "IMPOSTER_DATA_DIR";
 pub const DATABASE_FILE: &str = "imposter.db";
 
-/// Log directives for the binary; legacy environment variables intentionally have no alias.
-pub fn log_filter() -> String {
-    std::env::var("IMPOSTER_LOG").unwrap_or_else(|_| "info".to_owned())
+/// Log directives for the binary, `default` unless `IMPOSTER_LOG` is set; legacy
+/// environment variables intentionally have no alias.
+pub fn log_filter(default: &str) -> String {
+    std::env::var("IMPOSTER_LOG").unwrap_or_else(|_| default.to_owned())
 }
 
 /// Open the selected profile before the UI starts. Explicit directories never consult home.

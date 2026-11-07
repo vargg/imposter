@@ -68,12 +68,14 @@ numbers, so both are excluded. Each logical change is its own commit.
 
 ## Architecture principles
 
-- **Dependency direction: `core` <- `http`, `store`, `transfer`, `script` <- `app` <- `ui` <- `imposter`.**
-  Never add an edge against it.
+- **Dependency direction: `core` <- `http`, `store`, `transfer`, `script` <- `app` <- `ui`, `cli` <- `imposter`.**
+  Never add an edge against it. `cli` (the command line) is a sibling of `ui`: neither
+  depends on the other, and anything both need (the result schema) lives below them.
   Why: each layer stays testable without the ones above it, and `ui` can change without touching
   the domain.
   Enforced by: `crates/imposter/tests/architecture.rs` (every manifest against the allowed
-  graph). `imposter-ui` reaches the store and transfer crates only through `imposter-app`.
+  graph). `imposter-ui` and `imposter-cli` reach the store and transfer crates only through
+  `imposter-app`.
 - **`imposter-core` does no IO** (no files, network, database, clock or environment).
   Why: the domain rules (variables, settings resolution, validation) can then be tested
   exhaustively, quickly and deterministically.
@@ -865,11 +867,27 @@ numbers, so both are excluded. Each logical change is its own commit.
   is "damaged" to macOS once downloaded (the v0.1.0 draft was).
 - **The packaged binary is smoke-tested through the real app** (`imposter --smoke-test <url>`,
   driven by `scripts/smoke.py`): window, migrations, HTTP, history and the close sequence, with
-  a throwaway `IMPOSTER_DATA_DIR`. It is the binary's only argument. Why: packaging breaks
+  a throwaway `IMPOSTER_DATA_DIR`. It is the only argument that opens the window; any other
+  goes to the command line. Why: packaging breaks
   things unit tests cannot see (missing GL, TLS provider, bundled SQLite, paths). The app-side
   flow is covered by `imposter-ui/tests/smoke.rs`, CI runs the script on Linux on every push. The script
   checks the User-Agent against the workspace version, so release bumps remain verified
   without maintaining a second version string.
+- **The command line is `imposter send` in the same binary** (`imposter-cli`, reached from
+  `main.rs` before logging or the window start). It runs one request from a native file
+  (`document::select` + `executor::run`, the one engine) and prints the redacted
+  `RunResult` on stdout, its summary on stderr, and with `--out` the same JSON to a file
+  (atomically). It opens no database and reads only the process variables named by
+  `--input`/`--secret` (`Io::var`), never the rest of the environment; a missing or empty
+  one, or a secret under 4 characters (`redact::MIN_SECRET`, which would redact ordinary
+  text), stops the run before anything is sent. The file is read once, so an edit during
+  the run cannot change its checks. Ctrl+C cancels (exit 130). Logs default to warnings,
+  since stderr carries the summary. Arguments are parsed with `lexopt`; usage, the
+  README's tables and the help come from `SEND_FLAGS` and `exit_statuses()`, and a test
+  keeps the README equal to them. Why: agents and CI cannot depend on the window, and a
+  second executable would need its own packaging. Pinned by `imposter-cli/tests/send.rs`
+  (every outcome, inputs, the freeze) and `imposter/tests/cli.rs` (the process: no
+  profile created, no secret on stdout or stderr even at trace level, the interrupt).
 - **Release measurements use the packaged smoke workflow, with one excluded warm-up and
   ten successful runs, each in a fresh temporary profile.** Launch-to-request is measured
   before spawning the process through receipt at the loopback server, not first-frame time;

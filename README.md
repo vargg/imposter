@@ -193,8 +193,8 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 Postman JavaScript (`pm.*`) compatibility; WebSocket, gRPC and GraphQL-specific tools;
 HTTP/2 (requests use HTTP/1.1); cloud sync; a persistent cookie jar (cookies are sent as you
 list them). Before-sending and after-response scripts are supported in Rhai. Collections
-can be shared through native exports; repository project folders and a headless CLI are
-planned, not shipped.
+can be shared through native exports; repository project folders and a runner for whole
+folders are planned, not shipped.
 
 ## Installation
 
@@ -267,6 +267,54 @@ Cmd on macOS, Ctrl elsewhere. Shortcuts do nothing while a dialog is open.
 | Cmd/Ctrl+F | Find in the viewer under the pointer |
 | Alt+Enter | Inspect the variable at the cursor |
 | Esc | Close the inspector, find bar or suggestions |
+
+### Command line
+
+`imposter send` runs one request from a collection file (a native `.imposter.json` export)
+without a window and without your personal data: it opens no database, writes no history
+and reads only the process variables you name. It uses the same engine as **Send**, so the
+same file gives the same checks in the app and on the command line.
+
+```sh
+export API_TOKEN=…
+imposter send api.imposter.json "Users/Create user" --env Dev --secret token=API_TOKEN
+```
+
+The request is named by its folders and its own name; write a `/` inside a name as `\/`.
+The result is one JSON document on stdout, led by a `summary` and an `outcome`, with the
+file's SHA-256, the request as sent, the response head, check and script results, captures
+and body excerpts. A one-line summary goes to stderr. Captures and script variables stay in
+the run; nothing is written back to the file.
+
+| Option | Meaning |
+|---|---|
+| `--env NAME` | Use the file's environment NAME; without it, only globals and collection variables apply. |
+| `--input VAR=PROCESS_VAR` | Set variable VAR from the process variable PROCESS_VAR, above every scope. Repeatable. |
+| `--secret VAR=PROCESS_VAR` | As --input, and remove its value from the result and error output. Repeatable. |
+| `--out FILE` | Also write the result to FILE. |
+| `--max-body BYTES` | Show at most BYTES of each body in the result (default 65536; 0 shows none). |
+
+Every outcome has its own exit status, so CI can tell a failed check from a server that was
+not there. A response with no checks is not a pass: nothing was verified.
+
+| Status | Outcome | Meaning |
+|---|---|---|
+| 0 | `passed` | a response arrived and every check and script test passed |
+| 1 | `failed` | a check or script test failed |
+| 2 | `usage` | the command line was wrong, or the result file could not be written |
+| 3 | `not_sent` | nothing was sent: the file, request path, environment, an input or the request is wrong |
+| 4 | `transport_error` | no response: connection, TLS or timeout |
+| 5 | `script_failed` | a script failed or was stopped |
+| 6 | `not_checked` | a check could not be decided (cut body, bad path), none failed |
+| 7 | `no_checks` | a response arrived but the request has no checks: nothing verified |
+| 130 | `cancelled` | interrupted (Ctrl+C) |
+
+Secrets given with `--secret`, and the credentials the request sends (Basic and Digest
+passwords, Bearer tokens, the client key password), are replaced by `«redacted»` everywhere
+in the result and on stderr, as are `user:password@` in URLs and the values of
+`Authorization`, `Cookie` and `Set-Cookie` headers. This removes known values only: a server
+can return other sensitive data, which a result shows like any body. Copy as curl in the app
+still includes credentials, as it always did.
 
 ### Moving from the Python version
 

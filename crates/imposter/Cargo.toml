@@ -11,12 +11,19 @@ workspace = true
 
 [dependencies]
 imposter-app.workspace = true
+imposter-cli.workspace = true
 imposter-ui.workspace = true
 eframe.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 egui.workspace = true
+
+[dev-dependencies]
+imposter-testkit.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
 
 # Packaging with cargo-packager (docs/release.md): `cargo packager -p imposter --release`.
 [package.metadata.packager]

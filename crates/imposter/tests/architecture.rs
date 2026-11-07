@@ -22,9 +22,16 @@ const ALLOWED: &[(&str, &[&str])] = &[
         ],
     ),
     ("imposter-ui", &["imposter-core", "imposter-app"]),
+    // A sibling of the UI: the command line reaches the domain through the app's services.
+    ("imposter-cli", &["imposter-core", "imposter-app"]),
     (
         "imposter",
-        &["imposter-core", "imposter-app", "imposter-ui"],
+        &[
+            "imposter-core",
+            "imposter-app",
+            "imposter-ui",
+            "imposter-cli",
+        ],
     ),
     ("imposter-testkit", &[]),
 ];

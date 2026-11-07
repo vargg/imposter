@@ -19,7 +19,10 @@ fn child_profile() {
             ".imposter/imposter.db"
         })
     );
-    assert_eq!(paths::log_filter(), if explicit { "warn" } else { "info" });
+    assert_eq!(
+        paths::log_filter("info"),
+        if explicit { "warn" } else { "info" }
+    );
     store.close().unwrap();
     assert!(!root.join("old").exists());
 }
