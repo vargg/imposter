@@ -286,17 +286,22 @@ pub enum Source {
     },
     /// A value given to one headless run (from a named process variable), above every scope.
     Input,
+    /// A value an earlier request of the same run captured or set, above the inputs: a
+    /// login's token replaces the environment's for the requests after it.
+    Run,
 }
 
 impl Source {
     pub const CAPTURED_NAME: &'static str = "Captured collection (deleted)";
     pub const INPUT_NAME: &'static str = "Input";
+    pub const RUN_NAME: &'static str = "this run";
 
     pub fn label(&self) -> &str {
         match self {
             Self::Global => VariableContext::GLOBAL_NAME,
             Self::Captured => Self::CAPTURED_NAME,
             Self::Input => Self::INPUT_NAME,
+            Self::Run => Self::RUN_NAME,
             Self::Collection { name, .. } | Self::Environment { name, .. } => name,
         }
     }
@@ -319,7 +324,7 @@ impl Scope {
             Source::Global => Some(Self::Global),
             Source::Environment { id, .. } => id.map(Self::Environment),
             Source::Collection { id, .. } => id.map(Self::Collection),
-            Source::Captured | Source::Input => None,
+            Source::Captured | Source::Input | Source::Run => None,
         }
     }
 }
@@ -390,8 +395,14 @@ impl Snapshot {
 
     /// `inputs` above every scope, as a headless run's named inputs are.
     #[must_use]
-    pub fn with_inputs(mut self, inputs: &Variables) -> Self {
-        self.add(inputs, &SavedValues::default(), &Source::Input);
+    pub fn with_inputs(self, inputs: &Variables) -> Self {
+        self.with_layer(inputs, &Source::Input)
+    }
+
+    /// `values` above everything already here, from `source`.
+    #[must_use]
+    pub fn with_layer(mut self, values: &Variables, source: &Source) -> Self {
+        self.add(values, &SavedValues::default(), source);
         self
     }
 

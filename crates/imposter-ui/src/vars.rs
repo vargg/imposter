@@ -120,6 +120,7 @@ pub fn scope_label(source: &Source) -> &'static str {
         Source::Global => "Global",
         Source::Collection { .. } | Source::Captured => "Collection",
         Source::Input => "Input",
+        Source::Run => "This run",
         Source::Environment { .. } => "Environment",
     }
 }
@@ -132,6 +133,7 @@ pub fn where_defined(source: &Source) -> String {
         Source::Collection { name, .. } => format!("the {name} collection"),
         Source::Captured => format!("the {}", Source::CAPTURED_NAME.to_lowercase()),
         Source::Input => "a command-line input".to_owned(),
+        Source::Run => "an earlier request of this run".to_owned(),
     }
 }
 

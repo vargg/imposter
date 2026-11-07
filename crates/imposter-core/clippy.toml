@@ -1,7 +1,7 @@
 # imposter-core does no IO (AGENTS.md). Clippy uses only the nearest clippy.toml, so the root
 # settings are repeated here.
 allow-unwrap-in-tests = true
-doc-valid-idents = ["OpenAPI", "JSONPath", "JMeter", ".."]
+doc-valid-idents = ["OpenAPI", "JSONPath", "JMeter", "JUnit", ".."]
 
 disallowed-types = [
     { path = "std::fs::File", reason = "imposter-core does no IO" },

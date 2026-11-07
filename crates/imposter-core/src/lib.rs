@@ -11,6 +11,7 @@ pub mod load;
 pub mod model;
 pub mod prepare;
 pub mod redact;
+pub mod run_report;
 pub mod run_result;
 pub mod select;
 pub mod settings;

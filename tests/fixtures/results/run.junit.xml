@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="imposter run" tests="4" failures="1" errors="1" skipped="1" time="0.042">
+  <testsuite name="API / Flow" tests="4" failures="1" errors="1" skipped="1" time="0.042" timestamp="2026-10-26T07:33:20.000Z">
+    <testcase classname="API/Flow" name="Login" time="0.012"/>
+    <testcase classname="API/Flow" name="Create &lt;&amp;&gt;" time="0.012">
+      <failure message="Failed: 2 of 3 checks failed · 201 OK · 12 ms">status = 200: got 201 «redacted»
+Script test &quot;t&quot;: expected &lt;1&gt;</failure>
+    </testcase>
+    <testcase classname="API/Flow" name="Get" time="0.000">
+      <error message="Not sent: Unresolved variables: id">Unresolved variables: id</error>
+    </testcase>
+    <testcase classname="API/Flow" name="Delete" time="0.000">
+      <skipped message="an earlier request did not pass"/>
+    </testcase>
+  </testsuite>
+</testsuites>

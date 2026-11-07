@@ -1,4 +1,4 @@
 # Tests may unwrap: a panic there is a clear test failure, not a user-facing crash.
 allow-unwrap-in-tests = true
 # Product names written as prose in docs, not code identifiers. `..` keeps clippy's defaults.
-doc-valid-idents = ["OpenAPI", "JSONPath", "JMeter", ".."]
+doc-valid-idents = ["OpenAPI", "JSONPath", "JMeter", "JUnit", ".."]
