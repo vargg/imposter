@@ -475,18 +475,34 @@ numbers, so both are excluded. Each logical change is its own commit.
   await: an environment switch queued before Send applies, a later one cannot change a running
   request. The variable inspector uses the same function (`executor::inputs`).
 - **One engine runs every request: `executor::run`, which reads and writes nothing.** Send
-  is `inputs` + `run` + recording History; a run from a collection file is
-  `document::select` + `run`. `Inputs::origin` says where the inputs came from, and so
-  where captures and script variables go (`capture::Destination`): back to the stored
-  scopes, or, for a file, only into the run, named "this run" (writing a value back is a
-  separate edit). Scopes read from a file have no database id (`None`) rather than invented
-  ones, and a value given to the run is a `Source::Input` above every scope. A file's
-  request is chosen by its path of names (`document::RequestPath`, `Users/Create user`,
-  `\/` for a slash in a name); a path or environment naming nothing or several is refused
-  with the candidates. Settings are the application defaults, never the profile's. Why:
-  the roadmap's "one contract": a headless run must not grow a second variable, script or
-  check implementation. Pinned by `imposter-app/tests/document.rs`, which sends one file
-  through both paths and compares the bytes received and the verdicts.
+  is `inputs` + `run` + `executor::record`; the command line is `profile::select` (a saved
+  request, from the personal profile) or `document::select` (a native file) + `run`, then
+  `record` for the profile. `Inputs::writes` says where captures and script variables go
+  (`capture::Destination`): back to the stored scopes (Send), or only into the run, named
+  "this run" (files, and the command line against the profile: an agent must not change
+  the user's variables behind their back; writing a value back is a separate edit). Scopes
+  read from a file have no database id (`None`) rather than invented ones, and a value given
+  to the run is a `Source::Input` above every scope.
+  - **Naming a request** (`document::RequestPath`): the breadcrumb, collection first
+    (`Shop API / Users / Create user`); spaces around `/` are ignored so a copied breadcrumb
+    works, `\/` is a slash in a name, and in a file the collection's name may be left out.
+    A path or environment naming nothing or several (collection names need not be unique)
+    is refused with the candidates.
+  - **The profile run** (`profile::select`) reads the request, settings, variables and
+    scripts in one database command, like Send, with the environment named by `--env` and
+    none otherwise, never the app's active one (user's choice: an agent's run must not
+    depend on what the app shows). A red environment is refused unless Settings → Command
+    line → "Allow production environments" is on (`AppSettings::allow_production_from_cli`,
+    off by default): a flag on the command line would be one an agent can add (user's
+    choice). It records the run in History as the command line's (`Via::CommandLine`). It
+    opens only a profile that exists (`paths::open_existing_profile`): nothing is created,
+    copied or chosen implicitly.
+  - **A file run** uses the application defaults, never the profile's settings.
+
+  Why: the roadmap's "one contract": a headless run must not grow a second variable,
+  script or check implementation. Pinned by `imposter-app/tests/document.rs`, which sends
+  one file through both paths and compares the bytes received and the verdicts, and
+  `imposter-app/tests/profile.rs`.
 - **A headless run reports one result schema** (`core::run_result::RunResult`, format
   `imposter-result`, version 1), for the command line's JSON, result files and the
   desktop's view. It leads with a summary line and an outcome, then what ran (file SHA-256,
@@ -1162,7 +1178,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   regenerating it; a deliberate divergence is asserted in its own test with the reason.
   Current divergences: no empty `Cookie:` header when every cookie is disabled; converted
   documents are marked native version 2; Postman dynamic variables Imposter generates are
-  kept rather than removed.
+  kept rather than removed; stored settings gain `allow_production_from_cli` when it is on
+  (left out while off, so default settings keep the Python shape).
 - **No line-ending conversion** (`.gitattributes`: `* -text`). Why: fixtures, golden exports
   and the pinned schema are compared byte for byte; a CRLF checkout on Windows broke them.
   Enforced by: the Windows CI job, which runs those tests.

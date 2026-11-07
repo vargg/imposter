@@ -28,38 +28,63 @@ pub struct Inputs {
     /// The collection's and enclosing folders' scripts, outermost first; the request's own
     /// are added by the caller (`ScriptChain::with_request`).
     pub scripts: crate::scripts::ScriptChain,
-    pub origin: Origin,
+    pub writes: Writes,
 }
 
-/// Where an execution's inputs were read, which decides where its captures and script
-/// variables go.
+/// Where an execution's captures and script variables go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Origin {
-    /// The database: values go back to the scopes that defined them.
-    Store,
-    /// A collection file: nothing is stored, so values stay in the run.
-    File,
+pub enum Writes {
+    /// Back to the stored scopes that defined them, as Send does.
+    Scopes,
+    /// Only into the run: a file has no stored scopes, and a command-line run against the
+    /// profile must not change the user's variables behind their back.
+    Run,
 }
 
 impl Inputs {
     fn destination(&self) -> Destination<'_> {
-        match self.origin {
-            Origin::Store => Destination::Scopes(&self.snapshot, &self.context),
-            Origin::File => Destination::Run,
+        match self.writes {
+            Writes::Scopes => Destination::Scopes(&self.snapshot, &self.context),
+            Writes::Run => Destination::Run,
         }
     }
+}
+
+/// Which environment's values an execution reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnvironmentChoice {
+    /// The one active in the app, as Send uses.
+    Active,
+    /// This one, or none (globals and collection only), whatever the app has active.
+    Chosen(Option<imposter_core::ids::EnvironmentId>),
 }
 
 /// Read the inputs for `request`. Inspection uses this too, so it explains exactly what an
 /// execution would use.
 pub async fn inputs(store: &StoreHandle, request: &Request) -> Result<Inputs, StoreError> {
+    let request = request.clone();
+    store
+        .call(move |db| read_inputs(db, &request, EnvironmentChoice::Active))
+        .await
+}
+
+/// [`inputs`] inside a database command, with `environment` chosen. Captures go back to
+/// their scopes; a caller that keeps them in the run sets [`Inputs::writes`].
+pub fn read_inputs(
+    db: &imposter_store::Tx<'_>,
+    request: &Request,
+    environment: EnvironmentChoice,
+) -> Result<Inputs, StoreError> {
     let collection_id = request.collection_id;
     let folder_id = request.folder_id;
-    let captured = request.collection_variables_snapshot.clone();
-    store
-        .call(move |db| {
+    let captured = &request.collection_variables_snapshot;
+    {
+        {
             let settings = kv::app_settings(db)?;
-            let context = environments::variable_context(db)?;
+            let context = match environment {
+                EnvironmentChoice::Active => environments::variable_context(db)?,
+                EnvironmentChoice::Chosen(id) => environments::variable_context_for(db, id)?,
+            };
             let collection = match collection_id {
                 Some(id) => collections::collection(db, id)?,
                 None => None,
@@ -76,9 +101,7 @@ pub async fn inputs(store: &StoreHandle, request: &Request) -> Result<Inputs, St
                     saved: &saved,
                 }),
                 None if !captured.is_empty() || collection_id.is_some() => {
-                    Some(CollectionScope::Deleted {
-                        captured: &captured,
-                    })
+                    Some(CollectionScope::Deleted { captured })
                 }
                 None => None,
             };
@@ -92,10 +115,10 @@ pub async fn inputs(store: &StoreHandle, request: &Request) -> Result<Inputs, St
                 context,
                 snapshot,
                 scripts,
-                origin: Origin::Store,
+                writes: Writes::Scopes,
             })
-        })
-        .await
+        }
+    }
 }
 
 /// The collection's scripts, then those of each folder from the outermost down to the
@@ -363,7 +386,14 @@ pub async fn execute(
     cancel: CancellationToken,
 ) -> Result<Executed, ExecuteError> {
     let inputs = inputs(store, &request).await?;
-    let Ran { record, writes } = run(&inputs, request, cancel).await?;
+    let ran = run(&inputs, request, cancel).await?;
+    Ok(record(store, ran).await)
+}
+
+/// Record `ran` in History under the retention limits its settings carry. A failed write
+/// keeps the response and says so (`history_error`).
+pub async fn record(store: &StoreHandle, ran: Ran) -> Executed {
+    let Ran { record, writes } = ran;
     let mut response = record.response.clone();
     let sent = Box::new(record.resolved.clone());
     let attach_cookies = record.settings.attach_cookies;
@@ -382,13 +412,13 @@ pub async fn execute(
             None
         }
     };
-    Ok(Executed {
+    Executed {
         response,
         record: id,
         writes,
         sent,
         attach_cookies,
-    })
+    }
 }
 
 /// Run `request` with `inputs`: before-sending scripts, prepare, send, checks, captures and

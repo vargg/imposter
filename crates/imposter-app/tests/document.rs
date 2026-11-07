@@ -3,7 +3,7 @@
 #![cfg(test)]
 
 use imposter_app::document::{DocumentError, RequestPath, request_paths, select};
-use imposter_app::executor::{Origin, execute, run};
+use imposter_app::executor::{Writes, execute, run};
 use imposter_app::transfer::{import, read_preview};
 use imposter_core::capture::Taken;
 use imposter_core::check::Verdict;
@@ -93,7 +93,7 @@ fn request_paths_name_folders_and_escape_slashes() {
     );
     assert_eq!(path("Users/a\\/b/Ping").to_string(), "Users/a\\/b/Ping");
     assert_eq!(path("a\\\\b").to_string(), "a\\\\b");
-    for bad in ["", "/Ping", "Users/", "a//b", "a\\b", "a\\"] {
+    for bad in ["", "/Ping", "Users/", "a//b", "a\\b", "a\\", "a/ /b"] {
         assert_eq!(
             RequestPath::parse(bad),
             Err(DocumentError::BadPath(bad.to_owned())),
@@ -109,7 +109,7 @@ fn a_path_or_environment_that_names_nothing_or_several_is_refused() {
     let missing = select(&document, &path("Users/Delete"), None, &none).unwrap_err();
     assert_eq!(
         missing.to_string(),
-        "No request at Users/Delete. Requests in this file: Ping, Users/Create user, \
+        "No request at Users/Delete. Requests: Ping, Users/Create user, \
          Users/a\\/b/Ping, Twins/Same, Twins/Same"
     );
     assert_eq!(
@@ -123,11 +123,22 @@ fn a_path_or_environment_that_names_nothing_or_several_is_refused() {
         select(&document, &path("Ping"), Some("Staging"), &none)
             .unwrap_err()
             .to_string(),
-        "No environment named \"Staging\". Environments in this file: Dev, Prod"
+        "No environment named \"Staging\". Environments: Dev, Prod"
     );
     let found = select(&document, &path("Users/a\\/b/Ping"), None, &none).unwrap();
     assert_eq!(found.request.template.url, "{{base}}/nested");
-    assert_eq!(found.inputs.origin, Origin::File);
+    assert_eq!(found.inputs.writes, Writes::Run);
+    let copied = select(
+        &document,
+        &path(" API / Users / a\\/b / Ping "),
+        None,
+        &none,
+    )
+    .unwrap();
+    assert_eq!(
+        copied.request, found.request,
+        "a copied breadcrumb, with the collection and spaces, names the same request"
+    );
     assert_eq!(
         found
             .inputs

@@ -217,7 +217,7 @@ fn unsent_runs_say_why_in_words() {
         ),
         (
             vec!["send", file, "Nope"],
-            "Not sent: No request at Nope. Requests in this file: Pass, Fail,",
+            "Not sent: No request at Nope. Requests: Pass, Fail,",
         ),
         (
             vec!["send", file, "a//b"],

@@ -29,6 +29,7 @@ pub struct SettingsForm {
     pub host_identities: Vec<HostIdentity>,
     pub history_max_entries: u64,
     pub history_mib: u64,
+    pub allow_production_from_cli: bool,
 }
 
 impl SettingsForm {
@@ -49,6 +50,7 @@ impl SettingsForm {
             host_identities: settings.host_identities.clone(),
             history_max_entries: settings.history_max_entries.clamp(1, 1_000_000),
             history_mib: (settings.history_max_bytes / MIB).clamp(1, 102_400),
+            allow_production_from_cli: settings.allow_production_from_cli,
         }
     }
 
@@ -68,6 +70,7 @@ impl SettingsForm {
             host_identities: self.host_identities.clone(),
             history_max_entries: self.history_max_entries,
             history_max_bytes: self.history_mib * MIB,
+            allow_production_from_cli: self.allow_production_from_cli,
             ..base.clone()
         }
     }
@@ -479,6 +482,14 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                         },
                     );
                 });
+                section(ui, "Command line", |ui| {
+                    edited |= check(
+                        ui,
+                        &mut form.allow_production_from_cli,
+                        "Allow production environments",
+                        Some("imposter send and agents using it may run requests with environments marked red. A command-line flag cannot turn this on; a program that edits the app's database can."),
+                    );
+                });
                 ui.add_space(16.0);
             });
         });
@@ -502,10 +513,12 @@ mod tests {
             proxy_url: "http://p".into(),
             history_max_bytes: 3 * MIB,
             attach_cookies: false,
+            allow_production_from_cli: true,
             ..AppSettings::default()
         };
         let form = SettingsForm::new(&settings);
         assert_eq!(form.apply(&settings), settings);
+        assert!(form.allow_production_from_cli);
     }
 
     #[test]

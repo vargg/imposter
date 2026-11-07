@@ -68,6 +68,16 @@ pub struct AppSettings {
     pub autosave: bool,
     pub history_max_entries: u64,
     pub history_max_bytes: u64,
+    /// Whether the command line (`imposter send`, an agent through it) may use environments
+    /// marked red. Set in the app, never by a command-line flag an agent could add. Left out
+    /// while off, so the stored settings keep the Python app's shape unless it is turned on.
+    #[serde(skip_serializing_if = "is_false")]
+    pub allow_production_from_cli: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip_serializing_if passes a reference
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl Default for AppSettings {
@@ -87,6 +97,7 @@ impl Default for AppSettings {
             autosave: true,
             history_max_entries: 1000,
             history_max_bytes: 250 * 1024 * 1024,
+            allow_production_from_cli: false,
         }
     }
 }
@@ -213,6 +224,21 @@ impl AppSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A deliberate divergence from the Python app's settings: the command-line switch is
+    /// Imposter's own, stored only when on, so default settings keep the Python shape.
+    #[test]
+    fn the_command_line_switch_is_stored_only_when_on() {
+        let off = serde_json::to_value(AppSettings::default()).unwrap();
+        assert!(off.get("allow_production_from_cli").is_none());
+        let on = AppSettings {
+            allow_production_from_cli: true,
+            ..AppSettings::default()
+        };
+        let stored = serde_json::to_string(&on).unwrap();
+        assert!(stored.contains("\"allow_production_from_cli\":true"));
+        assert_eq!(serde_json::from_str::<AppSettings>(&stored).unwrap(), on);
+    }
 
     #[test]
     fn host_identities_normalize_and_override_as_a_set_then_by_field() {

@@ -322,3 +322,29 @@ fn every_section_puts_its_fields_in_one_column() {
     );
     app.harness.get_by_label("Verify TLS certificates");
 }
+
+#[test]
+fn production_from_the_command_line_is_allowed_only_here() {
+    let mut app = start();
+    open_settings(&mut app);
+    assert!(!stored(&app).allow_production_from_cli, "off until allowed");
+    // The last section, below the fold: pressed as a screen reader does, which needs no
+    // scrolling.
+    app.harness
+        .get_by_label("Allow production environments")
+        .click_accesskit();
+    app.harness.run_steps(2);
+    assert!(
+        app.harness
+            .state()
+            .state
+            .settings_screen
+            .form
+            .allow_production_from_cli,
+        "the click reached the switch"
+    );
+    assert!(save_enabled(&app), "the switch is an unsaved edit");
+    click(&mut app.harness, "Save settings");
+    settle(&mut app.harness);
+    assert!(stored(&app).allow_production_from_cli);
+}

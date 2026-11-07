@@ -7,16 +7,45 @@ use imposter_core::settings::AppSettings;
 use imposter_core::variables::{ActiveEnvironment, CollectionScope, Snapshot, VariableContext};
 use imposter_transfer::native::{NativeDocument, TransferFolder};
 
-use crate::executor::{Inputs, Origin};
+use crate::executor::{Inputs, Writes};
 use crate::scripts::{Level, ScriptChain};
 
-/// A request in a file, named by its folders and its own name: `Users/Admin/Create user`.
-/// A `/` inside a name is written `\/`, and a `\` as `\\`.
+/// A request named by its place: the collection, its folders and its own name, as the
+/// breadcrumb shows it (`Shop API / Users / Create user`). Spaces around `/` are ignored, so
+/// a copied breadcrumb works; a `/` inside a name is written `\/`, and a `\` as `\\`. In a
+/// file, which holds one collection, the collection's name may be left out.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestPath(Vec<String>);
 
 impl RequestPath {
     pub fn parse(text: &str) -> Result<Self, DocumentError> {
+        let mut path = Self::split(text)?;
+        for part in &mut path.0 {
+            let trimmed = part.trim();
+            if trimmed.is_empty() {
+                return Err(DocumentError::BadPath(text.to_owned()));
+            }
+            *part = trimmed.to_owned();
+        }
+        Ok(path)
+    }
+
+    /// The names in order: collection (when given), folders, request.
+    pub fn parts(&self) -> &[String] {
+        &self.0
+    }
+
+    /// Whether this path names `names`, compared as typed apart from surrounding spaces.
+    pub fn is(&self, names: &[&str]) -> bool {
+        self.0.len() == names.len() && self.0.iter().zip(names).all(|(a, b)| a == b.trim())
+    }
+
+    /// The path of a request at `folders` named `name`.
+    pub fn new(folders: &[&str], name: &str) -> Self {
+        Self::of(folders, name)
+    }
+
+    fn split(text: &str) -> Result<Self, DocumentError> {
         let mut parts = vec![String::new()];
         let mut chars = text.chars();
         while let Some(c) = chars.next() {
@@ -68,14 +97,14 @@ impl std::fmt::Display for RequestPath {
 pub enum DocumentError {
     #[error("{0:?} is not a request path: names are separated by \"/\", and none is empty")]
     BadPath(String),
-    #[error("No request at {path}. Requests in this file: {}", list(.available))]
+    #[error("No request at {path}. Requests: {}", list(.available))]
     NoRequest {
         path: String,
         available: Vec<String>,
     },
     #[error("{count} requests are at {path}; rename one so its path names one request")]
     Ambiguous { path: String, count: usize },
-    #[error("No environment named {name:?}. Environments in this file: {}", list(.available))]
+    #[error("No environment named {name:?}. Environments: {}", list(.available))]
     NoEnvironment {
         name: String,
         available: Vec<String>,
@@ -164,9 +193,15 @@ pub fn select(
     environment: Option<&str>,
     values: &Variables,
 ) -> Result<Selected, DocumentError> {
+    let collection_name = document.collection.name.as_str();
     let mut matches: Vec<Found<'_>> = all(document)
         .into_iter()
-        .filter(|(candidate, _)| candidate == path)
+        .filter(|(candidate, _)| {
+            let names: Vec<&str> = candidate.0.iter().map(String::as_str).collect();
+            let mut with_collection = vec![collection_name];
+            with_collection.extend(&names);
+            path.is(&names) || path.is(&with_collection)
+        })
         .map(|(_, found)| found)
         .collect();
     let found = match matches.len() {
@@ -255,7 +290,7 @@ pub fn select(
             context,
             snapshot,
             scripts: ScriptChain(levels),
-            origin: Origin::File,
+            writes: Writes::Run,
         },
     })
 }

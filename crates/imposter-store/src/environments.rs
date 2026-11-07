@@ -197,7 +197,15 @@ pub fn set_active_environment(
 
 /// Globals and the active environment, read together so execution sees one consistent state.
 pub fn variable_context(db: &Connection) -> Result<VariableContext, StoreError> {
-    let environment = match active_environment(db)? {
+    variable_context_for(db, active_environment(db)?)
+}
+
+/// Globals and the environment `chosen` (none: globals only), whichever is active.
+pub fn variable_context_for(
+    db: &Connection,
+    chosen: Option<EnvironmentId>,
+) -> Result<VariableContext, StoreError> {
+    let environment = match chosen {
         Some(id) => match environment(db, id)? {
             Some(env) => Some(imposter_core::variables::ActiveEnvironment {
                 saved: scopes::saved_values(db, Scope::Environment(env.id))?,

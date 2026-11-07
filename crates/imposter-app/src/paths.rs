@@ -35,6 +35,25 @@ fn open_profile_from(
     open_store(&dir)
 }
 
+/// Open the profile that already exists where the app keeps it (`IMPOSTER_DATA_DIR` as
+/// `explicit`, else `~/.imposter`), for the command line: nothing is created and no older
+/// profile is copied, so a run never makes or migrates a profile the app has not opened.
+pub fn open_existing_profile(
+    explicit: Option<std::ffi::OsString>,
+    home: Option<PathBuf>,
+) -> Result<imposter_store::Store, OpenError> {
+    let dir = match explicit {
+        Some(dir) if dir.is_empty() => return Err(OpenError::EmptyDirectory),
+        Some(dir) => PathBuf::from(dir),
+        None => home.ok_or(OpenError::NoHome)?.join(".imposter"),
+    };
+    let database = dir.join(DATABASE_FILE);
+    if !database.is_file() {
+        return Err(OpenError::NoProfile { database });
+    }
+    Ok(imposter_store::Store::open(&database)?)
+}
+
 /// Create `dir` if needed and open the database in it.
 pub fn open_store(dir: &std::path::Path) -> Result<imposter_store::Store, OpenError> {
     std::fs::create_dir_all(dir).map_err(|source| OpenError::Directory {
@@ -58,6 +77,11 @@ pub enum OpenError {
         #[source]
         source: std::io::Error,
     },
+    #[error(
+        "No I’mposter data at {}: open the app once to create it, or use --file",
+        database.display()
+    )]
+    NoProfile { database: PathBuf },
     #[error(transparent)]
     Store(#[from] imposter_store::StoreError),
 }
