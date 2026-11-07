@@ -8,8 +8,8 @@ use imposter_app::core::model::{SavedValues, Variables};
 pub use imposter_app::core::variables::Scope;
 use imposter_app::core::variables::{Definition, Snapshot, Source};
 
-/// A `{{name}}` token as the editors mark it: no braces or newline inside, not empty (the
-/// Python app's `\{\{([^{}\n]+)\}\}`).
+/// A `{{name}}` token as the editors mark it: no braces or newline inside, not empty
+/// (`\{\{([^{}\n]+)\}\}`, stricter than resolution, so half-typed text is not marked).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub range: Range<usize>,

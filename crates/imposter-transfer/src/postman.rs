@@ -1,6 +1,6 @@
 //! Postman Collection v2.1: a supported subset of the native format. Every conversion loss is
 //! reported; losses that change what a request sends require explicit consent before import.
-//! Behavior follows the Python app (`tests/fixtures/parity/postman.json`).
+//! Pinned by `tests/fixtures/golden/postman.json`.
 
 use std::path::Path;
 use std::sync::LazyLock;
@@ -54,17 +54,18 @@ pub fn validate(data: &Value) -> Result<(), PostmanError> {
         .map_err(|error| PostmanError::Schema(error.to_string()))
 }
 
-/// Python's `json.dumps(value, ensure_ascii=False)`: `", "` and `": "` separators.
-fn py_dumps(value: &Value) -> String {
+/// Compact JSON with `", "` and `": "` separators and characters left unescaped, as form
+/// bodies are stored.
+fn spaced_json(value: &Value) -> String {
     match value {
         Value::Array(items) => format!(
             "[{}]",
-            items.iter().map(py_dumps).collect::<Vec<_>>().join(", ")
+            items.iter().map(spaced_json).collect::<Vec<_>>().join(", ")
         ),
         Value::Object(map) => format!(
             "{{{}}}",
             map.iter()
-                .map(|(k, v)| format!("{}: {}", Value::String(k.clone()), py_dumps(v)))
+                .map(|(k, v)| format!("{}: {}", Value::String(k.clone()), spaced_json(v)))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
@@ -72,8 +73,9 @@ fn py_dumps(value: &Value) -> String {
     }
 }
 
-/// Python's `repr()` of a string, as warnings show names.
-fn py_repr(text: &str) -> String {
+/// A name quoted for a warning: in single quotes, or double quotes when it holds a single
+/// quote and no double one.
+fn quoted_name(text: &str) -> String {
     let quote = if text.contains('\'') && !text.contains('"') {
         '"'
     } else {
@@ -102,7 +104,7 @@ fn literal(value: Option<&Value>) -> String {
     match value {
         None | Some(Value::Null) => String::new(),
         Some(Value::String(text)) => text.clone(),
-        Some(other) => py_dumps(other),
+        Some(other) => spaced_json(other),
     }
 }
 
@@ -115,7 +117,7 @@ fn description(value: Option<&Value>) -> String {
     }
 }
 
-/// Python truthiness of a JSON value.
+/// Whether a JSON value is set: not null, false, zero or empty.
 fn truthy(value: Option<&Value>) -> bool {
     match value {
         None | Some(Value::Null) => false,
@@ -127,9 +129,9 @@ fn truthy(value: Option<&Value>) -> bool {
     }
 }
 
-/// Remove `{{ $dynamic }}` placeholders (Python `\{\{\s*\$.*?\}\}`) that Imposter does not
-/// generate; returns whether any was removed. Ones it generates (`$guid`, `$timestamp`, …) stay:
-/// a deliberate divergence from the Python app, which had no generated values.
+/// Remove `{{ $dynamic }}` placeholders (`\{\{\s*\$.*?\}\}`) that Imposter does not
+/// generate; returns whether any was removed. Ones it generates (`$guid`, `$timestamp`, …)
+/// stay, since they will have a value when sent.
 fn strip_dynamic(text: &str) -> Option<String> {
     let mut out = String::with_capacity(text.len());
     let mut found = false;
@@ -243,14 +245,14 @@ impl Decoder {
             {
                 self.loss(
                     location,
-                    &format!("disabled variable {}", py_repr(&key)),
+                    &format!("disabled variable {}", quoted_name(&key)),
                     false,
                 );
             } else {
                 if values.contains_key(&key) {
                     self.loss(
                         location,
-                        &format!("earlier duplicate variable {}", py_repr(&key)),
+                        &format!("earlier duplicate variable {}", quoted_name(&key)),
                         true,
                     );
                 }
@@ -272,7 +274,7 @@ impl Decoder {
         let kind_text = match kind {
             Some(Value::String(text)) => text.clone(),
             None | Some(Value::Null) => "None".to_owned(),
-            Some(other) => py_dumps(other),
+            Some(other) => spaced_json(other),
         };
         if !matches!(kind_text.as_str(), "basic" | "digest" | "bearer") {
             self.loss(location, &format!("{kind_text} authentication"), true);
@@ -471,7 +473,7 @@ impl Decoder {
                 let mode = match mode {
                     Some(Value::String(text)) => text.clone(),
                     None | Some(Value::Null) => "None".to_owned(),
-                    Some(other) => py_dumps(other),
+                    Some(other) => spaced_json(other),
                 };
                 self.loss(location, &format!("{mode} body"), true);
                 request.body_type = BodyType::None;
@@ -862,7 +864,7 @@ fn folder_script_warnings(folders: &[TransferFolder], warnings: &mut Vec<String>
     }
 }
 
-/// Pretty JSON with a trailing newline, as the Python app writes exports.
+/// Pretty JSON with a trailing newline, as native exports are written.
 pub fn to_bytes(value: &Value) -> Vec<u8> {
     let mut bytes = serde_json::to_vec_pretty(value).unwrap_or_default();
     bytes.push(b'\n');
@@ -939,14 +941,14 @@ mod tests {
     }
 
     #[test]
-    fn python_helpers_match() {
+    fn helpers_quote_and_space_as_stored() {
         assert_eq!(
-            py_dumps(&json!({"a": [1, true, null, "é"]})),
+            spaced_json(&json!({"a": [1, true, null, "é"]})),
             r#"{"a": [1, true, null, "é"]}"#
         );
-        assert_eq!(py_repr("a"), "'a'");
-        assert_eq!(py_repr("it's"), "\"it's\"");
-        assert_eq!(py_repr("a'\"b"), "'a\\'\"b'");
+        assert_eq!(quoted_name("a"), "'a'");
+        assert_eq!(quoted_name("it's"), "\"it's\"");
+        assert_eq!(quoted_name("a'\"b"), "'a\\'\"b'");
         assert_eq!(
             strip_dynamic("x{{$randomFirstName}}y{{ $t }}z"),
             Some("xyz".into())

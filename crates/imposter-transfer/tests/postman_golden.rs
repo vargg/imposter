@@ -1,5 +1,6 @@
-//! Postman conversion parity with the Python app (`tests/fixtures/parity/postman.json`, produced
-//! by running the Python adapter itself).
+//! Postman conversion against golden cases (`tests/fixtures/golden/postman.json`): the
+//! document, warnings and consent each input decodes to, and the collection each document
+//! encodes to.
 #![cfg(test)]
 
 use std::path::Path;
@@ -10,11 +11,11 @@ use serde_json::Value;
 
 fn fixture() -> Value {
     let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/parity/postman.json");
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/golden/postman.json");
     serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
 }
 
-/// Form bodies hold JSON arrays that Python and Rust space differently: compare them parsed.
+/// Form bodies hold JSON arrays whose spacing is not part of the format: compare them parsed.
 fn normalize(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -34,43 +35,31 @@ fn normalize(value: &mut Value) {
     }
 }
 
-/// The document as Python would write it. Deliberate divergence: Imposter marks converted
-/// documents as native version 2 (`imposter`), the Python app as version 1 (`poster`); the
-/// content is the same, so the marker is asserted here and then set to Python's.
+/// The document as exported, form bodies parsed.
 fn document_value(document: &NativeDocument) -> Value {
     let mut value: Value = serde_json::from_slice(&encode_native(document)).unwrap();
-    assert_eq!(
-        (&value["format"], &value["version"]),
-        (&Value::from("imposter"), &Value::from(2))
-    );
-    value["format"] = Value::from("poster");
-    value["version"] = Value::from(1);
     normalize(&mut value);
     value
 }
 
 #[test]
-fn decoding_matches_python_including_warnings_and_consent() {
+fn decoding_gives_the_expected_document_warnings_and_consent() {
     for case in fixture()["decode"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
-        if name == "dynamic variables" {
-            // Deliberate divergence: see generated_dynamic_variables_are_kept.
-            continue;
-        }
         let mut decoder = Decoder::default();
         let result = decoder.decode(&case["input"]);
         let expected = &case["expected"];
         if expected.get("error").is_some() {
             assert!(
                 result.is_err(),
-                "{name}: Python rejected it, Rust accepted {result:?}"
+                "{name}: expected a refusal, got {result:?}"
             );
             continue;
         }
         let document = result.unwrap_or_else(|error| panic!("{name}: {error}"));
-        let mut python = expected["document"].clone();
-        normalize(&mut python);
-        assert_eq!(document_value(&document), python, "{name}: document");
+        let mut wanted = expected["document"].clone();
+        normalize(&mut wanted);
+        assert_eq!(document_value(&document), wanted, "{name}: document");
         let warnings: Vec<String> = serde_json::from_value(expected["warnings"].clone()).unwrap();
         assert_eq!(decoder.warnings, warnings, "{name}: warnings");
         assert_eq!(
@@ -82,7 +71,7 @@ fn decoding_matches_python_including_warnings_and_consent() {
 }
 
 #[test]
-fn companions_match_python() {
+fn companions_add_their_environments_and_globals() {
     for case in fixture()["companions"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let mut decoder = Decoder::default();
@@ -109,7 +98,7 @@ fn companions_match_python() {
 }
 
 #[test]
-fn encoding_matches_python() {
+fn encoding_gives_the_expected_collection_and_warnings() {
     let fixture = fixture();
     for case in fixture["encode"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
@@ -126,20 +115,21 @@ fn encoding_matches_python() {
     );
 }
 
-/// The Python app removed every Postman dynamic variable, with consent. Imposter generates
-/// `$guid`, `$timestamp`, `$randomInt` and the rest of its own, so those stay as they are and
-/// need no consent; only the ones it cannot generate are removed, as before.
+/// Imposter generates `$guid`, `$timestamp`, `$randomInt` and the rest of its own, so those
+/// Postman dynamic variables stay as they are and need no consent; only the ones it cannot
+/// generate are removed, with consent.
 #[test]
 fn generated_dynamic_variables_are_kept() {
-    let case = fixture()["decode"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|case| case["name"] == "dynamic variables")
-        .unwrap()
-        .clone();
+    let input = serde_json::json!({
+        "info": {"name": "C", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+        "item": [{"name": "R", "request": {
+            "method": "GET",
+            "url": "http://h/{{$guid}}?t={{ $timestamp }}",
+            "header": [{"key": "X", "value": "{{$randomInt}}"}]
+        }}]
+    });
     let mut decoder = Decoder::default();
-    let document = decoder.decode(&case["input"]).unwrap();
+    let document = decoder.decode(&input).unwrap();
     let request = &document.collection.requests[0];
     assert!(
         request.url.starts_with("http://h/{{$guid}}"),
@@ -156,13 +146,8 @@ fn generated_dynamic_variables_are_kept() {
     assert_eq!(request.headers[0].value, "{{$randomInt}}");
     assert!(decoder.warnings.is_empty(), "{:?}", decoder.warnings);
     assert!(!decoder.requires_removal);
-    assert_eq!(
-        case["expected"]["warnings"].as_array().unwrap().len(),
-        2,
-        "Python removed them"
-    );
 
-    let mut input = case["input"].clone();
+    let mut input = input.clone();
     input["item"][0]["request"]["header"][0]["value"] = "{{$randomFirstName}}".into();
     let mut decoder = Decoder::default();
     let document = decoder.decode(&input).unwrap();

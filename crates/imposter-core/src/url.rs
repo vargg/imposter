@@ -1,6 +1,5 @@
-//! URL and query handling with the exact semantics of Python's `urllib.parse`
-//! (`urlsplit`, `quote_plus`, `urlencode`, `parse_qsl`), which the Python app used to build
-//! the request line. Parity is pinned by `tests/fixtures/parity/prepare.json`.
+//! URL and query handling for the request line: splitting a typed URL, and quoting, encoding
+//! and parsing query pairs. Pinned by `tests/fixtures/golden/prepare.json`.
 
 use std::fmt::Write as _;
 
@@ -18,8 +17,8 @@ fn is_scheme_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')
 }
 
-/// Python's `urlsplit`: strips leading C0 controls and spaces, removes tabs and newlines, and
-/// treats `name:` as a scheme only when it starts with a letter.
+/// Split a typed URL: leading C0 controls and spaces are stripped, tabs and newlines removed,
+/// and `name:` is a scheme only when it starts with a letter.
 pub fn split(url: &str) -> UrlParts {
     let cleaned: String = url
         .trim_start_matches(|c: char| c <= ' ')
@@ -55,7 +54,7 @@ pub fn split(url: &str) -> UrlParts {
     }
 }
 
-/// Python's `urlunsplit` for the request line: no fragment.
+/// The request line's URL from its parts: no fragment.
 pub fn join(parts: &UrlParts) -> String {
     let mut url = String::new();
     if !parts.scheme.is_empty() {
@@ -87,7 +86,8 @@ pub fn join_with_fragment(parts: &UrlParts) -> String {
     url
 }
 
-/// Python's `quote_plus(value, safe="")`: letters, digits and `_.-~` stay, space becomes `+`.
+/// Quote for a query: letters, digits and `_.-~` stay, space becomes `+`, every other byte
+/// is `%XX`.
 pub fn quote_plus(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -105,7 +105,7 @@ pub fn quote_plus(value: &str) -> String {
     out
 }
 
-/// Python's `urlencode` over ordered pairs.
+/// `name=value` pairs joined with `&`, both quoted, in their order.
 pub fn encode_pairs<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
     pairs
         .into_iter()
@@ -114,7 +114,7 @@ pub fn encode_pairs<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> 
         .join("&")
 }
 
-/// Python's `unquote_plus`: `+` is a space, valid `%XX` escapes are decoded, invalid escapes
+/// Unquote a query part: `+` is a space, valid `%XX` escapes are decoded, invalid escapes
 /// stay as typed, and invalid UTF-8 becomes U+FFFD.
 pub fn unquote_plus(value: &str) -> String {
     let bytes = value.as_bytes();
@@ -149,7 +149,7 @@ fn hex(digit: u8) -> u8 {
     }
 }
 
-/// Python's `parse_qsl(query, keep_blank_values=True)`: pairs split on `&`, a missing `=`
+/// Query pairs: split on `&`, a missing `=`
 /// means an empty value, empty segments are skipped.
 pub fn parse_pairs(query: &str) -> Vec<(String, String)> {
     query
@@ -167,7 +167,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn split_matches_python() {
+    fn split_cleans_and_finds_the_scheme() {
         let parts = split("HTTP://Example.com:80/a b?q=1#frag");
         assert_eq!(
             parts,
@@ -201,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn quoting_matches_python() {
+    fn quoting_keeps_only_unreserved_bytes() {
         assert_eq!(
             encode_pairs([("a b", "~*!'()/é"), ("x", "")]),
             "a+b=~%2A%21%27%28%29%2F%C3%A9&x="
@@ -209,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn parsing_matches_python() {
+    fn parsing_keeps_blank_values_and_skips_empty_segments() {
         assert_eq!(
             parse_pairs("a=1&&b&c=%zz&d=%ff+x;e=1&t=%4"),
             [

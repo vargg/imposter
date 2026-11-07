@@ -156,8 +156,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "Local API",
             "description": "Sample local API",
@@ -416,8 +416,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -496,8 +496,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -579,8 +579,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -634,95 +634,6 @@
       }
     },
     {
-      "name": "dynamic variables",
-      "input": {
-        "info": {
-          "name": "C",
-          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-        },
-        "item": [
-          {
-            "name": "R",
-            "request": {
-              "method": "GET",
-              "url": "http://h/{{$guid}}?t={{ $timestamp }}",
-              "header": [
-                {
-                  "key": "X",
-                  "value": "{{$randomInt}}"
-                }
-              ]
-            }
-          }
-        ]
-      },
-      "expected": {
-        "document": {
-          "format": "poster",
-          "version": 1,
-          "collection": {
-            "name": "C",
-            "description": "",
-            "variables": {},
-            "folders": [],
-            "requests": [
-              {
-                "position": 0,
-                "name": "R",
-                "description": "",
-                "method": "GET",
-                "protocol": "",
-                "url": "http://h/",
-                "path": "",
-                "auth": {
-                  "type": null,
-                  "basic": null,
-                  "digest": null,
-                  "bearer_token": null
-                },
-                "queries": [
-                  {
-                    "name": "t",
-                    "value": "",
-                    "is_enabled": true
-                  }
-                ],
-                "headers": [
-                  {
-                    "name": "X",
-                    "value": "",
-                    "is_enabled": true
-                  }
-                ],
-                "cookies": [],
-                "body": "",
-                "body_type": "none",
-                "options": {
-                  "follow_redirects": null,
-                  "verify_ssl": null,
-                  "attach_cookies": null,
-                  "proxy_url": null,
-                  "timeout": null,
-                  "ca_bundle": null,
-                  "certificate_path": null,
-                  "key_file": null,
-                  "password": null,
-                  "download_limit": null
-                }
-              }
-            ]
-          },
-          "environments": [],
-          "globals": {}
-        },
-        "warnings": [
-          "C/R: Postman dynamic variables will be removed",
-          "C/R: Postman dynamic variables will be removed"
-        ],
-        "requires_removal": true
-      }
-    },
-    {
       "name": "url object without raw",
       "input": {
         "info": {
@@ -761,8 +672,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -848,8 +759,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -919,8 +830,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -995,8 +906,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1075,8 +986,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1163,8 +1074,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1242,8 +1153,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1324,8 +1235,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1399,8 +1310,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1471,8 +1382,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1593,8 +1504,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1675,8 +1586,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1769,8 +1680,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1800,8 +1711,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1833,8 +1744,8 @@
       },
       "expected": {
         "document": {
-          "format": "poster",
-          "version": 1,
+          "format": "imposter",
+          "version": 2,
           "collection": {
             "name": "C",
             "description": "",
@@ -1874,8 +1785,8 @@
     {
       "name": "full",
       "document": {
-        "format": "poster",
-        "version": 1,
+        "format": "imposter",
+        "version": 2,
         "collection": {
           "name": "Full collection",
           "description": "Every field the native format carries",
@@ -2659,8 +2570,8 @@
     {
       "name": "minimal",
       "document": {
-        "format": "poster",
-        "version": 1,
+        "format": "imposter",
+        "version": 2,
         "collection": {
           "name": "Minimal",
           "description": "",

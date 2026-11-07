@@ -1,6 +1,6 @@
 [package]
 name = "imposter-transfer"
-description = "Native .imposter.json (v2) and .poster.json (v1), Postman v2.1 and OpenAPI 3 conversion, validation and import preview."
+description = "Native .imposter.json, Postman v2.1 and OpenAPI 3 conversion, validation and import preview."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

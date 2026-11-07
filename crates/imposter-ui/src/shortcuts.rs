@@ -18,7 +18,7 @@ const COMMAND_SHIFT: Modifiers = Modifiers::COMMAND.plus(Modifiers::SHIFT);
 const CTRL_SHIFT: Modifiers = Modifiers::CTRL.plus(Modifiers::SHIFT);
 
 pub const SEND: KeyboardShortcut = key(Modifiers::COMMAND, Key::Enter);
-/// The Python app's Run shortcut.
+/// Send as "Run", where many tools put it.
 pub const SEND_ALT: KeyboardShortcut = key(Modifiers::COMMAND, Key::R);
 pub const SAVE: KeyboardShortcut = key(Modifiers::COMMAND, Key::S);
 pub const NEW: KeyboardShortcut = key(Modifiers::COMMAND, Key::N);

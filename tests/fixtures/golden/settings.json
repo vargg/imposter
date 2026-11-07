@@ -13,7 +13,8 @@
       "download_limit": 10,
       "autosave": true,
       "history_max_entries": 1000,
-      "history_max_bytes": 262144000
+      "history_max_bytes": 262144000,
+      "allow_production_from_cli": false
     },
     "options": {
       "follow_redirects": null,
@@ -40,7 +41,8 @@
       "download_limit": 10,
       "autosave": true,
       "history_max_entries": 1000,
-      "history_max_bytes": 262144000
+      "history_max_bytes": 262144000,
+      "allow_production_from_cli": false
     }
   },
   {
@@ -57,7 +59,8 @@
       "download_limit": 10,
       "autosave": true,
       "history_max_entries": 1000,
-      "history_max_bytes": 262144000
+      "history_max_bytes": 262144000,
+      "allow_production_from_cli": false
     },
     "options": {
       "follow_redirects": false,
@@ -84,7 +87,8 @@
       "download_limit": 10,
       "autosave": true,
       "history_max_entries": 1000,
-      "history_max_bytes": 262144000
+      "history_max_bytes": 262144000,
+      "allow_production_from_cli": false
     }
   },
   {
@@ -101,7 +105,8 @@
       "download_limit": 10,
       "autosave": true,
       "history_max_entries": 1000,
-      "history_max_bytes": 262144000
+      "history_max_bytes": 262144000,
+      "allow_production_from_cli": false
     },
     "options": {
       "follow_redirects": null,
@@ -128,7 +133,8 @@
       "download_limit": 10,
       "autosave": true,
       "history_max_entries": 1000,
-      "history_max_bytes": 262144000
+      "history_max_bytes": 262144000,
+      "allow_production_from_cli": false
     }
   },
   {
@@ -145,7 +151,8 @@
       "download_limit": 10,
       "autosave": true,
       "history_max_entries": 1000,
-      "history_max_bytes": 262144000
+      "history_max_bytes": 262144000,
+      "allow_production_from_cli": false
     },
     "options": {
       "follow_redirects": null,
@@ -172,7 +179,8 @@
       "download_limit": 0,
       "autosave": true,
       "history_max_entries": 1000,
-      "history_max_bytes": 262144000
+      "history_max_bytes": 262144000,
+      "allow_production_from_cli": false
     }
   }
 ]

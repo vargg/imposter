@@ -1,11 +1,11 @@
 [
   {
     "name": "minimal",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -19,11 +19,11 @@
   },
   {
     "name": "empty request object uses defaults",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{}]}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{}]}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -70,101 +70,81 @@
   },
   {
     "name": "unknown top-level field",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}, \"extra\": 1}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}, \"extra\": 1}",
+    "accepted": false
   },
   {
     "name": "unknown collection field",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [], \"extra\": 1}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [], \"extra\": 1}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "unknown request field",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"bogus\": 1}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"bogus\": 1}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "unknown auth field",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": null, \"oauth\": null}}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": null, \"oauth\": null}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "unknown option",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"retries\": 3}}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"retries\": 3}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "unknown param field",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"headers\": [{\"name\": \"a\", \"value\": \"b\", \"note\": \"\"}]}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"headers\": [{\"name\": \"a\", \"value\": \"b\", \"note\": \"\"}]}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
-    "name": "version 2",
-    "document": "{\"format\": \"poster\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "name": "unsupported version",
+    "document": "{\"format\": \"imposter\", \"version\": 4, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "other format",
     "document": "{\"format\": \"postman\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "accepted": false
   },
   {
-    "name": "missing format uses default",
-    "document": "{\"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
-    "accepted": true,
-    "result": {
-      "format": "poster",
-      "version": 1,
-      "collection": {
-        "name": "C",
-        "description": "",
-        "variables": {},
-        "folders": [],
-        "requests": []
-      },
-      "environments": [],
-      "globals": {}
-    }
+    "name": "the old poster marker",
+    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
+  },
+  {
+    "name": "missing format",
+    "document": "{\"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "missing collection",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "empty collection name",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "empty folder name",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [{\"name\": \"\"}], \"requests\": []}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [{\"name\": \"\"}], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "empty environment name",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [{\"name\": \"\"}], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [{\"name\": \"\"}], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "custom method token",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"PROPFIND\"}]}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"PROPFIND\"}]}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -211,11 +191,11 @@
   },
   {
     "name": "lowercase method",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"get\"}]}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"get\"}]}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -262,35 +242,31 @@
   },
   {
     "name": "method with space",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"GE T\"}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValueError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"GE T\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "empty method",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"\"}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValueError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "non-ascii method",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"GÉT\"}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValueError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"method\": \"G\\u00c9T\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "auth type without config",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": \"basic\"}}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValueError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": \"basic\"}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "auth with config",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": \"basic\", \"basic\": {\"username\": \"u\", \"password\": \"p\"}}}]}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": \"basic\", \"basic\": {\"username\": \"u\", \"password\": \"p\"}}}]}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -340,41 +316,36 @@
   },
   {
     "name": "unknown auth type",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": \"oauth2\"}}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"auth\": {\"type\": \"oauth2\"}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "unknown body type",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"graphql\"}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"graphql\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "form body not an array",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"urlencoded\", \"body\": \"eyJhIjogMX0=\"}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValueError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"urlencoded\", \"body\": \"eyJhIjogMX0=\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "form body bad item",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"form-data\", \"body\": \"W3sibmFtZSI6ICJhIn1d\"}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"form-data\", \"body\": \"W3sibmFtZSI6ICJhIn1d\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "form body item with kind",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"urlencoded\", \"body\": \"W3sibmFtZSI6ICJhIiwgInZhbHVlIjogImIiLCAia2luZCI6ICJmaWxlIn1d\"}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"urlencoded\", \"body\": \"W3sibmFtZSI6ICJhIiwgInZhbHVlIjogImIiLCAia2luZCI6ICJmaWxlIn1d\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "multipart item with kind",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"W3sibmFtZSI6ICJhIiwgInZhbHVlIjogImIiLCAia2luZCI6ICJmaWxlIn1d\"}]}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"W3sibmFtZSI6ICJhIiwgInZhbHVlIjogImIiLCAia2luZCI6ICJmaWxlIn1d\"}]}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -421,23 +392,21 @@
   },
   {
     "name": "multipart bad kind",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"W3sibmFtZSI6ICJhIiwgInZhbHVlIjogImIiLCAia2luZCI6ICJ1cmwifV0=\"}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"W3sibmFtZSI6ICJhIiwgInZhbHVlIjogImIiLCAia2luZCI6ICJ1cmwifV0=\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "form body not json",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"bm90IGpzb24=\"}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "JSONDecodeError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"bm90IGpzb24=\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "empty form body",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"\"}]}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body_type\": \"multipart\", \"body\": \"\"}]}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -484,11 +453,11 @@
   },
   {
     "name": "standard base64 alphabet",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body\": \"+/8APj8=\"}]}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body\": \"+/8APj8=\"}]}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -535,11 +504,11 @@
   },
   {
     "name": "unpadded base64",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body\": \"-_8APj8\"}]}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body\": \"-_8APj8\"}]}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -586,29 +555,26 @@
   },
   {
     "name": "invalid base64",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body\": \"a b\"}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"body\": \"a b\"}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "zero timeout",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"timeout\": 0}}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"timeout\": 0}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "negative download limit",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"download_limit\": -1}}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"download_limit\": -1}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "integer timeout",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"timeout\": 5}}]}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"options\": {\"timeout\": 5}}]}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -655,17 +621,16 @@
   },
   {
     "name": "null param value",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"headers\": [{\"name\": \"a\", \"value\": null}]}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false,
-    "result": "ValidationError"
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"headers\": [{\"name\": \"a\", \"value\": null}]}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "param without is_enabled",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"headers\": [{\"name\": \"a\", \"value\": \"b\"}]}]}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"headers\": [{\"name\": \"a\", \"value\": \"b\"}]}]}, \"environments\": [], \"globals\": {}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",
@@ -718,11 +683,11 @@
   },
   {
     "name": "duplicate variables keep the last",
-    "document": "{\"format\": \"poster\", \"version\": 1, \"collection\": {\"name\": \"C\", \"variables\": {\"a\": \"1\", \"a\": \"2\"}}}",
+    "document": "{\"format\": \"imposter\", \"version\": 2, \"collection\": {\"name\": \"C\", \"variables\": {\"a\": \"2\"}}}",
     "accepted": true,
     "result": {
-      "format": "poster",
-      "version": 1,
+      "format": "imposter",
+      "version": 2,
       "collection": {
         "name": "C",
         "description": "",

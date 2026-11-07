@@ -380,7 +380,7 @@ async fn requests_that_cannot_be_sent_are_rejected_and_not_recorded() {
     let second = execute(&store.handle(), bad_url, CancellationToken::new()).await;
 
     assert!(matches!(first, Err(ExecuteError::Unresolved(ref names)) if names == &["missing"]));
-    // Unlike the Python app, which recorded URL errors as transport errors: nothing was sent.
+    // A URL error is not a transport error: nothing was sent.
     assert!(
         matches!(second, Err(ExecuteError::Invalid(ref m)) if m == "Enter an absolute HTTP or HTTPS URL")
     );

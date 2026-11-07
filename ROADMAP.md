@@ -176,7 +176,6 @@ Revisit when a real task is blocked. A competitor's feature list is not that tas
 | Postman `pm.*` compatibility | That is a JavaScript runtime. The Rhai decision stands; import keeps saying what it dropped. |
 | One MCP tool per endpoint, a hosted MCP service, or an MCP client for testing other servers | A stable small tool list is the point of the experiment. Testing MCP servers is a different product. |
 | A security scanner or a fuzzer | A check is not a scan. |
-| Further parity work whose only purpose is to resemble the old Python app | Its import stays. |
 
 ## Decisions
 

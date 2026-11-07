@@ -1,7 +1,7 @@
 //! The request editor's form state and its conversion to and from a [`Request`].
 //!
 //! Widgets edit these fields directly; [`Editor::to_request`] builds what is saved and sent.
-//! Rows without a name are kept while editing but never saved, as in the Python app.
+//! Rows without a name are kept while editing but never saved: a half-typed row is not data.
 
 use imposter_app::core::ids::RequestId;
 use imposter_app::core::model::{
@@ -250,7 +250,7 @@ impl OptionsForm {
     }
 }
 
-/// `30` rather than `30.0`, as Python's `str()` of a whole float would not, but readable.
+/// `30` rather than `30.0`: a whole number reads as one.
 fn format_number(value: f64) -> String {
     let text = value.to_string();
     text.strip_suffix(".0").map_or(text.clone(), str::to_owned)

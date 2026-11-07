@@ -1,8 +1,7 @@
 # Imposter agent manual
 
-Imposter is a local desktop HTTP API client written in Rust (egui/eframe). It rewrites the
-Python/PyQt6 prototype at `~/dev/pystman`, which stays the reference implementation; its
-`AGENTS.md` is the behavioral spec. Port behaviors, not code structure.
+Imposter is a local desktop HTTP API client written in Rust (egui/eframe), with a command
+line in the same binary.
 
 ## About this file
 
@@ -132,15 +131,15 @@ numbers, so both are excluded. Each logical change is its own commit.
   Why: logs end up in bug reports and screenshots.
   Enforced by: `imposter-http/tests/logging.rs` (trace-level capture, dependencies included).
   Transport error messages drop the URL, which can carry `user:password@`.
-- **The app's data is `~/.imposter/imposter.db`, overridable with `IMPOSTER_DATA_DIR`. Never read or
-  write the Python app's database files.**
-  Why: the Python app must keep working; users migrate through `.poster.json` export and import.
+- **The app's data is `~/.imposter/imposter.db`, overridable with `IMPOSTER_DATA_DIR`.**
+  Why: one place to back up, and tests and second profiles point elsewhere without touching
+  it.
 
 ## Decisions
 
-- **Rust only, one native binary per OS; no webview, JVM or own C/C++.** Why: the Python app was
-  hard to distribute (a specific interpreter plus a resolved environment). Speed and memory must
-  not get worse, but are secondary.
+- **Rust only, one native binary per OS; no webview, JVM or own C/C++.** Why: one file per OS
+  to distribute, with no interpreter or runtime to install. Speed and memory matter, but come
+  second.
 - **GUI: egui + eframe (glow backend); Iced not needed.** Why: the most mature tables, trees and
   panels, custom text layout for `{{var}}` highlighting, and a UI test harness (`egui_kittest`,
   headless, no GPU). Slint was rejected for limited text-editing control and license
@@ -202,7 +201,7 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Two themes from one set of named roles** (`theme::Palette`: background, surface, input,
   field_border, selected_bar, text, tones, syntax…, as `DARK` and `LIGHT`).
   - **Setting:** Settings → Appearance → Dark / Light / System; it applies at once and is
-    stored in UI state (`appearance`), not in the Python-shaped application settings.
+    stored in UI state (`appearance`), not in the application settings, which govern sends.
   - **Reading colors:** widgets read colors through `theme::palette()`, a thread-local that
     `theme::begin_frame` sets from the frame's theme. egui draws a frame on one thread, and a
     context-free lookup keeps helpers like `tone_text` simple.
@@ -335,8 +334,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   A decryption that is not a key is a wrong password: about once in 256 tries a wrong one
   passes the padding check and yields noise, which was reported as an invalid PEM file (and
   made `encrypted_key_errors_are_specific` flaky).
-- **HTTP/1.1 only.** Why: matches the Python app (httpx default) and keeps the wire format the
-  tests pin; HTTP/2 settings are out of scope.
+- **HTTP/1.1 only.** Why: it keeps the wire format the tests pin byte for byte; HTTP/2 waits
+  for a target API that needs it (ROADMAP.md).
 - **Load runs send one request many times, apart from Send** (`imposter_app::load`,
   `imposter_core::load`), as `ab` does with JMeter's measures.
   - **Plan** (`LoadPlan`, checked when built): requests in total (1 to 1,000,000, as `ab`
@@ -415,7 +414,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   defaults).
 - **Variables are ordered JSON objects** (collections, environments, the single `globals` row).
   No environment may be named `Global`, which names the globals scope. Why: order is kept for
-  display and export, and saving a scope replaces it whole, as in the Python app.
+  display and export, and saving a scope replaces it whole, so a save never merges.
 - **An environment may have a color** (`model::EnvColor`: red, yellow, green, blue, purple,
   or none), stored by name in a column whose CHECK admits only those names (migration V4)
   and exported in native version 2; Postman has no equivalent and leaves it out. A new
@@ -453,18 +452,19 @@ numbers, so both are excluded. Each logical change is its own commit.
   `via` is left out of the payload for Send, so older records read the same. Why: the list must not decode multi-megabyte payloads; details load one.
   Retention deletes oldest first by count and total payload size; a record larger than the
   whole budget is refused.
-- **Redirects are followed by `imposter-http`, not reqwest, with httpx's rules:** at most 20;
+- **Redirects are followed by `imposter-http`, not reqwest:** at most 20;
   303 becomes GET (except HEAD), 301/302 turn POST into a bodiless GET; 307/308 keep the method
   and replay the body; `Authorization` is dropped across origins (except an http→https upgrade
   of the same host); explicit `Cookie` headers are never carried to the next location. Why:
-  reqwest cannot replay streamed uploads, and users expect the Python app's behavior.
+  reqwest cannot replay streamed uploads, and credentials must not follow a redirect to
+  another origin.
 - **Digest is answered once per hop** (MD5, SHA, SHA-256, SHA-512, `-sess`, qop `auth`; not
   `auth-int`), rebuilding the body for the retry. Verified against the RFC 2617/7616 vectors.
-- **Uploads stream with chunked transfer encoding** (no `Content-Length`), as httpx does, and
-  are reopened for every attempt. Multipart parts match the Python app byte for byte
-  (`parity/multipart.json`).
-- **Timeouts apply to connecting and to each read**, not to the whole exchange, as in httpx: a
-  slow but steady download is not cut off.
+- **Uploads stream with chunked transfer encoding** (no `Content-Length`) and are reopened for
+  every attempt, so a large file is never held in memory and a redirect or Digest retry can
+  send it again. Multipart bytes are pinned by `golden/multipart.json`.
+- **Timeouts apply to connecting and to each read**, not to the whole exchange: a slow but
+  steady download is not cut off.
 - **Response headers arrive grouped by name and lowercased, and the reason phrase is the
   standard one for the status.** Why: hyper exposes neither the received order across names
   nor custom reason phrases. Values of one name keep their order.
@@ -528,8 +528,8 @@ numbers, so both are excluded. Each logical change is its own commit.
     `imposter-core/tests/run_result.rs` and its golden file
     `tests/fixtures/results/sent.imposter-result.json`.
 - **Requests that cannot be sent are not history.** Unresolved variables, a bad URL, auth or
-  cookie conflicts, a failed before-sending script are reported and nothing is recorded (the Python app recorded URL errors as
-  transport errors). Cancelled and failed sends are recorded with their outcome. A failed
+  cookie conflicts, a failed before-sending script are reported and nothing is recorded: a
+  URL error is not a transport error, since nothing was sent. Cancelled and failed sends are recorded with their outcome. A failed
   history write keeps the response and says so (`history_error`).
 - **The saver is plain UI-side state** (`imposter_app::saver`): one write in flight at a time,
   the newest snapshot per request, failures kept for retry or explicit discard. The UI runs
@@ -546,8 +546,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   Save adds it to (Save as new request / Discard / Stay), because "Save changes to …" read as
   overwriting the request the draft came from. Closing uses the same guard after background work drained, then writes
   UI state (layout, last selection, window) and closes; any failure keeps the window open.
-- **The tree is refreshed after a save that changed a request's method or name** (the Python app
-  left it stale).
+- **The tree is refreshed after a save that changed a request's method or name**, so it never
+  shows a stale name.
 - **The tree is reordered by dragging, by Move up and Move down, or by Alt+↑/↓.**
   - **Drop zones** (`workspace::drop_zone`): on a folder, the top and bottom quarters drop
     before and after it and the middle into it (last); under an open folder's header the
@@ -594,8 +594,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   every primary task step by step and the states a design review needs (first start,
   loading, errors, dialogs) at the minimum and a wide size. Design reviews follow the
   `design-ux` procedure: a reviewer that did not build the screens scores the tour.
-- **Variables in the editor:** fields mark `{{name}}` tokens with the Python app's highlight
-  pattern (`\{\{([^{}\n]+)\}\}`, stricter than the resolution pattern): defined names and
+- **Variables in the editor:** fields mark `{{name}}` tokens with the highlight pattern
+  `\{\{([^{}\n]+)\}\}` (stricter than the resolution pattern, so half-typed text is not marked): defined names and
   generated values in the accent color, unknown ones in the error color on a red tint
   (the two colors are equally bright, so hue alone failed colour-blind users). Typing `{{` suggests names with their scope and
   source, never values; the list opens only from typing in an unfinished token (clicking into
@@ -684,8 +684,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   printed as code (the review's #43–#46).
 - **The layout is a switch, not a mode:** side by side or stacked, changed only by the status
   bar's two layout buttons (the current one selected: one button showing the other
-  layout's icon read as the current state), never by the window width. The window can shrink to 720×480 (`MIN_WINDOW`; the
-  Python app's 1000×650 took more than half a laptop screen), so narrow panes adapt instead
+  layout's icon read as the current state), never by the window width. The window can shrink to 720×480 (`MIN_WINDOW`;
+  1000×650 took more than half a laptop screen), so narrow panes adapt instead
   of wrapping: single-line fields and button labels never wrap (a long label is cut, with
   the whole text on hover).
   Why: an automatic choice next to a manual one made the button seem broken. The sidebar
@@ -815,10 +815,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   file IO, sleeps, `block_on` and synchronous file dialogs. Only test and example crates allow
   them, at their top, and `window_state`, which runs before the window exists. Why: a frozen
   window is the most visible failure a desktop app has.
-- **Settings follow the Python screen** (fields, ranges, units) and save only on Save
-  Settings, against a baseline: undoing an edit is not a change. Settings the screen does not
+- **Settings save only on Save Settings**, against a baseline: undoing an edit is not a change. Settings the screen does not
   show are kept. Closing asks about unsaved settings after the request and variables guards.
-  Saving applies history retention at once (the Python app waited for the next send), so the
+  Saving applies history retention at once, not at the next send, so the
   limits the History screen shows are already true. The screen is one form: section headings
   instead of framed groups, one label column shared by every section (`LABEL_COLUMN`), at most
   720 points wide, with a line of help under fields that need it. Every path field has
@@ -834,7 +833,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   print them (`shortcuts::keys`: "Ctrl", "/", "Esc"; "⇧", "⌘" on a Mac), and the palette
   draws the same caps: egui's "Ctrl+Shift+Slash" in one cap had to be translated (Q12).
   The sheet's keys column fits its widest row, so every description starts in line.
-  Cmd/Ctrl+R sends (the Python app's Run); F2 renames, with Ctrl+Shift+R because F2 needs Fn
+  Cmd/Ctrl+R sends too ("Run" in many tools); F2 renames, with Ctrl+Shift+R because F2 needs Fn
   on Mac keyboards (Yaak's choice). egui ignores extra Shift/Alt when matching, so the
   handler consumes the most specific combinations first. Find, Alt+Enter and Esc are listed
   but stay with the widget they act on (Find with the viewer under the pointer). Why: one
@@ -968,23 +967,20 @@ numbers, so both are excluded. Each logical change is its own commit.
   the icon cannot drift from the theme.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
-- **Native format: version 1 (`"format": "poster"`) is read as the Python app's contract;
-  Imposter writes version 2 (`"format": "imposter"`), which adds request checks, captures,
-  saved values and environment colors.** New exports
-  use `.imposter.json`; imports accept both extensions and both versions without a companion
-  prompt. A document keeps its version when decoded and encoded again, so Python exports still
-  round-trip byte for byte (`imposter-transfer/tests/native_golden.rs`); markers and versions
-  must agree, and a version 1 document with checks, captures, saved values or colors is
-  refused rather than half-read. Fields
-  only version 2 has are left out when empty, so its requests otherwise look like version 1.
-  Why: moving from the Python app stays supported, and Imposter-only data travels with the
-  collection instead of being dropped (user's choice); the cost is that the Python app cannot
-  read new exports. Bytes are base64 with the URL-safe alphabet and padding, as Pydantic
-  writes them; both alphabets are read.
+- **Native format: `.imposter.json`, marked `"format": "imposter"`, version 2 or 3.** Version 2
+  holds a collection with its folders, requests, checks, captures, variables, saved values,
+  environments and colors. The marker and version are required and unknown fields are
+  refused at every level, so a file from another tool is refused rather than half-read; a
+  file with any other marker is reported as native, not tried as Postman. A document keeps
+  its version when decoded and encoded again, and its bytes round-trip exactly
+  (`imposter-transfer/tests/native_golden.rs`, with the cases in
+  `tests/fixtures/native/decode-cases.json`). Bytes are base64 with the URL-safe alphabet
+  and padding; both alphabets are read. Why: one strict format whose exports diff line by
+  line. Earlier formats are not read: nothing using them was released (user's choice).
   Version 3 (still `"imposter"`) adds scripts, on requests and on the collection and its
   folders. An export takes the lowest version that holds it (`NativeDocument::fit_version`:
   3 only when something has scripts), so script-free exports stay readable by Imposter
-  0.4; a version 1 or 2 document with scripts is refused, naming what has them. Postman exports list scripts as not exported (Postman's are
+  0.4; a version 2 document with scripts is refused, naming what has them. Postman exports list scripts as not exported (Postman's are
   JavaScript), and Postman's own scripts are still removed on import, with consent. The
   import review says how many requests have scripts. A script changes only its own request
   and reads only the variables that request could already use, so it adds no way out
@@ -1123,16 +1119,16 @@ numbers, so both are excluded. Each logical change is its own commit.
   global values win, with a warning. Postman losses that change how a request runs (scripts,
   unsupported auth or bodies) need the explicit "Remove the listed unsupported execution
   features" consent, enforced by the service (`TransferError::ConsentRequired`), not only by
-  the dialog. Other losses are warnings. Why: the Python app's contract; an import must be
-  undoable by deleting the new collection.
+  the dialog. Other losses are warnings. Why: an import must be undoable by deleting the new
+  collection.
 - **Postman files are validated against the bundled v2.1 schema (draft 4), offline.** The file
   is pinned by SHA-256 (`imposter-transfer/schemas/README.md`, checked by `tests/schema_pin.rs`).
 - **Exports are opt-in and atomic.** Environments and globals are included only when checked.
   The open request is exported as the editor shows it, unsaved edits included. Files are
   written to a temporary file and renamed; a Postman bundle with companions goes to a new
-  directory and never overwrites one. Tied sibling positions are renumbered on export, as the
-  Python app does, so a trip through the database keeps content and order, not tied numbers.
-- **curl in and out** (`imposter_core::curl`; the Python app has none). Import parses POSIX
+  directory and never overwrites one. Tied sibling positions are renumbered on export, so a
+  trip through the database keeps content and order, not tied numbers.
+- **curl in and out** (`imposter_core::curl`). Import parses POSIX
   shell quoting (including `$'…'`) and cmd's `^` escapes, maps the options browsers' "Copy as
   cURL" and hand-written commands use, reports others as warnings, and always opens the result
   as an unsaved draft. Copy as curl writes what Send would send now (variables resolved, auth
@@ -1155,8 +1151,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   included once and size capped. Swagger 2.0 is refused rather than half-supported. Files are
   recognised by content, not extension (`transfer::detect`), so only Postman files are asked
   for companions. YAML goes through `serde-saphyr` with a node budget scaled to the file
-  size, which refuses alias bombs. There is no Python implementation to check parity against;
-  the expectations are in `imposter-transfer/tests/openapi.rs`.
+  size, which refuses alias bombs. The expectations are in
+  `imposter-transfer/tests/openapi.rs`.
 - **File dialogs go through one seam** (`ImposterApp::pick`); tests answer them with
   `script_file_dialogs`, since native dialogs cannot be driven headless.
 - **Every dialog ends with the same button row** (`dialogs::buttons`), except a sheet with
@@ -1181,14 +1177,12 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Each dialog kind has its own modal id.** Why: a dialog replacing another (the import review
   followed by the unsaved-changes guard) inherited the old one's area, so a click on its buttons
   counted as a click outside and cancelled it.
-- **Parity with the Python app is tested against fixtures produced by running the Python code**
-  (`tests/fixtures/python/generate.py`), never against expectations written by hand. Why: a
-  port written from reading code copies the reader's misreadings. Change a fixture only by
-  regenerating it; a deliberate divergence is asserted in its own test with the reason.
-  Current divergences: no empty `Cookie:` header when every cookie is disabled; converted
-  documents are marked native version 2; Postman dynamic variables Imposter generates are
-  kept rather than removed; stored settings gain `allow_production_from_cli` when it is on
-  (left out while off, so default settings keep the Python shape).
+- **Golden fixtures pin exact behavior** (`tests/fixtures/golden`: request preparation,
+  variable and settings resolution, multipart bytes, Postman conversion;
+  `tests/fixtures/native`: documents and the accepted and refused cases). A change to one is
+  a change of behavior: it is made in the same commit as the code, with the reason in the
+  commit message. Why: they record behavior as it was verified when the cases were written;
+  a test that only compares the code with itself would not catch a regression.
 - **No line-ending conversion** (`.gitattributes`: `* -text`). Why: fixtures, golden exports
   and the pinned schema are compared byte for byte; a CRLF checkout on Windows broke them.
   Enforced by: the Windows CI job, which runs those tests.

@@ -112,7 +112,8 @@ fn language(content_type: &str) -> Language {
     }
 }
 
-/// Decode as UTF-8, or Latin-1 when that fails, as the Python app did. When the preview limit
+/// Decode as UTF-8, or Latin-1 when that fails, so every byte shows as some character. When
+/// the preview limit
 /// cut a character in two, the incomplete end is dropped instead of falling back.
 fn decode(bytes: &[u8], cut: bool) -> String {
     match std::str::from_utf8(bytes) {

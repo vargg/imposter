@@ -1,4 +1,4 @@
-//! HTTP Digest authentication (RFC 7616, RFC 2617), as httpx implements it: MD5, SHA, SHA-256
+//! HTTP Digest authentication (RFC 7616, RFC 2617): MD5, SHA, SHA-256
 //! and SHA-512 with their `-sess` variants, `qop=auth` or no qop. `auth-int` is not supported.
 
 use std::collections::HashMap;

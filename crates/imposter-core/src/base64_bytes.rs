@@ -1,5 +1,5 @@
-//! Bytes as base64 the way the Python app writes them: URL-safe alphabet with padding.
-//! Reading also accepts the standard alphabet and missing padding, as Pydantic does.
+//! Bytes as base64 in the native format: written with the URL-safe alphabet and padding.
+//! Reading also accepts the standard alphabet and missing padding, which other tools write.
 
 use base64::Engine as _;
 use base64::alphabet::URL_SAFE;
@@ -44,7 +44,7 @@ mod tests {
     const BYTES: &[u8] = &[0xfb, 0xff, 0x00, 0x3e, 0x3f];
 
     #[test]
-    fn writes_url_safe_with_padding_like_pydantic() {
+    fn writes_url_safe_with_padding() {
         assert_eq!(encode(BYTES), "-_8APj8=");
         assert_eq!(encode(b""), "");
     }

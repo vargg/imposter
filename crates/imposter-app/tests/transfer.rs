@@ -1,4 +1,4 @@
-//! Import and export end to end: files, previews, atomic imports, Python compatibility.
+//! Import and export end to end: files, previews, atomic imports, round trips.
 #![cfg(test)]
 
 use std::path::{Path, PathBuf};
@@ -35,8 +35,8 @@ fn json(path: &Path) -> Value {
     serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
 }
 
-/// Positions and folder order, which exports normalize when siblings tie (as the Python app's
-/// export does), set aside to compare content.
+/// Positions and folder order, which exports normalize when siblings tie, set aside to
+/// compare content.
 fn without_order(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -78,10 +78,10 @@ async fn round_trip(store: &Store, path: PathBuf, out: PathBuf) {
 }
 
 #[tokio::test]
-async fn a_python_export_imports_and_exports_again_with_the_same_content() {
-    let original = fixtures().join("native/full.poster.json");
+async fn an_export_imports_and_exports_again_with_the_same_content() {
+    let original = fixtures().join("native/full.imposter.json");
     let (dir, store) = open();
-    let first = dir.path().join("first.poster.json");
+    let first = dir.path().join("first.imposter.json");
     round_trip(&store, original.clone(), first.clone()).await;
 
     let mut exported = json(&first);
@@ -99,7 +99,7 @@ async fn a_python_export_imports_and_exports_again_with_the_same_content() {
 
     // A second trip through a fresh database changes nothing at all.
     let (dir2, store2) = open();
-    let second = dir2.path().join("second.poster.json");
+    let second = dir2.path().join("second.imposter.json");
     round_trip(&store2, first.clone(), second.clone()).await;
     assert_eq!(
         std::fs::read(&first).unwrap(),
@@ -121,7 +121,7 @@ async fn imports_never_overwrite_and_report_global_conflicts() {
 
     let preview = read_preview(
         &store.handle(),
-        fixtures().join("native/full.poster.json"),
+        fixtures().join("native/full.imposter.json"),
         Vec::new(),
     )
     .await
@@ -174,7 +174,7 @@ async fn exports_overlay_the_unsaved_draft_and_make_positions_unique() {
         },
         ..Request::default()
     };
-    let out = dir.path().join("out.poster.json");
+    let out = dir.path().join("out.imposter.json");
 
     export_native(
         &store.handle(),
@@ -194,7 +194,7 @@ async fn exports_overlay_the_unsaved_draft_and_make_positions_unique() {
             draft: Some(draft),
             ..ExportScope::default()
         },
-        dir.path().join("draft.poster.json"),
+        dir.path().join("draft.imposter.json"),
     )
     .await
     .unwrap();
@@ -207,7 +207,7 @@ async fn exports_overlay_the_unsaved_draft_and_make_positions_unique() {
     );
     assert_eq!(requests[0].url, "http://unsaved");
     let with_draft =
-        native::decode(&std::fs::read(dir.path().join("draft.poster.json")).unwrap()).unwrap();
+        native::decode(&std::fs::read(dir.path().join("draft.imposter.json")).unwrap()).unwrap();
     assert!(
         with_draft
             .collection
@@ -288,7 +288,8 @@ async fn postman_files_import_with_companions() {
 }
 
 /// Regression: import read native files with plain serde, so the version rules were skipped
-/// and a version 1 or 2 file holding scripts was imported as if it were version 3.
+/// and a version 2 file holding scripts was imported as if it were version 3. A file with
+/// another format marker is refused as native, not read as Postman.
 #[tokio::test]
 async fn native_imports_apply_the_version_rules() {
     let (dir, store) = open();
@@ -296,8 +297,8 @@ async fn native_imports_apply_the_version_rules() {
     scripted["version"] = 2.into();
     let v2_scripts = dir.path().join("v2-scripts.imposter.json");
     std::fs::write(&v2_scripts, serde_json::to_vec(&scripted).unwrap()).unwrap();
-    let mut marker = json(&fixtures().join("native/minimal.poster.json"));
-    marker["format"] = "imposter".into();
+    let mut marker = json(&fixtures().join("native/minimal.imposter.json"));
+    marker["format"] = "poster".into();
     let wrong_marker = dir.path().join("marker.imposter.json");
     std::fs::write(&wrong_marker, serde_json::to_vec(&marker).unwrap()).unwrap();
 
@@ -307,10 +308,11 @@ async fn native_imports_apply_the_version_rules() {
             native::NativeError::ScriptsNeedVersion3 { .. }
         ))
     ));
-    assert!(matches!(
-        read_preview(&store.handle(), wrong_marker, Vec::new()).await,
-        Err(TransferError::Native(native::NativeError::Marker { .. }))
-    ));
+    let refused = read_preview(&store.handle(), wrong_marker, Vec::new()).await;
+    assert!(
+        matches!(&refused, Err(TransferError::Native(native::NativeError::Json(e))) if e.to_string().contains("poster")),
+        "{refused:?}"
+    );
     assert_eq!(
         store.call(|db| collections::collections(db)).await.unwrap(),
         []
@@ -331,7 +333,7 @@ async fn bad_files_are_rejected_before_anything_is_written() {
     ));
     let native_with_companion = read_preview(
         &store.handle(),
-        fixtures().join("native/minimal.poster.json"),
+        fixtures().join("native/minimal.imposter.json"),
         vec![companion],
     )
     .await;
@@ -437,7 +439,7 @@ async fn files_are_recognised_by_content_not_name() {
     std::fs::write(&plain_yaml, "name: not an api\n").unwrap();
     for (path, kind) in [
         (
-            fixtures().join("native/full.poster.json"),
+            fixtures().join("native/full.imposter.json"),
             ImportKind::Native,
         ),
         (fixtures().join("postman-v2.1.json"), ImportKind::Postman),
@@ -785,7 +787,7 @@ async fn results_read_back_and_other_files_say_why_not() {
     let golden = fixtures().join("results/sent.imposter-result.json");
     let result = read_result(golden).await.unwrap();
     assert_eq!(result.definition.request, "Users/Create user");
-    let collection = read_result(fixtures().join("native/minimal.poster.json")).await;
+    let collection = read_result(fixtures().join("native/minimal.imposter.json")).await;
     assert!(
         collection
             .as_ref()

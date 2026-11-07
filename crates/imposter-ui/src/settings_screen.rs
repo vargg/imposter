@@ -1,5 +1,4 @@
-//! The Settings screen: application defaults, edited against a saved baseline. Fields and
-//! ranges follow the Python app.
+//! The Settings screen: application defaults, edited against a saved baseline.
 
 use egui::{Align, Grid, Layout, Ui};
 use imposter_app::core::settings::{AppSettings, HostIdentity};

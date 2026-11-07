@@ -51,7 +51,7 @@ const APPEARANCE_KEY: &str = "appearance";
 const LOAD_KEY: &str = "load_form";
 
 /// How the app looks: a UI preference, kept in UI state beside the layout rather than in the
-/// application settings the Python app shares.
+/// application settings, which also govern sends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Appearance {
@@ -4137,7 +4137,7 @@ impl ImposterApp {
         let generation = history.generation;
         let offset = history.offset;
         let filter = if history.only_current {
-            // No open saved request: an id that matches nothing, as the Python app did.
+            // No open saved request: an id that matches nothing, so the list is empty.
             Some(
                 self.state
                     .editor

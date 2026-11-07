@@ -1,4 +1,4 @@
-//! Collection import and export for Imposter (native `.poster.json` v1 and Postman v2.1), and
+//! Collection import and export for Imposter (native `.imposter.json` and Postman v2.1), and
 //! OpenAPI 3 import.
 
 pub mod native;

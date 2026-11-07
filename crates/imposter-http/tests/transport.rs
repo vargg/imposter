@@ -193,11 +193,11 @@ async fn compressed_responses_are_decoded() {
 }
 
 #[tokio::test]
-async fn multipart_bodies_match_the_python_app_byte_for_byte() {
+async fn multipart_bodies_match_the_golden_bytes() {
     let cases: Vec<Value> = serde_json::from_slice(
         &std::fs::read(
             Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../tests/fixtures/parity/multipart.json"),
+                .join("../../tests/fixtures/golden/multipart.json"),
         )
         .unwrap(),
     )

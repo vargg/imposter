@@ -1,5 +1,5 @@
-//! Golden compatibility with documents written and judged by the Python app itself
-//! (`tests/fixtures/python/generate.py`).
+//! The native format against golden documents: exact bytes on the way out, and which
+//! documents are accepted on the way in.
 #![cfg(test)]
 
 use std::path::{Path, PathBuf};
@@ -12,8 +12,8 @@ fn fixtures() -> PathBuf {
 }
 
 #[test]
-fn python_exports_round_trip_byte_for_byte() {
-    for name in ["full.poster.json", "minimal.poster.json"] {
+fn exports_round_trip_byte_for_byte() {
+    for name in ["full.imposter.json", "minimal.imposter.json"] {
         let original = std::fs::read(fixtures().join("native").join(name)).unwrap();
         let document = decode(&original).unwrap_or_else(|error| panic!("{name}: {error}"));
         let encoded = encode(&document);
@@ -26,10 +26,11 @@ fn python_exports_round_trip_byte_for_byte() {
 }
 
 #[test]
-fn acceptance_matches_python_and_accepted_documents_encode_alike() {
-    let cases: Vec<Value> =
-        serde_json::from_slice(&std::fs::read(fixtures().join("parity/decode.json")).unwrap())
-            .unwrap();
+fn documents_are_accepted_or_refused_as_listed_and_encode_alike() {
+    let cases: Vec<Value> = serde_json::from_slice(
+        &std::fs::read(fixtures().join("native/decode-cases.json")).unwrap(),
+    )
+    .unwrap();
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let result = decode(case["document"].as_str().unwrap().as_bytes());
@@ -100,42 +101,32 @@ fn version_3_documents_carry_scripts_and_round_trip_byte_for_byte() {
 }
 
 #[test]
-fn markers_and_versions_must_agree_and_version_1_stays_python_shaped() {
-    let minimal = std::fs::read_to_string(fixtures().join("native/minimal.poster.json")).unwrap();
+fn the_marker_and_a_known_version_are_required() {
+    let minimal = std::fs::read_to_string(fixtures().join("native/minimal.imposter.json")).unwrap();
     let with = |format: &str, version: &str| {
         minimal
-            .replace("\"poster\"", &format!("\"{format}\""))
-            .replace("\"version\": 1", &format!("\"version\": {version}"))
+            .replace("\"imposter\"", &format!("\"{format}\""))
+            .replace("\"version\": 2", &format!("\"version\": {version}"))
     };
-    assert!(decode(with("poster", "1").as_bytes()).is_ok());
     assert!(decode(with("imposter", "2").as_bytes()).is_ok());
     assert!(decode(with("imposter", "3").as_bytes()).is_ok());
-    for (format, version) in [
-        ("poster", "2"),
-        ("poster", "3"),
-        ("imposter", "1"),
-        ("imposter", "4"),
-    ] {
+    for (format, version) in [("poster", "1"), ("imposter", "1"), ("imposter", "4")] {
         assert!(
             decode(with(format, version).as_bytes()).is_err(),
             "{format} {version}"
         );
     }
-
-    let checks = std::fs::read_to_string(fixtures().join("native/checks.imposter.json")).unwrap();
-    let as_version_1 = checks
-        .replace("\"imposter\"", "\"poster\"")
-        .replace("\"version\": 2", "\"version\": 1");
-    let error = decode(as_version_1.as_bytes()).unwrap_err().to_string();
-    assert_eq!(
-        error,
-        "Request \"Create user\": checks and captures need format version 2"
+    let unmarked = minimal.replace("  \"format\": \"imposter\",\n", "");
+    assert!(
+        decode(unmarked.as_bytes()).is_err(),
+        "the marker is required"
     );
-    let python = std::fs::read(fixtures().join("native/full.poster.json")).unwrap();
-    let document = decode(&python).unwrap();
+
+    let full = std::fs::read(fixtures().join("native/full.imposter.json")).unwrap();
+    let document = decode(&full).unwrap();
     assert_eq!(
         (document.format, document.version),
-        (Format::Poster, Version::V1),
+        (Format::Imposter, Version::V2),
         "a document keeps its version"
     );
 }
@@ -178,38 +169,24 @@ fn postman_exports_name_the_scripts_they_leave_out() {
 }
 
 #[test]
-fn saved_values_need_version_2() {
-    let minimal = std::fs::read_to_string(fixtures().join("native/minimal.poster.json")).unwrap();
+fn saved_values_travel_with_their_scope() {
+    let minimal = std::fs::read_to_string(fixtures().join("native/minimal.imposter.json")).unwrap();
     let with_saved = minimal.replace(
         "\"globals\": {}",
         "\"globals\": {\"user\": \"1\"},\n  \"saved_globals\": {\"user\": [\"1\", \"2\"]}",
     );
-    assert_eq!(
-        decode(with_saved.as_bytes()).unwrap_err().to_string(),
-        "Saved values need format version 2"
-    );
-    let version_2 = with_saved
-        .replace("\"poster\"", "\"imposter\"")
-        .replace("\"version\": 1", "\"version\": 2");
-    let document = decode(version_2.as_bytes()).unwrap();
+    let document = decode(with_saved.as_bytes()).unwrap();
     assert_eq!(document.saved_globals.values("user"), ["1", "2"]);
 }
 
 #[test]
-fn environment_colors_need_version_2_and_are_left_out_when_unset() {
-    let minimal = std::fs::read_to_string(fixtures().join("native/minimal.poster.json")).unwrap();
+fn environment_colors_are_known_names_left_out_when_unset() {
+    let minimal = std::fs::read_to_string(fixtures().join("native/minimal.imposter.json")).unwrap();
     let colored = minimal.replace(
         "\"environments\": []",
         "\"environments\": [{\"name\": \"Prod\", \"color\": \"red\"}, {\"name\": \"Dev\"}]",
     );
-    assert_eq!(
-        decode(colored.as_bytes()).unwrap_err().to_string(),
-        "Environment colors need format version 2"
-    );
-    let version_2 = colored
-        .replace("\"poster\"", "\"imposter\"")
-        .replace("\"version\": 1", "\"version\": 2");
-    let document = decode(version_2.as_bytes()).unwrap();
+    let document = decode(colored.as_bytes()).unwrap();
     assert_eq!(
         document
             .environments
@@ -221,7 +198,7 @@ fn environment_colors_need_version_2_and_are_left_out_when_unset() {
     let encoded = String::from_utf8(encode(&document)).unwrap();
     assert_eq!(encoded.matches("\"color\"").count(), 1, "{encoded}");
     assert!(
-        decode(version_2.replace("\"red\"", "\"pink\"").as_bytes()).is_err(),
+        decode(colored.replace("\"red\"", "\"pink\"").as_bytes()).is_err(),
         "only known colors"
     );
 }

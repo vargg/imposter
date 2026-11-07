@@ -1,5 +1,5 @@
-//! Behavior parity with the Python reference app. The fixtures are produced by running the
-//! Python code itself (`tests/fixtures/python/generate.py`), not written by hand.
+//! Request preparation, variable resolution and settings resolution against golden cases
+//! (`tests/fixtures/golden`): the URL, headers and body each request goes out with.
 #![cfg(test)]
 #![allow(clippy::disallowed_methods)] // reading fixture files is the test harness, not core code
 
@@ -14,7 +14,7 @@ use serde_json::Value;
 
 fn fixture(name: &str) -> Vec<Value> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/parity")
+        .join("../../tests/fixtures/golden")
         .join(name);
     serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap()
 }
@@ -24,7 +24,7 @@ fn template(case: &Value) -> RequestTemplate {
 }
 
 #[test]
-fn request_preparation_matches_python() {
+fn requests_are_prepared_as_the_golden_cases_say() {
     for case in fixture("prepare.json") {
         let name = case["name"].as_str().unwrap();
         let template = template(&case);
@@ -44,7 +44,8 @@ fn request_preparation_matches_python() {
         );
         let mut headers: Vec<(String, String)> =
             serde_json::from_value(expected["headers"].clone()).unwrap();
-        // httpx adds Basic and Bearer `Authorization` after Python's prepare step, at the end.
+        // The cases list the headers before authentication; Basic and Bearer `Authorization`
+        // comes last.
         if matches!(
             template.auth.kind,
             Some(AuthKind::Basic | AuthKind::BearerToken)
@@ -54,13 +55,13 @@ fn request_preparation_matches_python() {
             headers.push(last.clone());
         }
         assert_eq!(prepared.headers, headers, "{name}: headers");
-        let python_body = base64_bytes::decode(expected["body"].as_str().unwrap()).unwrap();
+        let golden_body = base64_bytes::decode(expected["body"].as_str().unwrap()).unwrap();
         match prepared.body {
-            PreparedBody::Bytes(bytes) => assert_eq!(bytes, python_body, "{name}: body"),
-            // Python hands multipart and binary bodies to its transport unchanged.
+            PreparedBody::Bytes(bytes) => assert_eq!(bytes, golden_body, "{name}: body"),
+            // Multipart bodies go to the transport as fields; the case holds them encoded.
             PreparedBody::Multipart(fields) => {
                 let all = RequestTemplate {
-                    body: python_body,
+                    body: golden_body,
                     ..template.clone()
                 }
                 .multipart_fields()
@@ -73,12 +74,12 @@ fn request_preparation_matches_python() {
                     "{name}"
                 );
             }
-            PreparedBody::File(path) => assert_eq!(path.as_bytes(), python_body, "{name}: path"),
+            PreparedBody::File(path) => assert_eq!(path.as_bytes(), golden_body, "{name}: path"),
         }
     }
 }
 
-/// Form bodies are compared as JSON values: Python re-serializes them with its own spacing.
+/// Form bodies are compared as JSON values: their spacing is not part of the format.
 fn normalized(mut value: Value, body_type: BodyType) -> Value {
     if body_type.is_form() {
         let body = base64_bytes::decode(value["body"].as_str().unwrap()).unwrap();
@@ -88,7 +89,7 @@ fn normalized(mut value: Value, body_type: BodyType) -> Value {
 }
 
 #[test]
-fn variable_resolution_matches_python() {
+fn variables_resolve_as_the_golden_cases_say() {
     for case in fixture("resolve.json") {
         let name = case["name"].as_str().unwrap();
         let template = template(&case);
@@ -109,7 +110,7 @@ fn variable_resolution_matches_python() {
 }
 
 #[test]
-fn settings_resolution_matches_python() {
+fn settings_resolve_as_the_golden_cases_say() {
     for case in fixture("settings.json") {
         let base: AppSettings = serde_json::from_value(case["base"].clone()).unwrap();
         let options: Options = serde_json::from_value(case["options"].clone()).unwrap();
@@ -122,7 +123,7 @@ fn settings_resolution_matches_python() {
 }
 
 #[test]
-fn python_template_dumps_round_trip_unchanged() {
+fn stored_templates_round_trip_unchanged() {
     for file in ["prepare.json", "resolve.json"] {
         for case in fixture(file) {
             let value = case["request"].clone();

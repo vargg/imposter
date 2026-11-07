@@ -1,6 +1,6 @@
-//! Request templates as stored and exchanged. The serde shape is the native `.poster.json` v1
-//! format, field for field: every field has a default, unknown fields are rejected, and `null`
-//! is written for unset options exactly as the Python app does.
+//! Request templates as stored and exchanged. The serde shape is the native format's request,
+//! field for field: every field has a default, unknown fields are rejected, and `null` is
+//! written for unset options, so a stored request and an exported one read alike.
 
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Deserializer, Serialize};

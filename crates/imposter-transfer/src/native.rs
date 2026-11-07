@@ -1,10 +1,9 @@
-//! The native format. Version 1 (`"format": "poster"`) is the full-fidelity contract shared
-//! with the Python app; version 2 (`"format": "imposter"`) adds request checks, captures,
-//! saved variable values and environment colors; version 3 adds request scripts. Strict:
-//! unknown fields are rejected at every level, a document may not use data of a later
-//! version, and a document keeps its version when encoded again. New exports take the
-//! lowest Imposter version that holds them, so one without scripts stays readable by
-//! Imposter 0.4.
+//! The native format, `"format": "imposter"`: version 2 holds collections with their
+//! requests, checks, captures, variables, saved values, environments and colors; version 3
+//! adds scripts. Strict: the marker and version are required, unknown fields are rejected
+//! at every level, a document may not use data of a later version, and a document keeps its
+//! version when encoded again. New exports take the lowest version that holds them, so one
+//! without scripts stays readable by Imposter 0.4.
 
 use std::io::{Read as _, Write as _};
 use std::path::Path;
@@ -40,21 +39,16 @@ impl<'de> Deserialize<'de> for Name {
     }
 }
 
-/// The format marker. `poster` (version 1) is the contract shared with the Python app;
-/// `imposter` (version 2) adds what only Imposter has.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// The format marker: a file without it, or with another, is not a native document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
-    #[default]
-    Poster,
     Imposter,
 }
 
-/// Versions 1 to 3; anything else is rejected rather than guessed at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+/// Versions 2 and 3; anything else is rejected rather than guessed at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Version {
-    #[default]
-    V1,
     V2,
     V3,
 }
@@ -62,7 +56,6 @@ pub enum Version {
 impl Serialize for Version {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_u8(match self {
-            Self::V1 => 1,
             Self::V2 => 2,
             Self::V3 => 3,
         })
@@ -72,7 +65,6 @@ impl Serialize for Version {
 impl<'de> Deserialize<'de> for Version {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         match u64::deserialize(deserializer)? {
-            1 => Ok(Self::V1),
             2 => Ok(Self::V2),
             3 => Ok(Self::V3),
             other => Err(serde::de::Error::custom(format!(
@@ -136,9 +128,7 @@ pub struct TransferEnvironment {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeDocument {
-    #[serde(default)]
     pub format: Format,
-    #[serde(default)]
     pub version: Version,
     pub collection: TransferCollection,
     #[serde(default)]
@@ -244,14 +234,6 @@ pub enum NativeError {
     Method { request: String },
     #[error("Request {request:?}: authentication is missing its configuration")]
     Auth { request: String },
-    #[error("A {format:?} document must be version {expected}")]
-    Marker { format: &'static str, expected: u8 },
-    #[error("Request {request:?}: checks and captures need format version 2")]
-    ChecksInVersion1 { request: String },
-    #[error("Saved values need format version 2")]
-    SavedValuesInVersion1,
-    #[error("Environment colors need format version 2")]
-    ColorInVersion1,
     #[error("{owner}: scripts need format version 3")]
     ScriptsNeedVersion3 { owner: String },
     #[error("Request {request:?}: {source}")]
@@ -284,47 +266,8 @@ pub fn decode_value(data: serde_json::Value) -> Result<NativeDocument, NativeErr
     checked(serde_json::from_value(data)?)
 }
 
-/// The rules serde cannot express: markers and versions agree, and each field appears only
-/// in a version that has it.
+/// The rule serde cannot express: each field appears only in a version that has it.
 fn checked(document: NativeDocument) -> Result<NativeDocument, NativeError> {
-    match (document.format, document.version) {
-        (Format::Poster, Version::V1) | (Format::Imposter, Version::V2 | Version::V3) => {}
-        (Format::Poster, Version::V2 | Version::V3) => {
-            return Err(NativeError::Marker {
-                format: "poster",
-                expected: 1,
-            });
-        }
-        (Format::Imposter, Version::V1) => {
-            return Err(NativeError::Marker {
-                format: "imposter",
-                expected: 2,
-            });
-        }
-    }
-    if document.version == Version::V1 {
-        if let Some(request) = document
-            .requests()
-            .into_iter()
-            .find(|r| !r.checks.is_empty() || !r.captures.is_empty())
-        {
-            return Err(NativeError::ChecksInVersion1 {
-                request: request.name.clone(),
-            });
-        }
-        if !document.collection.saved_values.is_empty()
-            || !document.saved_globals.is_empty()
-            || document
-                .environments
-                .iter()
-                .any(|e| !e.saved_values.is_empty())
-        {
-            return Err(NativeError::SavedValuesInVersion1);
-        }
-        if document.environments.iter().any(|e| e.color.is_some()) {
-            return Err(NativeError::ColorInVersion1);
-        }
-    }
     if document.version < Version::V3
         && let Some(owner) = document.scripted()
     {
@@ -354,7 +297,7 @@ pub fn validate_templates(document: &NativeDocument) -> Result<(), NativeError> 
     Ok(())
 }
 
-/// UTF-8 JSON, two-space indented, newline-terminated, as the Python app writes it.
+/// UTF-8 JSON, two-space indented, newline-terminated, so a file diffs line by line.
 ///
 /// # Panics
 /// Never: the document holds only strings, numbers, booleans and string-keyed maps.
@@ -462,7 +405,7 @@ mod tests {
     #[test]
     fn atomic_write_replaces_and_leaves_no_temporary_files() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("out.poster.json");
+        let path = dir.path().join("out.imposter.json");
         atomic_write(&path, b"first").unwrap();
         atomic_write(&path, b"second").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"second");
@@ -470,7 +413,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name())
             .collect();
-        assert_eq!(names, ["out.poster.json"]);
+        assert_eq!(names, ["out.imposter.json"]);
     }
 
     #[test]

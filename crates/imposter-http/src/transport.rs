@@ -1,6 +1,6 @@
 //! Sending a prepared request: client policy, redirects, Digest retries, capped capture and
 //! cancellation. Redirects are followed here rather than by reqwest so streamed uploads can be
-//! rebuilt for 307/308 and the httpx rules apply (method changes, dropped credentials).
+//! rebuilt for 307/308 and our rules apply (method changes, dropped credentials).
 
 use std::time::Duration;
 
@@ -22,7 +22,8 @@ pub const MAX_REDIRECTS: usize = 20;
 /// How one execution talks to the network, resolved from the effective settings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Policy {
-    /// Applies separately to connecting and to each read, as in httpx.
+    /// Applies separately to connecting and to each read, so a slow but steady download is
+    /// not cut off.
     pub timeout: Duration,
     pub follow_redirects: bool,
     /// Explicit proxy; environment and system proxies are never used.
@@ -347,7 +348,7 @@ fn remove_header(headers: &mut Vec<(String, String)>, name: &str) {
     headers.retain(|(header, _)| !header.eq_ignore_ascii_case(name));
 }
 
-/// httpx's redirect method rules: 303 becomes GET (except HEAD); 301 and 302 turn POST into GET.
+/// Redirect method rules: 303 becomes GET (except HEAD); 301 and 302 turn POST into GET.
 fn redirect_method(status: StatusCode, method: &Method) -> Method {
     let to_get = (status == StatusCode::SEE_OTHER && method != Method::HEAD)
         || (matches!(status, StatusCode::MOVED_PERMANENTLY | StatusCode::FOUND)
@@ -594,7 +595,7 @@ async fn exchange(prepared: &Prepared, session: &Session) -> Result<reqwest::Res
         if !same_origin(&attempt.url, &next) && !is_https_upgrade(&attempt.url, &next) {
             remove_header(&mut attempt.headers, "authorization");
         }
-        // As httpx does: explicit cookies are not carried to the next location.
+        // Explicit cookies were meant for the first location, not the next.
         remove_header(&mut attempt.headers, "cookie");
         attempt.client = session.client_for(&next).await?;
         attempt.method = method;
@@ -627,7 +628,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn redirect_methods_follow_httpx() {
+    fn redirect_methods_follow_the_status() {
         assert_eq!(
             redirect_method(StatusCode::SEE_OTHER, &Method::PUT),
             Method::GET

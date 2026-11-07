@@ -6,10 +6,8 @@ sent. It runs as one native binary per OS, with no account, no cloud and no tele
 
 ![Requests: collection tree, request editor and response viewer](docs/images/requests.png)
 
-I’mposter is written in Rust with [egui](https://github.com/emilk/egui). It replaces an earlier
-Python/PyQt6 version and imports its native collection format. New exports use `.imposter.json`
-(native version 3 when scripts are present, otherwise version 2); existing `.poster.json`
-files still import.
+I’mposter is written in Rust with [egui](https://github.com/emilk/egui). Collections export
+as `.imposter.json` (native version 3 when scripts are present, otherwise version 2).
 
 On one M3 Pro Mac, the packaged 0.6.0 smoke workflow measured **218.6 ms median
 launch-to-request** and **106.1 MiB median peak resident memory** across ten runs after
@@ -158,8 +156,6 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   variable values and environment colors. Exports use **version 3** when a request, folder
   or collection has scripts, and **version 2** otherwise. Script-free exports remain
   readable by Imposter 0.4.
-  `.poster.json` files from the Python version (version 1) import unchanged; the Python
-  version cannot read Imposter versions 2 or 3.
 - Postman Collection v2.1 import and export, validated against the official schema, with
   environment and globals files. Anything Postman features Imposter cannot represent is listed
   before import; changes to how a request runs need explicit consent. Postman JavaScript
@@ -335,12 +331,6 @@ writes no agent configuration itself.
 saved requests (or those of a `--file`) and send one, with the environment and inputs you
 give on its command line. Its tools and output may change or go away.
 
-### Moving from the Python version
-
-Export each collection from the Python app as `.poster.json` (with its environments and
-globals if you want them), then use **+ → Import Collection…** in Imposter. The two apps never
-share a database, so the Python app keeps working.
-
 ## Your data
 
 I’mposter is the display name; the installed app is **Imposter**, the command is `imposter`,
@@ -423,7 +413,7 @@ which an architecture test enforces:
 | `imposter-core` | Domain types and rules: variables, settings, URLs, request preparation, curl, checks. No IO. |
 | `imposter-http` | HTTP transport: TLS (rustls), redirects, Digest auth, streamed uploads, cancellation. |
 | `imposter-store` | SQLite persistence on its own thread, with migrations and backups. |
-| `imposter-transfer` | Native (`.imposter.json`, `.poster.json`), Postman v2.1 and OpenAPI 3 conversion and validation. |
+| `imposter-transfer` | Native (`.imposter.json`), Postman v2.1 and OpenAPI 3 conversion and validation. |
 | `imposter-app` | Services the UI calls: execution, saving, history, import and export. |
 | `imposter-ui` | The egui interface. |
 | `imposter` | The binary. |

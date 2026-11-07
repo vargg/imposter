@@ -26,7 +26,7 @@ pub enum UploadError {
     ContentType,
 }
 
-/// 48 hex digits, as the Python app uses.
+/// 48 random hex digits: long enough never to appear in a part.
 pub fn boundary() -> String {
     let mut bytes = [0_u8; 24];
     if getrandom::fill(&mut bytes).is_err() {

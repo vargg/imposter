@@ -221,7 +221,7 @@ pub fn preview(db: &Tx<'_>, document: NativeDocument) -> Result<ImportPreview, S
         .globals
         .iter()
         .filter(|(key, value)| existing.get(*key).is_some_and(|current| current != *value))
-        .map(|(key, _)| format!("Global {}: existing value retained", python_repr(key)))
+        .map(|(key, _)| format!("Global {}: existing value retained", quoted_name(key)))
         .collect();
     Ok(ImportPreview {
         document,
@@ -232,7 +232,7 @@ pub fn preview(db: &Tx<'_>, document: NativeDocument) -> Result<ImportPreview, S
     })
 }
 
-fn python_repr(text: &str) -> String {
+fn quoted_name(text: &str) -> String {
     if text.contains('\'') && !text.contains('"') {
         format!("\"{text}\"")
     } else {
@@ -373,10 +373,9 @@ fn load(path: &Path) -> Result<(ImportKind, Value), TransferError> {
         },
     };
     let object = data.as_object().ok_or(TransferError::NotAnObject)?;
-    let kind = if matches!(
-        object.get("format").and_then(Value::as_str),
-        Some("poster" | "imposter")
-    ) {
+    // A format marker means a native document; one with another marker is refused by its
+    // decoder, naming the marker, rather than read as Postman.
+    let kind = if object.contains_key("format") {
         ImportKind::Native
     } else if openapi::is_openapi(&data) {
         ImportKind::OpenApi

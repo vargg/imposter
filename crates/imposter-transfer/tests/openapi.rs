@@ -1,5 +1,4 @@
-//! OpenAPI import: one request per operation, generated once. The Python app has no OpenAPI
-//! import, so these expectations are this app's own (see AGENTS.md).
+//! OpenAPI import: one request per operation, generated once (see AGENTS.md).
 #![cfg(test)]
 
 use std::fmt::Write as _;

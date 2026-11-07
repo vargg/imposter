@@ -89,7 +89,7 @@ fn a_native_file_is_reviewed_then_imported_and_shown() {
     let mut app = start();
     import(
         &mut app,
-        vec![Some(fixtures().join("native/full.poster.json"))],
+        vec![Some(fixtures().join("native/full.imposter.json"))],
     );
 
     app.harness.get_by_label("Review collection import");
@@ -255,7 +255,7 @@ fn a_cancelled_review_or_picker_writes_nothing() {
 fn a_bad_file_reports_why_it_cannot_be_imported() {
     let mut app = start();
     let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("list.poster.json");
+    let file = dir.path().join("list.imposter.json");
     std::fs::write(&file, "[1, 2]").unwrap();
     import(&mut app, vec![Some(file)]);
 
@@ -280,7 +280,7 @@ fn a_native_export_includes_unsaved_edits_and_opted_in_scopes() {
     settle(&mut app.harness);
     type_into(&mut app.harness, "Request URL", "/edited");
     let dir = tempfile::tempdir().unwrap();
-    let out = dir.path().join("api.poster.json");
+    let out = dir.path().join("api.imposter.json");
     app.harness
         .state_mut()
         .script_file_dialogs([Some(out.clone())]);
@@ -393,7 +393,7 @@ fn exporting_needs_a_collection_and_reports_write_failures() {
         collection(store, "API");
     });
     let dir = tempfile::tempdir().unwrap();
-    let out = dir.path().join("missing").join("api.poster.json");
+    let out = dir.path().join("missing").join("api.imposter.json");
     app.harness.state_mut().script_file_dialogs([Some(out)]);
     click(&mut app.harness, "Collection actions");
     click(&mut app.harness, "Export Collection…");
@@ -424,7 +424,7 @@ fn importing_over_unsaved_changes_asks_first() {
     type_into(&mut app.harness, "Request URL", "/edited");
     import(
         &mut app,
-        vec![Some(fixtures().join("native/minimal.poster.json"))],
+        vec![Some(fixtures().join("native/minimal.imposter.json"))],
     );
     click_button(&mut app.harness, "Import");
     settle(&mut app.harness);
@@ -442,7 +442,7 @@ fn the_new_native_extension_skips_postman_companions() {
     let mut app = start();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("collection.imposter.json");
-    std::fs::copy(fixtures().join("native/full.poster.json"), &path).unwrap();
+    std::fs::copy(fixtures().join("native/full.imposter.json"), &path).unwrap();
     import(&mut app, vec![Some(path)]);
     app.harness.get_by_label("Review collection import");
     click_button(&mut app.harness, "Import");

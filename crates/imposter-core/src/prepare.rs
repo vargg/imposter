@@ -105,7 +105,7 @@ pub fn prepare(template: &RequestTemplate, attach_cookies: bool) -> Result<Prepa
             .map(|item| format!("{}={}", item.name, item.value))
             .collect::<Vec<_>>()
             .join("; ");
-        // Unlike the Python app, no empty `Cookie:` header when every cookie is disabled.
+        // No empty `Cookie:` header when every cookie is disabled.
         if !cookie.is_empty() {
             headers.push(("Cookie".to_owned(), cookie));
         }

@@ -66,8 +66,8 @@ pub fn provider() -> Arc<CryptoProvider> {
 
 /// Build a client configuration. Reads files, so call it off the UI thread.
 ///
-/// A custom CA bundle replaces the platform roots (as Python's `create_default_context(cafile=…)`
-/// does). Turning verification off skips both chain and hostname checks.
+/// A custom CA bundle replaces the platform roots rather than adding to them. Turning
+/// verification off skips both chain and hostname checks.
 pub fn client_config(settings: &TlsSettings) -> Result<ClientConfig, TlsError> {
     let provider = provider();
     let verifier: Arc<dyn ServerCertVerifier> = if !settings.verify {

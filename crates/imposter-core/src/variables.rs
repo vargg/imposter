@@ -1,9 +1,8 @@
 //! `{{name}}` placeholders: finding, resolving and explaining them.
 //!
-//! Matching follows the Python app's regex `\{\{(.*?)\}\}` exactly: the first `}}` after `{{`
-//! closes a placeholder unless a newline comes first, the name is trimmed, and values are
-//! inserted verbatim (never resolved again). Parity is pinned by
-//! `tests/fixtures/parity/resolve.json`.
+//! Matching is the regex `\{\{(.*?)\}\}`: the first `}}` after `{{` closes a placeholder
+//! unless a newline comes first, the name is trimmed, and values are inserted verbatim (never
+//! resolved again). Pinned by `tests/fixtures/golden/resolve.json`.
 
 use std::collections::BTreeSet;
 use std::ops::Range;
@@ -23,8 +22,8 @@ pub struct Placeholder<'a> {
     pub name: &'a str,
 }
 
-/// Python's `str.strip()` whitespace: Unicode whitespace plus the ASCII separators 0x1C–0x1F.
-fn is_python_space(c: char) -> bool {
+/// Whitespace trimmed from a name: Unicode whitespace plus the ASCII separators 0x1C–0x1F.
+fn is_name_space(c: char) -> bool {
     c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)
 }
 
@@ -40,7 +39,7 @@ pub fn placeholders(text: &str) -> Vec<Placeholder<'_>> {
             Some(end) if !text[body..end].contains('\n') => {
                 found.push(Placeholder {
                     range: start..end + 2,
-                    name: text[body..end].trim_matches(is_python_space),
+                    name: text[body..end].trim_matches(is_name_space),
                 });
                 from = end + 2;
             }
@@ -406,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn placeholder_matching_follows_the_python_regex() {
+    fn placeholder_matching_follows_the_regex() {
         assert_eq!(names("{{a}} {{ b }} {{}}"), ["a", "b", ""]);
         assert_eq!(names("{{{a}}}"), ["{a"]);
         assert_eq!(names("{{{{a}}}}"), ["{{a"]);
