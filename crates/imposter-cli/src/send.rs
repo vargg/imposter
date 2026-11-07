@@ -247,9 +247,15 @@ async fn run_profile(
     .map_err(|e| e.to_string())?;
     let handle = store.handle();
     let outcome = async {
-        let selected = profile::select(&handle, path, args.environment.as_deref(), &values)
-            .await
-            .map_err(|e| e.to_string())?;
+        let selected = profile::select(
+            &handle,
+            path,
+            args.environment.as_deref(),
+            &values,
+            profile::Purpose::Run,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
         let capture_bytes = selected.inputs.settings.download_limit.saturating_mul(1024);
         let mut ran = executor::run(&selected.inputs, selected.request, cancel)
             .await

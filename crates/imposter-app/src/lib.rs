@@ -1,6 +1,7 @@
 //! Services and runtime glue for Imposter. The UI reaches the lower crates through these
 //! re-exports only (see the architecture test).
 
+pub mod catalog;
 pub mod document;
 pub mod executor;
 pub mod filter;

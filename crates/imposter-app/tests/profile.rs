@@ -6,7 +6,7 @@
 use imposter_app::document::{DocumentError, RequestPath};
 use imposter_app::executor::{Writes, record, run};
 use imposter_app::paths::{OpenError, open_existing_profile};
-use imposter_app::profile::{ProfileError, request_paths, select};
+use imposter_app::profile::{ProfileError, Purpose, request_paths, select};
 use imposter_core::capture::{Capture, Taken};
 use imposter_core::execution::Via;
 use imposter_core::model::{EnvColor, ParamItem, RequestTemplate, Variables};
@@ -76,6 +76,7 @@ async fn the_breadcrumb_names_a_request_and_only_the_named_environment_applies()
             &path("Shop API / Users / List users"),
             environment,
             &values,
+            Purpose::Run,
         )
         .await
         .unwrap();
@@ -107,9 +108,15 @@ async fn the_breadcrumb_names_a_request_and_only_the_named_environment_applies()
 async fn wrong_paths_and_environments_say_what_exists() {
     let (_dir, store) = profile("http://127.0.0.1:1").await;
     let none = Variables::new();
-    let missing = select(&store.handle(), &path("Users/List users"), None, &none)
-        .await
-        .unwrap_err();
+    let missing = select(
+        &store.handle(),
+        &path("Users/List users"),
+        None,
+        &none,
+        Purpose::Run,
+    )
+    .await
+    .unwrap_err();
     assert_eq!(
         missing.to_string(),
         "No request at Users/List users. Requests: Shop API/Users/List users"
@@ -119,6 +126,7 @@ async fn wrong_paths_and_environments_say_what_exists() {
         &path("Shop API/Users/List users"),
         Some("Staging"),
         &none,
+        Purpose::Run,
     )
     .await
     .unwrap_err();
@@ -148,7 +156,8 @@ async fn wrong_paths_and_environments_say_what_exists() {
             &store.handle(),
             &path("Shop API/Users/List users"),
             None,
-            &none
+            &none,
+            Purpose::Run
         )
         .await,
         Err(ProfileError::Path(DocumentError::Ambiguous {
@@ -167,6 +176,7 @@ async fn production_needs_the_apps_setting() {
         &path("Shop API/Users/List users"),
         Some("Prod"),
         &Variables::new(),
+        Purpose::Run,
     )
     .await
     .unwrap_err();
@@ -185,6 +195,7 @@ async fn production_needs_the_apps_setting() {
         &path("Shop API/Users/List users"),
         Some("Prod"),
         &Variables::new(),
+        Purpose::Run,
     )
     .await
     .unwrap();
@@ -203,6 +214,7 @@ async fn a_recorded_run_is_the_command_lines_and_changes_no_variable() {
         &path("Shop API/Users/List users"),
         Some("Dev"),
         &Variables::new(),
+        Purpose::Run,
     )
     .await
     .unwrap();

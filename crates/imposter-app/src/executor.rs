@@ -123,7 +123,7 @@ pub fn read_inputs(
 
 /// The collection's scripts, then those of each folder from the outermost down to the
 /// request's own folder. A folder that no longer exists, or belongs elsewhere, adds none.
-fn script_levels(
+pub(crate) fn script_levels(
     db: &imposter_store::Tx<'_>,
     collection: &collections::Collection,
     folder: Option<imposter_core::ids::FolderId>,

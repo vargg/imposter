@@ -24,6 +24,25 @@ pub const SECRET_HEADERS: [&str; 4] = [
 /// a run refuses them as secret inputs.
 pub const MIN_SECRET: usize = 4;
 
+/// A stored credential as `show` may print it: as written when it is nothing but
+/// `{{placeholders}}`, optionally after an auth scheme word (`Bearer {{token}}`); otherwise
+/// [`MARK`], since a literal value is the secret itself. Empty stays empty.
+pub fn shown(text: &str) -> String {
+    let mut rest = text.to_owned();
+    for placeholder in crate::variables::placeholders(text).into_iter().rev() {
+        rest.replace_range(placeholder.range, " ");
+    }
+    let rest = rest.trim();
+    let scheme = ["bearer", "basic", "digest", "token"]
+        .iter()
+        .any(|word| rest.eq_ignore_ascii_case(word));
+    if text.is_empty() || ((rest.is_empty() || scheme) && text.contains("{{")) {
+        text.to_owned()
+    } else {
+        MARK.to_owned()
+    }
+}
+
 /// The values to remove, longest first so a secret containing another goes whole.
 #[derive(Debug, Clone, Default)]
 pub struct Redactor {
@@ -235,6 +254,23 @@ mod tests {
             &AppSettings::default(),
         );
         assert_eq!(bearer.text("tok-123"), MARK);
+    }
+
+    #[test]
+    fn only_placeholders_are_shown_for_a_stored_credential() {
+        assert_eq!(shown("{{token}}"), "{{token}}");
+        assert_eq!(shown("Bearer {{token}}"), "Bearer {{token}}");
+        assert_eq!(
+            shown("{{user}}:{{pass}}"),
+            MARK,
+            "a literal colon is not a scheme"
+        );
+        assert_eq!(shown(" {{a}} {{b}} "), " {{a}} {{b}} ");
+        assert_eq!(shown("hunter22"), MARK);
+        assert_eq!(shown("Bearer abc123"), MARK);
+        assert_eq!(shown("Bearer"), MARK, "a scheme alone is not a placeholder");
+        assert_eq!(shown("{{token}}x"), MARK);
+        assert_eq!(shown(""), "");
     }
 
     #[test]

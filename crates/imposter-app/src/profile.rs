@@ -10,6 +10,14 @@ use imposter_store::{StoreError, StoreHandle, collections, environments, kv};
 use crate::document::{DocumentError, RequestPath, Selected};
 use crate::executor::{EnvironmentChoice, Writes, read_inputs};
 
+/// Why a request is chosen: running one may refuse production, inspecting one never does,
+/// since it reveals only names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Purpose {
+    Run,
+    Inspect,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProfileError {
     #[error(transparent)]
@@ -48,12 +56,21 @@ pub async fn select(
     path: &RequestPath,
     environment: Option<&str>,
     values: &Variables,
+    purpose: Purpose,
 ) -> Result<Selected, ProfileError> {
     let path = path.clone();
     let environment = environment.map(str::to_owned);
     let values = values.clone();
     store
-        .call(move |db| Ok(select_in(db, &path, environment.as_deref(), &values)))
+        .call(move |db| {
+            Ok(select_in(
+                db,
+                &path,
+                environment.as_deref(),
+                &values,
+                purpose,
+            ))
+        })
         .await?
 }
 
@@ -62,6 +79,7 @@ fn select_in(
     path: &RequestPath,
     environment: Option<&str>,
     values: &Variables,
+    purpose: Purpose,
 ) -> Result<Selected, ProfileError> {
     let index = collections::request_index(db)?;
     let matches: Vec<&collections::IndexedRequest> = index
@@ -103,7 +121,8 @@ fn select_in(
                 }
                 .into());
             };
-            if found.color == Some(EnvColor::Red)
+            if purpose == Purpose::Run
+                && found.color == Some(EnvColor::Red)
                 && !kv::app_settings(db)?.allow_production_from_cli
             {
                 return Err(ProfileError::Production {

@@ -122,9 +122,9 @@ fn list(names: &[String]) -> String {
 }
 
 /// A request found in a file, and the folders around it, outermost first.
-struct Found<'a> {
-    folders: Vec<&'a TransferFolder>,
-    template: &'a RequestTemplate,
+pub(crate) struct Found<'a> {
+    pub(crate) folders: Vec<&'a TransferFolder>,
+    pub(crate) template: &'a RequestTemplate,
 }
 
 fn walk<'a>(
@@ -146,7 +146,7 @@ fn walk<'a>(
     }
 }
 
-fn all(document: &NativeDocument) -> Vec<(RequestPath, Found<'_>)> {
+pub(crate) fn all(document: &NativeDocument) -> Vec<(RequestPath, Found<'_>)> {
     let mut found = Vec::new();
     walk(
         &mut Vec::new(),

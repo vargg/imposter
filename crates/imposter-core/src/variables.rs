@@ -191,6 +191,34 @@ pub fn resolve_template(
     }
 }
 
+/// Every variable name `template` uses where it reaches the wire, and in its checks'
+/// expected values, sorted and once each. A body that cannot be read as text (not UTF-8, a
+/// broken form) adds nothing, but never hides the names elsewhere. Names scripts read with
+/// `vars.get` are not found: scripts are code, not templates.
+pub fn used(template: &RequestTemplate) -> Vec<String> {
+    let none = Variables::new();
+    let mut resolved = template.clone();
+    let mut walk = Resolver {
+        values: &none,
+        missing: BTreeSet::new(),
+    };
+    walk.text(&mut resolved.url);
+    walk.items(&mut resolved.headers);
+    walk.items(&mut resolved.queries);
+    walk.items(&mut resolved.cookies);
+    walk.auth(&mut resolved.auth);
+    walk.options(&mut resolved.options);
+    let _ = walk.body(&mut resolved);
+    for check in &template.checks {
+        walk.missing.extend(
+            placeholders(&check.expected)
+                .into_iter()
+                .map(|p| p.name.to_owned()),
+        );
+    }
+    walk.missing.into_iter().collect()
+}
+
 /// The active environment's identity and values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveEnvironment {
@@ -548,6 +576,38 @@ mod tests {
             .collect();
         assert_eq!(sources, ["Dev", "API", "Global"]);
         assert_eq!(snapshot.collection_values, collection);
+    }
+
+    #[test]
+    fn used_names_cover_every_field_that_reaches_the_wire_and_checks() {
+        use crate::check::{Check, Op};
+        use crate::model::{BodyType, ParamItem, RequestAuth};
+        use crate::select::Selector;
+        let template = RequestTemplate {
+            url: "{{base}}/users/{{ id }}".into(),
+            headers: vec![ParamItem::new("X-Trace", "{{trace}}")],
+            queries: vec![ParamItem::new("q", "{{$uuid}}")],
+            auth: RequestAuth::bearer("{{token}}"),
+            body: b"{\"n\": {{n}}}".to_vec(),
+            body_type: BodyType::Json,
+            checks: vec![Check::new(Selector::Status, Op::Equals, "{{expected}}")],
+            ..RequestTemplate::default()
+        };
+        assert_eq!(
+            used(&template),
+            ["$uuid", "base", "expected", "id", "n", "token", "trace"]
+        );
+        let broken = RequestTemplate {
+            url: "{{base}}".into(),
+            body: vec![0xff, b'{', b'{'],
+            body_type: BodyType::Json,
+            ..RequestTemplate::default()
+        };
+        assert_eq!(
+            used(&broken),
+            ["base"],
+            "an unreadable body hides nothing else"
+        );
     }
 
     #[test]
