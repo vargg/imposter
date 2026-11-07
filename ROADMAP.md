@@ -78,8 +78,10 @@ Protect these. The milestones run on them.
   scripted answers, and a request log.
 - A closed-loop load probe of one request.
 - Command palette, themes, density, and named controls for assistive technology.
-- One native binary per OS. Today it opens the window, and its only argument is
-  `--smoke-test`.
+- One native binary per OS. Without arguments it opens the window; `imposter send` runs
+  one request from a native file headless, with named secret inputs, a redacted JSON
+  result, an exit status per outcome and a result file History opens; `imposter skill`
+  prints the agent instructions. `imposter mcp` is the experimental spike below.
 
 ## Core, still to build
 
@@ -87,7 +89,6 @@ In milestone order. MCP is not in this table; it is an experiment below.
 
 | Work | Why it is core | When |
 |---|---|---|
-| `imposter send` on one saved request, headless | Agents and CI cannot depend on the window. | M1 |
 | Project folder: YAML, one file per request and per folder | Teams review definitions next to the code. | M2 |
 | A runner for a folder or the collection, in the app and the CLI | A check pays off when the set runs together. | M2 |
 | OAuth 2.0, API-key auth, a cookie jar | A pasted bearer token goes stale, and a login's cookies are not kept. | M3 |
@@ -318,23 +319,15 @@ permissions and should land as several commits. No calendar dates.
 Completed 7 November 2026: navigation, accurate README and refreshed screenshots,
 explicit mock/load limits, and [packaged 0.6.0 launch-to-request and peak-memory evidence](docs/validation.md#packaged-060-measurements).
 
-### M1 — One request, headless
+### M1 — Complete: one request, headless
 
-- `imposter send` runs one saved request through the existing engine, from an explicit
-  native `.imposter.json` file, with no window and no read of the personal profile.
-  The project folder replaces that file as the source in M2.
-- Named secret inputs, redacted JSON, cancellation, and exit statuses for each outcome
-  in "What a run means".
-- A result artifact the desktop can open.
-- The narrow stdio spike described under the experiment.
-- A skill file for `send`, printed by `imposter skill`. The user decides where their
-  agent reads it. The app writes no agent configuration.
-
-Exit: against a loopback server, a failing check, a passing check and a not-checked
-response produce the same distinct results from the GUI and the CLI. Secrets are absent
-from the default result and from error output, including fault-injection cases. A
-headless smoke run works without a display. An environment change during the run does
-not affect it.
+Completed 7 November 2026: `imposter send` from a native file through the one engine
+(`executor::run`), named secret inputs, redacted results with an exit status per outcome,
+result files opened in History, `imposter skill`, and the MCP spike with its findings
+above. The exit tests are `imposter-app/tests/document.rs`, `imposter-ui/tests/results.rs`,
+`imposter-cli/tests/send.rs`, `imposter/tests/cli.rs` and `smoke.py --headless`, which CI
+runs on Linux before any display library is installed. The file source stays until M2's
+project folder replaces it.
 
 ### M2 — The project folder and the runner
 
