@@ -267,3 +267,46 @@ async fn a_saved_request_runs_beside_the_open_app() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].via, imposter_app::core::execution::Via::CommandLine);
 }
+
+/// An agent's first step, as a process: list the saved requests while the app has the
+/// database open, writing nothing.
+#[tokio::test]
+async fn saved_requests_are_listed_beside_the_open_app() {
+    use imposter_app::core::model::{RequestTemplate, Variables};
+    use imposter_app::store::{Store, collections, executions};
+    let home = tempfile::tempdir().unwrap();
+    let data = home.path().join("data");
+    std::fs::create_dir(&data).unwrap();
+    let app = Store::open(&data.join("imposter.db")).unwrap();
+    app.call(|db| {
+        let api = collections::create_collection(db, "API", "", &Variables::new())?;
+        collections::create_request(
+            db,
+            api.id,
+            None,
+            &RequestTemplate {
+                name: "Ping".into(),
+                method: "GET".into(),
+                url: "{{base}}/ping".into(),
+                ..RequestTemplate::default()
+            },
+        )?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+
+    let mut command = imposter(home.path());
+    command.args(["list", "--text"]);
+    let output = output(command).await;
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "GET  API/Ping  {{base}}/ping\n"
+    );
+    let history = app
+        .call(|db| executions::page(db, None, 0, 10))
+        .await
+        .unwrap();
+    assert!(history.is_empty(), "listing writes nothing");
+}

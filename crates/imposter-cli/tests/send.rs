@@ -353,7 +353,11 @@ fn an_unwritable_result_file_is_reported_after_the_result() {
 fn help_version_and_usage_errors() {
     let help = run_with(&["--help"], &|_| None);
     assert_eq!(help.status, 0);
-    assert!(help.stdout.contains("imposter send <REQUEST> [OPTIONS]"));
+    assert!(help.stdout.contains("\n  send <REQUEST> [OPTIONS]\n"));
+    assert!(
+        help.stdout
+            .contains("\n  list [FILTER] [--file FILE] [--text]\n")
+    );
     let version = run_with(&["--version"], &|_| None);
     assert_eq!(
         version.stdout,
@@ -367,7 +371,7 @@ fn help_version_and_usage_errors() {
     assert!(
         skill
             .stdout
-            .starts_with("# I’mposter: run a saved HTTP request")
+            .starts_with("# I’mposter: find, read and run the user's saved HTTP requests")
     );
     let wrong = run_with(&["send", "--file", "only-a-file"], &|_| None);
     assert_eq!(wrong.status, 2);

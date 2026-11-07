@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use imposter_core::run_result::RunOutcome;
 
+pub mod catalog;
 pub mod mcp;
 pub mod send;
 
@@ -23,6 +24,59 @@ pub struct Flag {
     /// The value it takes, as the usage names it.
     pub value: &'static str,
     pub help: &'static str,
+}
+
+/// A command, as the help and the README list it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandHelp {
+    pub name: &'static str,
+    pub arguments: &'static str,
+    pub help: &'static str,
+}
+
+/// Every command, in the order an agent uses them.
+pub const COMMANDS: [CommandHelp; 6] = [
+    CommandHelp {
+        name: "list",
+        arguments: "[FILTER] [--file FILE] [--text]",
+        help: "List saved requests with their method, URL, checks and scripts. FILTER is the sidebar's filter language (users, method:POST, -old).",
+    },
+    CommandHelp {
+        name: "show",
+        arguments: "<REQUEST> [--env NAME] [--file FILE] [--max-body BYTES] [--text]",
+        help: "Show a request as stored, with the variables it uses and where each is defined for --env. Placeholders only, never values.",
+    },
+    CommandHelp {
+        name: "envs",
+        arguments: "[--file FILE] [--text]",
+        help: "List environments (red is production), globals and collections with their variable names, never values.",
+    },
+    CommandHelp {
+        name: "send",
+        arguments: "<REQUEST> [OPTIONS]",
+        help: "Run a saved request as Send does and print its checked, redacted result. Kept in History as the command line's.",
+    },
+    CommandHelp {
+        name: "skill",
+        arguments: "",
+        help: "Print instructions for a coding agent.",
+    },
+    CommandHelp {
+        name: "mcp",
+        arguments: "[--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--max-body BYTES]",
+        help: "Experimental: an MCP server over stdio.",
+    },
+];
+
+/// The README's command table rows, generated from [`COMMANDS`].
+pub fn readme_command_rows() -> Vec<String> {
+    COMMANDS
+        .iter()
+        .map(|c| {
+            let call = format!("imposter {} {}", c.name, c.arguments);
+            format!("| `{}` | {} |", call.trim_end(), c.help)
+        })
+        .collect()
 }
 
 pub const SEND_FLAGS: [Flag; 6] = [
@@ -97,24 +151,30 @@ pub fn version() -> String {
 /// The help text, from [`SEND_FLAGS`] and [`RunOutcome::ALL`].
 pub fn usage() -> String {
     let mut text = String::from(
-        "Usage:\n  imposter                       open the app\n  imposter send <REQUEST> [OPTIONS]\n\n\
-         Run one saved request without a window, as Send does. REQUEST is its breadcrumb,\n\
-         collection first: \"Shop API / Users / Create user\" (write a \"/\" inside a name as\n\
-         \"\\/\"). The run is kept in History, marked as the command line's; captured values\n\
-         stay in the run. The result is printed as JSON on stdout, a summary on stderr.\n\n\
-         Options:\n",
+        "Usage:\n  imposter                       open the app\n  imposter <COMMAND> [ARGUMENTS]\n\n\
+         Commands read your saved requests (or a collection file with --file). A REQUEST is\n\
+         its breadcrumb, collection first: \"Shop API / Users / Create user\" (write a \"/\"\n\
+         inside a name as \"\\/\"). Output is JSON on stdout; list, show and envs take --text\n\
+         for people.\n\nCommands:\n",
     );
+    for command in COMMANDS {
+        // Writing to a String cannot fail.
+        let call = format!("{} {}", command.name, command.arguments);
+        let _ = writeln!(text, "  {}", call.trim_end());
+        let _ = writeln!(text, "      {}", command.help);
+    }
+    text.push_str("\nsend options:\n");
     for flag in SEND_FLAGS {
         let left = format!("{} {}", flag.name, flag.value);
-        // Writing to a String cannot fail.
         let _ = writeln!(text, "  {left:<26} {}", flag.help);
     }
-    text.push_str("\nExit status:\n");
+    text.push_str("\nsend exit status:\n");
     for (status, name, help) in exit_statuses() {
         let _ = writeln!(text, "  {status:<4} {name:<16} {help}");
     }
     text.push_str(
-        "\nOther commands:\n  imposter skill                 print instructions for a coding agent\n  imposter mcp [--file FILE] [--env NAME] [--input|--secret VAR=PROCESS_VAR]... [--max-body BYTES]\n                                 experimental: an MCP server over stdio\n  imposter --help | --version\n",
+        "\nlist, show and envs exit 0, or 3 when the profile, file, request or environment is\n\
+         wrong, and 2 for usage errors.\n\nOther:\n  imposter --help | --version\n",
     );
     text
 }
@@ -154,6 +214,10 @@ pub fn skill() -> String {
         .collect();
     include_str!("skill.md")
         .replace(
+            "{{commands}}",
+            &table("| Command | What it does |", readme_command_rows()),
+        )
+        .replace(
             "{{options}}",
             &table("| Option | Meaning |", readme_flag_rows()),
         )
@@ -183,6 +247,7 @@ enum Command {
     Version,
     Skill,
     Send(SendArgs),
+    Catalog(catalog::CatalogArgs),
     /// The experimental MCP server: a FILE and the run's environment and inputs.
     Mcp(SendArgs),
 }
@@ -204,6 +269,9 @@ fn parse(args: Vec<OsString>) -> Result<Command, String> {
             Some(other) => Err(other.unexpected().to_string()),
         },
         "send" => parse_send(&mut parser, false),
+        "list" => parse_list(&mut parser),
+        "show" => parse_catalog(&mut parser, catalog::Kind::Show),
+        "envs" => parse_catalog(&mut parser, catalog::Kind::Envs),
         "mcp" => parse_send(&mut parser, true),
         other => Err(format!("unknown command {other:?}")),
     }
@@ -221,6 +289,93 @@ fn input(value: OsString, secret: bool) -> Result<InputArg, String> {
         }),
         _ => Err(format!("{text:?} is not VAR=PROCESS_VAR")),
     }
+}
+
+/// `list`: its own few options, and every other word is the filter, including `-word`
+/// negations, which an option parser would take for flags.
+fn parse_list(parser: &mut lexopt::Parser) -> Result<Command, String> {
+    let mut args = catalog::CatalogArgs::default();
+    let mut words: Vec<String> = Vec::new();
+    let mut raw = parser.raw_args().map_err(|e| e.to_string())?;
+    let mut rest_are_words = false;
+    while let Some(arg) = raw.next() {
+        let arg = arg
+            .into_string()
+            .map_err(|_| "arguments must be valid UTF-8".to_owned())?;
+        match arg.as_str() {
+            _ if rest_are_words => words.push(arg),
+            "--" => rest_are_words = true,
+            "--help" | "-h" => return Ok(Command::Help),
+            "--text" => args.text = true,
+            "--file" => {
+                let file = raw
+                    .next()
+                    .ok_or_else(|| "missing argument for option '--file'".to_owned())?;
+                args.file = Some(PathBuf::from(file));
+            }
+            _ if arg.starts_with("--file=") => {
+                args.file = Some(PathBuf::from(&arg["--file=".len()..]));
+            }
+            _ if arg.starts_with("--") => return Err(format!("invalid option '{arg}'")),
+            _ => words.push(arg),
+        }
+    }
+    args.target = words.join(" ");
+    Ok(Command::Catalog(args))
+}
+
+/// `show` and `envs`: a request, or nothing.
+fn parse_catalog(parser: &mut lexopt::Parser, kind: catalog::Kind) -> Result<Command, String> {
+    use catalog::Kind;
+    use lexopt::prelude::*;
+    let mut args = catalog::CatalogArgs {
+        kind,
+        ..catalog::CatalogArgs::default()
+    };
+    let mut positional: Vec<String> = Vec::new();
+    while let Some(arg) = parser.next().map_err(|e| e.to_string())? {
+        let value = |parser: &mut lexopt::Parser| parser.value().map_err(|e| e.to_string());
+        match arg {
+            Long("help") | Short('h') => return Ok(Command::Help),
+            Long("file") => args.file = Some(PathBuf::from(value(parser)?)),
+            Long("text") => args.text = true,
+            Long("env") if kind == Kind::Show => {
+                args.environment = Some(
+                    value(parser)?
+                        .into_string()
+                        .map_err(|_| "--env must be valid UTF-8".to_owned())?,
+                );
+            }
+            Long("max-body") if kind == Kind::Show => {
+                args.max_body = value(parser)?
+                    .into_string()
+                    .ok()
+                    .and_then(|text| text.parse().ok())
+                    .ok_or_else(|| "--max-body takes a number of bytes".to_owned())?;
+            }
+            Value(value) => positional.push(
+                value
+                    .into_string()
+                    .map_err(|_| "arguments must be valid UTF-8".to_owned())?,
+            ),
+            other => return Err(other.unexpected().to_string()),
+        }
+    }
+    match kind {
+        Kind::List => args.target = positional.join(" "),
+        Kind::Show => {
+            let [request] = positional.as_slice() else {
+                return Err("show takes one REQUEST".into());
+            };
+            args.target.clone_from(request);
+        }
+        Kind::Envs => {
+            if !positional.is_empty() {
+                return Err("envs takes no arguments".into());
+            }
+        }
+    }
+    Ok(Command::Catalog(args))
 }
 
 /// `send`'s arguments, or with `mcp` the server's: a FILE without a REQUEST (the agent
@@ -297,6 +452,28 @@ pub fn main(args: Vec<OsString>, io: &mut Io<'_>) -> u8 {
         Command::Skill => {
             let _ = io.stdout.write_all(skill().as_bytes());
             0
+        }
+        Command::Catalog(args) => {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    let _ = writeln!(io.stderr, "error: cannot start: {error}");
+                    return USAGE_STATUS;
+                }
+            };
+            match runtime.block_on(catalog::run(&args, io.var)) {
+                Ok(output) => {
+                    let _ = io.stdout.write_all(output.as_bytes());
+                    0
+                }
+                Err(message) => {
+                    let _ = writeln!(io.stderr, "error: {message}");
+                    RunOutcome::NotSent.exit_status()
+                }
+            }
         }
         Command::Send(args) => {
             let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -488,7 +665,38 @@ mod tests {
     }
 
     #[test]
+    fn list_takes_negations_as_filter_words() {
+        let parsed = |line: &[&str]| match parse(args(line)) {
+            Ok(Command::Catalog(c)) => Ok((c.target, c.file, c.text)),
+            Ok(other) => Err(format!("{other:?}")),
+            Err(e) => Err(e),
+        };
+        assert_eq!(
+            parsed(&["list", "users", "-old", "--text", "--file=a.json"]),
+            Ok(("users -old".into(), Some("a.json".into()), true))
+        );
+        assert_eq!(
+            parsed(&["list", "--file", "b.json", "--", "--text"]),
+            Ok(("--text".into(), Some("b.json".into()), false)),
+            "after -- every word is the filter"
+        );
+        assert_eq!(
+            parsed(&["list", "--loud"]),
+            Err("invalid option '--loud'".into())
+        );
+        assert_eq!(
+            parsed(&["list", "--file"]),
+            Err("missing argument for option '--file'".into())
+        );
+        assert_eq!(parse(args(&["list", "-h"])), Ok(Command::Help));
+    }
+
+    #[test]
     fn the_readme_lists_exactly_these_options_and_statuses() {
+        assert_eq!(
+            readme_table("| Command | What it does |"),
+            readme_command_rows()
+        );
         assert_eq!(readme_table("| Option | Meaning |"), readme_flag_rows());
         assert_eq!(
             readme_table("| Status | Outcome | Meaning |"),
@@ -499,10 +707,19 @@ mod tests {
     #[test]
     fn the_skill_is_filled_from_the_tables() {
         let skill = skill();
-        for placeholder in ["{{options}}", "{{statuses}}", "{{operators}}"] {
+        for placeholder in [
+            "{{commands}}",
+            "{{options}}",
+            "{{statuses}}",
+            "{{operators}}",
+        ] {
             assert!(!skill.contains(placeholder), "{placeholder}");
         }
-        for row in readme_flag_rows().iter().chain(&readme_status_rows()) {
+        for row in readme_command_rows()
+            .iter()
+            .chain(&readme_flag_rows())
+            .chain(&readme_status_rows())
+        {
             assert!(skill.contains(row.as_str()), "{row}");
         }
         for op in imposter_core::check::Op::ALL {

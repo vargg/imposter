@@ -923,13 +923,34 @@ numbers, so both are excluded. Each logical change is its own commit.
   History, production and a missing profile refused) and `imposter/tests/cli.rs` (the
   process: no profile created for a file run, no secret on stdout or stderr even at trace
   level, the interrupt).
+- **`imposter list`, `show` and `envs` let an agent find and read requests before running
+  them** (`imposter_app::catalog`, `imposter_cli::catalog`), from the profile or a `--file`,
+  writing nothing. `list` gives each request's path, method, URL template and how many
+  checks and captures it has, and whether scripts run around it, filtered with the
+  sidebar's language (`imposter_app::filter`, moved out of the UI for this); its own parser
+  takes `-word` as a negation, not a flag. `show` gives one request as stored and every
+  `{{variable}}` it uses (`variables::used`) with the scope that defines it for `--env`
+  (`generated`, `undefined`), names only. `envs` gives environments with their colour,
+  globals and collections, by variable name. Values never appear (user's choice:
+  placeholders, not values), and a stored credential (Basic and Digest passwords, Bearer
+  tokens, the key password, `Authorization`, `Proxy-Authorization` and `Cookie` headers,
+  cookies) shows only when it is nothing but placeholders, optionally after a scheme word
+  (`redact::shown`), else `«redacted»`; a secret pasted into a body cannot be told from
+  data, and the README says so. Inspecting with a production environment is allowed
+  (`profile::Purpose::Inspect`): it reveals only names. Output is JSON, or text with
+  `--text` (user's choice). The commands, help, README table and skill come from
+  `COMMANDS`, which a test keeps equal to the README. Why: an agent could run a request
+  but not find one, nor learn what it does without sending it. Pinned by
+  `imposter-app/tests/catalog.rs` (profile and file agree; no value or literal credential
+  in any output), `imposter-cli/tests/catalog.rs` and a process test in
+  `imposter/tests/cli.rs`.
 - **`imposter skill` prints the instructions a coding agent needs** (`skill.md` in
   `imposter-cli`): how to choose a request, pass secrets by process variable name, read
   the result and propose a check as a reviewable diff. Its option, exit status and
   operator lists are filled from `SEND_FLAGS`, `exit_statuses()` and `check::Op::ALL`
   when printed, so it cannot drift from the parser. It only prints: the user decides
   where their agent reads it, and the app writes no agent configuration (the roadmap's
-  rule).
+  rule). It teaches the order `list`, `show`, `send`.
 - **`imposter mcp` is an experimental MCP server over stdio** (`imposter_cli::mcp`), the M1
   spike, not the M4 tool list: `list_requests` and `send_request {path}` over the saved
   requests (or a `--file`), answered with the same `RunResult` as `send` (structured, and

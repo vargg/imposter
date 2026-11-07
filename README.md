@@ -266,14 +266,31 @@ Cmd on macOS, Ctrl elsewhere. Shortcuts do nothing while a dialog is open.
 
 ### Command line
 
-`imposter send` runs one of your saved requests without a window, through the same engine
-as **Send**. Edit requests in the app, then run them from a terminal, a script or a coding
-agent; there is nothing to export.
+The `imposter` command reads and runs your saved requests without a window, through the
+same engine as **Send**. Edit requests in the app, then use them from a terminal, a script or
+a coding agent; there is nothing to export.
 
 ```sh
+imposter list users --text                     # find a request
+imposter show "Shop API / Users / Create user" --env Dev --text   # see what it does
 export API_TOKEN=…
 imposter send "Shop API / Users / Create user" --env Dev --secret token=API_TOKEN
 ```
+
+| Command | What it does |
+|---|---|
+| `imposter list [FILTER] [--file FILE] [--text]` | List saved requests with their method, URL, checks and scripts. FILTER is the sidebar's filter language (users, method:POST, -old). |
+| `imposter show <REQUEST> [--env NAME] [--file FILE] [--max-body BYTES] [--text]` | Show a request as stored, with the variables it uses and where each is defined for --env. Placeholders only, never values. |
+| `imposter envs [--file FILE] [--text]` | List environments (red is production), globals and collections with their variable names, never values. |
+| `imposter send <REQUEST> [OPTIONS]` | Run a saved request as Send does and print its checked, redacted result. Kept in History as the command line's. |
+| `imposter skill` | Print instructions for a coding agent. |
+| `imposter mcp [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--max-body BYTES]` | Experimental: an MCP server over stdio. |
+
+`list`, `show` and `envs` write nothing. They show templates as stored, with their
+`{{placeholders}}`, and only the names of variables, never their values; a credential
+stored as a literal (a token typed into Auth, an `Authorization` header) shows as
+`«redacted»`. A secret pasted straight into a body cannot be told apart from data and is
+shown as stored.
 
 The request is named by its breadcrumb, collection first, as the app shows it above the
 request bar (spaces around `/` are optional; write a `/` inside a name as `\/`). A wrong path

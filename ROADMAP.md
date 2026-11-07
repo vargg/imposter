@@ -82,7 +82,9 @@ Protect these. The milestones run on them.
   saved request headless from the personal profile (recorded in History as the command
   line's), or from a native file with `--file` for CI. It takes named secret inputs and
   gives a redacted JSON result, an exit status per outcome and a result file History
-  opens. `imposter skill` prints the agent instructions. `imposter mcp` is the
+  opens. `imposter list`, `show` and `envs` let an agent find a request and read it
+  (placeholders and variable names, never values) before running it. `imposter skill`
+  prints the agent instructions. `imposter mcp` is the
   experimental spike below.
 
 ## Core, still to build
@@ -128,6 +130,9 @@ CLI. The file, environment and inputs come only from the command line the user w
 Covered by protocol, cancellation and secret tests; not yet tried in a real host. What it
 showed for M4's contract:
 
+- Discovery came to the command line first (`imposter list`, `show`, `envs`, 7 November
+  2026); M4's "Find requests", "Inspect request" and "List environments" tools should
+  return the same `catalog` structures.
 - Paths of names are a weak identity. A rename breaks every reference an agent kept, and
   duplicate names are refused at call time. The tool contract needs M2's stable request
   ids, with paths for display only.

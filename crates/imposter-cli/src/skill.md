@@ -1,11 +1,31 @@
-# I’mposter: run a saved HTTP request and check it
+# I’mposter: find, read and run the user's saved HTTP requests
 
-`imposter send` runs one of the user's saved I’mposter requests and prints a checked,
-redacted result as JSON. Use it to reproduce an API call the user saved, confirm a fix, or
-see what a server answers, instead of rebuilding the request with curl. It never opens a
-window. The user edits requests in the app; what they save is what runs.
+The `imposter` command works with the requests the user saved in the I’mposter app. Use it
+to reproduce an API call the user saved, confirm a fix, or see what a server answers,
+instead of rebuilding the request with curl. It never opens a window; what the user saves
+in the app is what runs.
 
-## Command
+## Find, read, then run
+
+1. `imposter list [FILTER]`: every saved request with its method, URL template and how
+   many checks it has. Narrow it with words or the sidebar's filter language
+   (`users`, `method:POST`, `url:orders`, `-old`).
+2. `imposter show <REQUEST> --env NAME`: one request as stored, its headers, body, checks,
+   captures and scripts, and every `{{variable}}` it uses with where it is defined for
+   that environment, or `undefined`. Values are never shown, only names: a credential
+   reads `{{token}}`, or `«redacted»` when it was typed in literally.
+3. `imposter envs`: the environments (red means production), globals and collections,
+   with the names of their variables. Use it to choose `--env`.
+4. `imposter send <REQUEST> --env NAME`: run it and read the result (below).
+
+Read before you run: `show` tells you whether a request changes data (its method, URL and
+body) and which variables must exist, without sending anything. An `undefined` variable
+means the run will stop before sending; ask the user for it, or pass it with `--input` or
+`--secret`.
+
+{{commands}}
+
+## Running a request
 
 ```sh
 imposter send <REQUEST> [OPTIONS]
