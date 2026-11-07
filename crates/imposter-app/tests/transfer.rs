@@ -287,6 +287,36 @@ async fn postman_files_import_with_companions() {
     assert_eq!(tree.requests.len(), 5);
 }
 
+/// Regression: import read native files with plain serde, so the version rules were skipped
+/// and a version 1 or 2 file holding scripts was imported as if it were version 3.
+#[tokio::test]
+async fn native_imports_apply_the_version_rules() {
+    let (dir, store) = open();
+    let mut scripted = json(&fixtures().join("native/scripts.imposter.json"));
+    scripted["version"] = 2.into();
+    let v2_scripts = dir.path().join("v2-scripts.imposter.json");
+    std::fs::write(&v2_scripts, serde_json::to_vec(&scripted).unwrap()).unwrap();
+    let mut marker = json(&fixtures().join("native/minimal.poster.json"));
+    marker["format"] = "imposter".into();
+    let wrong_marker = dir.path().join("marker.imposter.json");
+    std::fs::write(&wrong_marker, serde_json::to_vec(&marker).unwrap()).unwrap();
+
+    assert!(matches!(
+        read_preview(&store.handle(), v2_scripts, Vec::new()).await,
+        Err(TransferError::Native(
+            native::NativeError::ScriptsNeedVersion3 { .. }
+        ))
+    ));
+    assert!(matches!(
+        read_preview(&store.handle(), wrong_marker, Vec::new()).await,
+        Err(TransferError::Native(native::NativeError::Marker { .. }))
+    ));
+    assert_eq!(
+        store.call(|db| collections::collections(db)).await.unwrap(),
+        []
+    );
+}
+
 #[tokio::test]
 async fn bad_files_are_rejected_before_anything_is_written() {
     let (dir, store) = open();

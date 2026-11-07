@@ -406,9 +406,7 @@ pub fn read(
             if !companions.is_empty() {
                 return Err(TransferError::NativeCompanions);
             }
-            let document: NativeDocument =
-                serde_json::from_value(data).map_err(NativeError::Json)?;
-            Ok((document, Vec::new(), false))
+            Ok((native::decode_value(data)?, Vec::new(), false))
         }
         ImportKind::OpenApi => {
             if !companions.is_empty() {

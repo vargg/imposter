@@ -276,7 +276,17 @@ pub fn read_document(path: &Path) -> Result<Vec<u8>, NativeError> {
 
 /// Decode and validate everything an import needs before any write.
 pub fn decode(data: &[u8]) -> Result<NativeDocument, NativeError> {
-    let document: NativeDocument = serde_json::from_slice(data)?;
+    checked(serde_json::from_slice(data)?)
+}
+
+/// [`decode`] for a document already parsed as JSON.
+pub fn decode_value(data: serde_json::Value) -> Result<NativeDocument, NativeError> {
+    checked(serde_json::from_value(data)?)
+}
+
+/// The rules serde cannot express: markers and versions agree, and each field appears only
+/// in a version that has it.
+fn checked(document: NativeDocument) -> Result<NativeDocument, NativeError> {
     match (document.format, document.version) {
         (Format::Poster, Version::V1) | (Format::Imposter, Version::V2 | Version::V3) => {}
         (Format::Poster, Version::V2 | Version::V3) => {
