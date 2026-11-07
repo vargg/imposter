@@ -872,7 +872,12 @@ numbers, so both are excluded. Each logical change is its own commit.
   things unit tests cannot see (missing GL, TLS provider, bundled SQLite, paths). The app-side
   flow is covered by `imposter-ui/tests/smoke.rs`, CI runs the script on Linux on every push. The script
   checks the User-Agent against the workspace version, so release bumps remain verified
-  without maintaining a second version string.
+  without maintaining a second version string. `smoke.py --headless` runs `imposter send`
+  with every display variable removed and checks the outcome, the User-Agent and that no
+  profile was created; CI runs it before any display or GL library is installed, and the
+  release on every package (on Windows before Mesa is added). Why: the roadmap allows a
+  separate headless executable only if this binary cannot run without a display; this
+  shows it can.
 - **The command line is `imposter send` in the same binary** (`imposter-cli`, reached from
   `main.rs` before logging or the window start). It runs one request from a native file
   (`document::select` + `executor::run`, the one engine) and prints the redacted

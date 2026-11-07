@@ -85,7 +85,9 @@ jobs:
 
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'
-        run: python3 scripts/smoke.py target/packages/Imposter.app/Contents/MacOS/imposter
+        run: |
+          python3 scripts/smoke.py target/packages/Imposter.app/Contents/MacOS/imposter
+          python3 scripts/smoke.py --headless target/packages/Imposter.app/Contents/MacOS/imposter
 
       - name: Smoke test (Linux)
         if: runner.os == 'Linux'
@@ -95,9 +97,11 @@ jobs:
           sudo apt-get install -y xvfb libgl1-mesa-dri libegl1 libxkbcommon-x11-0
           sudo apt-get install -y ./target/packages/*.deb
           xvfb-run -a python3 scripts/smoke.py /usr/bin/imposter
+          python3 scripts/smoke.py --headless /usr/bin/imposter
           chmod +x target/packages/*.AppImage
           # No FUSE on runners: the AppImage runtime extracts itself instead.
           APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a python3 scripts/smoke.py target/packages/*.AppImage
+          APPIMAGE_EXTRACT_AND_RUN=1 python3 scripts/smoke.py --headless target/packages/*.AppImage
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
@@ -106,6 +110,10 @@ jobs:
           $dir = Join-Path $env:RUNNER_TEMP "ImposterInstall"
           $installer = Get-ChildItem target/packages/*-setup.exe | Select-Object -First 1
           Start-Process -Wait -FilePath $installer.FullName -ArgumentList "/S", "/D=$dir"
+          # Before Mesa is added: the command line needs no OpenGL.
+          python scripts/smoke.py --headless (Join-Path $dir "imposter.exe")
+          # PowerShell carries on after a failed program unless told.
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Runners have no GPU OpenGL; Mesa's software driver next to the binary provides
           # it for this test only. Users' machines use their own drivers.
           $mesa = "https://github.com/pal1000/mesa-dist-win/releases/download/24.2.7/mesa3d-24.2.7-release-msvc.7z"

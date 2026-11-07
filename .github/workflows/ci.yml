@@ -50,6 +50,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libegl1 libxkbcommon-x11-0
       - run: cargo build --locked -p imposter
+      # `imposter send` before any display or GL library is installed: the same binary
+      # must run a request where no display exists.
+      - run: python3 scripts/smoke.py --headless target/debug/imposter
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libegl1 libxkbcommon-x11-0
       - run: xvfb-run -a python3 scripts/smoke.py target/debug/imposter

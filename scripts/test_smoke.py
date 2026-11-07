@@ -3,6 +3,7 @@
 import contextlib
 import http.server
 import io
+import json
 import os
 from pathlib import Path
 import sqlite3
@@ -134,6 +135,40 @@ class BoundaryTests(unittest.TestCase):
                     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                         with self.assertRaisesRegex(ValueError, message):
                             smoke.run_once(Path("unused"), "Imposter/test")
+
+    def test_every_headless_assertion_still_rejects_a_broken_app(self):
+        for fault, message in (
+            ("exit", "exit code 3"), ("outcome", "outcome 'failed'"), ("json", "outcome None"),
+            ("agent", "unexpected User-Agent"), ("path", "expected one GET /smoke"),
+            ("missing_request", "expected one GET /smoke"), ("profile", "created a profile"),
+            ("display", "unexpected User-Agent"),
+        ):
+            with self.subTest(fault=fault):
+                def broken_app(command, work, env, measure):
+                    # Fault injection only at the app process; HTTP stays real.
+                    self.assertEqual(command[1:3], ["send", str(Path(work) / "smoke.imposter.json")])
+                    document = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+                    self.assertEqual(document["collection"]["folders"][0]["requests"][0]["name"], "Smoke")
+                    if fault == "profile":
+                        Path(env["IMPOSTER_DATA_DIR"]).mkdir()
+                    shown = any(name in env for name in smoke.DISPLAY_VARIABLES)
+                    if fault != "missing_request":
+                        url = env["SMOKE_BASE"] + "/smoke" + ("wrong" if fault == "path" else "")
+                        agent = "wrong" if fault == "agent" or shown else "Imposter/test"
+                        request = Request(url, headers={"User-Agent": agent})
+                        with build_opener(ProxyHandler({})).open(request, timeout=5) as response:
+                            response.read()
+                    stdout = {"json": "not json", "outcome": '{"outcome": "failed"}'}.get(fault, '{"outcome": "passed"}')
+                    return subprocess.CompletedProcess(command, 3 if fault == "exit" else 0, stdout, "")
+
+                display = {"DISPLAY": ":0"} if fault == "display" else {}
+                with patch.dict(os.environ, display), patch.object(smoke, "run_process", side_effect=broken_app):
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                        if fault == "display":
+                            smoke.run_headless(Path("unused"), "Imposter/test")
+                        else:
+                            with self.assertRaisesRegex(ValueError, message):
+                                smoke.run_headless(Path("unused"), "Imposter/test")
 
     def test_loopback_observations_are_isolated_per_run(self):
         first = []

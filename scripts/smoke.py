@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Smoke-test a packaged Imposter binary with an isolated profile and loopback server.
 
-Usage: scripts/smoke.py [--measure] <path to the imposter executable>
+Usage: scripts/smoke.py [--measure | --headless] <path to the imposter executable>
 Opens a real window; needs a display (Xvfb on Linux CI). Measurement mode is macOS-only.
+--headless runs `imposter send` instead, with every display variable removed: the same
+binary must run a request where no display exists.
 """
 
 from __future__ import annotations
@@ -166,6 +168,65 @@ def run_once(binary: Path, expected_agent: str, measure: bool = False) -> Sample
             thread.join(timeout=TIMEOUT)
 
 
+# The variables a GUI toolkit reads to find a display; a headless run gets none of them.
+DISPLAY_VARIABLES = ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XDG_SESSION_TYPE")
+
+
+def smoke_collection(path: Path) -> None:
+    request = {
+        "name": "Smoke", "method": "GET", "url": "{{base}}/smoke", "body": "", "body_type": "json",
+        "checks": [{"selector": "status", "op": "equals", "expected": "200"}],
+    }
+    document = {
+        "format": "imposter", "version": 2,
+        "collection": {"name": "Smoke", "folders": [{"name": "Checks", "requests": [request]}]},
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+
+def run_headless(binary: Path, expected_agent: str) -> None:
+    requests: list[tuple[str, str, float]] = []
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler_for(requests)) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory(prefix="imposter-headless-") as work:
+                data = Path(work) / "data"
+                collection = Path(work) / "smoke.imposter.json"
+                smoke_collection(collection)
+                env = {name: value for name, value in os.environ.items() if name not in DISPLAY_VARIABLES}
+                env.update({
+                    "IMPOSTER_DATA_DIR": str(data),
+                    "SMOKE_BASE": f"http://127.0.0.1:{server.server_port}",
+                    "LC_ALL": "C",
+                })
+                command = [str(binary), "send", str(collection), "Checks/Smoke", "--input", "base=SMOKE_BASE"]
+                result = run_process(command, work, env, False)
+                print(result.stderr, end="", file=sys.stderr)
+                failures = []
+                if result.returncode != 0:
+                    failures.append(f"exit code {result.returncode}")
+                try:
+                    outcome = json.loads(result.stdout).get("outcome")
+                except (ValueError, AttributeError):
+                    outcome = None
+                if outcome != "passed":
+                    failures.append(f"outcome {outcome!r}, expected 'passed'")
+                agents = [agent for _, agent, _ in requests]
+                if agents != [expected_agent]:
+                    failures.append(f"unexpected User-Agent: {agents}")
+                seen = [path for path, _, _ in requests]
+                if seen != ["/smoke"]:
+                    failures.append(f"server saw {seen}, expected one GET /smoke")
+                if data.exists():
+                    failures.append("a headless run created a profile")
+                if failures:
+                    raise ValueError("; ".join(failures))
+        finally:
+            server.shutdown()
+            thread.join(timeout=TIMEOUT)
+
+
 def measure_series(binary: Path, expected_agent: str) -> dict:
     samples = []
     for index in range(MEASURED_RUNS + 1):
@@ -181,7 +242,9 @@ def measure_series(binary: Path, expected_agent: str) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path)
-    parser.add_argument("--measure", action="store_true", help="macOS: one warm-up, ten samples, JSON report")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--measure", action="store_true", help="macOS: one warm-up, ten samples, JSON report")
+    modes.add_argument("--headless", action="store_true", help="run `imposter send` with no display variables")
     args = parser.parse_args()
     if args.measure and sys.platform != "darwin":
         parser.error("--measure requires macOS /usr/bin/time -l; ordinary smoke tests work on every OS")
@@ -194,6 +257,9 @@ def main() -> int:
         if args.measure:
             report = measure_series(args.binary.resolve(), expected_agent)
             print(json.dumps(report, indent=2, allow_nan=False))
+        elif args.headless:
+            run_headless(args.binary.resolve(), expected_agent)
+            print("headless smoke test passed")
         else:
             run_once(args.binary.resolve(), expected_agent)
             print("smoke test passed")
