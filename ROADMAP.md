@@ -119,6 +119,29 @@ worth trying.
   file.
 - The desktop, the CLI and CI are a complete release without M4.
 
+**M1 spike findings (7 November 2026).** `imposter mcp <FILE>` (experimental) serves two
+tools, `list_requests` and `send_request {path}`, over stdio on the same `send` code as the
+CLI. The file, environment and inputs come only from the command line the user wrote.
+Covered by protocol, cancellation and secret tests; not yet tried in a real host. What it
+showed for M4's contract:
+
+- Paths of names are a weak identity. A rename breaks every reference an agent kept, and
+  duplicate names are refused at call time. The tool contract needs M2's stable request
+  ids, with paths for display only.
+- MCP asks for structured content to be repeated as text, so a result with a 64 KiB
+  excerpt costs twice that in context. M4 needs a smaller default excerpt and the
+  planned "Read result" by run id, not the whole result in every call.
+- A failed check is a successful tool call (`isError: false`, the outcome is data). A
+  host that only shows `isError` presents a failing run as fine. The summary leads the
+  text for that reason; M4 should also declare an `outputSchema`.
+- Starting the server with fixed inputs works as a coarse execution grant, but it grants
+  the whole file. It has no per-destination limit, and redirects are not checked against
+  one. These are M4's grant and security tests.
+- One send runs at a time. Other calls wait, and a long send can reach a host's timeout,
+  since no progress notifications are sent. `notifications/cancelled` stops a send. A
+  client that closes its input cancels the send and the server exits without answering
+  queued calls.
+
 ## Not now
 
 Revisit when a real task is blocked. A competitor's feature list is not that task.

@@ -900,6 +900,16 @@ numbers, so both are excluded. Each logical change is its own commit.
   when printed, so it cannot drift from the parser. It only prints: the user decides
   where their agent reads it, and the app writes no agent configuration (the roadmap's
   rule).
+- **`imposter mcp <FILE>` is an experimental MCP server over stdio** (`imposter_cli::mcp`),
+  the M1 spike, not the M4 tool list: `list_requests` and `send_request {path}`, answered
+  with the same `RunResult` as `send` (structured, and repeated as text as MCP asks). The
+  file, environment and inputs come only from its command line, so an agent chooses which
+  request runs and nothing else; there is no `--out` and no port. Messages are
+  newline-delimited JSON-RPC 2.0, hand-written over `serde_json` (no SDK dependency for a
+  spike); diagnostics go to stderr. One send runs at a time while further messages are
+  read: `notifications/cancelled` for it cancels it, others wait, and a closed input
+  cancels and ends the server. Its findings are in ROADMAP.md under the experiment. Pinned
+  by `imposter-cli/tests/mcp.rs` and the process test in `imposter/tests/cli.rs`.
 - **History opens a result file the command line wrote** (⋯ → "Open result file…", also
   in the palette), in place of a selected execution: the summary in its outcome's tone, a
   muted line saying where it came from ("From imposter send · Users/Create user · Dev ·

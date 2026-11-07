@@ -320,6 +320,10 @@ For a coding agent, `imposter skill` prints instructions on running requests, pa
 secrets and reading results. Put them wherever your agent reads instructions; I’mposter
 writes no agent configuration itself.
 
+`imposter mcp <FILE>` is an experiment: an MCP server over stdio that lets a chat tool list
+the requests of one file and send one, with the environment and inputs you give on its
+command line. Its tools and output may change or go away.
+
 ### Moving from the Python version
 
 Export each collection from the Python app as `.poster.json` (with its environments and

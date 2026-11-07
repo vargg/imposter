@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use imposter_core::run_result::RunOutcome;
 
+pub mod mcp;
 pub mod send;
 
 pub use send::{InputArg, SendArgs};
@@ -107,7 +108,7 @@ pub fn usage() -> String {
         let _ = writeln!(text, "  {status:<4} {name:<16} {help}");
     }
     text.push_str(
-        "\nOther commands:\n  imposter skill                 print instructions for a coding agent\n  imposter --help | --version\n",
+        "\nOther commands:\n  imposter skill                 print instructions for a coding agent\n  imposter mcp <FILE> [--env NAME] [--input|--secret VAR=PROCESS_VAR]... [--max-body BYTES]\n                                 experimental: an MCP server over stdio for one file\n  imposter --help | --version\n",
     );
     text
 }
@@ -176,6 +177,8 @@ enum Command {
     Version,
     Skill,
     Send(SendArgs),
+    /// The experimental MCP server: a FILE and the run's environment and inputs.
+    Mcp(SendArgs),
 }
 
 fn parse(args: Vec<OsString>) -> Result<Command, String> {
@@ -194,7 +197,8 @@ fn parse(args: Vec<OsString>) -> Result<Command, String> {
             None => Ok(Command::Skill),
             Some(other) => Err(other.unexpected().to_string()),
         },
-        "send" => parse_send(&mut parser),
+        "send" => parse_send(&mut parser, false),
+        "mcp" => parse_send(&mut parser, true),
         other => Err(format!("unknown command {other:?}")),
     }
 }
@@ -213,7 +217,9 @@ fn input(value: OsString, secret: bool) -> Result<InputArg, String> {
     }
 }
 
-fn parse_send(parser: &mut lexopt::Parser) -> Result<Command, String> {
+/// `send`'s arguments, or with `mcp` the server's: a FILE without a REQUEST (the agent
+/// chooses it per call) and no `--out`.
+fn parse_send(parser: &mut lexopt::Parser, mcp: bool) -> Result<Command, String> {
     use lexopt::prelude::*;
     let mut positional: Vec<OsString> = Vec::new();
     let mut args = SendArgs::default();
@@ -230,7 +236,7 @@ fn parse_send(parser: &mut lexopt::Parser) -> Result<Command, String> {
             }
             Long("input") => args.inputs.push(input(value(parser)?, false)?),
             Long("secret") => args.inputs.push(input(value(parser)?, true)?),
-            Long("out") => args.out = Some(PathBuf::from(value(parser)?)),
+            Long("out") if !mcp => args.out = Some(PathBuf::from(value(parser)?)),
             Long("max-body") => {
                 args.max_body = value(parser)?
                     .into_string()
@@ -243,6 +249,13 @@ fn parse_send(parser: &mut lexopt::Parser) -> Result<Command, String> {
         }
     }
     let mut positional = positional.into_iter();
+    if mcp {
+        let (Some(file), None) = (positional.next(), positional.next()) else {
+            return Err("mcp takes a FILE".into());
+        };
+        args.file = PathBuf::from(file);
+        return Ok(Command::Mcp(args));
+    }
     let (Some(file), Some(request), None) =
         (positional.next(), positional.next(), positional.next())
     else {
@@ -304,6 +317,40 @@ pub fn main(args: Vec<OsString>, io: &mut Io<'_>) -> u8 {
                 send::send(&args, io.var, cancel).await
             });
             send::report(&args, &result, io.stdout, io.stderr)
+        }
+        Command::Mcp(args) => {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    let _ = writeln!(io.stderr, "error: cannot start: {error}");
+                    return USAGE_STATUS;
+                }
+            };
+            let (lines, received) = tokio::sync::mpsc::unbounded_channel();
+            // Reading stdin blocks, so a thread feeds the server; it ends with stdin.
+            std::thread::spawn(move || {
+                for line in std::io::stdin().lines() {
+                    let Ok(line) = line else { break };
+                    if lines.send(line).is_err() {
+                        break;
+                    }
+                }
+            });
+            let _ = writeln!(
+                io.stderr,
+                "imposter mcp (experimental): serving {} over stdio",
+                args.file.display()
+            );
+            match runtime.block_on(mcp::serve(received, io.stdout, &args, io.var)) {
+                Ok(()) => 0,
+                Err(error) => {
+                    let _ = writeln!(io.stderr, "error: stdout closed: {error}");
+                    1
+                }
+            }
         }
     }
 }
@@ -388,6 +435,18 @@ mod tests {
         ] {
             assert_eq!(parse(args(line)), Err(message.to_owned()), "{line:?}");
         }
+        assert_eq!(parse(args(&["mcp"])), Err("mcp takes a FILE".to_owned()));
+        assert_eq!(
+            parse(args(&["mcp", "a.json", "--out", "x"])),
+            Err("invalid option '--out'".to_owned())
+        );
+        assert!(matches!(
+            parse(args(&["mcp", "a.json", "--env", "Dev"])),
+            Ok(Command::Mcp(SendArgs {
+                environment: Some(_),
+                ..
+            }))
+        ));
         assert_eq!(parse(args(&["help"])), Ok(Command::Help));
         assert_eq!(parse(args(&["send", "--help"])), Ok(Command::Help));
         assert_eq!(parse(args(&["-V"])), Ok(Command::Version));

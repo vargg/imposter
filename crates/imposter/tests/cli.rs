@@ -175,3 +175,47 @@ async fn an_interrupt_cancels_the_run() {
     assert_eq!(output.status.code(), Some(130), "{output:?}");
     assert_eq!(json_of(&output)["outcome"], "cancelled");
 }
+
+/// The experimental MCP server answers on stdout over a pipe and ends with its input.
+#[tokio::test]
+async fn mcp_answers_over_stdio_and_ends_with_its_input() {
+    use std::io::Write as _;
+    let home = tempfile::tempdir().unwrap();
+    let file = write_document(home.path(), "http://127.0.0.1:1");
+    let mut command = imposter(home.path());
+    command
+        .args(["mcp", file.to_str().unwrap()])
+        .stdin(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    stdin
+        .write_all(
+            concat!(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}"#,
+                "\n",
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_requests","arguments":{}}}"#,
+                "\n"
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+    drop(stdin);
+    let output = tokio::task::spawn_blocking(move || child.wait_with_output().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let answers: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(answers[0]["result"]["protocolVersion"], "2025-11-25");
+    assert_eq!(
+        answers[1]["result"]["structuredContent"]["requests"],
+        json!(["Users/List", "Users/Hold"])
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("experimental"),
+        "diagnostics go to stderr"
+    );
+}
