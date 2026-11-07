@@ -645,7 +645,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   list and save (the user's note). The bookmark is as wide as a two-digit count on every row, so the remove buttons
   after it stay in one column. Why: × beside the value invited removing it by mistake (the
   review's #38; Phase 5 review Q23, Q24).
-- **History search uses the sidebar's filter language** (`filter.rs`, with `status:`,
+- **History search uses the sidebar's filter language** (`imposter_app::filter`, with `status:`,
   `env:` and `via:` added for History: `404`, `4xx`, `failed`, `cancelled`; `via:cli` or
   `via:app`). Words match the request
   name and the URL as sent; bodies are not searched, because that would decode every
@@ -864,7 +864,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   Ctrl+Tab goes back to the previous request; Shift starts from the oldest; Esc cancels. A
   release that comes before the index loads opens as soon as it arrives. Why: the
   back-and-forth between two requests is the most common jump.
-- **The sidebar filter is a small query language** (`filter.rs`, after Yaak's): words combine
+- **The sidebar filter is a small query language** (`imposter_app::filter`, after Yaak's): words combine
   with AND, plus OR, NOT/`-word`, `"phrases"`, parentheses, and `method:` (whole method),
   `url:` and `name:`. Plain words match the request's folder path, name and URL, so typing a
   folder name shows its requests and a negation never brings a whole folder back; folders

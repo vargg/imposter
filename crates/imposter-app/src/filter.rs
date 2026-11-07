@@ -6,8 +6,8 @@
 //! text anywhere, except `method:`, which must be the whole method, and `status:`. Text that
 //! does not parse is searched as typed, so the filter never errors.
 
-use imposter_app::core::execution::{Outcome, Via};
-use imposter_app::store::executions::ExecutionSummary;
+use imposter_core::execution::{Outcome, Via};
+use imposter_store::executions::ExecutionSummary;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
@@ -382,9 +382,9 @@ mod tests {
         environment: &str,
     ) -> ExecutionSummary {
         ExecutionSummary {
-            id: imposter_app::core::ids::ExecutionId(0),
+            id: imposter_core::ids::ExecutionId(0),
             request_id: None,
-            timestamp: imposter_app::core::execution::Timestamp(0),
+            timestamp: imposter_core::execution::Timestamp(0),
             name: name.into(),
             method: method.into(),
             url: url.into(),

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use imposter_app::core::ids::{FolderId, RequestId};
 use imposter_app::store::collections::{Folder, RequestSummary, Tree};
 
-use crate::filter::{Candidate, Query};
+use imposter_app::filter::{Candidate, Query};
 
 /// Something in the tree that can be renamed, moved or deleted: the store's own item, so a
 /// drop goes to [`imposter_app::store::collections::place`] as it is.

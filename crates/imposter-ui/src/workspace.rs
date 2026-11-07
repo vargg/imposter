@@ -396,7 +396,7 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
     ui.add_space(6.0);
     ui.separator();
     ui.add_space(6.0);
-    let query = crate::filter::Query::parse(&state.sidebar_filter);
+    let query = imposter_app::filter::Query::parse(&state.sidebar_filter);
     egui::ScrollArea::vertical()
         .id_salt("tree")
         .auto_shrink([false, false])
@@ -718,7 +718,7 @@ fn sidebar_filter(state: &mut State, ui: &mut Ui) {
             state.sidebar_filter.clear();
         }
     }
-    let query = crate::filter::Query::parse(&state.sidebar_filter);
+    let query = imposter_app::filter::Query::parse(&state.sidebar_filter);
     if let Some(tree) = state.tree.as_ref().filter(|_| !query.is_all()) {
         let shown = crate::tree::request_count(&tree.filtered(&query));
         let total = crate::tree::request_count(&tree.roots);

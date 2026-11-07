@@ -4,7 +4,6 @@ pub mod app;
 pub mod checks;
 pub mod dialogs;
 pub mod editor;
-pub mod filter;
 pub mod highlight;
 pub mod history_screen;
 pub mod icons;

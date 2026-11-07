@@ -3,6 +3,7 @@
 
 pub mod document;
 pub mod executor;
+pub mod filter;
 pub mod load;
 pub mod ops;
 pub mod paths;

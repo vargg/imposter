@@ -4149,8 +4149,10 @@ impl ImposterApp {
             None
         };
         history.status = Some(("Loading history…".into(), Tone::Muted));
-        let query =
-            crate::filter::Query::parse_with(&history.filter, crate::filter::HISTORY_FIELDS);
+        let query = imposter_app::filter::Query::parse_with(
+            &history.filter,
+            imposter_app::filter::HISTORY_FIELDS,
+        );
         self.task(
             move |db| {
                 if query.is_all() {
