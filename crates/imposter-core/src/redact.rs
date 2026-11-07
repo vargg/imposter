@@ -1,0 +1,252 @@
+//! Taking known secrets out of what a headless run reports. Filtering by known values cannot
+//! find every sensitive value a server returns; it removes the ones the run was given and
+//! the credentials it sent.
+
+use base64::Engine as _;
+use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+use regex::Regex;
+
+use crate::model::{Auth, RequestTemplate};
+use crate::settings::AppSettings;
+
+/// What stands in for a removed value.
+pub const MARK: &str = "«redacted»";
+
+/// Headers whose whole value is a credential, by lowercase name.
+pub const SECRET_HEADERS: [&str; 4] = [
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+];
+
+/// Secrets shorter than this would remove ordinary text wherever it appears ("1", "dev"), so
+/// a run refuses them as secret inputs.
+pub const MIN_SECRET: usize = 4;
+
+/// The values to remove, longest first so a secret containing another goes whole.
+#[derive(Debug, Clone, Default)]
+pub struct Redactor {
+    needles: Vec<String>,
+}
+
+fn userinfo() -> &'static Regex {
+    static PATTERN: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    PATTERN.get_or_init(|| {
+        Regex::new(r"([A-Za-z][A-Za-z0-9+.\-]*://)[^\s/?#@]+@")
+            .expect("the userinfo pattern is a valid regular expression")
+    })
+}
+
+const HEX: &[u8; 16] = b"0123456789ABCDEF";
+
+/// Percent-encoding of every byte outside RFC 3986's unreserved set, as URLs and forms
+/// carry a value.
+fn percent_encoded(value: &str, space_as_plus: bool) -> String {
+    let mut out = String::with_capacity(value.len() * 3);
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(char::from(byte));
+            }
+            b' ' if space_as_plus => out.push('+'),
+            other => {
+                out.push('%');
+                out.push(char::from(HEX[usize::from(other >> 4)]));
+                out.push(char::from(HEX[usize::from(other & 0xF)]));
+            }
+        }
+    }
+    out
+}
+
+impl Redactor {
+    /// Remove `value` and the forms it travels in: percent-encoded (URLs, forms) and base64
+    /// (both alphabets, with and without padding). Empty values are ignored.
+    pub fn secret(&mut self, value: &str) {
+        if value.is_empty() {
+            return;
+        }
+        let bytes = value.as_bytes();
+        let forms = [
+            value.to_owned(),
+            percent_encoded(value, false),
+            percent_encoded(value, true),
+            STANDARD.encode(bytes),
+            STANDARD_NO_PAD.encode(bytes),
+            URL_SAFE.encode(bytes),
+            URL_SAFE_NO_PAD.encode(bytes),
+        ];
+        for form in forms {
+            if !self.needles.contains(&form) {
+                self.needles.push(form);
+            }
+        }
+        self.needles
+            .sort_by_key(|needle| std::cmp::Reverse(needle.len()));
+    }
+
+    /// Remove the credentials `template` sends and the client key password in `settings`.
+    /// Basic credentials also go as the `user:password` pair a server could echo.
+    pub fn credentials(&mut self, template: &RequestTemplate, settings: &AppSettings) {
+        match template.auth.active() {
+            Ok(Some(Auth::Basic(credentials))) => {
+                self.secret(&credentials.password);
+                if !credentials.password.is_empty() {
+                    self.secret(&format!(
+                        "{}:{}",
+                        credentials.username, credentials.password
+                    ));
+                }
+            }
+            Ok(Some(Auth::Digest(credentials))) => self.secret(&credentials.password),
+            Ok(Some(Auth::Bearer(token))) => self.secret(&token.token),
+            Ok(None) | Err(_) => {}
+        }
+        if let Some(password) = &template.options.password {
+            self.secret(password);
+        }
+        self.secret(&settings.password);
+    }
+
+    /// `text` with every known secret and any `user:password@` in a URL replaced by [`MARK`].
+    pub fn text(&self, text: &str) -> String {
+        let mut out = userinfo()
+            .replace_all(text, format!("${{1}}{MARK}@").as_str())
+            .into_owned();
+        for needle in &self.needles {
+            if out.contains(needle.as_str()) {
+                out = out.replace(needle.as_str(), MARK);
+            }
+        }
+        out
+    }
+
+    /// A header as reported: credential headers lose their whole value.
+    pub fn header(&self, name: &str, value: &str) -> (String, String) {
+        let value = if SECRET_HEADERS.contains(&name.to_ascii_lowercase().as_str()) {
+            MARK.to_owned()
+        } else {
+            self.text(value)
+        };
+        (self.text(name), value)
+    }
+
+    /// Every string in `value`, keys included, through [`Redactor::text`].
+    pub fn json(&self, value: &mut serde_json::Value) {
+        use serde_json::Value;
+        match value {
+            Value::String(text) => *text = self.text(text),
+            Value::Array(items) => items.iter_mut().for_each(|item| self.json(item)),
+            Value::Object(map) => {
+                let entries = std::mem::take(map);
+                for (key, mut item) in entries {
+                    self.json(&mut item);
+                    map.insert(self.text(&key), item);
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::RequestAuth;
+
+    fn redactor(secrets: &[&str]) -> Redactor {
+        let mut redactor = Redactor::default();
+        for secret in secrets {
+            redactor.secret(secret);
+        }
+        redactor
+    }
+
+    #[test]
+    fn secrets_go_in_every_form_they_travel_in() {
+        let redactor = redactor(&["s3cr et/+"]);
+        for form in [
+            "s3cr et/+",
+            "s3cr%20et%2F%2B",
+            "s3cr+et%2F%2B",
+            &STANDARD.encode("s3cr et/+"),
+            &URL_SAFE_NO_PAD.encode("s3cr et/+"),
+        ] {
+            assert_eq!(
+                redactor.text(&format!("a {form} b")),
+                "a «redacted» b",
+                "{form}"
+            );
+        }
+        assert_eq!(redactor.text("nothing here"), "nothing here");
+    }
+
+    #[test]
+    fn the_longest_secret_goes_whole() {
+        let redactor = redactor(&["abcd", "abcdefgh"]);
+        assert_eq!(
+            redactor.text("x abcdefgh y abcd"),
+            "x «redacted» y «redacted»"
+        );
+    }
+
+    #[test]
+    fn url_passwords_and_credential_headers_go() {
+        let redactor = Redactor::default();
+        assert_eq!(
+            redactor.text("see https://ann:pw@example.com/a?b=c@d and ftp://x@y"),
+            "see https://«redacted»@example.com/a?b=c@d and ftp://«redacted»@y"
+        );
+        assert_eq!(
+            redactor.header("Set-Cookie", "sid=1"),
+            ("Set-Cookie".into(), MARK.into())
+        );
+        assert_eq!(
+            redactor.header("x-trace", "1"),
+            ("x-trace".into(), "1".into())
+        );
+    }
+
+    #[test]
+    fn credentials_of_the_active_auth_and_key_password_go() {
+        let mut redactor = Redactor::default();
+        let template = RequestTemplate {
+            auth: RequestAuth::basic("ann", "hunter22"),
+            ..RequestTemplate::default()
+        };
+        let settings = AppSettings {
+            password: "keypass".into(),
+            ..AppSettings::default()
+        };
+        redactor.credentials(&template, &settings);
+        let echoed = format!("Basic {} hunter22 keypass", STANDARD.encode("ann:hunter22"));
+        assert_eq!(
+            redactor.text(&echoed),
+            "Basic «redacted» «redacted» «redacted»"
+        );
+
+        let mut bearer = Redactor::default();
+        bearer.credentials(
+            &RequestTemplate {
+                auth: RequestAuth::bearer("tok-123"),
+                ..RequestTemplate::default()
+            },
+            &AppSettings::default(),
+        );
+        assert_eq!(bearer.text("tok-123"), MARK);
+    }
+
+    #[test]
+    fn json_is_redacted_everywhere_keys_included() {
+        let redactor = redactor(&["topsecret"]);
+        let mut value = serde_json::json!({
+            "a": ["topsecret", 1, null, {"topsecret": "x topsecret"}],
+        });
+        redactor.json(&mut value);
+        assert_eq!(
+            value,
+            serde_json::json!({"a": ["«redacted»", 1, null, {"«redacted»": "x «redacted»"}]})
+        );
+    }
+}

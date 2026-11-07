@@ -479,6 +479,28 @@ numbers, so both are excluded. Each logical change is its own commit.
   the roadmap's "one contract": a headless run must not grow a second variable, script or
   check implementation. Pinned by `imposter-app/tests/document.rs`, which sends one file
   through both paths and compares the bytes received and the verdicts.
+- **A headless run reports one result schema** (`core::run_result::RunResult`, format
+  `imposter-result`, version 1), for the command line's JSON, result files and the
+  desktop's view. It leads with a summary line and an outcome, then what ran (file SHA-256,
+  request path, environment, input names, never values), checks, script tests, captures,
+  the request as sent, the response head and body excerpts, and the limits it was made
+  under. The script console is never part of it, as it is never stored.
+  - **Outcomes** each have an exit status: passed 0, failed 1 (a check or a script test),
+    not sent 3, transport error 4, script failed 5 (before sending or after the
+    response), not checked 6, no checks 7, cancelled 130; 2 is for usage errors, which
+    have no result. When several apply, the one that says least was verified wins
+    (`RunOutcome::of`). A response with no checks is not success: it is an execution,
+    not verified behavior (the roadmap's "What a run means").
+  - **Redaction** (`core::redact::Redactor`) runs over every string of the result, keys
+    included: the run's secret inputs and the credentials it sent (Basic and Digest
+    passwords, the Basic `user:password` pair, Bearer tokens, the client key password),
+    each also percent-encoded and base64 in both alphabets; `user:password@` in any URL;
+    and the whole value of `Authorization`, `Proxy-Authorization`, `Cookie` and
+    `Set-Cookie`. Bodies are redacted before the excerpt is cut, so a secret across the
+    cut leaves nothing behind (found by the golden test). Filtering by known values cannot
+    find every sensitive value a server returns, and the README says so. Pinned by
+    `imposter-core/tests/run_result.rs` and its golden file
+    `tests/fixtures/results/sent.imposter-result.json`.
 - **Requests that cannot be sent are not history.** Unresolved variables, a bad URL, auth or
   cookie conflicts, a failed before-sending script are reported and nothing is recorded (the Python app recorded URL errors as
   transport errors). Cancelled and failed sends are recorded with their outcome. A failed

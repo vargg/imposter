@@ -1,0 +1,121 @@
+{
+  "format": "imposter-result",
+  "version": 1,
+  "summary": "Failed: 1 of 3 checks failed · 201 Created · 12 ms",
+  "outcome": "failed",
+  "run": {
+    "id": "0b5c7f0e-4f0a-4d55-9a57-2b8f1d2c3e4f",
+    "tool": "imposter 0.0.0",
+    "started": "2026-10-26T07:33:20.000Z",
+    "elapsed_ms": 15
+  },
+  "definition": {
+    "file": "api.imposter.json",
+    "sha256": "abababababababababababababababababababababababababababababababab",
+    "request": "Users/Create user",
+    "environment": "Dev"
+  },
+  "inputs": [
+    {
+      "variable": "token",
+      "from": "API_TOKEN",
+      "secret": true
+    }
+  ],
+  "origin": "live",
+  "checks": [
+    {
+      "check": {
+        "enabled": true,
+        "selector": "status",
+        "op": "equals",
+        "expected": "201"
+      },
+      "verdict": "passed",
+      "actual": null
+    },
+    {
+      "check": {
+        "enabled": true,
+        "selector": {
+          "json": "$.echo"
+        },
+        "op": "equals",
+        "expected": "x"
+      },
+      "verdict": "failed",
+      "actual": "«redacted»"
+    }
+  ],
+  "script": {
+    "tests": [
+      {
+        "name": "created",
+        "passed": true
+      }
+    ]
+  },
+  "captures": [
+    {
+      "variable": "echo",
+      "taken": {
+        "value": "«redacted»"
+      },
+      "target": "this run"
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "url": "https://«redacted»@api.test/users?key=«redacted»",
+    "headers": [
+      [
+        "X-Trace",
+        "t-1"
+      ],
+      [
+        "Content-Type",
+        "application/json"
+      ],
+      [
+        "Authorization",
+        "«redacted»"
+      ]
+    ],
+    "body": {
+      "text": "{\"token\":\"«redacted»\"}",
+      "bytes": 25,
+      "cut": false,
+      "binary": false
+    }
+  },
+  "response": {
+    "status": 201,
+    "reason": "Created",
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "set-cookie",
+        "«redacted»"
+      ],
+      [
+        "x-echo",
+        "«redacted»"
+      ]
+    ],
+    "elapsed_ms": 12.3,
+    "truncated": false,
+    "body": {
+      "text": "{\"id\":7,\"echo\":\"«redacted»\",\"padding\":\"0123456789abcdefghijklm",
+      "bytes": 80,
+      "cut": true,
+      "binary": false
+    }
+  },
+  "limits": {
+    "capture_bytes": 5242880,
+    "excerpt_bytes": 64
+  }
+}
