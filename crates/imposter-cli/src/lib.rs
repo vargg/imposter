@@ -25,11 +25,16 @@ pub struct Flag {
     pub help: &'static str,
 }
 
-pub const SEND_FLAGS: [Flag; 5] = [
+pub const SEND_FLAGS: [Flag; 6] = [
+    Flag {
+        name: "--file",
+        value: "FILE",
+        help: "Read a collection file (.imposter.json) instead of your I’mposter data, as CI does. Nothing is written to History.",
+    },
     Flag {
         name: "--env",
         value: "NAME",
-        help: "Use the file's environment NAME; without it, only globals and collection variables apply.",
+        help: "Use environment NAME; without it, only globals and collection variables apply, whatever the app has active.",
     },
     Flag {
         name: "--input",
@@ -92,11 +97,12 @@ pub fn version() -> String {
 /// The help text, from [`SEND_FLAGS`] and [`RunOutcome::ALL`].
 pub fn usage() -> String {
     let mut text = String::from(
-        "Usage:\n  imposter                       open the app\n  imposter send <FILE> <REQUEST> [OPTIONS]\n\n\
-         Run one request from a collection file (.imposter.json) without a window and without\n\
-         your personal data. REQUEST is its path of names, e.g. \"Users/Create user\" (write a\n\
-         \"/\" inside a name as \"\\/\"). The result is printed as JSON on stdout, a summary on\n\
-         stderr.\n\nOptions:\n",
+        "Usage:\n  imposter                       open the app\n  imposter send <REQUEST> [OPTIONS]\n\n\
+         Run one saved request without a window, as Send does. REQUEST is its breadcrumb,\n\
+         collection first: \"Shop API / Users / Create user\" (write a \"/\" inside a name as\n\
+         \"\\/\"). The run is kept in History, marked as the command line's; captured values\n\
+         stay in the run. The result is printed as JSON on stdout, a summary on stderr.\n\n\
+         Options:\n",
     );
     for flag in SEND_FLAGS {
         let left = format!("{} {}", flag.name, flag.value);
@@ -108,7 +114,7 @@ pub fn usage() -> String {
         let _ = writeln!(text, "  {status:<4} {name:<16} {help}");
     }
     text.push_str(
-        "\nOther commands:\n  imposter skill                 print instructions for a coding agent\n  imposter mcp <FILE> [--env NAME] [--input|--secret VAR=PROCESS_VAR]... [--max-body BYTES]\n                                 experimental: an MCP server over stdio for one file\n  imposter --help | --version\n",
+        "\nOther commands:\n  imposter skill                 print instructions for a coding agent\n  imposter mcp [--file FILE] [--env NAME] [--input|--secret VAR=PROCESS_VAR]... [--max-body BYTES]\n                                 experimental: an MCP server over stdio\n  imposter --help | --version\n",
     );
     text
 }
@@ -237,6 +243,7 @@ fn parse_send(parser: &mut lexopt::Parser, mcp: bool) -> Result<Command, String>
             Long("input") => args.inputs.push(input(value(parser)?, false)?),
             Long("secret") => args.inputs.push(input(value(parser)?, true)?),
             Long("out") if !mcp => args.out = Some(PathBuf::from(value(parser)?)),
+            Long("file") => args.file = Some(PathBuf::from(value(parser)?)),
             Long("max-body") => {
                 args.max_body = value(parser)?
                     .into_string()
@@ -250,18 +257,14 @@ fn parse_send(parser: &mut lexopt::Parser, mcp: bool) -> Result<Command, String>
     }
     let mut positional = positional.into_iter();
     if mcp {
-        let (Some(file), None) = (positional.next(), positional.next()) else {
-            return Err("mcp takes a FILE".into());
+        return match positional.next() {
+            None => Ok(Command::Mcp(args)),
+            Some(_) => Err("mcp takes no REQUEST: the agent chooses one per call".into()),
         };
-        args.file = PathBuf::from(file);
-        return Ok(Command::Mcp(args));
     }
-    let (Some(file), Some(request), None) =
-        (positional.next(), positional.next(), positional.next())
-    else {
-        return Err("send takes a FILE and a REQUEST".into());
+    let (Some(request), None) = (positional.next(), positional.next()) else {
+        return Err("send takes one REQUEST (use --file FILE for a collection file)".into());
     };
-    args.file = PathBuf::from(file);
     args.request = request
         .into_string()
         .map_err(|_| "REQUEST must be valid UTF-8".to_owned())?;
@@ -342,7 +345,10 @@ pub fn main(args: Vec<OsString>, io: &mut Io<'_>) -> u8 {
             let _ = writeln!(
                 io.stderr,
                 "imposter mcp (experimental): serving {} over stdio",
-                args.file.display()
+                args.file.as_ref().map_or_else(
+                    || "your saved requests".to_owned(),
+                    |file| file.display().to_string()
+                )
             );
             match runtime.block_on(mcp::serve(received, io.stdout, &args, io.var)) {
                 Ok(()) => 0,
@@ -369,6 +375,7 @@ mod tests {
             "send",
             "--env",
             "Dev",
+            "--file",
             "api.imposter.json",
             "--secret",
             "token=API_TOKEN",
@@ -383,7 +390,7 @@ mod tests {
         assert_eq!(
             parsed,
             Command::Send(SendArgs {
-                file: "api.imposter.json".into(),
+                file: Some("api.imposter.json".into()),
                 request: "Users/Create user".into(),
                 environment: Some("Dev".into()),
                 inputs: vec![
@@ -409,10 +416,13 @@ mod tests {
         for (line, message) in [
             (&[][..], "a command is needed"),
             (&["sned"][..], "unknown command \"sned\""),
-            (&["send", "a.json"][..], "send takes a FILE and a REQUEST"),
             (
-                &["send", "a", "b", "c"][..],
-                "send takes a FILE and a REQUEST",
+                &["send"][..],
+                "send takes one REQUEST (use --file FILE for a collection file)",
+            ),
+            (
+                &["send", "a.json", "Users/List"][..],
+                "send takes one REQUEST (use --file FILE for a collection file)",
             ),
             (
                 &["send", "a", "b", "--input", "x"][..],
@@ -435,13 +445,20 @@ mod tests {
         ] {
             assert_eq!(parse(args(line)), Err(message.to_owned()), "{line:?}");
         }
-        assert_eq!(parse(args(&["mcp"])), Err("mcp takes a FILE".to_owned()));
         assert_eq!(
-            parse(args(&["mcp", "a.json", "--out", "x"])),
+            parse(args(&["mcp", "Users/List"])),
+            Err("mcp takes no REQUEST: the agent chooses one per call".to_owned())
+        );
+        assert_eq!(
+            parse(args(&["mcp", "--out", "x"])),
             Err("invalid option '--out'".to_owned())
         );
         assert!(matches!(
-            parse(args(&["mcp", "a.json", "--env", "Dev"])),
+            parse(args(&["mcp"])),
+            Ok(Command::Mcp(SendArgs { file: None, .. }))
+        ));
+        assert!(matches!(
+            parse(args(&["mcp", "--file", "a.json", "--env", "Dev"])),
             Ok(Command::Mcp(SendArgs {
                 environment: Some(_),
                 ..

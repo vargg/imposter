@@ -200,7 +200,7 @@ def run_headless(binary: Path, expected_agent: str) -> None:
                     "SMOKE_BASE": f"http://127.0.0.1:{server.server_port}",
                     "LC_ALL": "C",
                 })
-                command = [str(binary), "send", str(collection), "Checks/Smoke", "--input", "base=SMOKE_BASE"]
+                command = [str(binary), "send", "Checks/Smoke", "--file", str(collection), "--input", "base=SMOKE_BASE"]
                 result = run_process(command, work, env, False)
                 print(result.stderr, end="", file=sys.stderr)
                 failures = []

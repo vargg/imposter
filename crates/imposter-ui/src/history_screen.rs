@@ -436,19 +436,29 @@ fn result_header(ui: &mut Ui, opened: &crate::app::OpenedResult, actions: &mut V
         .as_deref()
         .unwrap_or("no environment");
     let run: String = result.run.id.chars().take(8).collect();
+    // A run against the profile is also in History; a file run never is.
+    let kept = match result.definition.source {
+        imposter_app::core::run_result::Source::Profile => "also in History",
+        imposter_app::core::run_result::Source::File => "from a file, not in History",
+    };
     let origin = format!(
-        "From imposter send · {} · {environment} · run {run} · not in history · secrets removed",
+        "From imposter send · {} · {environment} · run {run} · {kept} · secrets removed",
         result.definition.request
     );
+    let mut details = vec![format!("Opened from {}", opened.file)];
+    if let Some(file) = &result.definition.file {
+        details.push(format!("Ran {file}"));
+    }
+    if let Some(sha256) = &result.definition.sha256 {
+        details.push(format!("SHA-256 {sha256}"));
+    }
+    details.push(format!(
+        "Started {} by {}",
+        result.run.started, result.run.tool
+    ));
+    let details = details.join("\n");
     ui.add(egui::Label::new(tone_text(origin, Tone::Muted)).truncate())
-        .on_hover_text(format!(
-            "{} ({})\nSHA-256 {}\nStarted {} by {}",
-            result.definition.file,
-            opened.file,
-            result.definition.sha256,
-            result.run.started,
-            result.run.tool
-        ));
+        .on_hover_text(details);
 }
 
 /// The selected execution's line and actions; `false` while there is nothing to show.

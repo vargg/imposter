@@ -177,7 +177,7 @@ fn every_outcome_has_its_exit_status_and_result() {
         ("Inputs", &["--env", "Staging"][..], RunOutcome::NotSent),
         ("Twins", &[][..], RunOutcome::NotSent),
     ] {
-        let mut args = vec!["send", file, request];
+        let mut args = vec!["send", "--file", file, request];
         args.extend_from_slice(extra);
         let ran = run_with(&args, &var);
         let result = ran.result();
@@ -189,7 +189,7 @@ fn every_outcome_has_its_exit_status_and_result() {
         assert_eq!(ran.status, outcome.exit_status(), "{request} {extra:?}");
         assert_eq!(ran.stderr, format!("{}\n", result.summary), "{request}");
         assert_eq!(result.definition.request, request);
-        assert_eq!(result.definition.sha256.len(), 64);
+        assert_eq!(result.definition.sha256.map_or(0, |h| h.len()), 64);
     }
     let targets: Vec<String> = serving
         .server
@@ -212,27 +212,27 @@ fn unsent_runs_say_why_in_words() {
     let none = |_: &str| None;
     let cases = [
         (
-            vec!["send", file, "Inputs", "--input", "id=USER_ID"],
+            vec!["send", "--file", file, "Inputs", "--input", "id=USER_ID"],
             "Not sent: Input id: the process variable USER_ID is not set",
         ),
         (
-            vec!["send", file, "Nope"],
+            vec!["send", "--file", file, "Nope"],
             "Not sent: No request at Nope. Requests: Pass, Fail,",
         ),
         (
-            vec!["send", file, "a//b"],
+            vec!["send", "--file", file, "a//b"],
             "Not sent: \"a//b\" is not a request path",
         ),
         (
-            vec!["send", "/no/such/file.json", "Pass"],
+            vec!["send", "--file", "/no/such/file.json", "Pass"],
             "Not sent: Cannot read the file:",
         ),
         (
-            vec!["send", file, "Before"],
+            vec!["send", "--file", file, "Before"],
             "Script failed, nothing sent: Before-sending script, line 1: no key",
         ),
         (
-            vec!["send", file, "Unresolved"],
+            vec!["send", "--file", file, "Unresolved"],
             "Not sent: Unresolved variables: missing",
         ),
     ];
@@ -242,10 +242,13 @@ fn unsent_runs_say_why_in_words() {
     }
     let garbage = dir.path().join("garbage.json");
     std::fs::write(&garbage, "{\"format\": \"imposter\", \"version\": 1}").unwrap();
-    let ran = run_with(&["send", garbage.to_str().unwrap(), "Pass"], &none);
+    let ran = run_with(
+        &["send", "--file", garbage.to_str().unwrap(), "Pass"],
+        &none,
+    );
     assert_eq!(ran.result().outcome, RunOutcome::NotSent);
     assert_eq!(
-        ran.result().definition.sha256.len(),
+        ran.result().definition.sha256.map_or(0, |h| h.len()),
         64,
         "a file that was read has its revision even when it is not a collection"
     );
@@ -262,6 +265,7 @@ fn secrets_never_reach_stdout_stderr_or_the_result_file() {
     let ran = run_with(
         &[
             "send",
+            "--file",
             file.to_str().unwrap(),
             "Echo",
             "--secret",
@@ -291,6 +295,7 @@ fn secrets_never_reach_stdout_stderr_or_the_result_file() {
     let short = run_with(
         &[
             "send",
+            "--file",
             file.to_str().unwrap(),
             "Echo",
             "--secret",
@@ -316,6 +321,7 @@ fn an_unwritable_result_file_is_reported_after_the_result() {
     let ran = run_with(
         &[
             "send",
+            "--file",
             file.to_str().unwrap(),
             "Pass",
             "--out",
@@ -347,7 +353,7 @@ fn an_unwritable_result_file_is_reported_after_the_result() {
 fn help_version_and_usage_errors() {
     let help = run_with(&["--help"], &|_| None);
     assert_eq!(help.status, 0);
-    assert!(help.stdout.contains("imposter send <FILE> <REQUEST>"));
+    assert!(help.stdout.contains("imposter send <REQUEST> [OPTIONS]"));
     let version = run_with(&["--version"], &|_| None);
     assert_eq!(
         version.stdout,
@@ -363,12 +369,12 @@ fn help_version_and_usage_errors() {
             .stdout
             .starts_with("# I’mposter: run a saved HTTP request")
     );
-    let wrong = run_with(&["send", "only-a-file"], &|_| None);
+    let wrong = run_with(&["send", "--file", "only-a-file"], &|_| None);
     assert_eq!(wrong.status, 2);
     assert_eq!(wrong.stdout, "");
     assert_eq!(
         wrong.stderr,
-        "error: send takes a FILE and a REQUEST\nRun imposter --help for usage.\n"
+        "error: send takes one REQUEST (use --file FILE for a collection file)\nRun imposter --help for usage.\n"
     );
 }
 
@@ -395,6 +401,7 @@ fn an_edit_during_the_run_does_not_change_it() {
         run_with(
             &[
                 "send",
+                "--file",
                 &path,
                 "Inputs",
                 "--input",
@@ -414,4 +421,126 @@ fn an_edit_during_the_run_does_not_change_it() {
     release.send(()).unwrap();
     let ran = running.join().unwrap();
     assert_eq!(ran.result().outcome, RunOutcome::Passed, "{}", ran.stdout);
+}
+
+/// A profile with "Shop API / Users / List users", a Dev and a red Prod environment, and
+/// Dev active in the app.
+fn saved_profile(dir: &Path, base: &str) {
+    use imposter_app::core::model::{EnvColor, RequestTemplate, Variables};
+    use imposter_app::store::{Store, collections, environments};
+    let store = Store::open(&dir.join("imposter.db")).unwrap();
+    let base = base.to_owned();
+    store
+        .call_blocking(move |db| {
+            let vars = |pairs: &[(&str, &str)]| -> Variables {
+                pairs
+                    .iter()
+                    .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                    .collect()
+            };
+            environments::set_globals(db, &vars(&[("base", &base), ("scope", "global")]))?;
+            let dev = environments::create_environment(db, "Dev", &vars(&[("scope", "dev")]))?;
+            environments::set_active_environment(db, Some(dev.id))?;
+            let prod = environments::create_environment(db, "Prod", &Variables::new())?;
+            environments::set_environment_color(db, prod.id, Some(EnvColor::Red))?;
+            let shop = collections::create_collection(db, "Shop API", "", &Variables::new())?;
+            let users = collections::create_folder(db, shop.id, None, "Users", "", 0)?;
+            let template: RequestTemplate = serde_json::from_value(json!({
+                "name": "List users", "method": "GET", "url": "{{base}}/users?scope={{scope}}",
+                "body": "", "body_type": "json",
+                "checks": [{"selector": "status", "op": "equals", "expected": "200"}],
+            }))
+            .unwrap();
+            collections::create_request(db, shop.id, Some(users.id), &template)?;
+            Ok(())
+        })
+        .unwrap();
+    store.close().unwrap();
+}
+
+fn history(dir: &Path) -> Vec<imposter_app::store::executions::ExecutionSummary> {
+    let store = imposter_app::store::Store::open(&dir.join("imposter.db")).unwrap();
+    let rows = store
+        .call_blocking(|db| imposter_app::store::executions::page(db, None, 0, 10))
+        .unwrap();
+    store.close().unwrap();
+    rows
+}
+
+#[test]
+fn a_saved_request_runs_from_the_profile_and_is_kept_in_history() {
+    let serving = serve(|_, _| response("200 OK", &[], b""));
+    let data = tempfile::tempdir().unwrap();
+    saved_profile(data.path(), &serving.server.url);
+    let env = vars(&[("IMPOSTER_DATA_DIR", data.path().to_str().unwrap())]);
+    let var = |name: &str| env.get(name).cloned();
+
+    let ran = run_with(&["send", "Shop API / Users / List users"], &var);
+    assert_eq!(ran.status, 0, "{}", ran.stdout);
+    let result = ran.result();
+    assert_eq!(
+        result.definition.source,
+        imposter_app::core::run_result::Source::Profile
+    );
+    assert_eq!(
+        (result.definition.file, result.definition.sha256),
+        (None, None)
+    );
+    assert_eq!(
+        serving.server.requests()[0].target(),
+        "/users?scope=global",
+        "the app's active Dev applies only when named"
+    );
+    let with_dev = run_with(&["send", "Shop API/Users/List users", "--env", "Dev"], &var);
+    assert_eq!(with_dev.status, 0);
+    assert_eq!(serving.server.requests()[1].target(), "/users?scope=dev");
+
+    let rows = history(data.path());
+    assert_eq!(rows.len(), 2);
+    assert!(
+        rows.iter()
+            .all(|r| r.via == imposter_app::core::execution::Via::CommandLine)
+    );
+    assert_eq!(rows[0].environment, "Dev");
+}
+
+#[test]
+fn profile_runs_refuse_production_and_missing_data() {
+    let data = tempfile::tempdir().unwrap();
+    saved_profile(data.path(), "http://127.0.0.1:1");
+    let env = vars(&[("IMPOSTER_DATA_DIR", data.path().to_str().unwrap())]);
+    let var = |name: &str| env.get(name).cloned();
+    let prod = run_with(
+        &["send", "Shop API/Users/List users", "--env", "Prod"],
+        &var,
+    );
+    assert_eq!(prod.result().outcome, RunOutcome::NotSent);
+    assert!(
+        prod.stderr.contains("Allow production environments"),
+        "{}",
+        prod.stderr
+    );
+    let wrong = run_with(&["send", "Users/List users"], &var);
+    assert!(
+        wrong.stderr.contains("Requests: Shop API/Users/List users"),
+        "{}",
+        wrong.stderr
+    );
+    assert_eq!(
+        history(data.path()).len(),
+        0,
+        "nothing sent, nothing recorded"
+    );
+
+    let empty = tempfile::tempdir().unwrap();
+    let env = vars(&[("IMPOSTER_DATA_DIR", empty.path().to_str().unwrap())]);
+    let var = |name: &str| env.get(name).cloned();
+    let none = run_with(&["send", "Shop API/Users/List users"], &var);
+    assert_eq!(none.result().outcome, RunOutcome::NotSent);
+    assert!(none.stderr.contains("open the app once"), "{}", none.stderr);
+    assert_eq!(
+        std::fs::read_dir(empty.path()).unwrap().count(),
+        0,
+        "no profile was created"
+    );
 }

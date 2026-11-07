@@ -508,7 +508,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   desktop's view. It leads with a summary line and an outcome, then what ran (file SHA-256,
   request path, environment, input names, never values), checks, script tests, captures,
   the request as sent, the response head and body excerpts, and the limits it was made
-  under. The script console is never part of it, as it is never stored.
+  under. The script console is never part of it, as it is never stored. `definition.source`
+  says whether it ran from the profile or a file; only a file run has a SHA-256, since
+  database rows have no portable revision.
   - **Outcomes** each have an exit status: passed 0, failed 1 (a check or a script test),
     not sent 3, transport error 4, script failed 5 (before sending or after the
     response), not checked 6, no checks 7, cancelled 130; 2 is for usage errors, which
@@ -901,21 +903,27 @@ numbers, so both are excluded. Each logical change is its own commit.
   release on every package (on Windows before Mesa is added). Why: the roadmap allows a
   separate headless executable only if this binary cannot run without a display; this
   shows it can.
-- **The command line is `imposter send` in the same binary** (`imposter-cli`, reached from
-  `main.rs` before logging or the window start). It runs one request from a native file
-  (`document::select` + `executor::run`, the one engine) and prints the redacted
-  `RunResult` on stdout, its summary on stderr, and with `--out` the same JSON to a file
-  (atomically). It opens no database and reads only the process variables named by
-  `--input`/`--secret` (`Io::var`), never the rest of the environment; a missing or empty
-  one, or a secret under 4 characters (`redact::MIN_SECRET`, which would redact ordinary
-  text), stops the run before anything is sent. The file is read once, so an edit during
-  the run cannot change its checks. Ctrl+C cancels (exit 130). Logs default to warnings,
-  since stderr carries the summary. Arguments are parsed with `lexopt`; usage, the
-  README's tables and the help come from `SEND_FLAGS` and `exit_statuses()`, and a test
-  keeps the README equal to them. Why: agents and CI cannot depend on the window, and a
-  second executable would need its own packaging. Pinned by `imposter-cli/tests/send.rs`
-  (every outcome, inputs, the freeze) and `imposter/tests/cli.rs` (the process: no
-  profile created, no secret on stdout or stderr even at trace level, the interrupt).
+- **The command line is `imposter send <REQUEST>` in the same binary** (`imposter-cli`,
+  reached from `main.rs` before logging or the window start). By default it runs a saved
+  request from the personal profile (`profile::select` + `executor::run` +
+  `executor::record`): the user edits requests in the app and runs them from a terminal or
+  an agent with nothing to export (user's choice; exporting after every edit only added
+  manual steps). `--file FILE` runs from a native file instead, for CI or a machine without
+  the profile (`document::select` + `run`), reading the file once and recording its
+  SHA-256; it writes nothing. Either way it prints the redacted `RunResult` on stdout, its
+  summary and notes (a failed History write) on stderr, and with `--out` the same JSON to
+  a file (atomically). It reads only the process variables named by `--input`/`--secret`
+  (`Io::var`) and `IMPOSTER_DATA_DIR`, never the rest of the environment; a missing or
+  empty input, or a secret under 4 characters (`redact::MIN_SECRET`, which would redact
+  ordinary text), stops the run before anything is sent. Ctrl+C cancels (exit 130). Logs
+  default to warnings, since stderr carries the summary. Arguments are parsed with
+  `lexopt`; usage, the README's tables and the help come from `SEND_FLAGS` and
+  `exit_statuses()`, and a test keeps the README equal to them. Why: agents and CI cannot
+  depend on the window, and a second executable would need its own packaging. Pinned by
+  `imposter-cli/tests/send.rs` (every outcome, inputs, the freeze, the profile and its
+  History, production and a missing profile refused) and `imposter/tests/cli.rs` (the
+  process: no profile created for a file run, no secret on stdout or stderr even at trace
+  level, the interrupt).
 - **`imposter skill` prints the instructions a coding agent needs** (`skill.md` in
   `imposter-cli`): how to choose a request, pass secrets by process variable name, read
   the result and propose a check as a reviewable diff. Its option, exit status and
@@ -923,11 +931,12 @@ numbers, so both are excluded. Each logical change is its own commit.
   when printed, so it cannot drift from the parser. It only prints: the user decides
   where their agent reads it, and the app writes no agent configuration (the roadmap's
   rule).
-- **`imposter mcp <FILE>` is an experimental MCP server over stdio** (`imposter_cli::mcp`),
-  the M1 spike, not the M4 tool list: `list_requests` and `send_request {path}`, answered
-  with the same `RunResult` as `send` (structured, and repeated as text as MCP asks). The
-  file, environment and inputs come only from its command line, so an agent chooses which
-  request runs and nothing else; there is no `--out` and no port. Messages are
+- **`imposter mcp` is an experimental MCP server over stdio** (`imposter_cli::mcp`), the M1
+  spike, not the M4 tool list: `list_requests` and `send_request {path}` over the saved
+  requests (or a `--file`), answered with the same `RunResult` as `send` (structured, and
+  repeated as text as MCP asks). The source, environment and inputs come only from its
+  command line, so an agent chooses which request runs and nothing else; there is no
+  `--out` and no port. Messages are
   newline-delimited JSON-RPC 2.0, hand-written over `serde_json` (no SDK dependency for a
   spike); diagnostics go to stderr. One send runs at a time while further messages are
   read: `notifications/cancelled` for it cancels it, others wait, and a closed input
@@ -935,9 +944,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   by `imposter-cli/tests/mcp.rs` and the process test in `imposter/tests/cli.rs`.
 - **History opens a result file the command line wrote** (⋯ → "Open result file…", also
   in the palette), in place of a selected execution: the summary in its outcome's tone, a
-  muted line saying where it came from ("From imposter send · Users/Create user · Dev ·
-  run 0b5c7f0e · not in history · secrets removed", the file, SHA-256 and start time on
-  hover), × to close it, and the same Response, Request body and Request headers tabs. A
+  muted line saying where it came from ("From imposter send · Shop API/Users/Create user ·
+  Dev · run 0b5c7f0e · also in History · secrets removed", or "from a file, not in History";
+  the file, SHA-256 and start time on hover), × to close it, and the same Response, Request body and Request headers tabs. A
   run that sent nothing shows its error instead of a response. Nothing is stored, and
   Restore and Copy as curl are not offered, since a result holds redacted values. The
   file is read on the bridge with the import size limit (`transfer::read_result`). Why:

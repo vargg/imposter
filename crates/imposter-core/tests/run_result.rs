@@ -12,7 +12,7 @@ use imposter_core::execution::{
 use imposter_core::model::{BodyType, ParamItem, Request, RequestAuth, RequestTemplate};
 use imposter_core::redact::Redactor;
 use imposter_core::run_result::{
-    Definition, Input, Limits, Meta, ReadError, RunInfo, RunOutcome, RunResult,
+    Definition, Input, Limits, Meta, ReadError, RunInfo, RunOutcome, RunResult, Source,
 };
 use imposter_core::select::Selector;
 use imposter_core::settings::AppSettings;
@@ -28,8 +28,9 @@ fn meta() -> Meta {
             elapsed_ms: 15,
         },
         definition: Definition {
-            file: "api.imposter.json".into(),
-            sha256: "ab".repeat(32),
+            source: Source::File,
+            file: Some("api.imposter.json".into()),
+            sha256: Some("ab".repeat(32)),
             request: "Users/Create user".into(),
             environment: Some("Dev".into()),
         },

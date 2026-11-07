@@ -1,21 +1,29 @@
 # I’mposter: run a saved HTTP request and check it
 
-`imposter send` runs one request from an I’mposter collection file (`.imposter.json`) and
-prints a checked, redacted result as JSON. Use it to reproduce an API call the user saved,
-confirm a fix, or see what a server answers, instead of rebuilding the request with curl.
-It never opens a window, never reads the user's personal I’mposter data and writes no
-history.
+`imposter send` runs one of the user's saved I’mposter requests and prints a checked,
+redacted result as JSON. Use it to reproduce an API call the user saved, confirm a fix, or
+see what a server answers, instead of rebuilding the request with curl. It never opens a
+window. The user edits requests in the app; what they save is what runs.
 
 ## Command
 
 ```sh
-imposter send <FILE> <REQUEST> [OPTIONS]
+imposter send <REQUEST> [OPTIONS]
 ```
 
-`REQUEST` is the request's path of names: its folders, then its name, separated by `/`
-(`Users/Create user`; a `/` inside a name is written `\/`). If the path is wrong, the
-result's `error` lists every request in the file, so one failed run shows the choices. An
-environment is used only when named with `--env`.
+`REQUEST` is the request's breadcrumb: its collection, its folders, then its name,
+separated by `/` (`Shop API / Users / Create user`; spaces around `/` are optional, and a
+`/` inside a name is written `\/`). If the path is wrong, the result's `error` lists every
+saved request, so one failed run shows the choices.
+
+Only the environment named with `--env` applies, never the one the app has active. An
+environment marked red (production) is refused unless the user has allowed it in the app;
+do not look for a way around that, ask the user. Every run is kept in the app's History,
+marked as the command line's, so the user can review what ran. Values that captures and
+scripts set stay in the run and change none of the user's variables.
+
+With `--file FILE` the request comes from an exported collection file instead (as CI runs
+it); then the path may leave out the collection's name, and nothing is written to History.
 
 {{options}}
 
@@ -42,7 +50,8 @@ stdout is one JSON document; stderr has one summary line. Read, in order:
 - `script.tests[]`: tests the request's scripts ran.
 - `response.status`, `response.headers`, `response.body.text` (an excerpt: see `cut` and
   `bytes`), and `request`, the request as sent.
-- `definition.sha256`: the revision of the file that ran.
+- `definition.source`: `profile` (the user's saved requests) or `file`; for a file,
+  `definition.sha256` is the revision that ran.
 
 The exit status says the same as `outcome`:
 
@@ -54,8 +63,10 @@ limit); look at the reason before concluding anything.
 
 ## Proposing a check
 
-Checks live in the request's `checks` list in the collection file. Propose a change to the
-file as a diff for the user to review; never weaken an expected value to make a run pass.
+A check is part of the saved request. Propose it to the user, who adds it in the app
+(the request's Tests tab); with `--file`, propose it as a diff to the request's `checks`
+list in the file. Never weaken an expected value to make a run pass. A check is written
+like this:
 
 ```json
 {"selector": "status", "op": "equals", "expected": "201"}

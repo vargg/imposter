@@ -10,9 +10,13 @@ use std::time::Instant;
 use imposter_app::document::{self, RequestPath};
 use imposter_app::executor::{self, ExecuteError, SystemEntropy};
 use imposter_app::formats::native;
+use imposter_app::{paths, profile};
+use imposter_core::execution::{ExecutionRecord, Via};
 use imposter_core::model::Variables;
 use imposter_core::redact::{MIN_SECRET, Redactor};
-use imposter_core::run_result::{Definition, Input, Limits, Meta, RunInfo, RunOutcome, RunResult};
+use imposter_core::run_result::{
+    Definition, Input, Limits, Meta, RunInfo, RunOutcome, RunResult, Source,
+};
 use sha2::{Digest as _, Sha256};
 use tokio_util::sync::CancellationToken;
 
@@ -28,7 +32,8 @@ pub struct InputArg {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendArgs {
-    pub file: PathBuf,
+    /// A native collection file to read instead of the personal profile.
+    pub file: Option<PathBuf>,
     pub request: String,
     pub environment: Option<String>,
     pub inputs: Vec<InputArg>,
@@ -42,7 +47,7 @@ pub const DEFAULT_MAX_BODY: usize = 64 * 1024;
 impl Default for SendArgs {
     fn default() -> Self {
         Self {
-            file: PathBuf::new(),
+            file: None,
             request: String::new(),
             environment: None,
             inputs: Vec::new(),
@@ -102,8 +107,13 @@ pub async fn send(
     let id = imposter_core::generate::generate("$uuid", &mut entropy).unwrap_or_default();
     let mut redactor = Redactor::default();
     let mut definition = Definition {
-        file: args.file.display().to_string(),
-        sha256: String::new(),
+        source: if args.file.is_some() {
+            Source::File
+        } else {
+            Source::Profile
+        },
+        file: args.file.as_ref().map(|f| f.display().to_string()),
+        sha256: None,
         request: args.request.clone(),
         environment: args.environment.clone(),
     };
@@ -131,9 +141,9 @@ pub async fn send(
         },
     };
     let result = match outcome {
-        Ok((record, capture_bytes)) => {
+        Ok((record, capture_bytes, notes)) => {
             redactor.credentials(&record.resolved.template, &record.settings);
-            RunResult::sent(
+            let mut result = RunResult::sent(
                 &record,
                 Meta {
                     limits: Limits {
@@ -143,7 +153,9 @@ pub async fn send(
                     ..meta
                 },
                 &redactor,
-            )
+            );
+            result.notes = notes;
+            result
         }
         Err(Unsent(outcome, message)) => {
             // A stop asked for by the user is a cancel, whatever step it interrupted.
@@ -158,40 +170,104 @@ pub async fn send(
     result.redacted(&redactor)
 }
 
+/// What a run produced: its record, the capture limit it ran under, and notes.
+type Ran = (ExecutionRecord, u64, Vec<String>);
+
+fn unsent(error: ExecuteError) -> Unsent {
+    match error {
+        ExecuteError::Script(message) => Unsent(RunOutcome::ScriptFailed, message),
+        other => Unsent(RunOutcome::NotSent, other.to_string()),
+    }
+}
+
 async fn run(
     args: &SendArgs,
     var: &dyn Fn(&str) -> Option<String>,
     cancel: CancellationToken,
     redactor: &mut Redactor,
     definition: &mut Definition,
-) -> Result<(imposter_core::execution::ExecutionRecord, u64), Unsent> {
+) -> Result<Ran, Unsent> {
     let path = RequestPath::parse(&args.request).map_err(|e| e.to_string())?;
-    let file = args.file.clone();
+    match &args.file {
+        Some(file) => run_file(args, file, &path, var, cancel, redactor, definition).await,
+        None => run_profile(args, &path, var, cancel, redactor).await,
+    }
+}
+
+async fn run_file(
+    args: &SendArgs,
+    file: &std::path::Path,
+    path: &RequestPath,
+    var: &dyn Fn(&str) -> Option<String>,
+    cancel: CancellationToken,
+    redactor: &mut Redactor,
+    definition: &mut Definition,
+) -> Result<Ran, Unsent> {
+    let file = file.to_owned();
     // Read once: an edit to the file during the run cannot change it.
     let bytes = tokio::task::spawn_blocking(move || native::read_document(&file))
         .await
         .map_err(|_| "The file could not be read".to_owned())?
         .map_err(|e| e.to_string())?;
-    definition.sha256 =
-        Sha256::digest(&bytes)
-            .iter()
-            .fold(String::with_capacity(64), |mut hex, byte| {
-                // Writing to a String cannot fail.
-                let _ = write!(hex, "{byte:02x}");
-                hex
-            });
+    definition.sha256 = Some(Sha256::digest(&bytes).iter().fold(
+        String::with_capacity(64),
+        |mut hex, byte| {
+            // Writing to a String cannot fail.
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        },
+    ));
     let document = native::decode(&bytes).map_err(|e| e.to_string())?;
     let values = read_inputs(&args.inputs, var, redactor)?;
-    let selected = document::select(&document, &path, args.environment.as_deref(), &values)
+    let selected = document::select(&document, path, args.environment.as_deref(), &values)
         .map_err(|e| e.to_string())?;
     let capture_bytes = selected.inputs.settings.download_limit.saturating_mul(1024);
     let ran = executor::run(&selected.inputs, selected.request, cancel)
         .await
-        .map_err(|error| match error {
-            ExecuteError::Script(message) => Unsent(RunOutcome::ScriptFailed, message),
-            other => Unsent(RunOutcome::NotSent, other.to_string()),
-        })?;
-    Ok((ran.record, capture_bytes))
+        .map_err(unsent)?;
+    Ok((ran.record, capture_bytes, Vec::new()))
+}
+
+/// A saved request from the personal profile: read in one database command, run, and
+/// recorded in History as the command line's. Captures stay in the run.
+async fn run_profile(
+    args: &SendArgs,
+    path: &RequestPath,
+    var: &dyn Fn(&str) -> Option<String>,
+    cancel: CancellationToken,
+    redactor: &mut Redactor,
+) -> Result<Ran, Unsent> {
+    let values = read_inputs(&args.inputs, var, redactor)?;
+    let explicit = var(paths::DATA_DIR_VARIABLE).map(std::ffi::OsString::from);
+    let store = tokio::task::spawn_blocking(move || {
+        paths::open_existing_profile(explicit, std::env::home_dir())
+    })
+    .await
+    .map_err(|_| "The profile could not be opened".to_owned())?
+    .map_err(|e| e.to_string())?;
+    let handle = store.handle();
+    let outcome = async {
+        let selected = profile::select(&handle, path, args.environment.as_deref(), &values)
+            .await
+            .map_err(|e| e.to_string())?;
+        let capture_bytes = selected.inputs.settings.download_limit.saturating_mul(1024);
+        let mut ran = executor::run(&selected.inputs, selected.request, cancel)
+            .await
+            .map_err(unsent)?;
+        ran.record.via = Via::CommandLine;
+        let record = ran.record.clone();
+        let executed = executor::record(&handle, ran).await;
+        let notes = if executed.record.is_none() {
+            vec![executed.response.history_error]
+        } else {
+            Vec::new()
+        };
+        Ok((record, capture_bytes, notes))
+    }
+    .await;
+    // Closing waits for the database thread to finish its last write.
+    let _ = tokio::task::spawn_blocking(move || store.close()).await;
+    outcome
 }
 
 /// Write the result: JSON on stdout, the summary on stderr, and the file `--out` names.
@@ -206,6 +282,9 @@ pub fn report(
     // A closed pipe cannot be reported anywhere else.
     let _ = stdout.write_all(json.as_bytes());
     let _ = writeln!(stderr, "{}", result.summary);
+    for note in &result.notes {
+        let _ = writeln!(stderr, "note: {note}");
+    }
     if let Some(out) = &args.out
         && let Err(error) = native::atomic_write(out, json.as_bytes())
     {

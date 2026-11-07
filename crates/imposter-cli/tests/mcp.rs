@@ -69,6 +69,11 @@ struct Session {
 
 impl Session {
     fn start(file: PathBuf, secret: bool) -> Self {
+        Self::start_with(Some(file), secret, None)
+    }
+
+    /// A server over `file`, or over the profile in `data` without one.
+    fn start_with(file: Option<PathBuf>, secret: bool, data: Option<String>) -> Self {
         let (input, lines) = unbounded_channel();
         let (written, output) = unbounded_channel();
         let args = SendArgs {
@@ -85,7 +90,11 @@ impl Session {
             ..SendArgs::default()
         };
         let task = tokio::task::spawn_blocking(move || {
-            let env: HashMap<String, String> = [("API_TOKEN".to_owned(), SECRET.to_owned())].into();
+            let mut env: HashMap<String, String> =
+                [("API_TOKEN".to_owned(), SECRET.to_owned())].into();
+            if let Some(data) = data {
+                env.insert("IMPOSTER_DATA_DIR".to_owned(), data);
+            }
             let var = move |name: &str| env.get(name).cloned();
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -282,4 +291,47 @@ async fn a_client_that_leaves_mid_send_stops_it() {
         by_id(&messages, 2)["result"]["structuredContent"]["outcome"],
         "cancelled"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn without_a_file_it_serves_the_saved_requests() {
+    use imposter_app::core::model::{RequestTemplate, Variables};
+    use imposter_app::store::{Store, collections};
+    let server = Server::start(|_, _| response("200 OK", &[], b"")).await;
+    let data = tempfile::tempdir().unwrap();
+    let store = Store::open(&data.path().join("imposter.db")).unwrap();
+    let url = format!("{}/ping", server.url);
+    store
+        .call(move |db| {
+            let api = collections::create_collection(db, "API", "", &Variables::new())?;
+            collections::create_request(
+                db,
+                api.id,
+                None,
+                &RequestTemplate {
+                    name: "Ping".into(),
+                    method: "GET".into(),
+                    url,
+                    ..RequestTemplate::default()
+                },
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    drop(store);
+    let mut session =
+        Session::start_with(None, false, Some(data.path().to_str().unwrap().to_owned()));
+    session.send(&call(1, "list_requests", json!({})));
+    session.send(&call(2, "send_request", json!({"path": "API / Ping"})));
+    let messages = session.answers(2).await;
+    session.finish().await;
+    assert_eq!(
+        by_id(&messages, 1)["result"]["structuredContent"]["requests"],
+        json!(["API/Ping"])
+    );
+    let sent = &by_id(&messages, 2)["result"]["structuredContent"];
+    assert_eq!(sent["outcome"], "no_checks");
+    assert_eq!(sent["definition"]["source"], "profile");
+    assert_eq!(server.requests().len(), 1);
 }

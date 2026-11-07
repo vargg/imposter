@@ -10,6 +10,7 @@
     "elapsed_ms": 15
   },
   "definition": {
+    "source": "file",
     "file": "api.imposter.json",
     "sha256": "abababababababababababababababababababababababababababababababab",
     "request": "Users/Create user",

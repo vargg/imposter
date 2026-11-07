@@ -10,6 +10,7 @@ use std::io::Write;
 
 use imposter_app::document::request_paths;
 use imposter_app::formats::native;
+use imposter_app::{paths, profile};
 use serde_json::{Value, json};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_util::sync::CancellationToken;
@@ -76,6 +77,8 @@ enum Incoming {
         id: Value,
         path: String,
     },
+    /// List the requests, then answer `id`.
+    List(Value),
     /// A notification, or a cancel of request `id`.
     Cancel(Value),
     Nothing,
@@ -97,23 +100,41 @@ fn initialize(id: &Value, params: &Value) -> Value {
     )
 }
 
-fn list(id: &Value, args: &SendArgs) -> Value {
-    let paths = native::read_document(&args.file)
-        .map_err(|e| e.to_string())
-        .and_then(|bytes| native::decode(&bytes).map_err(|e| e.to_string()));
-    match paths {
-        Ok(document) => {
-            let paths = request_paths(&document);
-            reply(
-                id,
-                text_result(&paths.join("\n"), Some(json!({"requests": paths})), false),
-            )
+/// The requests the server can send: those of its file, or every saved one.
+async fn list(id: &Value, args: &SendArgs, var: &dyn Fn(&str) -> Option<String>) -> Value {
+    let paths: Result<Vec<String>, String> = if let Some(file) = &args.file {
+        native::read_document(file)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| native::decode(&bytes).map_err(|e| e.to_string()))
+            .map(|document| request_paths(&document))
+    } else {
+        let explicit = var(paths::DATA_DIR_VARIABLE).map(std::ffi::OsString::from);
+        match tokio::task::spawn_blocking(move || {
+            paths::open_existing_profile(explicit, std::env::home_dir())
+        })
+        .await
+        {
+            Ok(Ok(store)) => {
+                let found = profile::request_paths(&store.handle())
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = tokio::task::spawn_blocking(move || store.close()).await;
+                found
+            }
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(_) => Err("The profile could not be opened".to_owned()),
         }
+    };
+    match paths {
+        Ok(paths) => reply(
+            id,
+            text_result(&paths.join("\n"), Some(json!({"requests": paths})), false),
+        ),
         Err(message) => reply(id, text_result(&message, None, true)),
     }
 }
 
-fn parse(line: &str, args: &SendArgs) -> Incoming {
+fn parse(line: &str) -> Incoming {
     let Ok(message) = serde_json::from_str::<Value>(line) else {
         return Incoming::Answer(error(&Value::Null, PARSE_ERROR, "Parse error"));
     };
@@ -140,7 +161,7 @@ fn parse(line: &str, args: &SendArgs) -> Incoming {
         "tools/call" => {
             let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
             match params.get("name").and_then(Value::as_str) {
-                Some("list_requests") => Incoming::Answer(list(&id, args)),
+                Some("list_requests") => Incoming::List(id),
                 Some("send_request") => match arguments.get("path").and_then(Value::as_str) {
                     Some(path) => Incoming::Send {
                         id,
@@ -196,8 +217,9 @@ pub async fn serve(
         if line.trim().is_empty() {
             continue;
         }
-        match parse(&line, args) {
+        match parse(&line) {
             Incoming::Answer(message) => write(out, &message)?,
+            Incoming::List(id) => write(out, &list(&id, args, var).await)?,
             Incoming::Nothing | Incoming::Cancel(_) => {}
             Incoming::Send { id, path } => {
                 let cancel = CancellationToken::new();
@@ -214,7 +236,7 @@ pub async fn serve(
                         result = &mut running => break result,
                         next = lines.recv(), if !closed => {
                             if let Some(next) = next {
-                                match parse(&next, args) {
+                                match parse(&next) {
                                     Incoming::Cancel(target) if target == id => cancel.cancel(),
                                     _ => queued.push_back(next),
                                 }

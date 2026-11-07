@@ -40,6 +40,7 @@ fn collection(dir: &Path, base: &str) -> PathBuf {
 fn send(file: &Path, request: &str, out: &Path) -> u8 {
     let args: Vec<OsString> = [
         "send",
+        "--file",
         file.to_str().unwrap(),
         request,
         "--out",

@@ -78,10 +78,12 @@ Protect these. The milestones run on them.
   scripted answers, and a request log.
 - A closed-loop load probe of one request.
 - Command palette, themes, density, and named controls for assistive technology.
-- One native binary per OS. Without arguments it opens the window; `imposter send` runs
-  one request from a native file headless, with named secret inputs, a redacted JSON
-  result, an exit status per outcome and a result file History opens; `imposter skill`
-  prints the agent instructions. `imposter mcp` is the experimental spike below.
+- One native binary per OS. Without arguments it opens the window. `imposter send` runs a
+  saved request headless from the personal profile (recorded in History as the command
+  line's), or from a native file with `--file` for CI. It takes named secret inputs and
+  gives a redacted JSON result, an exit status per outcome and a result file History
+  opens. `imposter skill` prints the agent instructions. `imposter mcp` is the
+  experimental spike below.
 
 ## Core, still to build
 
@@ -196,6 +198,10 @@ that shows this binary cannot run without a display.
 Two modes.
 
 - The personal SQLite workspace stays as it is. Opening a project does not convert it.
+  The command line runs its saved requests directly (decided 7 November 2026, after M1
+  shipped file-only): editing in the app and exporting after every change only added
+  manual steps. Only the environment named runs, production needs a switch in the app,
+  captures stay in the run, and each run is recorded in History as the command line's.
 - An opted-in project links a collection to a folder. For that collection the files are
   the shared definitions. SQLite holds history, UI state, secrets and a rebuildable
   cache. It is not a second copy that can win a conflict.
@@ -321,13 +327,14 @@ explicit mock/load limits, and [packaged 0.6.0 launch-to-request and peak-memory
 
 ### M1 — Complete: one request, headless
 
-Completed 7 November 2026: `imposter send` from a native file through the one engine
-(`executor::run`), named secret inputs, redacted results with an exit status per outcome,
-result files opened in History, `imposter skill`, and the MCP spike with its findings
-above. The exit tests are `imposter-app/tests/document.rs`, `imposter-ui/tests/results.rs`,
+Completed 7 November 2026: `imposter send` through the one engine (`executor::run`), from
+the personal profile by default and from a native file with `--file`; named secret inputs,
+redacted results with an exit status per outcome, result files opened in History,
+`imposter skill`, and the MCP spike with its findings above. The exit tests are
+`imposter-app/tests/document.rs` and `profile.rs`, `imposter-ui/tests/results.rs`,
 `imposter-cli/tests/send.rs`, `imposter/tests/cli.rs` and `smoke.py --headless`, which CI
-runs on Linux before any display library is installed. The file source stays until M2's
-project folder replaces it.
+runs on Linux before any display library is installed. M2's project folder becomes a third
+source; the file stays for CI until then.
 
 ### M2 — The project folder and the runner
 

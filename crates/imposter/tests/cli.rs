@@ -68,7 +68,7 @@ async fn send_runs_headless_and_touches_no_personal_data() {
     let home = tempfile::tempdir().unwrap();
     let file = write_document(home.path(), &server.url);
     let mut command = imposter(home.path());
-    command.args(["send", file.to_str().unwrap(), "Users/List"]);
+    command.args(["send", "--file", file.to_str().unwrap(), "Users/List"]);
     let output = output(command).await;
 
     assert_eq!(output.status.code(), Some(0), "{output:?}");
@@ -114,6 +114,7 @@ async fn secrets_stay_out_of_stdout_and_stderr_even_with_trace_logs() {
         .env("IMPOSTER_LOG", "trace")
         .args([
             "send",
+            "--file",
             file.to_str().unwrap(),
             "Users/List",
             "--secret",
@@ -137,7 +138,7 @@ async fn secrets_stay_out_of_stdout_and_stderr_even_with_trace_logs() {
 async fn usage_errors_exit_2_without_a_result() {
     let home = tempfile::tempdir().unwrap();
     let mut command = imposter(home.path());
-    command.args(["send", "--bogus"]);
+    command.args(["send", "--file", "@@BOGUS@@"]);
     let output = output(command).await;
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(output.stdout, b"");
@@ -161,7 +162,7 @@ async fn an_interrupt_cancels_the_run() {
     let home = tempfile::tempdir().unwrap();
     let file = write_document(home.path(), &server.url);
     let mut command = imposter(home.path());
-    command.args(["send", file.to_str().unwrap(), "Users/Hold"]);
+    command.args(["send", "--file", file.to_str().unwrap(), "Users/Hold"]);
     let child = command.spawn().unwrap();
     wait.recv().await.unwrap();
     let status = Command::new("kill")
@@ -184,7 +185,7 @@ async fn mcp_answers_over_stdio_and_ends_with_its_input() {
     let file = write_document(home.path(), "http://127.0.0.1:1");
     let mut command = imposter(home.path());
     command
-        .args(["mcp", file.to_str().unwrap()])
+        .args(["mcp", "--file", file.to_str().unwrap()])
         .stdin(Stdio::piped());
     let mut child = command.spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
@@ -218,4 +219,51 @@ async fn mcp_answers_over_stdio_and_ends_with_its_input() {
         String::from_utf8_lossy(&output.stderr).contains("experimental"),
         "diagnostics go to stderr"
     );
+}
+
+/// The main use: a request saved in the app runs from the command line while the app has
+/// the same database open, and the app sees the run in History.
+#[tokio::test]
+async fn a_saved_request_runs_beside_the_open_app() {
+    use imposter_app::core::model::{RequestTemplate, Variables};
+    use imposter_app::store::{Store, collections, executions};
+    let server = Server::start(|_, _| response("200 OK", &[], b"ok")).await;
+    let home = tempfile::tempdir().unwrap();
+    let data = home.path().join("data");
+    std::fs::create_dir(&data).unwrap();
+    // Stands in for the running app: its own connection, open throughout.
+    let app = Store::open(&data.join("imposter.db")).unwrap();
+    let url = format!("{}/users", server.url);
+    app.call(move |db| {
+        let api = collections::create_collection(db, "API", "", &Variables::new())?;
+        let users = collections::create_folder(db, api.id, None, "Users", "", 0)?;
+        collections::create_request(
+            db,
+            api.id,
+            Some(users.id),
+            &RequestTemplate {
+                name: "List".into(),
+                method: "GET".into(),
+                url,
+                ..RequestTemplate::default()
+            },
+        )?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+
+    let mut command = imposter(home.path());
+    command.args(["send", "API / Users / List"]);
+    let output = output(command).await;
+
+    assert_eq!(output.status.code(), Some(7), "no checks: {output:?}");
+    assert_eq!(json_of(&output)["definition"]["source"], "profile");
+    assert_eq!(server.requests().len(), 1);
+    let rows = app
+        .call(|db| executions::page(db, None, 0, 10))
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].via, imposter_app::core::execution::Via::CommandLine);
 }

@@ -270,25 +270,36 @@ Cmd on macOS, Ctrl elsewhere. Shortcuts do nothing while a dialog is open.
 
 ### Command line
 
-`imposter send` runs one request from a collection file (a native `.imposter.json` export)
-without a window and without your personal data: it opens no database, writes no history
-and reads only the process variables you name. It uses the same engine as **Send**, so the
-same file gives the same checks in the app and on the command line.
+`imposter send` runs one of your saved requests without a window, through the same engine
+as **Send**. Edit requests in the app, then run them from a terminal, a script or a coding
+agent; there is nothing to export.
 
 ```sh
 export API_TOKEN=…
-imposter send api.imposter.json "Users/Create user" --env Dev --secret token=API_TOKEN
+imposter send "Shop API / Users / Create user" --env Dev --secret token=API_TOKEN
 ```
 
-The request is named by its folders and its own name; write a `/` inside a name as `\/`.
+The request is named by its breadcrumb, collection first, as the app shows it above the
+request bar (spaces around `/` are optional; write a `/` inside a name as `\/`). A wrong path
+lists every saved request. Only the environment named with `--env` applies, never the one
+the app has active, and an environment marked red (production) is refused unless you turn
+on Settings → Command line → **Allow production environments** in the app. The run is kept
+in History, marked **CLI** (find them with `via:cli`); values its captures and scripts set
+stay in the run and change none of your variables. It works while the app is open.
+
 The result is one JSON document on stdout, led by a `summary` and an `outcome`, with the
-file's SHA-256, the request as sent, the response head, check and script results, captures
-and body excerpts. A one-line summary goes to stderr. Captures and script variables stay in
-the run; nothing is written back to the file.
+request as sent, the response head, check and script results, captures and body excerpts.
+A one-line summary goes to stderr.
+
+For CI, or a machine without your data, export the collection (**⋯ → Export Collection…**,
+with the environments it needs) and add `--file api.imposter.json`. A file run uses the
+application defaults, writes no History and reads nothing else; the result records the
+file's SHA-256.
 
 | Option | Meaning |
 |---|---|
-| `--env NAME` | Use the file's environment NAME; without it, only globals and collection variables apply. |
+| `--file FILE` | Read a collection file (.imposter.json) instead of your I’mposter data, as CI does. Nothing is written to History. |
+| `--env NAME` | Use environment NAME; without it, only globals and collection variables apply, whatever the app has active. |
 | `--input VAR=PROCESS_VAR` | Set variable VAR from the process variable PROCESS_VAR, above every scope. Repeatable. |
 | `--secret VAR=PROCESS_VAR` | As --input, and remove its value from the result and error output. Repeatable. |
 | `--out FILE` | Also write the result to FILE; History opens it (⋯ → Open result file…). |
@@ -320,9 +331,9 @@ For a coding agent, `imposter skill` prints instructions on running requests, pa
 secrets and reading results. Put them wherever your agent reads instructions; I’mposter
 writes no agent configuration itself.
 
-`imposter mcp <FILE>` is an experiment: an MCP server over stdio that lets a chat tool list
-the requests of one file and send one, with the environment and inputs you give on its
-command line. Its tools and output may change or go away.
+`imposter mcp` is an experiment: an MCP server over stdio that lets a chat tool list your
+saved requests (or those of a `--file`) and send one, with the environment and inputs you
+give on its command line. Its tools and output may change or go away.
 
 ### Moving from the Python version
 

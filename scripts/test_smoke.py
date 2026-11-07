@@ -146,8 +146,8 @@ class BoundaryTests(unittest.TestCase):
             with self.subTest(fault=fault):
                 def broken_app(command, work, env, measure):
                     # Fault injection only at the app process; HTTP stays real.
-                    self.assertEqual(command[1:3], ["send", str(Path(work) / "smoke.imposter.json")])
-                    document = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+                    self.assertEqual(command[1:5], ["send", "Checks/Smoke", "--file", str(Path(work) / "smoke.imposter.json")])
+                    document = json.loads(Path(command[4]).read_text(encoding="utf-8"))
                     self.assertEqual(document["collection"]["folders"][0]["requests"][0]["name"], "Smoke")
                     if fault == "profile":
                         Path(env["IMPOSTER_DATA_DIR"]).mkdir()

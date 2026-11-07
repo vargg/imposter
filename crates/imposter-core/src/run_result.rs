@@ -139,13 +139,27 @@ pub struct RunInfo {
     pub elapsed_ms: u64,
 }
 
-/// What ran: the file by path and content, the request in it and the environment.
+/// Where the definitions that ran were read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Source {
+    /// The personal profile the app uses.
+    Profile,
+    /// A native collection file (`--file`).
+    File,
+}
+
+/// What ran: where it was read, the request and the environment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Definition {
-    pub file: String,
-    /// SHA-256 of the file's bytes, in hex; empty when the file could not be read.
-    pub sha256: String,
+    pub source: Source,
+    /// The file as given, for a file run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// SHA-256 of the file's bytes, in hex, once the file was read: the revision that ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
     pub request: String,
     /// `None`: globals and collection variables only.
     pub environment: Option<String>,
@@ -232,6 +246,9 @@ pub struct RunResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<ResponseHead>,
     pub limits: Limits,
+    /// What else the reader should know, such as a History write that failed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 /// What the caller knows about a run besides its record.
@@ -407,6 +424,7 @@ impl RunResult {
             request,
             response: head,
             limits: meta.limits,
+            notes: Vec::new(),
         }
     }
 
@@ -430,6 +448,7 @@ impl RunResult {
             request: None,
             response: None,
             limits: meta.limits,
+            notes: Vec::new(),
         }
     }
 
