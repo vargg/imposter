@@ -893,6 +893,19 @@ numbers, so both are excluded. Each logical change is its own commit.
   second executable would need its own packaging. Pinned by `imposter-cli/tests/send.rs`
   (every outcome, inputs, the freeze) and `imposter/tests/cli.rs` (the process: no
   profile created, no secret on stdout or stderr even at trace level, the interrupt).
+- **History opens a result file the command line wrote** (⋯ → "Open result file…", also
+  in the palette), in place of a selected execution: the summary in its outcome's tone, a
+  muted line saying where it came from ("From imposter send · Users/Create user · Dev ·
+  run 0b5c7f0e · not in history · secrets removed", the file, SHA-256 and start time on
+  hover), × to close it, and the same Response, Request body and Request headers tabs. A
+  run that sent nothing shows its error instead of a response. Nothing is stored, and
+  Restore and Copy as curl are not offered, since a result holds redacted values. The
+  file is read on the bridge with the import size limit (`transfer::read_result`). Why:
+  a person must be able to explain a failure from the result, without logs or asking the
+  agent to reconstruct the run (the roadmap's "How we know"). Pinned by
+  `imposter-ui/tests/results.rs`, which writes results with the real command line
+  (`imposter-cli` is a dev-dependency of the UI for that test only) and checks that the
+  desktop shows the same outcome and verdicts, and by the layout lint.
 - **Release measurements use the packaged smoke workflow, with one excluded warm-up and
   ten successful runs, each in a fresh temporary profile.** Launch-to-request is measured
   before spawning the process through receipt at the loopback server, not first-frame time;

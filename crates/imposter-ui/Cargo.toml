@@ -26,5 +26,7 @@ image.workspace = true
 serde_json.workspace = true
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
 imposter-testkit.workspace = true
+# Result files the real command line writes, opened in History (the M1 exit criterion).
+imposter-cli.workspace = true
 tempfile.workspace = true
 tokio.workspace = true

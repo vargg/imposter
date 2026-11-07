@@ -43,7 +43,7 @@ pub const SEND_FLAGS: [Flag; 5] = [
     Flag {
         name: "--out",
         value: "FILE",
-        help: "Also write the result to FILE.",
+        help: "Also write the result to FILE; History opens it (⋯ → Open result file…).",
     },
     Flag {
         name: "--max-body",

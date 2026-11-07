@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use imposter_app::transfer::{
     ExportScope, ImportKind, TransferError, detect, export_native, import, is_file, postman_export,
-    read_preview, write_file, write_postman,
+    read_preview, read_result, write_file, write_postman,
 };
 use imposter_core::model::{BodyType, Request, RequestTemplate, Variables};
 use imposter_core::prepare::{PreparedBody, prepare};
@@ -778,4 +778,20 @@ async fn collection_and_folder_scripts_survive_import_and_export() {
         exported["collection"]["folders"][0]["scripts"],
         original["collection"]["folders"][0]["scripts"]
     );
+}
+
+#[tokio::test]
+async fn results_read_back_and_other_files_say_why_not() {
+    let golden = fixtures().join("results/sent.imposter-result.json");
+    let result = read_result(golden).await.unwrap();
+    assert_eq!(result.definition.request, "Users/Create user");
+    let collection = read_result(fixtures().join("native/minimal.poster.json")).await;
+    assert!(
+        collection
+            .as_ref()
+            .is_err_and(|e| e.starts_with("Not an Imposter result")),
+        "{collection:?}"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    assert!(read_result(dir.path().join("missing.json")).await.is_err());
 }

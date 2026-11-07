@@ -481,6 +481,78 @@ pub fn sent_request(record: &ExecutionRecord) -> SentRequest {
     sent_request_of(&record.resolved, record.settings.attach_cookies)
 }
 
+/// The request a headless result records, as History shows a sent request. Its body is
+/// the result's excerpt, already redacted.
+pub fn result_request(sent: &imposter_app::core::run_result::SentRequest) -> SentRequest {
+    let headers: Vec<String> = sent
+        .headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}"))
+        .collect();
+    let language = language(content_type(&sent.headers));
+    let (body, language) = match &sent.body {
+        None => (String::new(), Language::Plain),
+        Some(excerpt) => match &excerpt.text {
+            None => (
+                format!("Binary body, {}", format_size(excerpt.bytes)),
+                Language::Plain,
+            ),
+            Some(text) if excerpt.cut => (
+                format!("{text}\n… Excerpt of {}", format_size(excerpt.bytes)),
+                Language::Plain,
+            ),
+            Some(text) => match (language, pretty_json(text)) {
+                (Language::Json, Some(formatted)) => (formatted, Language::Json),
+                _ => (text.clone(), language),
+            },
+        },
+    };
+    SentRequest {
+        summary: format!("{} {}", sent.method, sent.url),
+        headers: headers.join("\n"),
+        body,
+        language,
+    }
+}
+
+/// What a result's response body notice says when the result holds less than arrived: an
+/// excerpt is not a body cut when captured. `None` when the whole body is there.
+pub fn result_notice(head: &imposter_app::core::run_result::ResponseHead) -> Option<String> {
+    let captured = if head.truncated {
+        " · cut when captured"
+    } else {
+        ""
+    };
+    match &head.body {
+        None => Some(format!("The result keeps no body (--max-body 0){captured}")),
+        Some(excerpt) if excerpt.binary => Some(format!(
+            "Binary body, {}: a result keeps text only{captured}",
+            format_size(excerpt.bytes)
+        )),
+        Some(excerpt) if excerpt.cut => Some(format!(
+            "The result keeps the first {} of {}{captured}",
+            format_size(excerpt.text.as_ref().map_or(0, String::len)),
+            format_size(excerpt.bytes)
+        )),
+        Some(_) if head.truncated => Some("Body cut when captured".to_owned()),
+        Some(_) => None,
+    }
+}
+
+/// How a headless run's outcome reads: green only when everything checked passed.
+pub fn outcome_tone(outcome: imposter_app::core::run_result::RunOutcome) -> Tone {
+    use imposter_app::core::run_result::RunOutcome;
+    match outcome {
+        RunOutcome::Passed => Tone::Ok,
+        RunOutcome::NotChecked | RunOutcome::NoChecks => Tone::Warning,
+        RunOutcome::Cancelled => Tone::Muted,
+        RunOutcome::Failed
+        | RunOutcome::NotSent
+        | RunOutcome::TransportError
+        | RunOutcome::ScriptFailed => Tone::Error,
+    }
+}
+
 /// What the resolved request `sent` went out as; see [`sent_request`].
 pub fn sent_request_of(
     sent: &imposter_app::core::model::Request,
@@ -1027,6 +1099,45 @@ pub fn find_all(haystack: &str, needle: &str) -> Vec<Range<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn result_notices_name_the_excerpt_not_the_capture() {
+        use imposter_app::core::run_result::{Excerpt, ResponseHead};
+        let head = |body: Option<Excerpt>, truncated: bool| ResponseHead {
+            status: 200,
+            reason: "OK".into(),
+            headers: Vec::new(),
+            elapsed_ms: 1.0,
+            truncated,
+            body,
+        };
+        let excerpt = |text: Option<&str>, bytes: usize, cut: bool| Excerpt {
+            binary: text.is_none(),
+            text: text.map(str::to_owned),
+            bytes,
+            cut,
+        };
+        assert_eq!(
+            result_notice(&head(Some(excerpt(Some("ab"), 2, false)), false)),
+            None
+        );
+        assert_eq!(
+            result_notice(&head(Some(excerpt(Some("ab"), 80, true)), false)).as_deref(),
+            Some("The result keeps the first 2 B of 80 B")
+        );
+        assert_eq!(
+            result_notice(&head(Some(excerpt(None, 10, false)), true)).as_deref(),
+            Some("Binary body, 10 B: a result keeps text only · cut when captured")
+        );
+        assert_eq!(
+            result_notice(&head(None, false)).as_deref(),
+            Some("The result keeps no body (--max-body 0)")
+        );
+        assert_eq!(
+            result_notice(&head(Some(excerpt(Some("ab"), 2, false)), true)).as_deref(),
+            Some("Body cut when captured")
+        );
+    }
 
     #[test]
     fn binary_bodies_are_told_by_type_or_by_a_nul_byte() {

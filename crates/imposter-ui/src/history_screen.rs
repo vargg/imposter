@@ -193,6 +193,14 @@ fn toolbar(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut V
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             crate::icons::menu(ui, crate::icons::Icon::More, "History actions", |ui| {
+                if ui
+                    .button("Open result file…")
+                    .on_hover_text("Show a result that imposter send wrote with --out")
+                    .clicked()
+                {
+                    actions.push(Action::History(HistoryAction::OpenResult));
+                }
+                ui.separator();
                 if ui.button("Clear all history…").clicked() {
                     actions.push(Action::History(HistoryAction::Clear));
                 }
@@ -372,6 +380,65 @@ fn pager(
 /// The selected execution: one line with what was sent and how it went, and its actions;
 /// then one row of tabs for the response and the request as sent.
 fn detail(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Vec<Action>) {
+    if let Some(opened) = &history.opened {
+        result_header(ui, opened, actions);
+    } else if !record_header(ui, history, actions) {
+        return;
+    }
+    detail_tabs(ui, history, actions);
+}
+
+/// What a result file says about its run: the summary in the outcome's tone, then where it
+/// came from, and a close button.
+fn result_header(ui: &mut Ui, opened: &crate::app::OpenedResult, actions: &mut Vec<Action>) {
+    let result = &opened.result;
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if crate::icons::button(ui, crate::icons::Icon::Close, "Close result", false).clicked()
+            {
+                actions.push(Action::History(HistoryAction::CloseResult));
+            }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(tone_text(
+                        &result.summary,
+                        viewer::outcome_tone(result.outcome),
+                    ))
+                    .truncate()
+                    .selectable(true),
+                )
+                .on_hover_text(&result.summary);
+            });
+        });
+    });
+    let environment = result
+        .definition
+        .environment
+        .as_deref()
+        .unwrap_or("no environment");
+    let run: String = result.run.id.chars().take(8).collect();
+    let origin = format!(
+        "From imposter send · {} · {environment} · run {run} · not in history · secrets removed",
+        result.definition.request
+    );
+    ui.add(egui::Label::new(tone_text(origin, Tone::Muted)).truncate())
+        .on_hover_text(format!(
+            "{} ({})\nSHA-256 {}\nStarted {} by {}",
+            result.definition.file,
+            opened.file,
+            result.definition.sha256,
+            result.run.started,
+            result.run.tool
+        ));
+}
+
+/// The selected execution's line and actions; `false` while there is nothing to show.
+fn record_header(
+    ui: &mut Ui,
+    history: &crate::app::HistoryScreen,
+    actions: &mut Vec<Action>,
+) -> bool {
     if history.selected.is_none() {
         ui.add_space(16.0);
         ui.vertical_centered(|ui| {
@@ -380,11 +447,11 @@ fn detail(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Ve
                 Tone::Muted,
             ))
         });
-        return;
+        return false;
     }
     let (Some(record), Some(request)) = (&history.record, &history.request) else {
         ui.label(tone_text("Loading…", Tone::Muted));
-        return;
+        return false;
     };
     ui.add_space(4.0);
     ui.horizontal(|ui| {
@@ -437,6 +504,11 @@ fn detail(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Ve
             });
         });
     });
+    true
+}
+
+/// One row of tabs for the response and the request as sent, then the chosen one.
+fn detail_tabs(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Vec<Action>) {
     // One row of tabs: the response, then the request's body and headers as sent.
     ui.horizontal(|ui| {
         for (tab, sent, label, accessible) in [
@@ -465,7 +537,9 @@ fn detail(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Ve
                 }
             }
         }
-        if history.tab == HistoryTab::Request {
+        if history.tab == HistoryTab::Request
+            && let Some(request) = &history.request
+        {
             let (view, text, copy) = match history.request_tab {
                 SentTab::Body => (
                     &mut history.request_body_view,
@@ -486,6 +560,20 @@ fn detail(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Ve
     match history.tab {
         HistoryTab::Request => sent_request(ui, history),
         HistoryTab::Response => {
+            if let Some(opened) = &history.opened
+                && opened.result.response.is_none()
+            {
+                // Nothing arrived: the summary says how it ended, the error why.
+                ui.add_space(8.0);
+                if !opened.result.error.is_empty() {
+                    ui.add(
+                        egui::Label::new(&opened.result.error)
+                            .wrap()
+                            .selectable(true),
+                    );
+                }
+                return;
+            }
             // History responses are not the open request's: no row adds a check.
             if let Some(crate::workspace::PaneAction::SaveBody) =
                 crate::workspace::response_body(ui, &mut history.response, "history", true, false)

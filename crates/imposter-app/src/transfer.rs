@@ -485,6 +485,16 @@ pub async fn is_file(path: PathBuf) -> bool {
         .is_ok_and(|metadata| metadata.is_file())
 }
 
+/// A result `imposter send` wrote, read off the async threads with the import size limit.
+pub async fn read_result(path: PathBuf) -> Result<imposter_core::run_result::RunResult, String> {
+    tokio::task::spawn_blocking(move || {
+        let bytes = native::read_document(&path).map_err(|e| e.to_string())?;
+        imposter_core::run_result::RunResult::read(&bytes).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|_| TransferError::Task.to_string())?
+}
+
 /// The Postman export of `scope` and its warnings, for review before writing.
 pub async fn postman_export(
     store: &StoreHandle,

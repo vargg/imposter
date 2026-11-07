@@ -291,7 +291,7 @@ the run; nothing is written back to the file.
 | `--env NAME` | Use the file's environment NAME; without it, only globals and collection variables apply. |
 | `--input VAR=PROCESS_VAR` | Set variable VAR from the process variable PROCESS_VAR, above every scope. Repeatable. |
 | `--secret VAR=PROCESS_VAR` | As --input, and remove its value from the result and error output. Repeatable. |
-| `--out FILE` | Also write the result to FILE. |
+| `--out FILE` | Also write the result to FILE; History opens it (⋯ → Open result file…). |
 | `--max-body BYTES` | Show at most BYTES of each body in the result (default 65536; 0 shows none). |
 
 Every outcome has its own exit status, so CI can tell a failed check from a server that was

@@ -14,6 +14,7 @@ use egui::ViewportCommand;
 use imposter_app::core::execution::{ExecutionRecord, Outcome as ExchangeOutcome, Response};
 use imposter_app::core::ids::{CollectionId, EnvironmentId, ExecutionId, FolderId, RequestId};
 use imposter_app::core::model::{EnvColor, FormItem, Request, SavedValues, Variables};
+use imposter_app::core::run_result::RunResult;
 use imposter_app::core::settings::AppSettings;
 use imposter_app::core::variables::Snapshot;
 use imposter_app::executor::{self, ExecuteError, Executed};
@@ -223,6 +224,12 @@ pub enum Message {
     HistoryRecord {
         id: ExecutionId,
         result: Result<Option<Box<ExecutionRecord>>, Failure>,
+    },
+    /// The result file chosen to open in History, none when cancelled.
+    ResultPicked(Option<PathBuf>),
+    ResultRead {
+        file: String,
+        result: Result<Box<RunResult>, String>,
     },
     Flushed(Result<(), Failure>),
     /// Background work with nothing to apply (it logs its own failures).
@@ -459,6 +466,17 @@ pub enum HistoryAction {
     /// Copy the selected execution's request as curl.
     CopyCurl,
     Clear,
+    /// Choose a result file `imposter send` wrote and show it in the details.
+    OpenResult,
+    CloseResult,
+}
+
+/// A result file shown in History's details. It is not stored: closing it, or choosing an
+/// execution, puts it away.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenedResult {
+    pub file: String,
+    pub result: RunResult,
 }
 
 /// What History's details show; the response first, as it is what a run is looked up for.
@@ -481,6 +499,8 @@ pub struct HistoryScreen {
     pub rows: Vec<ExecutionSummary>,
     pub selected: Option<ExecutionId>,
     pub record: Option<ExecutionRecord>,
+    /// A result file shown instead of a selected execution.
+    pub opened: Option<OpenedResult>,
     /// The selected execution's request as sent.
     pub request: Option<crate::viewer::SentRequest>,
     pub request_tab: SentTab,
@@ -1520,6 +1540,47 @@ impl ImposterApp {
                     self.file_picked(target, &path);
                 }
             }
+            Message::ResultPicked(path) => {
+                if let Some(path) = path {
+                    let file = path.file_name().map_or_else(
+                        || path.display().to_string(),
+                        |n| n.to_string_lossy().into(),
+                    );
+                    self.bridge.spawn(move |_| async move {
+                        let result = transfer::read_result(path).await.map(Box::new);
+                        Message::ResultRead { file, result }
+                    });
+                }
+            }
+            Message::ResultRead { file, result } => match result {
+                Ok(result) => {
+                    let history = &mut self.state.history;
+                    history.selected = None;
+                    history.record = None;
+                    history.request = result.request.as_ref().map(crate::viewer::result_request);
+                    history.response = ResponsePane::default();
+                    if let Some(response) = result.response() {
+                        history.response.show(response);
+                    }
+                    if let Some(notice) = result
+                        .response
+                        .as_ref()
+                        .and_then(crate::viewer::result_notice)
+                    {
+                        history.response.notice = Some((notice, Tone::Muted));
+                    }
+                    history.tab = HistoryTab::Response;
+                    history.status = None;
+                    history.opened = Some(OpenedResult {
+                        file,
+                        result: *result,
+                    });
+                }
+                Err(error) => {
+                    self.state.history.status =
+                        Some((format!("Cannot open {file}: {error}"), Tone::Error));
+                }
+            },
             Message::ImportPicked(path) => {
                 if let Some(path) = path {
                     self.bridge.spawn(move |_| async move {
@@ -4177,6 +4238,7 @@ impl ImposterApp {
             HistoryAction::Select(id) => {
                 self.state.history.selected = Some(id);
                 self.state.history.record = None;
+                self.state.history.opened = None;
                 self.task(
                     move |db| executions::execution(db, id),
                     move |result| Message::HistoryRecord {
@@ -4217,6 +4279,26 @@ impl ImposterApp {
             HistoryAction::Clear => {
                 let executions = self.state.history.usage.map(|u| u.entries);
                 self.state.dialog = Some(Dialog::clear_history(executions));
+            }
+            HistoryAction::OpenResult => {
+                // From the palette: show where the result will appear.
+                self.state.screen = Screen::History;
+                if !self.state.history.loaded {
+                    self.load_history();
+                }
+                self.pick(
+                    FileDialog::Open {
+                        title: "Open result file",
+                        filter: Some(("Imposter results", &["json"])),
+                    },
+                    |paths| Message::ResultPicked(paths.into_iter().next()),
+                );
+            }
+            HistoryAction::CloseResult => {
+                let history = &mut self.state.history;
+                history.opened = None;
+                history.request = None;
+                history.response = ResponsePane::default();
             }
         }
     }

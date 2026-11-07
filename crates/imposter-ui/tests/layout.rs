@@ -429,6 +429,15 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     check(app, "restored draft");
     click(&mut app.harness, "History");
     settle(&mut app.harness);
+    // A result file from the command line, with its summary and origin lines.
+    let result = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/results/sent.imposter-result.json");
+    app.harness.state_mut().script_file_dialogs([Some(result)]);
+    click(&mut app.harness, "History actions");
+    click(&mut app.harness, "Open result file…");
+    settle(&mut app.harness);
+    check(app, "History result");
+    click(&mut app.harness, "Close result");
     click(&mut app.harness, "Requests");
     settle(&mut app.harness);
     for (dialog, keys) in [("palette", egui::Key::K), ("recent", egui::Key::P)] {

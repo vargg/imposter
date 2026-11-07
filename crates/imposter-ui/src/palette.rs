@@ -470,6 +470,11 @@ fn fixed_items(state: &State) -> Vec<Item> {
     );
     action("Import Collection…", None, Action::Import);
     action(
+        "Open Result File…",
+        None,
+        Action::History(crate::app::HistoryAction::OpenResult),
+    );
+    action(
         crate::workspace::PASTE_CURL,
         None,
         Action::Prompt(Dialog::Curl {
