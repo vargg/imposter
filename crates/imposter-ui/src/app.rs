@@ -3441,8 +3441,9 @@ impl ImposterApp {
     ) -> Option<String> {
         let screen = &self.state.variables;
         let blocked = screen.dirty().then_some(screen.scope);
-        let (kept, writes): (Vec<_>, Vec<_>) =
-            writes.into_iter().partition(|w| Some(w.scope) == blocked);
+        let (kept, writes): (Vec<_>, Vec<_>) = writes
+            .into_iter()
+            .partition(|w| w.scope.is_some() && w.scope == blocked);
         if !writes.is_empty() {
             let scopes = imposter_app::core::capture::scopes(&writes);
             let names: Vec<String> = writes.iter().map(|w| w.name.clone()).collect();

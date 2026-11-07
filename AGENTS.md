@@ -466,6 +466,19 @@ numbers, so both are excluded. Each logical change is its own commit.
   The database thread runs commands in order, so this is the snapshot taken before the first
   await: an environment switch queued before Send applies, a later one cannot change a running
   request. The variable inspector uses the same function (`executor::inputs`).
+- **One engine runs every request: `executor::run`, which reads and writes nothing.** Send
+  is `inputs` + `run` + recording History; a run from a collection file is
+  `document::select` + `run`. `Inputs::origin` says where the inputs came from, and so
+  where captures and script variables go (`capture::Destination`): back to the stored
+  scopes, or, for a file, only into the run, named "this run" (writing a value back is a
+  separate edit). Scopes read from a file have no database id (`None`) rather than invented
+  ones, and a value given to the run is a `Source::Input` above every scope. A file's
+  request is chosen by its path of names (`document::RequestPath`, `Users/Create user`,
+  `\/` for a slash in a name); a path or environment naming nothing or several is refused
+  with the candidates. Settings are the application defaults, never the profile's. Why:
+  the roadmap's "one contract": a headless run must not grow a second variable, script or
+  check implementation. Pinned by `imposter-app/tests/document.rs`, which sends one file
+  through both paths and compares the bytes received and the verdicts.
 - **Requests that cannot be sent are not history.** Unresolved variables, a bad URL, auth or
   cookie conflicts, a failed before-sending script are reported and nothing is recorded (the Python app recorded URL errors as
   transport errors). Cancelled and failed sends are recorded with their outcome. A failed

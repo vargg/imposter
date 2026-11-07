@@ -201,7 +201,7 @@ pub fn variable_context(db: &Connection) -> Result<VariableContext, StoreError> 
         Some(id) => match environment(db, id)? {
             Some(env) => Some(imposter_core::variables::ActiveEnvironment {
                 saved: scopes::saved_values(db, Scope::Environment(env.id))?,
-                id: env.id,
+                id: Some(env.id),
                 name: env.name,
                 values: env.variables,
             }),

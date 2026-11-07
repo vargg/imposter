@@ -3,7 +3,7 @@
 
 use std::time::Instant;
 
-use imposter_core::capture::Write;
+use imposter_core::capture::{Destination, Write};
 use imposter_core::execution::{ExecutionRecord, Outcome, Response, Timestamp};
 use imposter_core::generate::Entropy;
 use imposter_core::ids::ExecutionId;
@@ -28,6 +28,26 @@ pub struct Inputs {
     /// The collection's and enclosing folders' scripts, outermost first; the request's own
     /// are added by the caller (`ScriptChain::with_request`).
     pub scripts: crate::scripts::ScriptChain,
+    pub origin: Origin,
+}
+
+/// Where an execution's inputs were read, which decides where its captures and script
+/// variables go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// The database: values go back to the scopes that defined them.
+    Store,
+    /// A collection file: nothing is stored, so values stay in the run.
+    File,
+}
+
+impl Inputs {
+    fn destination(&self) -> Destination<'_> {
+        match self.origin {
+            Origin::Store => Destination::Scopes(&self.snapshot, &self.context),
+            Origin::File => Destination::Run,
+        }
+    }
 }
 
 /// Read the inputs for `request`. Inspection uses this too, so it explains exactly what an
@@ -50,7 +70,7 @@ pub async fn inputs(store: &StoreHandle, request: &Request) -> Result<Inputs, St
             };
             let scope = match &collection {
                 Some(collection) => Some(CollectionScope::Live {
-                    id: collection.id,
+                    id: Some(collection.id),
                     name: &collection.name,
                     values: &collection.variables,
                     saved: &saved,
@@ -72,6 +92,7 @@ pub async fn inputs(store: &StoreHandle, request: &Request) -> Result<Inputs, St
                 context,
                 snapshot,
                 scripts,
+                origin: Origin::Store,
             })
         })
         .await
@@ -141,14 +162,15 @@ pub struct Executed {
     pub attach_cookies: bool,
 }
 
-/// Write captured values, one transaction for all of them.
+/// Write captured values to their stored scopes, one transaction for all of them. Values
+/// that belong to the run only are not written.
 pub async fn write_captures(store: &StoreHandle, writes: Vec<Write>) -> Result<(), StoreError> {
     store
         .call(move |db| {
             for scope in imposter_core::capture::scopes(&writes) {
                 let values: Vec<(String, String)> = writes
                     .iter()
-                    .filter(|w| w.scope == scope)
+                    .filter(|w| w.scope == Some(scope))
                     .map(|w| (w.name.clone(), w.value.clone()))
                     .collect();
                 scopes::set_current(db, scope, &values)?;
@@ -323,6 +345,16 @@ pub fn recorded_curl(record: &ExecutionRecord) -> Result<String, ExecuteError> {
     Ok(imposter_core::curl::to_command(&prepared, &record.settings))
 }
 
+/// A finished execution, not yet recorded anywhere.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ran {
+    /// What History records: the request as stored and as sent, settings, environment and
+    /// response.
+    pub record: ExecutionRecord,
+    /// Values the request's captures and scripts set, to write where `Inputs::origin` says.
+    pub writes: Vec<Write>,
+}
+
 /// Send `request` and record it. `cancel` stops the network exchange; a cancelled execution
 /// is still recorded, like any other outcome.
 pub async fn execute(
@@ -331,9 +363,45 @@ pub async fn execute(
     cancel: CancellationToken,
 ) -> Result<Executed, ExecuteError> {
     let inputs = inputs(store, &request).await?;
+    let Ran { record, writes } = run(&inputs, request, cancel).await?;
+    let mut response = record.response.clone();
+    let sent = Box::new(record.resolved.clone());
+    let attach_cookies = record.settings.attach_cookies;
+    let (entries, bytes) = (
+        record.settings.history_max_entries,
+        record.settings.history_max_bytes,
+    );
+    let id = match store
+        .call(move |db| executions::record(db, &record, entries, bytes))
+        .await
+    {
+        Ok(id) => Some(id),
+        Err(error) => {
+            tracing::warn!(%error, "recording an execution failed");
+            HISTORY_ERROR.clone_into(&mut response.history_error);
+            None
+        }
+    };
+    Ok(Executed {
+        response,
+        record: id,
+        writes,
+        sent,
+        attach_cookies,
+    })
+}
+
+/// Run `request` with `inputs`: before-sending scripts, prepare, send, checks, captures and
+/// after-response scripts. Nothing is read or written here, so Send and a headless run
+/// share every step. `cancel` stops scripts and the network exchange.
+pub async fn run(
+    inputs: &Inputs,
+    request: Request,
+    cancel: CancellationToken,
+) -> Result<Ran, ExecuteError> {
     let chain = inputs.scripts.with_request(&request).compile()?;
     let (mut resolved, settings, mut values) =
-        resolve_with(&request, &inputs, &mut SystemEntropy::default())?;
+        resolve_with(&request, inputs, &mut SystemEntropy::default())?;
     let before = chain
         .before(resolved.template, values.clone(), cancel.clone())
         .await
@@ -360,12 +428,9 @@ pub async fn execute(
     };
     response.elapsed = started.elapsed().as_secs_f64();
     response.checks = imposter_core::check::evaluate(&request.template.checks, &response, &values);
-    let (captured, mut writes) = imposter_core::capture::evaluate(
-        &request.template.captures,
-        &response,
-        &inputs.snapshot,
-        &inputs.context,
-    );
+    let destination = inputs.destination();
+    let (captured, mut writes) =
+        imposter_core::capture::evaluate(&request.template.captures, &response, destination);
     response.captures = captured;
     // The after-response script sees the before-sending script's sets, and runs only on a
     // response, as checks do.
@@ -393,47 +458,24 @@ pub async fn execute(
     }
     // Scripts set variables where captures would, after the captures.
     writes.extend(sets.into_iter().map(|(name, value)| Write {
-        scope: imposter_core::capture::target(&inputs.snapshot, &inputs.context, &name).0,
+        scope: destination.of(&name).0,
         name,
         value,
     }));
 
     let mut template = request.clone();
-    template.collection_variables_snapshot = resolved.collection_variables_snapshot.clone();
-    let sent = Box::new(resolved.clone());
-    let attach_cookies = settings.attach_cookies;
+    template
+        .collection_variables_snapshot
+        .clone_from(&resolved.collection_variables_snapshot);
     let record = ExecutionRecord {
         timestamp: now(),
         request_id: request.id,
         template,
         resolved,
-        settings: settings.clone(),
+        settings,
         environment_id: inputs.context.environment_id(),
         environment: inputs.context.environment_name().to_owned(),
-        response: response.clone(),
+        response,
     };
-    let (entries, bytes) = (settings.history_max_entries, settings.history_max_bytes);
-    match store
-        .call(move |db| executions::record(db, &record, entries, bytes))
-        .await
-    {
-        Ok(id) => Ok(Executed {
-            response,
-            record: Some(id),
-            writes,
-            sent,
-            attach_cookies,
-        }),
-        Err(error) => {
-            tracing::warn!(%error, "recording an execution failed");
-            HISTORY_ERROR.clone_into(&mut response.history_error);
-            Ok(Executed {
-                response,
-                record: None,
-                writes,
-                sent,
-                attach_cookies,
-            })
-        }
-    }
+    Ok(Ran { record, writes })
 }

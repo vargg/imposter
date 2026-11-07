@@ -506,13 +506,7 @@ async fn a_deleted_collection_falls_back_to_the_captured_variables() {
 
     assert_eq!(executed.response.status, 200);
     let source = &found.snapshot.effective("base").unwrap().source;
-    assert_eq!(
-        source,
-        &Source::Collection {
-            id: None,
-            name: "Captured collection (deleted)".into()
-        }
-    );
+    assert_eq!(source, &Source::Captured);
 }
 
 #[tokio::test]

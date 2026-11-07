@@ -187,20 +187,20 @@ vars.set("secret", "rotated");"#,
     assert_eq!(record.response.console, Vec::<String>::new());
 
     // Sets go where captures go: the defining scope, else the active environment.
-    let writes: Vec<(Scope, &str, &str)> = executed
+    let writes: Vec<(Option<Scope>, &str, &str)> = executed
         .writes
         .iter()
         .map(|w| (w.scope, w.name.as_str(), w.value.as_str()))
         .collect();
     assert!(
-        matches!(writes[0], (Scope::Environment(_), "stamp", "early")),
+        matches!(writes[0], (Some(Scope::Environment(_)), "stamp", "early")),
         "{writes:?}"
     );
     assert!(
-        matches!(writes[1], (Scope::Environment(_), "item_id", "7")),
+        matches!(writes[1], (Some(Scope::Environment(_)), "item_id", "7")),
         "{writes:?}"
     );
-    assert_eq!(writes[2], (Scope::Global, "secret", "rotated"));
+    assert_eq!(writes[2], (Some(Scope::Global), "secret", "rotated"));
 }
 
 #[tokio::test]

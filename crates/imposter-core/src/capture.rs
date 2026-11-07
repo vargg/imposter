@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::execution::{Outcome, Response};
 use crate::select::{ResponseView, Selector};
-use crate::variables::{Scope, Snapshot, VariableContext};
+use crate::variables::{Scope, Snapshot, Source, VariableContext};
 
 fn yes() -> bool {
     true
@@ -54,29 +54,61 @@ pub struct Captured {
     pub target: String,
 }
 
-/// A value to write: the current value of `name` in `scope`.
+/// A value to write: the current value of `name` in `scope`, or in the run only when
+/// `scope` is `None` (nothing is stored).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Write {
-    pub scope: Scope,
+    pub scope: Option<Scope>,
     pub name: String,
     pub value: String,
 }
 
+/// Where a run's captures and script variables go.
+#[derive(Debug, Clone, Copy)]
+pub enum Destination<'a> {
+    /// Into the stored scopes the request's variables came from (Send in the app).
+    Scopes(&'a Snapshot, &'a VariableContext),
+    /// Into the run only: its variables were read from a file, and writing a value back
+    /// is a separate edit.
+    Run,
+}
+
+impl Destination<'_> {
+    /// The words naming a write that stays in the run.
+    pub const RUN_NAME: &'static str = "this run";
+
+    /// Where a write of `name` goes, and its name for people.
+    pub fn of(&self, name: &str) -> (Option<Scope>, String) {
+        match self {
+            Self::Scopes(snapshot, context) => target(snapshot, context, name),
+            Self::Run => (None, Self::RUN_NAME.to_owned()),
+        }
+    }
+}
+
 /// Where a captured `name` goes: the scope whose definition is in effect, so the value the
 /// request saw is the one replaced. A name nobody defines, or one defined only by a deleted
-/// collection's captured values, goes to the active environment, else to the globals.
-pub fn target(snapshot: &Snapshot, context: &VariableContext, name: &str) -> (Scope, String) {
+/// collection's captured values, goes to the active environment, else to the globals. A
+/// scope that is not stored (read from a file) gives `None`.
+pub fn target(
+    snapshot: &Snapshot,
+    context: &VariableContext,
+    name: &str,
+) -> (Option<Scope>, String) {
     if let Some(definition) = snapshot.effective(name)
-        && let Some(scope) = Scope::of(&definition.source)
+        && definition.source != Source::Captured
     {
-        return (scope, definition.source.label().to_owned());
+        return (
+            Scope::of(&definition.source),
+            definition.source.label().to_owned(),
+        );
     }
-    match context.environment_id() {
-        Some(id) => (
-            Scope::Environment(id),
-            context.environment_name().to_owned(),
+    match &context.environment {
+        Some(environment) => (
+            environment.id.map(Scope::Environment),
+            environment.name.clone(),
         ),
-        None => (Scope::Global, VariableContext::GLOBAL_NAME.to_owned()),
+        None => (Some(Scope::Global), VariableContext::GLOBAL_NAME.to_owned()),
     }
 }
 
@@ -85,8 +117,7 @@ pub fn target(snapshot: &Snapshot, context: &VariableContext, name: &str) -> (Sc
 pub fn evaluate(
     captures: &[Capture],
     response: &Response,
-    snapshot: &Snapshot,
-    context: &VariableContext,
+    destination: Destination<'_>,
 ) -> (Vec<Captured>, Vec<Write>) {
     if response.outcome != Outcome::Response {
         return (Vec::new(), Vec::new());
@@ -99,7 +130,7 @@ pub fn evaluate(
         if !capture.enabled || name.is_empty() {
             continue;
         }
-        let (scope, label) = target(snapshot, context, name);
+        let (scope, label) = destination.of(name);
         let taken = match view.read(&capture.selector) {
             Ok(Some(Value::String(text))) => Taken::Value(text),
             Ok(Some(value)) => Taken::Value(value.to_string()),
@@ -123,12 +154,12 @@ pub fn evaluate(
     (results, writes)
 }
 
-/// The scopes `writes` touch, once each.
+/// The stored scopes `writes` touch, once each.
 pub fn scopes(writes: &[Write]) -> Vec<Scope> {
     let mut scopes: Vec<Scope> = Vec::new();
-    for write in writes {
-        if !scopes.contains(&write.scope) {
-            scopes.push(write.scope);
+    for scope in writes.iter().filter_map(|w| w.scope) {
+        if !scopes.contains(&scope) {
+            scopes.push(scope);
         }
     }
     scopes
@@ -152,7 +183,7 @@ mod tests {
         VariableContext {
             globals: vars(&[("region", "eu")]),
             environment: environment.then(|| ActiveEnvironment {
-                id: EnvironmentId(3),
+                id: Some(EnvironmentId(3)),
                 name: "Dev".into(),
                 values: vars(&[("token", "old")]),
                 saved: SavedValues::default(),
@@ -166,7 +197,7 @@ mod tests {
         Snapshot::build(
             context,
             Some(CollectionScope::Live {
-                id: CollectionId(9),
+                id: Some(CollectionId(9)),
                 name: "API",
                 values: collection,
                 saved: &saved,
@@ -191,20 +222,20 @@ mod tests {
         let (snapshot, context) = (&built, &active);
         assert_eq!(
             target(snapshot, context, "token"),
-            (Scope::Environment(EnvironmentId(3)), "Dev".into())
+            (Some(Scope::Environment(EnvironmentId(3))), "Dev".into())
         );
         assert_eq!(
             target(snapshot, context, "user_id"),
-            (Scope::Collection(CollectionId(9)), "API".into())
+            (Some(Scope::Collection(CollectionId(9))), "API".into())
         );
         assert_eq!(
             target(snapshot, context, "region"),
-            (Scope::Collection(CollectionId(9)), "API".into()),
+            (Some(Scope::Collection(CollectionId(9))), "API".into()),
             "the collection overrides the globals"
         );
         assert_eq!(
             target(snapshot, context, "new_name"),
-            (Scope::Environment(EnvironmentId(3)), "Dev".into()),
+            (Some(Scope::Environment(EnvironmentId(3))), "Dev".into()),
             "new names go to the active environment"
         );
         let global = self::context(false);
@@ -214,7 +245,7 @@ mod tests {
                 &global,
                 "new_name"
             ),
-            (Scope::Global, "Global".into())
+            (Some(Scope::Global), "Global".into())
         );
         let deleted = Snapshot::build(
             &global,
@@ -224,7 +255,7 @@ mod tests {
         );
         assert_eq!(
             target(&deleted, &global, "gone"),
-            (Scope::Global, "Global".into()),
+            (Some(Scope::Global), "Global".into()),
             "a deleted collection holds nothing"
         );
     }
@@ -246,7 +277,11 @@ mod tests {
                 ..Capture::new("off", Selector::Status)
             },
         ];
-        let (results, writes) = evaluate(&captures, &response(), &snapshot, &context);
+        let (results, writes) = evaluate(
+            &captures,
+            &response(),
+            Destination::Scopes(&snapshot, &context),
+        );
         let taken: Vec<(&str, &Taken)> = results
             .iter()
             .map(|r| (r.variable.as_str(), &r.taken))
@@ -289,15 +324,56 @@ mod tests {
             Capture::new("id", Selector::Status),
             Capture::new("id", Selector::Json("$.user.id".into())),
         ];
-        let (_, writes) = evaluate(&captures, &response(), &snapshot, &context);
+        let (_, writes) = evaluate(
+            &captures,
+            &response(),
+            Destination::Scopes(&snapshot, &context),
+        );
         assert_eq!(writes.len(), 1);
         assert_eq!(writes[0].value, "7");
 
         let failed = Response::failure(Outcome::TransportError, "Connect", "refused");
         assert_eq!(
-            evaluate(&captures, &failed, &snapshot, &context),
+            evaluate(&captures, &failed, Destination::Scopes(&snapshot, &context)),
             (Vec::new(), Vec::new())
         );
+    }
+
+    #[test]
+    fn a_run_from_a_file_keeps_its_writes() {
+        let mut context = context(true);
+        if let Some(environment) = &mut context.environment {
+            environment.id = None;
+        }
+        let collection = vars(&[("user_id", "1")]);
+        let saved = SavedValues::default();
+        let snapshot = Snapshot::build(
+            &context,
+            Some(CollectionScope::Live {
+                id: None,
+                name: "API",
+                values: &collection,
+                saved: &saved,
+            }),
+        );
+        assert_eq!(
+            target(&snapshot, &context, "user_id"),
+            (None, "API".into()),
+            "a collection read from a file is not stored"
+        );
+        assert_eq!(
+            target(&snapshot, &context, "new_name"),
+            (None, "Dev".into())
+        );
+        let captures = [
+            Capture::new("token", Selector::Json("$.token".into())),
+            Capture::new("region", Selector::Json("$.tags[0]".into())),
+        ];
+        let (results, writes) = evaluate(&captures, &response(), Destination::Run);
+        assert!(results.iter().all(|r| r.target == "this run"));
+        assert!(writes.iter().all(|w| w.scope.is_none()));
+        assert_eq!(writes.len(), 2);
+        assert_eq!(scopes(&writes), [], "nothing to store");
     }
 
     #[test]

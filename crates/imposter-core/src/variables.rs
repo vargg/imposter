@@ -195,7 +195,9 @@ pub fn resolve_template(
 /// The active environment's identity and values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveEnvironment {
-    pub id: EnvironmentId,
+    /// `None` for an environment read from a file rather than the database: it has no
+    /// stored identity, and nothing is written back to it.
+    pub id: Option<EnvironmentId>,
     pub name: String,
     pub values: Variables,
     pub saved: SavedValues,
@@ -221,7 +223,7 @@ impl VariableContext {
     }
 
     pub fn environment_id(&self) -> Option<EnvironmentId> {
-        self.environment.as_ref().map(|env| env.id)
+        self.environment.as_ref().and_then(|env| env.id)
     }
 }
 
@@ -229,7 +231,8 @@ impl VariableContext {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CollectionScope<'a> {
     Live {
-        id: CollectionId,
+        /// `None` for a collection read from a file rather than the database.
+        id: Option<CollectionId>,
         name: &'a str,
         values: &'a Variables,
         saved: &'a SavedValues,
@@ -239,6 +242,8 @@ pub enum CollectionScope<'a> {
     },
 }
 
+/// Where a definition comes from. An id of `None` marks a scope read from a file, which
+/// has no stored identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
     Global,
@@ -246,16 +251,25 @@ pub enum Source {
         id: Option<CollectionId>,
         name: String,
     },
+    /// The collection values a History draft captured when its collection is gone.
+    Captured,
     Environment {
-        id: EnvironmentId,
+        id: Option<EnvironmentId>,
         name: String,
     },
+    /// A value given to one headless run (from a named process variable), above every scope.
+    Input,
 }
 
 impl Source {
+    pub const CAPTURED_NAME: &'static str = "Captured collection (deleted)";
+    pub const INPUT_NAME: &'static str = "Input";
+
     pub fn label(&self) -> &str {
         match self {
             Self::Global => VariableContext::GLOBAL_NAME,
+            Self::Captured => Self::CAPTURED_NAME,
+            Self::Input => Self::INPUT_NAME,
             Self::Collection { name, .. } | Self::Environment { name, .. } => name,
         }
     }
@@ -271,13 +285,14 @@ pub enum Scope {
 }
 
 impl Scope {
-    /// Where a definition lives; a deleted collection's captured values live nowhere.
+    /// Where a definition lives; a deleted collection's captured values and scopes read
+    /// from a file live nowhere in the database.
     pub fn of(source: &Source) -> Option<Self> {
         match source {
             Source::Global => Some(Self::Global),
-            Source::Environment { id, .. } => Some(Self::Environment(*id)),
-            Source::Collection { id: Some(id), .. } => Some(Self::Collection(*id)),
-            Source::Collection { id: None, .. } => None,
+            Source::Environment { id, .. } => id.map(Self::Environment),
+            Source::Collection { id, .. } => id.map(Self::Collection),
+            Source::Captured | Source::Input => None,
         }
     }
 }
@@ -312,20 +327,15 @@ impl Snapshot {
                 saved,
             }) => (
                 Source::Collection {
-                    id: Some(id),
+                    id,
                     name: name.to_owned(),
                 },
                 values.clone(),
                 saved,
             ),
-            Some(CollectionScope::Deleted { captured }) => (
-                Source::Collection {
-                    id: None,
-                    name: "Captured collection (deleted)".to_owned(),
-                },
-                captured.clone(),
-                &no_saved,
-            ),
+            Some(CollectionScope::Deleted { captured }) => {
+                (Source::Captured, captured.clone(), &no_saved)
+            }
             None => (
                 Source::Collection {
                     id: None,
@@ -349,6 +359,13 @@ impl Snapshot {
         }
         snapshot.collection_values = collection_values;
         snapshot
+    }
+
+    /// `inputs` above every scope, as a headless run's named inputs are.
+    #[must_use]
+    pub fn with_inputs(mut self, inputs: &Variables) -> Self {
+        self.add(inputs, &SavedValues::default(), &Source::Input);
+        self
     }
 
     fn add(&mut self, values: &Variables, saved: &SavedValues, source: &Source) {
@@ -442,7 +459,7 @@ mod tests {
             globals: vars(&[("id", "1")]),
             global_saved: saved("id", &["1", "2"]),
             environment: Some(ActiveEnvironment {
-                id: EnvironmentId(1),
+                id: Some(EnvironmentId(1)),
                 name: "Dev".into(),
                 values: vars(&[("id", "42")]),
                 saved: saved("id", &["42", "77"]),
@@ -452,7 +469,7 @@ mod tests {
         let snapshot = Snapshot::build(
             &context,
             Some(CollectionScope::Live {
-                id: CollectionId(3),
+                id: Some(CollectionId(3)),
                 name: "API",
                 values: &collection,
                 saved: &saved("id", &["c", "d"]),
@@ -480,12 +497,17 @@ mod tests {
         );
         assert_eq!(Scope::of(&Source::Global), Some(Scope::Global));
         assert_eq!(
-            Scope::of(&Source::Collection {
-                id: None,
-                name: String::new()
-            }),
+            Scope::of(&Source::Captured),
             None,
             "captured values of a deleted collection cannot be edited"
+        );
+        assert_eq!(
+            Scope::of(&Source::Environment {
+                id: None,
+                name: "Dev".into()
+            }),
+            None,
+            "an environment read from a file is not stored"
         );
     }
 
@@ -494,7 +516,7 @@ mod tests {
         let context = VariableContext {
             globals: vars(&[("a", "global"), ("g", "only global"), ("e", "")]),
             environment: Some(ActiveEnvironment {
-                id: EnvironmentId(7),
+                id: Some(EnvironmentId(7)),
                 name: "Dev".into(),
                 values: vars(&[("a", "env"), ("e", "")]),
                 saved: SavedValues::default(),
@@ -505,7 +527,7 @@ mod tests {
         let snapshot = Snapshot::build(
             &context,
             Some(CollectionScope::Live {
-                id: CollectionId(3),
+                id: Some(CollectionId(3)),
                 name: "API",
                 values: &collection,
                 saved: &SavedValues::default(),
@@ -530,6 +552,25 @@ mod tests {
     }
 
     #[test]
+    fn inputs_override_every_scope() {
+        let context = VariableContext {
+            globals: vars(&[("token", "global"), ("host", "h")]),
+            ..VariableContext::default()
+        };
+        let snapshot =
+            Snapshot::build(&context, None).with_inputs(&vars(&[("token", "from input")]));
+        assert_eq!(
+            snapshot.values(),
+            vars(&[("token", "from input"), ("host", "h")])
+        );
+        let token = snapshot.effective("token").unwrap();
+        assert_eq!(token.source, Source::Input);
+        assert_eq!(token.source.label(), "Input");
+        assert_eq!(Scope::of(&token.source), None, "an input is not stored");
+        assert_eq!(snapshot.definitions["token"].len(), 2);
+    }
+
+    #[test]
     fn deleted_collection_uses_captured_values() {
         let captured = vars(&[("c", "captured")]);
         let snapshot = Snapshot::build(
@@ -540,12 +581,7 @@ mod tests {
         );
         let definition = snapshot.effective("c").unwrap();
         assert_eq!(definition.value, "captured");
-        assert_eq!(
-            definition.source,
-            Source::Collection {
-                id: None,
-                name: "Captured collection (deleted)".into()
-            }
-        );
+        assert_eq!(definition.source, Source::Captured);
+        assert_eq!(definition.source.label(), "Captured collection (deleted)");
     }
 }

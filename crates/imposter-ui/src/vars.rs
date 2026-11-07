@@ -118,7 +118,8 @@ pub fn complete(text: &str, start: usize, cursor: usize, name: &str) -> (String,
 pub fn scope_label(source: &Source) -> &'static str {
     match source {
         Source::Global => "Global",
-        Source::Collection { .. } => "Collection",
+        Source::Collection { .. } | Source::Captured => "Collection",
+        Source::Input => "Input",
         Source::Environment { .. } => "Environment",
     }
 }
@@ -129,6 +130,8 @@ pub fn where_defined(source: &Source) -> String {
         Source::Global => "Global".to_owned(),
         Source::Environment { name, .. } => format!("the {name} environment"),
         Source::Collection { name, .. } => format!("the {name} collection"),
+        Source::Captured => format!("the {}", Source::CAPTURED_NAME.to_lowercase()),
+        Source::Input => "a command-line input".to_owned(),
     }
 }
 
@@ -286,7 +289,7 @@ mod tests {
             &VariableContext {
                 globals,
                 environment: Some(ActiveEnvironment {
-                    id: EnvironmentId(4),
+                    id: Some(EnvironmentId(4)),
                     name: "Dev".into(),
                     values: env,
                     saved: SavedValues::default(),
@@ -294,7 +297,7 @@ mod tests {
                 ..VariableContext::default()
             },
             Some(CollectionScope::Live {
-                id: CollectionId(2),
+                id: Some(CollectionId(2)),
                 name: "API",
                 values: &collection,
                 saved: &SavedValues::default(),
@@ -417,16 +420,14 @@ mod tests {
                 .1
                 .ends_with("… Value preview limited to 4096 characters")
         );
+        assert_eq!(Scope::of(&Source::Captured), None);
         assert_eq!(
-            Scope::of(&Source::Collection {
-                id: None,
-                name: String::new()
-            }),
-            None
+            where_defined(&Source::Captured),
+            "the captured collection (deleted)"
         );
         assert_eq!(
             Scope::of(&Source::Environment {
-                id: EnvironmentId(1),
+                id: Some(EnvironmentId(1)),
                 name: "x".into()
             }),
             Some(Scope::Environment(EnvironmentId(1)))
