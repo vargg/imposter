@@ -476,6 +476,7 @@ pub async fn run(
         environment_id: inputs.context.environment_id(),
         environment: inputs.context.environment_name().to_owned(),
         response,
+        via: imposter_core::execution::Via::App,
     };
     Ok(Ran { record, writes })
 }

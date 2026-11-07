@@ -6,7 +6,7 @@
 //! text anywhere, except `method:`, which must be the whole method, and `status:`. Text that
 //! does not parse is searched as typed, so the filter never errors.
 
-use imposter_app::core::execution::Outcome;
+use imposter_app::core::execution::{Outcome, Via};
 use imposter_app::store::executions::ExecutionSummary;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +17,8 @@ pub enum Field {
     /// `404`, `4xx`, `failed` or `cancelled`.
     Status,
     Environment,
+    /// `cli` for runs from the command line, `app` for Send.
+    Via,
 }
 
 /// The fields the sidebar knows.
@@ -33,6 +35,7 @@ pub const HISTORY_FIELDS: &[(&str, Field)] = &[
     ("name", Field::Name),
     ("status", Field::Status),
     ("env", Field::Environment),
+    ("via", Field::Via),
 ];
 
 /// What a list item offers to the filter.
@@ -79,7 +82,7 @@ impl Searchable for Candidate<'_> {
             Field::Method => self.method.eq_ignore_ascii_case(value),
             Field::Url => contains(self.url, value),
             Field::Name => contains(self.name, value),
-            Field::Status | Field::Environment => false,
+            Field::Status | Field::Environment | Field::Via => false,
         }
     }
 }
@@ -97,6 +100,11 @@ impl Searchable for ExecutionSummary {
             Field::Name => contains(&self.name, value),
             Field::Environment => contains(&self.environment, value),
             Field::Status => status_matches(self.outcome, self.status, value),
+            Field::Via => match value.trim().to_ascii_lowercase().as_str() {
+                "cli" | "command_line" | "command-line" => self.via == Via::CommandLine,
+                "app" => self.via == Via::App,
+                _ => false,
+            },
         }
     }
 }
@@ -385,12 +393,13 @@ mod tests {
             elapsed: 0.0,
             environment: environment.into(),
             truncated: false,
+            via: Via::App,
         }
     }
 
     #[test]
     fn history_knows_status_and_environment() {
-        let runs = [
+        let mut runs = [
             run(
                 "List users",
                 "GET",
@@ -432,6 +441,7 @@ mod tests {
                 "Dev",
             ),
         ];
+        runs[1].via = Via::CommandLine;
         let hits = |query: &str| -> Vec<&str> {
             let query = Query::parse_with(query, HISTORY_FIELDS);
             runs.iter()
@@ -452,6 +462,9 @@ mod tests {
             Vec::<&str>::new(),
             "no response, no status"
         );
+        assert_eq!(hits("via:cli"), [runs[1].name.as_str()]);
+        assert_eq!(hits("via:app").len(), runs.len() - 1);
+        assert_eq!(hits("via:robot"), Vec::<&str>::new());
         assert_eq!(
             hits("name:\"create user\" OR url:health"),
             ["Create user", "Health"]

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::StoreError;
 
 /// Every migration in order; the database's `user_version` counts how many have run.
-pub const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5];
+pub const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6];
 
 const V1: &str = r"
 CREATE TABLE collections (
@@ -107,9 +107,19 @@ ALTER TABLE collections ADD COLUMN scripts TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE folders ADD COLUMN scripts TEXT NOT NULL DEFAULT '{}';
 ";
 
+/// Which interface started an execution (`execution::Via`), for History's list to show.
+const V6: &str = r"
+ALTER TABLE executions ADD COLUMN via TEXT NOT NULL DEFAULT 'app' CHECK (via IN ('app', 'command_line'));
+";
+
+/// How long a write waits for another process (the app, or the command line beside it)
+/// to finish its own before failing.
+pub const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Open a connection with the pragmas every connection needs.
 pub fn connect(path: &Path) -> Result<Connection, StoreError> {
     let connection = Connection::open(path)?;
+    connection.busy_timeout(BUSY_TIMEOUT)?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
     connection.pragma_update(None, "synchronous", "NORMAL")?;
     connection.pragma_update(None, "foreign_keys", true)?;

@@ -87,6 +87,9 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **One thread owns the SQLite connection**; every other part sends it commands, and one
   command is one transaction.
   Why: writes are serialized without locks, and a failed command rolls back as a unit.
+  Another process (the command line beside the app) has its own connection; every
+  connection waits up to `schema::BUSY_TIMEOUT` (5 s) for the other's write instead of
+  failing at once with "database is locked".
 - **Dependencies are declared once** in the root `[workspace.dependencies]`; crates use
   `name.workspace = true`.
   Why: one version per dependency across the workspace, upgraded in one place.
@@ -443,8 +446,11 @@ numbers, so both are excluded. Each logical change is its own commit.
     migrated "Production" still arrives without a color.
   - **Managing:** the picker ends with "Manage environments…", which opens Variables on the
     active environment (Global without one), through the Variables guard.
-- **History rows carry summary columns** (name, method, URL, status, outcome, elapsed) next to
-  the JSON payload. Why: the list must not decode multi-megabyte payloads; details load one.
+- **History rows carry summary columns** (name, method, URL, status, outcome, elapsed, and
+  since V6 `via`: Send or the command line) next to the JSON payload. A run from the
+  command line shows a muted "CLI" before its name in the list (before it, so a cut name
+  cannot hide it) and is described "from the command line" to screen readers; its record's
+  `via` is left out of the payload for Send, so older records read the same. Why: the list must not decode multi-megabyte payloads; details load one.
   Retention deletes oldest first by count and total payload size; a record larger than the
   whole budget is refused.
 - **Redirects are followed by `imposter-http`, not reqwest, with httpx's rules:** at most 20;
@@ -621,8 +627,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   list and save (the user's note). The bookmark is as wide as a two-digit count on every row, so the remove buttons
   after it stay in one column. Why: × beside the value invited removing it by mistake (the
   review's #38; Phase 5 review Q23, Q24).
-- **History search uses the sidebar's filter language** (`filter.rs`, with `status:` and
-  `env:` added for History: `404`, `4xx`, `failed`, `cancelled`). Words match the request
+- **History search uses the sidebar's filter language** (`filter.rs`, with `status:`,
+  `env:` and `via:` added for History: `404`, `4xx`, `failed`, `cancelled`; `via:cli` or
+  `via:app`). Words match the request
   name and the URL as sent; bodies are not searched, because that would decode every
   payload. The database thread scans the summary columns newest first, keeps matches and
   stops when the page is full (`executions::search`), so retention of up to a million entries

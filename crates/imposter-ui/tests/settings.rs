@@ -121,6 +121,7 @@ fn lower_history_limits_apply_when_saved() {
                         environment_id: None,
                         environment: "Global".into(),
                         response: Response::default(),
+                        via: imposter_app::core::execution::Via::App,
                     };
                     executions::record(db, &record, 1000, u64::MAX)?;
                 }

@@ -1,6 +1,6 @@
 //! Execution history with retention by count and by stored size, oldest first.
 
-use imposter_core::execution::{ExecutionRecord, Outcome, Timestamp};
+use imposter_core::execution::{ExecutionRecord, Outcome, Timestamp, Via};
 use imposter_core::ids::{ExecutionId, RequestId};
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -20,6 +20,7 @@ pub struct ExecutionSummary {
     pub elapsed: f64,
     pub environment: String,
     pub truncated: bool,
+    pub via: Via,
 }
 
 fn outcome_text(outcome: Outcome) -> &'static str {
@@ -54,8 +55,8 @@ pub fn record(
     db.execute(
         "INSERT INTO executions
            (request_id, timestamp, name, method, url, status, outcome, elapsed, environment,
-            truncated, payload, payload_size)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            truncated, payload, payload_size, via)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             record.request_id.map(|id| id.0),
             record.timestamp.0,
@@ -69,6 +70,7 @@ pub fn record(
             record.response.truncated,
             payload,
             i64::try_from(size).unwrap_or(i64::MAX),
+            via_text(record.via),
         ],
     )?;
     let id = ExecutionId(db.last_insert_rowid());
@@ -105,7 +107,14 @@ pub fn enforce_retention(
 }
 
 /// Newest first, optionally for one request.
-const SUMMARY_COLUMNS: &str = "id, request_id, timestamp, name, method, url, status, outcome, elapsed, environment, truncated";
+const SUMMARY_COLUMNS: &str = "id, request_id, timestamp, name, method, url, status, outcome, elapsed, environment, truncated, via";
+
+fn via_text(via: Via) -> &'static str {
+    match via {
+        Via::App => "app",
+        Via::CommandLine => "command_line",
+    }
+}
 
 fn summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExecutionSummary> {
     Ok(ExecutionSummary {
@@ -120,6 +129,11 @@ fn summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExecutionSummary> {
         elapsed: row.get(8)?,
         environment: row.get(9)?,
         truncated: row.get(10)?,
+        via: if row.get::<_, String>(11)? == "command_line" {
+            Via::CommandLine
+        } else {
+            Via::App
+        },
     })
 }
 

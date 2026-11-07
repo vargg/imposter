@@ -110,6 +110,7 @@ fn record() -> ExecutionRecord {
             console: vec![format!("printed {SECRET}")],
             ..Response::default()
         },
+        via: imposter_core::execution::Via::App,
     }
 }
 

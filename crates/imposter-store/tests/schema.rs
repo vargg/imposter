@@ -21,6 +21,7 @@ const RELEASED: &[u64] = &[
     0xe689_f6b6_e428_4fff,
     0x8368_840d_9797_2675,
     0x9dee_fccd_4832_126b,
+    0x3faf_9e64_8716_257b,
 ];
 
 #[test]
@@ -131,4 +132,19 @@ fn a_migration_that_breaks_references_is_rolled_back() {
         .query_row("SELECT count(*) FROM folders", [], |row| row.get(0))
         .unwrap();
     assert_eq!(folders, 0);
+}
+
+/// The app and the command line can write to one database at once: a write waits for the
+/// other's to finish instead of failing at once with "database is locked".
+#[test]
+fn connections_wait_for_another_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = connect(&dir.path().join("imposter.db")).unwrap();
+    let waits: i64 = db
+        .pragma_query_value(None, "busy_timeout", |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        u128::try_from(waits).unwrap(),
+        imposter_store::schema::BUSY_TIMEOUT.as_millis()
+    );
 }

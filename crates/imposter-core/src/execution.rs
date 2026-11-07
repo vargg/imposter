@@ -125,6 +125,23 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
     (year, month, day)
 }
 
+/// What started an execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Via {
+    /// Send in the app.
+    #[default]
+    App,
+    /// `imposter send` or the MCP server, against the personal profile.
+    CommandLine,
+}
+
+impl Via {
+    pub fn is_app(&self) -> bool {
+        *self == Self::App
+    }
+}
+
 /// One execution, independent of the request it came from (no foreign key): deleting the
 /// request keeps its history. Upload contents are never part of it, only their paths.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -139,6 +156,9 @@ pub struct ExecutionRecord {
     pub environment_id: Option<EnvironmentId>,
     pub environment: String,
     pub response: Response,
+    /// Left out for Send, so records from before the command line read the same.
+    #[serde(default, skip_serializing_if = "Via::is_app")]
+    pub via: Via,
 }
 
 impl ExecutionRecord {
@@ -209,6 +229,7 @@ mod tests {
             environment_id: None,
             environment: "Global".into(),
             response: Response::default(),
+            via: Via::App,
         };
         let draft = record.restore();
         assert_eq!(draft.id, None);

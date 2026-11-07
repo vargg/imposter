@@ -3,7 +3,7 @@
 
 mod support;
 
-use imposter_core::execution::{ExecutionRecord, Outcome, Response, Timestamp};
+use imposter_core::execution::{ExecutionRecord, Outcome, Response, Timestamp, Via};
 use imposter_core::ids::{ExecutionId, RequestId};
 use imposter_core::model::{Request, Variables};
 use imposter_core::settings::{AppSettings, SettingsError};
@@ -33,6 +33,7 @@ fn record(request: Option<RequestId>, body: usize, at: i64) -> ExecutionRecord {
             elapsed: 0.25,
             ..Response::default()
         },
+        via: Via::App,
     }
 }
 
@@ -86,6 +87,36 @@ fn record_execution(
     value: &ExecutionRecord,
 ) -> Result<ExecutionId, StoreError> {
     imposter_store::executions::record(db, value, 1000, 250 * 1024 * 1024)
+}
+
+#[test]
+fn runs_from_the_command_line_are_marked_in_the_record_and_the_list() {
+    let (_dir, store) = store();
+    let mut cli = record(None, 1, 1_000);
+    cli.via = Via::CommandLine;
+    let expected = cli.clone();
+    let app = record(None, 1, 2_000);
+    let (cli_id, _) = store
+        .call_blocking(move |db| Ok((record_execution(db, &cli)?, record_execution(db, &app)?)))
+        .unwrap();
+    assert_eq!(
+        store
+            .call_blocking(move |db| execution(db, cli_id))
+            .unwrap(),
+        Some(expected)
+    );
+    let vias: Vec<Via> = store
+        .call_blocking(|db| page(db, None, 0, 10))
+        .unwrap()
+        .iter()
+        .map(|s| s.via)
+        .collect();
+    assert_eq!(vias, [Via::App, Via::CommandLine], "newest first");
+    let payload = serde_json::to_string(&record(None, 1, 0)).unwrap();
+    assert!(
+        !payload.contains("via"),
+        "Send's records read as they always did"
+    );
 }
 
 #[test]

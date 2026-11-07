@@ -224,6 +224,7 @@ fn pages_move_between_newer_and_older() {
                             status: 200,
                             ..Response::default()
                         },
+                        via: imposter_app::core::execution::Via::App,
                     };
                     executions::record(db, &record, 1000, u64::MAX)?;
                 }
@@ -240,6 +241,61 @@ fn pages_move_between_newer_and_older() {
     click(&mut app.harness, "Newer");
     settle(&mut app.harness);
     app.harness.get_by_label("Executions 1-50");
+}
+
+#[test]
+fn runs_from_the_command_line_are_marked_and_found_with_via() {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                for (i, via) in [
+                    imposter_app::core::execution::Via::App,
+                    imposter_app::core::execution::Via::CommandLine,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let request = Request {
+                        template: RequestTemplate {
+                            url: format!("http://h/{i}"),
+                            ..RequestTemplate::default()
+                        },
+                        ..Request::default()
+                    };
+                    let record = ExecutionRecord {
+                        timestamp: Timestamp(1_700_000_000_000),
+                        request_id: None,
+                        template: request.clone(),
+                        resolved: request,
+                        settings: AppSettings::default(),
+                        environment_id: None,
+                        environment: "Global".into(),
+                        response: Response::default(),
+                        via,
+                    };
+                    executions::record(db, &record, 1000, u64::MAX)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+    });
+    open_history(&mut app);
+    let marked = app
+        .harness
+        .query_all_by_label_contains("from the command line")
+        .count();
+    assert_eq!(marked, 1);
+    type_into(&mut app.harness, "Filter history", "via:cli");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Matches 1-1");
+    app.harness.get_by_label_contains("History GET http://h/1 ");
+    assert_eq!(
+        app.harness
+            .query_all_by_label_contains("History GET http://h/0 ")
+            .count(),
+        0,
+        "Send's run is filtered out"
+    );
 }
 
 #[test]

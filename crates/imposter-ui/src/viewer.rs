@@ -1220,6 +1220,7 @@ mod tests {
             environment_id: None,
             environment: "Global".into(),
             response: Response::default(),
+            via: imposter_app::core::execution::Via::App,
         }
     }
 

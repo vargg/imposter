@@ -179,7 +179,7 @@ fn toolbar(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut V
         name(&field, "Filter history");
         let field = field.on_hover_text(
             "Words match the request name and URL. status:404, status:4xx, status:failed, \
-             method:, url:, name:, env:, OR, NOT, -word and \"phrases\". Bodies are not searched.",
+             method:, url:, name:, env:, via:cli, OR, NOT, -word and \"phrases\". Bodies are not searched.",
         );
         if field.changed() {
             actions.push(Action::History(HistoryAction::Filtered));
@@ -239,9 +239,13 @@ fn table(
                 let (rect, response) =
                     ui.allocate_exact_size(vec2(width, row_height), Sense::click());
                 let when = viewer::local_time(row.timestamp);
+                let via = match row.via {
+                    imposter_app::core::execution::Via::App => "",
+                    imposter_app::core::execution::Via::CommandLine => ", from the command line",
+                };
                 name(
                     &response,
-                    &format!("History {} {} {}", row.method, row.url, when),
+                    &format!("History {} {} {when}{via}", row.method, row.url),
                 );
                 let fill = if selected {
                     palette().selected
@@ -286,15 +290,29 @@ fn row_cells(
                 palette.text_muted,
                 &small,
             ),
-            Column::Name => text_job(
-                if row.name.is_empty() {
+            Column::Name => {
+                let name = if row.name.is_empty() {
                     "Untitled request"
                 } else {
                     &row.name
-                },
-                palette.text,
-                &body,
-            ),
+                };
+                let mut job = egui::text::LayoutJob::default();
+                // A run from the command line (an agent, a script) says so before its name,
+                // where a cut name cannot hide it.
+                if row.via == imposter_app::core::execution::Via::CommandLine {
+                    job.append(
+                        "CLI  ",
+                        0.0,
+                        egui::TextFormat::simple(small.clone(), palette.text_muted),
+                    );
+                }
+                job.append(
+                    name,
+                    0.0,
+                    egui::TextFormat::simple(body.clone(), palette.text),
+                );
+                job
+            }
             Column::Method => text_job(&row.method, crate::theme::method_color(&row.method), &mono),
             Column::Url => {
                 let (origin, path) = viewer::split_origin(&row.url);
