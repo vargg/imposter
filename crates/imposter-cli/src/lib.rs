@@ -106,7 +106,9 @@ pub fn usage() -> String {
     for (status, name, help) in exit_statuses() {
         let _ = writeln!(text, "  {status:<4} {name:<16} {help}");
     }
-    text.push_str("\nOther commands:\n  imposter --help | --version\n");
+    text.push_str(
+        "\nOther commands:\n  imposter skill                 print instructions for a coding agent\n  imposter --help | --version\n",
+    );
     text
 }
 
@@ -126,6 +128,35 @@ pub fn readme_status_rows() -> Vec<String> {
         .collect()
 }
 
+/// The skill text for a coding agent, printed by `imposter skill`. Its option, exit status
+/// and operator lists come from the same tables as the parser and the help.
+pub fn skill() -> String {
+    let table = |header: &str, rows: Vec<String>| {
+        let columns = header.matches('|').count() - 1;
+        let mut text = format!("{header}\n|{}\n", "---|".repeat(columns));
+        for row in rows {
+            text.push_str(&row);
+            text.push('\n');
+        }
+        text.trim_end().to_owned()
+    };
+    let operators: Vec<String> = imposter_core::check::Op::ALL
+        .iter()
+        .filter_map(|op| serde_json::to_value(op).ok())
+        .filter_map(|value| value.as_str().map(|name| format!("`{name}`")))
+        .collect();
+    include_str!("skill.md")
+        .replace(
+            "{{options}}",
+            &table("| Option | Meaning |", readme_flag_rows()),
+        )
+        .replace(
+            "{{statuses}}",
+            &table("| Status | Outcome | Meaning |", readme_status_rows()),
+        )
+        .replace("{{operators}}", &operators.join(", "))
+}
+
 /// What the binary should do with its arguments.
 pub fn wants_command_line(args: &[OsString]) -> bool {
     args.first().is_some_and(|first| first != "--smoke-test")
@@ -143,6 +174,7 @@ pub struct Io<'a> {
 enum Command {
     Help,
     Version,
+    Skill,
     Send(SendArgs),
 }
 
@@ -158,6 +190,10 @@ fn parse(args: Vec<OsString>) -> Result<Command, String> {
     };
     match first.as_str() {
         "help" => Ok(Command::Help),
+        "skill" => match parser.next().map_err(|e| e.to_string())? {
+            None => Ok(Command::Skill),
+            Some(other) => Err(other.unexpected().to_string()),
+        },
         "send" => parse_send(&mut parser),
         other => Err(format!("unknown command {other:?}")),
     }
@@ -240,6 +276,10 @@ pub fn main(args: Vec<OsString>, io: &mut Io<'_>) -> u8 {
         }
         Command::Version => {
             let _ = writeln!(io.stdout, "{}", version());
+            0
+        }
+        Command::Skill => {
+            let _ = io.stdout.write_all(skill().as_bytes());
             0
         }
         Command::Send(args) => {
@@ -377,6 +417,29 @@ mod tests {
         assert_eq!(
             readme_table("| Status | Outcome | Meaning |"),
             readme_status_rows()
+        );
+    }
+
+    #[test]
+    fn the_skill_is_filled_from_the_tables() {
+        let skill = skill();
+        for placeholder in ["{{options}}", "{{statuses}}", "{{operators}}"] {
+            assert!(!skill.contains(placeholder), "{placeholder}");
+        }
+        for row in readme_flag_rows().iter().chain(&readme_status_rows()) {
+            assert!(skill.contains(row.as_str()), "{row}");
+        }
+        for op in imposter_core::check::Op::ALL {
+            let name = serde_json::to_value(op).unwrap();
+            assert!(
+                skill.contains(&format!("`{}`", name.as_str().unwrap())),
+                "{op:?}"
+            );
+        }
+        assert_eq!(parse(args(&["skill"])), Ok(Command::Skill));
+        assert_eq!(
+            parse(args(&["skill", "--write"])),
+            Err("invalid option '--write'".to_owned())
         );
     }
 

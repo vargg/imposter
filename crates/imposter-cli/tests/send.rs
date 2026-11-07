@@ -353,6 +353,16 @@ fn help_version_and_usage_errors() {
         version.stdout,
         format!("imposter {}\n", env!("CARGO_PKG_VERSION"))
     );
+    let skill = run_with(&["skill"], &|_| None);
+    assert_eq!(
+        (skill.status, skill.stdout.as_str()),
+        (0, imposter_cli::skill().as_str())
+    );
+    assert!(
+        skill
+            .stdout
+            .starts_with("# I’mposter: run a saved HTTP request")
+    );
     let wrong = run_with(&["send", "only-a-file"], &|_| None);
     assert_eq!(wrong.status, 2);
     assert_eq!(wrong.stdout, "");

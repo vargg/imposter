@@ -893,6 +893,13 @@ numbers, so both are excluded. Each logical change is its own commit.
   second executable would need its own packaging. Pinned by `imposter-cli/tests/send.rs`
   (every outcome, inputs, the freeze) and `imposter/tests/cli.rs` (the process: no
   profile created, no secret on stdout or stderr even at trace level, the interrupt).
+- **`imposter skill` prints the instructions a coding agent needs** (`skill.md` in
+  `imposter-cli`): how to choose a request, pass secrets by process variable name, read
+  the result and propose a check as a reviewable diff. Its option, exit status and
+  operator lists are filled from `SEND_FLAGS`, `exit_statuses()` and `check::Op::ALL`
+  when printed, so it cannot drift from the parser. It only prints: the user decides
+  where their agent reads it, and the app writes no agent configuration (the roadmap's
+  rule).
 - **History opens a result file the command line wrote** (⋯ → "Open result file…", also
   in the palette), in place of a selected execution: the summary in its outcome's tone, a
   muted line saying where it came from ("From imposter send · Users/Create user · Dev ·

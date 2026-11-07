@@ -316,6 +316,10 @@ in the result and on stderr, as are `user:password@` in URLs and the values of
 can return other sensitive data, which a result shows like any body. Copy as curl in the app
 still includes credentials, as it always did.
 
+For a coding agent, `imposter skill` prints instructions on running requests, passing
+secrets and reading results. Put them wherever your agent reads instructions; I’mposter
+writes no agent configuration itself.
+
 ### Moving from the Python version
 
 Export each collection from the Python app as `.poster.json` (with its environments and
