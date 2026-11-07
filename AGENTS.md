@@ -944,6 +944,26 @@ numbers, so both are excluded. Each logical change is its own commit.
   `imposter-app/tests/catalog.rs` (profile and file agree; no value or literal credential
   in any output), `imposter-cli/tests/catalog.rs` and a process test in
   `imposter/tests/cli.rs`.
+- **A run executes a folder or a collection as one run** (`imposter_app::runner`, selected
+  by `profile::select_all` or `document::select_all`). The target is a breadcrumb naming a
+  collection, a folder or one request; requests run depth first in the tree's order
+  (siblings by position, folders and requests mixed, as the sidebar shows them). Every
+  request's template, settings, variables and scripts are read at the start, in one
+  database command, so an edit during the run changes nothing. Values a request captures
+  or sets (`Writes::Run`) go into a layer above the inputs and every scope
+  (`Source::Run`, "this run"), so a login's token reaches the requests after it; nothing is
+  written back to the user's variables. The run stops at the first request that did not
+  pass and reports the rest as skipped, unless told to keep going (user's choice: later
+  requests usually depend on what failed). A run from the profile records each request in
+  History as the command line's; a production environment is refused once, up front. The
+  report (`core::run_report::RunReport`, `imposter-run` version 1) has each request's
+  redacted `RunResult` or the reason it was skipped, totals, one outcome and JUnit XML.
+  The run passes when no request failed, errored or had an undecidable check and at least
+  one check ran (user's choice: a login that only captures needs no check of its own); a
+  run with no checks is `no_checks`, an empty selection `not_sent`; otherwise the outcome
+  that says least was verified wins (`RunReport::new`). Pinned by
+  `imposter-app/tests/runner.rs`, `imposter-core/tests/run_report.rs` and the JUnit golden
+  file `tests/fixtures/results/run.junit.xml`.
 - **`imposter skill` prints the instructions a coding agent needs** (`skill.md` in
   `imposter-cli`): how to choose a request, pass secrets by process variable name, read
   the result and propose a check as a reviewable diff. Its option, exit status and

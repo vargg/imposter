@@ -102,6 +102,11 @@ pub enum DocumentError {
         path: String,
         available: Vec<String>,
     },
+    #[error("No collection, folder or request at {path}. Collections and folders: {}", list(.available))]
+    NoTarget {
+        path: String,
+        available: Vec<String>,
+    },
     #[error("{count} requests are at {path}; rename one so its path names one request")]
     Ambiguous { path: String, count: usize },
     #[error("No environment named {name:?}. Environments: {}", list(.available))]
@@ -219,6 +224,15 @@ pub fn select(
             });
         }
     };
+    let context = context(document, environment)?;
+    Ok(selected(document, path, &found, &context, values))
+}
+
+/// The globals and the named environment of `document` (none: globals only).
+fn context(
+    document: &NativeDocument,
+    environment: Option<&str>,
+) -> Result<VariableContext, DocumentError> {
     let environment = match environment {
         None => None,
         Some(name) => {
@@ -253,14 +267,24 @@ pub fn select(
             }
         }
     };
-    let context = VariableContext {
+    Ok(VariableContext {
         globals: document.globals.clone(),
         global_saved: document.saved_globals.clone(),
         environment,
-    };
+    })
+}
+
+/// What running `found` needs: its variables and script chain, with `values` on top.
+fn selected(
+    document: &NativeDocument,
+    path: &RequestPath,
+    found: &Found<'_>,
+    context: &VariableContext,
+    values: &Variables,
+) -> Selected {
     let collection = &document.collection;
     let snapshot = Snapshot::build(
-        &context,
+        context,
         Some(CollectionScope::Live {
             id: None,
             name: collection.name.as_str(),
@@ -279,7 +303,7 @@ pub fn select(
             &folder.scripts,
         )
     }));
-    Ok(Selected {
+    Selected {
         path: path.clone(),
         request: Request {
             template: found.template.clone(),
@@ -287,12 +311,143 @@ pub fn select(
         },
         inputs: Inputs {
             settings: AppSettings::default(),
-            context,
+            context: context.clone(),
             snapshot,
             scripts: ScriptChain(levels),
             writes: Writes::Run,
         },
-    })
+    }
+}
+
+/// Every request under `target` in `document`, in the tree's order (siblings by position,
+/// folders and requests mixed), each ready to run with `environment` and `values`. The
+/// target names the collection, a folder or one request; the collection's name may be left
+/// out of a folder's or request's path.
+pub fn select_all(
+    document: &NativeDocument,
+    target: &RequestPath,
+    environment: Option<&str>,
+    values: &Variables,
+) -> Result<Vec<Selected>, DocumentError> {
+    let collection = &document.collection;
+    let collection_name = collection.name.as_str();
+    let mut parts: Vec<&str> = target.parts().iter().map(String::as_str).collect();
+    if parts.first() == Some(&collection_name) {
+        parts.remove(0);
+    }
+    let mut folders: Vec<&TransferFolder> = Vec::new();
+    let (mut within, mut requests) = (&collection.folders[..], &collection.requests[..]);
+    let mut single: Option<&RequestTemplate> = None;
+    for (index, part) in parts.iter().enumerate() {
+        let folder: Vec<&TransferFolder> = within
+            .iter()
+            .filter(|f| f.name.as_str().trim() == *part)
+            .collect();
+        let request: Vec<&RequestTemplate> = if index + 1 == parts.len() {
+            requests.iter().filter(|r| r.name.trim() == *part).collect()
+        } else {
+            Vec::new()
+        };
+        match (folder.as_slice(), request.as_slice()) {
+            ([one], []) => {
+                folders.push(one);
+                within = &one.folders;
+                requests = &one.requests;
+            }
+            ([], [one]) => single = Some(one),
+            ([], []) => {
+                return Err(DocumentError::NoTarget {
+                    path: target.to_string(),
+                    available: targets(document),
+                });
+            }
+            (several, others) => {
+                return Err(DocumentError::Ambiguous {
+                    path: target.to_string(),
+                    count: several.len() + others.len(),
+                });
+            }
+        }
+    }
+    let context = context(document, environment)?;
+    let mut found = Vec::new();
+    match single {
+        Some(template) => found.push(Found {
+            folders: folders.clone(),
+            template,
+        }),
+        None => ordered(&mut folders, within, requests, &mut found),
+    }
+    Ok(found
+        .iter()
+        .map(|found| {
+            let mut place = vec![collection_name];
+            place.extend(found.folders.iter().map(|f| f.name.as_str()));
+            let path = RequestPath::new(&place, &found.template.name);
+            selected(document, &path, found, &context, values)
+        })
+        .collect())
+}
+
+/// Requests and folders of one level by position, folders opened in place, depth first.
+fn ordered<'a>(
+    folders: &mut Vec<&'a TransferFolder>,
+    within: &'a [TransferFolder],
+    requests: &'a [RequestTemplate],
+    found: &mut Vec<Found<'a>>,
+) {
+    enum Node<'a> {
+        Request(&'a RequestTemplate),
+        Folder(&'a TransferFolder),
+    }
+    let mut nodes: Vec<(i64, usize, Node<'a>)> = requests
+        .iter()
+        .enumerate()
+        .map(|(index, r)| (r.position, index, Node::Request(r)))
+        .chain(
+            within
+                .iter()
+                .enumerate()
+                .map(|(index, f)| (f.position, requests.len() + index, Node::Folder(f))),
+        )
+        .collect();
+    nodes.sort_by_key(|(position, index, _)| (*position, *index));
+    for (_, _, node) in nodes {
+        match node {
+            Node::Request(template) => found.push(Found {
+                folders: folders.clone(),
+                template,
+            }),
+            Node::Folder(folder) => {
+                folders.push(folder);
+                ordered(folders, &folder.folders, &folder.requests, found);
+                folders.pop();
+            }
+        }
+    }
+}
+
+/// The collection and every folder, as a run's target can name them.
+fn targets(document: &NativeDocument) -> Vec<String> {
+    fn walk(place: &mut Vec<String>, folders: &[TransferFolder], out: &mut Vec<String>) {
+        for folder in folders {
+            place.push(folder.name.as_str().to_owned());
+            let names: Vec<&str> = place.iter().map(String::as_str).collect();
+            if let Some((last, rest)) = names.split_last() {
+                out.push(RequestPath::new(rest, last).to_string());
+            }
+            walk(place, &folder.folders, out);
+            place.pop();
+        }
+    }
+    let collection = document.collection.name.as_str().to_owned();
+    let mut out = vec![RequestPath::new(&[], &collection).to_string()];
+    walk(
+        &mut vec![collection],
+        &document.collection.folders,
+        &mut out,
+    );
+    out
 }
 
 fn level(name: String, scripts: &Scripts) -> Level {

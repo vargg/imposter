@@ -9,6 +9,7 @@ pub mod load;
 pub mod ops;
 pub mod paths;
 pub mod profile;
+pub mod runner;
 pub mod runtime;
 pub mod saver;
 pub mod scripts;
