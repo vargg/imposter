@@ -1,0 +1,11 @@
+format: imposter-project
+version: 1
+id: col-shop
+name: Shop API
+description: The shop's public API.
+variables:
+  base: http://localhost:8080
+  flag: "true"
+  "n": "1"
+scripts:
+  before: request.set_header("x-run", uuid());

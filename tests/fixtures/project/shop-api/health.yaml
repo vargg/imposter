@@ -1,0 +1,5 @@
+id: req-health
+position: 0
+name: Health
+method: GET
+url: "{{base}}/health"

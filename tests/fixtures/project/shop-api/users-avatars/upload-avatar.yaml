@@ -1,0 +1,19 @@
+id: req-upload
+position: 0
+name: Upload avatar
+method: PUT
+url: "{{base}}/users/{{id}}/avatar?size=large&a-rather-long-query-parameter-name=and-a-long-value-that-goes-past-eighty-columns"
+auth:
+  type: bearer_token
+  bearer_token:
+    token: "{{secret:token}}"
+body:
+  multipart:
+  - name: note
+    value: hello
+  - name: avatar
+    file: fixtures/avatar.png
+    content_type: image/png
+settings:
+  follow_redirects: false
+  timeout: 12.5

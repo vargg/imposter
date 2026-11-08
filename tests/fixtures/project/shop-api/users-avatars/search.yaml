@@ -1,0 +1,15 @@
+id: req-search
+position: 1
+name: Search
+method: POST
+url: "{{base}}/search"
+queries:
+- name: page
+  value: "1"
+cookies:
+- name: session
+  value: "{{secret:session}}"
+body:
+  urlencoded:
+  - name: q
+    value: shoes

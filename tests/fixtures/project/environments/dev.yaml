@@ -1,0 +1,9 @@
+id: env-dev
+name: Dev
+variables:
+  base: http://localhost:8080
+  user: ann
+saved_values:
+  user:
+  - ann
+  - bob

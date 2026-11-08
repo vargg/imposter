@@ -4,6 +4,7 @@ pub mod collections;
 pub mod environments;
 mod error;
 pub mod executions;
+pub mod files;
 pub mod kv;
 pub mod profile;
 pub mod schema;

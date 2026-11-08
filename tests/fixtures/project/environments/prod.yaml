@@ -1,0 +1,7 @@
+id: env-prod
+name: Prod
+color: red
+share_values: false
+variables:
+  base: ""
+  user: ""

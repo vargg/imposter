@@ -1,0 +1,7 @@
+id: req-file
+position: 3
+name: Send file
+method: POST
+url: ""
+body:
+  file: fixtures/data.bin

@@ -1119,6 +1119,31 @@ numbers, so both are excluded. Each logical change is its own commit.
   Version 4 adds captures stored as secrets (`Capture::secret`); `fit_version` picks it
   only for a document with one, and an older version holding one is refused, naming the
   request, as scripts are below 3.
+- **The collections folder format** (`store::files::format`, format `imposter-project`,
+  version 1): one YAML file per request, per folder (`folder.yaml` in its directory),
+  per collection (`imposter.yaml` in its directory) and per environment
+  (`environments/<name>.yaml`). Why: an edit to a request or check must be a diff of its
+  own lines, and two people editing different requests must not touch the same file
+  (the roadmap's M2 layout; one export file failed both).
+  - **Names to files:** lowercase ASCII letters and digits, `-` for the rest
+    (`Shop API` → `shop-api`, user's choice: portable, no quoting, no case clashes on
+    macOS and Windows); `-2`, `-3` for siblings that collide; `folder`, `imposter` and
+    `environments` are reserved where they would clash.
+  - **Identity and order are fields:** each file carries an `id` and a `position`, so a
+    reorder renames nothing and a rename moves one file.
+  - **Readable values:** request files have their own serde types mirroring
+    `RequestTemplate`: bodies as text (a literal block when multi-line), form fields as
+    lists, a binary body as `file: <path>`, settings and auth only where set; bytes that
+    are not text fall back to base64. Long single lines are never folded.
+  - **An environment that does not share its values** is written with its names and
+    empty values (`share_values: false`); its values stay in the profile.
+  - **Strict reading, as the native format:** unknown fields, duplicate ids, a
+    directory without `folder.yaml`, an empty name or another format or version are
+    refused, naming the file. Only directories with `imposter.yaml` and
+    `environments/` are read, so the folder can live inside a repository beside other
+    files. YAML is read with a node budget, as OpenAPI import does.
+  Pinned by `imposter-store/tests/project_format.rs` and the golden folder
+  `tests/fixtures/project/`.
 - **Checks are data, not scripts** (`core::check`): a selector (status, a header, a JSONPath,
   the body, duration, size), an operator and an expected value that may use `{{variables}}`,
   stored in the request template. The executor evaluates them after every response with the

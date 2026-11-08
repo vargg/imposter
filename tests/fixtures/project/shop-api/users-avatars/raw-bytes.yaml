@@ -1,0 +1,9 @@
+id: req-raw
+position: 2
+name: Raw bytes
+method: GET
+url: ""
+body:
+  bytes:
+    body_type: plain
+    base64: _wBB

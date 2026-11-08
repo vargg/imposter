@@ -1,0 +1,33 @@
+id: req-login
+position: 1
+name: Log in
+description: Exchanges the password for a token.
+method: POST
+url: "{{base}}/login"
+headers:
+- name: Accept
+  value: application/json
+- name: X-Debug
+  value: "1"
+  enabled: false
+body:
+  json: |-
+    {
+      "user": "{{user}}",
+      "password": "{{secret:password}}"
+    }
+checks:
+- enabled: true
+  selector: status
+  op: equals
+  expected: "200"
+captures:
+- enabled: true
+  variable: token
+  selector:
+    json: $.token
+  secret: true
+scripts:
+  after: |-
+    test("has a token", response.path("$.token") != ());
+    print("ok");
