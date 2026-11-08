@@ -42,7 +42,12 @@ fn scope_color(state: &State, scope: Scope) -> Option<EnvColor> {
 pub fn explanation(state: &State, scope: Scope) -> (String, &'static str) {
     match scope {
         Scope::Global => (
-            "Used by every request.".to_owned(),
+            if state.globals_shared {
+                "Used by every request. Saved to globals.yaml in the collections folder."
+            } else {
+                "Used by every request. globals.yaml lists the names; the values stay on this computer."
+            }
+            .to_owned(),
             "A collection's variables and the active environment override these.",
         ),
         Scope::Environment(id) => {
@@ -132,6 +137,13 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         }
         let has_rows = !state.variables.rows.is_empty();
         icons::menu(ui, Icon::More, "Variable actions", |ui| {
+            if current == Scope::Global {
+                let mut share = state.globals_shared;
+                if ui.checkbox(&mut share, "Share values").clicked() {
+                    actions.push(Action::Variables(VariablesAction::ShareGlobals(share)));
+                }
+                ui.separator();
+            }
             if let Scope::Environment(id) = current {
                 if ui.button("Edit name and color…").clicked() {
                     actions.push(Action::Variables(VariablesAction::RenameEnvironment(id)));

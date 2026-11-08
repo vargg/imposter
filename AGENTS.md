@@ -459,7 +459,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   across folders). The old `globals` row moves to the file once, values shared (user's
   choice over keeping them local), and stays unused. A `--project` run gets the shared
   globals only, so a name whose value stays on someone's computer is unresolved, not sent
-  empty.
+  empty. In the app, the Global page's ⋯ menu has "Share values" (through the Variables guard)
+  and its explanation says where the values are. Pinned by `imposter-store/tests/files.rs`,
+  `imposter-ui/tests/project.rs` and the layout lint's Global menu.
 - **Shared values in files, local values on this computer** (user's choice: a send must
   never dirty git). A collection's and an environment's file hold the shared values;
   `local_scopes` (V8) holds what captures, `vars.set` and the inspector's value swap set

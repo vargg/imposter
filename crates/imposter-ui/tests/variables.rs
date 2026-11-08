@@ -665,7 +665,8 @@ fn the_screen_says_what_it_edits_and_where_it_stands_in_precedence() {
     assert!(
         caption.right() <= picker.left() && (caption.center().y - picker.center().y).abs() < 4.0
     );
-    app.harness.get_by_label("Used by every request.");
+    app.harness
+        .get_by_label("Used by every request. Saved to globals.yaml in the collections folder.");
     app.harness
         .get_by_label("A collection's variables and the active environment override these.");
 

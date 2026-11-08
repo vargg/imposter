@@ -495,6 +495,11 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     ];
     check(app, "variables with secrets");
     app.harness.state_mut().state.variables.secrets.clear();
+    // The Global page's menu, with its Share values switch.
+    click(&mut app.harness, "Variable actions");
+    check(app, "global variable actions");
+    app.harness.key_press(egui::Key::Escape);
+    settle(&mut app.harness);
     click(&mut app.harness, "New environment");
     check(app, "environment dialog");
     app.harness.key_press(egui::Key::Escape);

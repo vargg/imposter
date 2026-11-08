@@ -83,6 +83,7 @@ pub struct Startup {
     load_form: crate::load_screen::LoadForm,
     folder: PathBuf,
     folder_error: Option<String>,
+    globals_shared: bool,
 }
 
 /// The collections folder just switched to, and what it holds.
@@ -90,6 +91,7 @@ pub struct Startup {
 pub struct Switched {
     folder: PathBuf,
     folder_error: Option<String>,
+    globals_shared: bool,
     collections: Vec<Collection>,
     environments: Vec<Environment>,
     active_environment: Option<EnvironmentId>,
@@ -223,6 +225,8 @@ pub enum Message {
         /// Its variables, saved values and secrets (none for a collection).
         result: Result<(Variables, SavedValues, Variables), Failure>,
     },
+    /// The globals' values are now shared (`true`) or kept here.
+    GlobalsShared(Result<bool, Failure>),
     ValueChosen {
         scope: Scope,
         name: String,
@@ -559,6 +563,8 @@ pub enum VariablesAction {
     NewEnvironment,
     RenameEnvironment(EnvironmentId),
     DeleteEnvironment(EnvironmentId),
+    /// Write the globals' values to `globals.yaml`, or keep them on this computer.
+    ShareGlobals(bool),
 }
 
 /// Changes that replace the Variables screen's rows go through its own guard.
@@ -573,6 +579,7 @@ enum VarTransition {
     Open(Scope),
     /// Open `scope` with a new row for `name`, unless it already has one.
     Define(Scope, String),
+    ShareGlobals(bool),
     Close,
 }
 
@@ -1019,6 +1026,8 @@ pub struct State {
     pub collections_folder: PathBuf,
     /// Why that folder could not be read, when it could not; nothing is written to it.
     pub folder_error: Option<String>,
+    /// Whether the globals' values are written to `globals.yaml`.
+    pub globals_shared: bool,
     pub collection: Option<CollectionId>,
     pub tree: Option<TreeView>,
     pub selected: Option<NodeId>,
@@ -1101,6 +1110,7 @@ impl ImposterApp {
                 collections: Vec::new(),
                 collections_folder: PathBuf::new(),
                 folder_error: None,
+                globals_shared: true,
                 collection: None,
                 tree: None,
                 selected: None,
@@ -1182,6 +1192,7 @@ impl ImposterApp {
                         .unwrap_or_default(),
                     folder: db.folder(),
                     folder_error: db.folder_error(),
+                    globals_shared: environments::globals_shared(db),
                 })
             },
             |result| Message::Started(result.map(Box::new).map_err(failure)),
@@ -1401,6 +1412,21 @@ impl ImposterApp {
                     self.navigate(Navigation::SwitchFolder(folder));
                 }
             }
+            Message::GlobalsShared(result) => match result {
+                Ok(share) => {
+                    self.state.globals_shared = share;
+                    if self.state.variables.scope == Scope::Global {
+                        self.load_variables(Scope::Global);
+                    }
+                    self.load_snapshot();
+                    self.status(if share {
+                        "Global values are shared in globals.yaml"
+                    } else {
+                        "Global values stay on this computer; globals.yaml lists the names"
+                    });
+                }
+                Err(error) => self.error("Sharing not changed", error),
+            },
             Message::FolderSwitched(result) => match result {
                 Ok(switched) => self.folder_switched(*switched),
                 Err(error) => self.error("Cannot use that collections folder", error),
@@ -1799,6 +1825,7 @@ impl ImposterApp {
         state.load.form = startup.load_form;
         state.collections_folder = startup.folder;
         state.folder_error = startup.folder_error;
+        state.globals_shared = startup.globals_shared;
         if let Some(draft) = startup.draft {
             self.load_editor(&draft);
             self.request_status("Restored the draft you left open", Tone::Muted);
@@ -1833,6 +1860,7 @@ impl ImposterApp {
         let state = &mut self.state;
         state.collections_folder = switched.folder;
         state.folder_error = switched.folder_error;
+        state.globals_shared = switched.globals_shared;
         state.collections = switched.collections;
         state.environments = switched.environments;
         state.active_environment = switched.active_environment;
@@ -2146,6 +2174,7 @@ impl ImposterApp {
                     Ok(Switched {
                         folder: db.folder(),
                         folder_error: db.folder_error(),
+                        globals_shared: environments::globals_shared(db),
                         collections: collections::collections(db)?,
                         environments: environments::environments(db)?,
                         active_environment: environments::active_environment(db)?,
@@ -3585,6 +3614,13 @@ impl ImposterApp {
                 self.state.variables.define = Some(name);
                 self.load_variables(scope);
             }
+            VarTransition::ShareGlobals(share) => self.task(
+                move |db| {
+                    environments::set_globals_shared(db, share)?;
+                    Ok(share)
+                },
+                |result| Message::GlobalsShared(result.map_err(failure)),
+            ),
             VarTransition::Close => self.settings_close(),
         }
     }
@@ -3859,6 +3895,11 @@ impl ImposterApp {
             }
             VariablesAction::DeleteEnvironment(id) => {
                 self.variables_navigate(VarTransition::DeleteEnvironment(id));
+            }
+            VariablesAction::ShareGlobals(share) => {
+                if share != self.state.globals_shared {
+                    self.variables_navigate(VarTransition::ShareGlobals(share));
+                }
             }
         }
     }

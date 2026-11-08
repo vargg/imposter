@@ -126,3 +126,42 @@ fn an_environment_can_keep_its_values_on_this_computer() {
         "the dialog closed"
     );
 }
+
+#[test]
+fn the_global_page_can_keep_its_values_on_this_computer() {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                imposter_app::store::environments::set_globals(
+                    db,
+                    &[("region".to_owned(), "eu".to_owned())]
+                        .into_iter()
+                        .collect(),
+                )
+            })
+            .unwrap();
+    });
+    assert_eq!(file(&app, "globals.yaml"), "variables:\n  region: eu\n");
+    click(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    app.harness
+        .get_by_label_contains("Saved to globals.yaml in the collections folder");
+
+    click(&mut app.harness, "Variable actions");
+    click(&mut app.harness, "Share values");
+    settle(&mut app.harness);
+    assert!(!app.harness.state().state.globals_shared);
+    assert_eq!(
+        file(&app, "globals.yaml"),
+        "share_values: false\nvariables:\n  region: \"\"\n"
+    );
+    app.harness
+        .get_by_label_contains("globals.yaml lists the names; the values stay on this computer");
+    let in_effect = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(imposter_app::store::environments::globals)
+        .unwrap();
+    assert_eq!(in_effect.get("region").map(String::as_str), Some("eu"));
+}
