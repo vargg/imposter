@@ -1,0 +1,3 @@
+variables:
+  region: eu
+  user_agent: imposter-tests

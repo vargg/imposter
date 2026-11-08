@@ -96,7 +96,7 @@ fn globals_are_edited_and_saved_on_the_variables_screen() {
         .harness
         .state()
         .store()
-        .call_blocking(|db| environments::globals(db))
+        .call_blocking(environments::globals)
         .unwrap();
     assert_eq!(stored, vars(&[("host", "old-new"), ("token", "t")]));
 }
@@ -120,7 +120,7 @@ fn duplicate_names_are_refused_and_nothing_is_saved() {
         app.harness
             .state()
             .store()
-            .call_blocking(|db| environments::globals(db))
+            .call_blocking(environments::globals)
             .unwrap(),
         vars(&[("a", "1")])
     );
@@ -152,7 +152,7 @@ fn switching_scope_with_unsaved_rows_asks_and_discard_keeps_the_stored_values() 
         app.harness
             .state()
             .store()
-            .call_blocking(|db| environments::globals(db))
+            .call_blocking(environments::globals)
             .unwrap(),
         vars(&[("a", "1")])
     );
@@ -182,7 +182,7 @@ fn saving_from_the_guard_stores_then_switches() {
         app.harness
             .state()
             .store()
-            .call_blocking(|db| environments::globals(db))
+            .call_blocking(environments::globals)
             .unwrap(),
         vars(&[("a", "12")])
     );
@@ -466,7 +466,7 @@ fn closing_with_unsaved_variables_asks_and_cancel_stays_open() {
         app.harness
             .state()
             .store()
-            .call_blocking(|db| environments::globals(db))
+            .call_blocking(environments::globals)
             .unwrap(),
         vars(&[("a", "1x")])
     );
@@ -729,7 +729,7 @@ fn clear_all_is_in_the_menu_and_asks_before_removing() {
         app.harness
             .state()
             .store()
-            .call_blocking(|db| environments::globals(db))
+            .call_blocking(environments::globals)
             .unwrap(),
         vars(&[])
     );

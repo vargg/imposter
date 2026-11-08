@@ -165,9 +165,17 @@ fn the_active_environment_brings_its_saved_values() {
 fn a_version_1_database_gains_empty_saved_values() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("imposter.db");
+    // A version-1 database keeps its globals in their row; opening it moves them to
+    // the collections folder.
     Store::open_with(&path, &MIGRATIONS[..1])
         .unwrap()
-        .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1")])))
+        .call_blocking(|db| {
+            db.execute(
+                "UPDATE globals SET variables = '{\"a\":\"1\"}' WHERE id = 1",
+                [],
+            )?;
+            Ok(())
+        })
         .unwrap();
 
     let store = Store::open(&path).unwrap();

@@ -28,6 +28,40 @@ pub fn switch(db: &crate::Tx<'_>, dir: &Path) -> Result<(), StoreError> {
     Ok(())
 }
 
+/// Set once the old `globals` row was moved to `globals.yaml`.
+const GLOBALS_MIGRATED_KEY: &str = "globals_migrated";
+
+/// Write the old `globals` row to `globals.yaml` once, values shared (user's choice). A
+/// folder that already has the file keeps it; a folder that could not be read is left
+/// alone and asked again next time.
+fn move_globals(db: &Connection, state: &mut State) -> Result<(), StoreError> {
+    let key = GLOBALS_MIGRATED_KEY;
+    if crate::kv::get::<bool>(db, crate::kv::Table::Settings, key)?.unwrap_or(false)
+        || state.error.is_some()
+    {
+        return Ok(());
+    }
+    if state.model.globals.is_none() {
+        let (variables, saved): (String, String) = db.query_row(
+            "SELECT variables, saved_values FROM globals WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let variables: Variables = serde_json::from_str(&variables)?;
+        let saved: SavedValues = serde_json::from_str(&saved)?;
+        if !variables.is_empty() {
+            let before = state.clone();
+            state.model.globals = Some(format::Globals {
+                share_values: true,
+                variables,
+                saved_values: saved,
+            });
+            state.write_changes(&before)?;
+        }
+    }
+    crate::kv::set(db, crate::kv::Table::Settings, key, &true)
+}
+
 /// Set once the old tables' collections and environments were moved to the folder.
 const MIGRATED_KEY: &str = "files_migrated";
 
@@ -43,7 +77,8 @@ pub fn open(connection: &mut Connection, database: &Path) -> Result<State, Store
         ));
     }
     move_tables(&tx, &root)?;
-    let state = State::load(&tx, &root)?;
+    let mut state = State::load(&tx, &root)?;
+    move_globals(&tx, &mut state)?;
     tx.commit()?;
     Ok(state)
 }

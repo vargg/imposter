@@ -205,8 +205,8 @@ that shows this binary cannot run without a display.
 Decided 8 November 2026, replacing the earlier two modes (a personal SQLite workspace
 plus opted-in linked folders): every collection and environment definition is files in
 one collections folder, set in Settings; there is no database copy and no linked or
-unlinked collection. SQLite keeps personal data only: History, settings, UI state,
-secrets, globals and local values. The command line reads the same folder, or another one
+unlinked collection; global variables are the folder's `globals.yaml`. SQLite keeps
+personal data only: History, settings, UI state, secrets and local values. The command line reads the same folder, or another one
 with `--project DIR`. Only the environment named runs, production needs a switch in the
 app, captures stay in the run, and each run from the profile is recorded in History as the
 command line's.

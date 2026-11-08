@@ -68,7 +68,7 @@ fn variables_keep_their_order() {
         .unwrap();
     assert_eq!(
         store
-            .call_blocking(|db| globals(db))
+            .call_blocking(globals)
             .unwrap()
             .keys()
             .collect::<Vec<_>>(),

@@ -3,6 +3,7 @@
 //! diff of its own lines.
 //!
 //! ```text
+//! globals.yaml                the variables every collection here shares
 //! environments/dev.yaml       an environment
 //! shop-api/imposter.yaml      a collection
 //! shop-api/login.yaml         a request in it
@@ -12,7 +13,7 @@
 //! File names come from names (`Shop API` → `shop-api`); identity is the `id` inside each
 //! file, and order is its `position`, so a reorder renames nothing. Reading is strict, as
 //! the native format is: unknown fields, duplicate ids and unexpected YAML files are
-//! refused, naming the file. Secrets, local values, globals and History are never here.
+//! refused, naming the file. Secrets, local values and History are never here.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -31,12 +32,25 @@ pub const VERSION: u32 = 1;
 pub const COLLECTION_FILE: &str = "imposter.yaml";
 pub const FOLDER_FILE: &str = "folder.yaml";
 pub const ENVIRONMENTS_DIR: &str = "environments";
+pub const GLOBALS_FILE: &str = "globals.yaml";
+/// The owner id the globals file is rendered under: there is one.
+pub const GLOBALS_ID: &str = "globals";
 
 /// Every collection and environment in a folder.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Project {
     pub collections: Vec<Collection>,
     pub environments: Vec<Environment>,
+    /// The variables every collection of the folder shares; `None` without a file.
+    pub globals: Option<Globals>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Globals {
+    /// Off: the file lists names only, and the values stay in the user's profile.
+    pub share_values: bool,
+    pub variables: Variables,
+    pub saved_values: SavedValues,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -177,6 +191,25 @@ struct FolderFile {
     description: String,
     #[serde(default, skip_serializing_if = "Scripts::is_empty")]
     scripts: Scripts,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GlobalsFile {
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    share_values: bool,
+    #[serde(default, skip_serializing_if = "Variables::is_empty")]
+    variables: Variables,
+    #[serde(default, skip_serializing_if = "SavedValues::is_empty")]
+    saved_values: SavedValues,
+}
+
+/// Names with empty values: what a file holds for values that are not shared.
+fn names_only(variables: &Variables) -> Variables {
+    variables
+        .keys()
+        .map(|k| (k.clone(), String::new()))
+        .collect()
 }
 
 #[derive(Serialize, Deserialize)]
@@ -592,6 +625,25 @@ pub fn render(project: &Project) -> BTreeMap<String, Vec<u8>> {
 /// Every file of `project` by the id of what it holds: its path and bytes.
 pub fn render_owned(project: &Project) -> HashMap<String, (String, Vec<u8>)> {
     let mut files: Owned = HashMap::new();
+    if let Some(globals) = &project.globals {
+        let file = GlobalsFile {
+            share_values: globals.share_values,
+            variables: if globals.share_values {
+                globals.variables.clone()
+            } else {
+                names_only(&globals.variables)
+            },
+            saved_values: if globals.share_values {
+                globals.saved_values.clone()
+            } else {
+                SavedValues::default()
+            },
+        };
+        files.insert(
+            GLOBALS_ID.to_owned(),
+            (GLOBALS_FILE.to_owned(), yaml(&file)),
+        );
+    }
     let mut taken = HashSet::new();
     for environment in ordered(&project.environments, |e| (0, e.id.as_str())) {
         let name = unique(&slug(&environment.name, "environment"), &mut taken, &[]);
@@ -741,7 +793,16 @@ pub fn read_owned(
     let mut collections: BTreeMap<&str, BTreeMap<&str, &[u8]>> = BTreeMap::new();
     for (path, bytes) in files {
         let Some((top, rest)) = path.split_once('/') else {
-            // Loose files at the top belong to whatever else shares the folder (a README).
+            if path == GLOBALS_FILE {
+                let file: GlobalsFile = parse(path, bytes)?;
+                claim(GLOBALS_ID, path)?;
+                project.globals = Some(Globals {
+                    share_values: file.share_values,
+                    variables: file.variables,
+                    saved_values: file.saved_values,
+                });
+            }
+            // Other loose files at the top belong to whatever else shares the folder.
             continue;
         };
         if top == ENVIRONMENTS_DIR {

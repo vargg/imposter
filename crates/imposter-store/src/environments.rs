@@ -55,14 +55,18 @@ fn to_environment(
     })
 }
 
-/// "Global" names the scope of global variables, so no environment may take it.
+/// "Global" names the scope of global variables, so no environment may take it, in any
+/// case: a "global" environment beside the Global scope would read as the same thing.
 fn check_name(state: &State, name: &str, except: Option<&str>) -> Result<(), StoreError> {
     let taken = state
         .model
         .environments
         .iter()
         .any(|e| e.name == name && Some(e.uid.as_str()) != except);
-    if name.trim().is_empty() || name == VariableContext::GLOBAL_NAME || taken {
+    let global = name
+        .trim()
+        .eq_ignore_ascii_case(VariableContext::GLOBAL_NAME);
+    if name.trim().is_empty() || global || taken {
         return Err(Conflict::EnvironmentName.into());
     }
     Ok(())
@@ -196,19 +200,39 @@ pub fn delete_environment(db: &Tx<'_>, id: EnvironmentId) -> Result<(), StoreErr
     Ok(())
 }
 
-pub fn globals(db: &Connection) -> Result<Variables, StoreError> {
-    let text: String = db.query_row("SELECT variables FROM globals WHERE id = 1", [], |row| {
-        row.get(0)
-    })?;
-    Ok(serde_json::from_str(&text)?)
+/// The global variables in effect: `globals.yaml`'s, with this computer's over them.
+pub fn globals(db: &Tx<'_>) -> Result<Variables, StoreError> {
+    Ok(scopes::read(db, Scope::Global)?.0)
 }
 
-pub fn set_globals(db: &Connection, variables: &Variables) -> Result<(), StoreError> {
-    db.execute(
-        "UPDATE globals SET variables = ?1 WHERE id = 1",
-        [serde_json::to_string(variables)?],
-    )?;
-    Ok(())
+/// Replace the global variables, as an explicit edit does.
+pub fn set_globals(db: &Tx<'_>, variables: &Variables) -> Result<(), StoreError> {
+    let saved = scopes::saved_values(db, Scope::Global)?;
+    scopes::write(db, Scope::Global, variables, &saved)
+}
+
+/// Whether the globals' values are written to `globals.yaml` (they are until turned off).
+pub fn globals_shared(db: &Tx<'_>) -> bool {
+    db.read(|state| state.model.globals.as_ref().is_none_or(|g| g.share_values))
+}
+
+/// Share the globals' values in `globals.yaml`, or keep them on this computer only. The
+/// values in effect do not change.
+pub fn set_globals_shared(db: &Tx<'_>, share: bool) -> Result<(), StoreError> {
+    let (variables, saved) = scopes::read(db, Scope::Global)?;
+    db.write(|state, _| {
+        let globals = state
+            .model
+            .globals
+            .get_or_insert_with(|| crate::files::format::Globals {
+                share_values: true,
+                variables: Variables::new(),
+                saved_values: SavedValues::default(),
+            });
+        globals.share_values = share;
+        Ok(())
+    })?;
+    scopes::write(db, Scope::Global, &variables, &saved)
 }
 
 /// The active environment, or `None` for globals only. A stale id (deleted elsewhere) reads

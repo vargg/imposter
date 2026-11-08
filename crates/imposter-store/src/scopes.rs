@@ -6,13 +6,23 @@
 //! value swap set, and all of an environment's values when it does not share them. The
 //! values in effect are the local ones over the shared ones. Saving on the Variables screen
 //! ([`write`]) makes what it shows the shared values and clears the local ones. Globals
-//! stay in the profile.
+//! work the same way, in `globals.yaml`.
 
 use imposter_core::model::{SavedValues, Variables};
 use imposter_core::variables::Scope;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::files::workspace::{Kind, State};
+
+/// The `local_scopes` key of a folder's globals, which have no file id: the globals belong
+/// to the folder, so this computer's values for them do too.
+fn globals_key(state: &State) -> String {
+    format!(
+        "{}:{}",
+        crate::files::format::GLOBALS_ID,
+        state.root.display()
+    )
+}
 use crate::{StoreError, Tx};
 
 /// This computer's values for the scope whose file id is `uid`, and its saved values when
@@ -71,7 +81,21 @@ struct Filed {
 
 fn filed(state: &State, scope: Scope) -> Result<Filed, StoreError> {
     match scope {
-        Scope::Global => Err(StoreError::NotFound("globals")),
+        // No file yet: no globals, shared once there are some.
+        Scope::Global => Ok(state.model.globals.as_ref().map_or_else(
+            || Filed {
+                uid: globals_key(state),
+                variables: Variables::new(),
+                saved: SavedValues::default(),
+                shares: true,
+            },
+            |g| Filed {
+                uid: globals_key(state),
+                variables: g.variables.clone(),
+                saved: g.saved_values.clone(),
+                shares: g.share_values,
+            },
+        )),
         Scope::Collection(id) => {
             let uid = state.ids.uid(Kind::Collection, id.0);
             state
@@ -105,39 +129,19 @@ fn filed(state: &State, scope: Scope) -> Result<Filed, StoreError> {
     }
 }
 
-fn read_globals(db: &Connection) -> Result<(Variables, SavedValues), StoreError> {
-    let (variables, saved): (String, String) = db
-        .query_row(
-            "SELECT variables, saved_values FROM globals WHERE id = 1",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?
-        .ok_or(StoreError::NotFound("globals"))?;
-    Ok((
-        serde_json::from_str(&variables)?,
-        serde_json::from_str(&saved)?,
-    ))
-}
-
 /// A scope's variables in effect and its saved values. Saved values of names the scope no
 /// longer defines are left out.
 pub fn read(db: &Tx<'_>, scope: Scope) -> Result<(Variables, SavedValues), StoreError> {
-    let (variables, mut saved) = if scope == Scope::Global {
-        read_globals(db)?
+    let filed = db.read(|state| filed(state, scope))?;
+    let (local, local_saved) = local(db, &filed.uid)?;
+    let mut variables = filed.variables;
+    for (name, value) in local {
+        variables.insert(name, value);
+    }
+    let mut saved = if filed.shares {
+        filed.saved
     } else {
-        let filed = db.read(|state| filed(state, scope))?;
-        let (local, local_saved) = local(db, &filed.uid)?;
-        let mut variables = filed.variables;
-        for (name, value) in local {
-            variables.insert(name, value);
-        }
-        let saved = if filed.shares {
-            filed.saved
-        } else {
-            local_saved
-        };
-        (variables, saved)
+        local_saved
     };
     saved.retain_defined(&variables);
     Ok((variables, saved))
@@ -158,16 +162,6 @@ pub fn write(
 ) -> Result<(), StoreError> {
     let mut saved = saved.clone();
     saved.retain_defined(variables);
-    if scope == Scope::Global {
-        db.execute(
-            "UPDATE globals SET variables = ?1, saved_values = ?2 WHERE id = 1",
-            params![
-                serde_json::to_string(variables)?,
-                serde_json::to_string(&saved)?
-            ],
-        )?;
-        return Ok(());
-    }
     let (uid, shares) = db.write(|state, _| {
         let filed = filed(state, scope)?;
         let names_only: Variables = variables
@@ -202,7 +196,17 @@ pub fn write(
                     row.saved_values = file_saved;
                 }
             }
-            Scope::Global => {}
+            Scope::Global => {
+                // Empty shared globals need no file; a choice not to share is kept.
+                state.model.globals = (!filed.shares
+                    || !file_variables.is_empty()
+                    || !file_saved.is_empty())
+                .then(|| crate::files::format::Globals {
+                    share_values: filed.shares,
+                    variables: file_variables,
+                    saved_values: file_saved,
+                });
+            }
         }
         Ok((filed.uid, filed.shares))
     })?;
@@ -221,13 +225,6 @@ pub fn set_current(
     scope: Scope,
     values: &[(String, String)],
 ) -> Result<(), StoreError> {
-    if scope == Scope::Global {
-        let (mut variables, saved) = read_globals(db)?;
-        for (name, value) in values {
-            variables.insert(name.clone(), value.clone());
-        }
-        return write(db, scope, &variables, &saved);
-    }
     let uid = db.read(|state| filed(state, scope))?.uid;
     let (mut local, saved) = local(db, &uid)?;
     for (name, value) in values {

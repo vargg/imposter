@@ -85,6 +85,12 @@ fn documents(project: &Project) -> Vec<NativeDocument> {
                 scripts: c.scripts.clone(),
             });
             document.environments.clone_from(&environments);
+            // Shared globals only: names whose values stay on someone's computer are left
+            // out, so a request using one says it is unresolved rather than send it empty.
+            if let Some(globals) = project.globals.as_ref().filter(|g| g.share_values) {
+                document.globals.clone_from(&globals.variables);
+                document.saved_globals.clone_from(&globals.saved_values);
+            }
             document.fit_version();
             document
         })

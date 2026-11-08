@@ -258,14 +258,77 @@ fn local_values_stay_on_this_computer_and_saving_shares_them() {
         .values()
         .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
         .collect();
-    for private in [
-        "tok-1234",
-        "g-value",
-        "global_only",
-        "http://captured",
-        "captured-id-42",
-    ] {
+    for private in ["tok-1234", "http://captured", "captured-id-42"] {
         assert!(!all.contains(private), "{private} reached the folder");
+    }
+    // Globals are the folder's shared variables, in their own file.
+    let globals = String::from_utf8(folder(dir.path())["globals.yaml"].clone()).unwrap();
+    assert_eq!(globals, "variables:\n  global_only: g-value\n");
+}
+
+#[test]
+fn globals_live_in_the_folder_and_a_capture_changes_only_this_computer() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    store
+        .call_blocking(|db| {
+            environments::set_globals(db, &vars(&[("region", "eu")]))?;
+            secrets::write(db, SecretScope::Global, &vars(&[("key", "k-secret-1")]))
+        })
+        .unwrap();
+    let file = || String::from_utf8(folder(dir.path())["globals.yaml"].clone()).unwrap();
+    assert_eq!(file(), "variables:\n  region: eu\n");
+
+    store
+        .call_blocking(|db| {
+            scopes::set_current(db, Scope::Global, &[("region".into(), "us".into())])
+        })
+        .unwrap();
+    assert_eq!(
+        file(),
+        "variables:\n  region: eu\n",
+        "a capture leaves the file"
+    );
+    let in_effect = store.call_blocking(environments::globals).unwrap();
+    assert_eq!(in_effect, vars(&[("region", "us")]));
+
+    // Not shared: names only in the file, the values here.
+    store
+        .call_blocking(|db| environments::set_globals_shared(db, false))
+        .unwrap();
+    assert_eq!(file(), "share_values: false\nvariables:\n  region: \"\"\n");
+    let (in_effect, shared) = store
+        .call_blocking(|db| Ok((environments::globals(db)?, environments::globals_shared(db))))
+        .unwrap();
+    assert_eq!(in_effect, vars(&[("region", "us")]));
+    assert!(!shared);
+    assert!(!file().contains("k-secret-1"));
+
+    // Another folder brings its own globals.
+    let other = tempfile::tempdir().unwrap();
+    let path = other.path().to_owned();
+    store
+        .call_blocking(move |db| files::switch(db, &path))
+        .unwrap();
+    assert!(
+        store
+            .call_blocking(environments::globals)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn an_environment_cannot_take_the_global_name_in_any_case() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    for name in ["Global", "global", " GLOBAL "] {
+        let result = store
+            .call_blocking(move |db| environments::create_environment(db, name, &Variables::new()));
+        assert!(
+            matches!(result, Err(StoreError::Conflict(_))),
+            "{name:?}: {result:?}"
+        );
     }
 }
 
@@ -300,7 +363,8 @@ fn a_version_7_database_moves_its_collections_into_the_folder_once() {
                INSERT INTO requests (id, collection_id, folder_id, template)
                    VALUES (13, 5, 8, '{"name":"List users","method":"GET","url":"{{base}}/users","position":0}');
                INSERT INTO environments (id, name, variables, color) VALUES (3, 'Prod', '{"base":"p"}', 'red');
-               INSERT INTO secrets (environment_id, name, value) VALUES (3, 'token', 'tok-5678');"#,
+               INSERT INTO secrets (environment_id, name, value) VALUES (3, 'token', 'tok-5678');
+               UPDATE globals SET variables = '{"region":"eu"}' WHERE id = 1;"#,
         )?;
         Ok(())
     })
@@ -312,6 +376,11 @@ fn a_version_7_database_moves_its_collections_into_the_folder_once() {
     assert!(files.contains_key("shop-api/imposter.yaml"));
     assert!(files.contains_key("shop-api/users/list-users.yaml"));
     assert!(files.contains_key("environments/prod.yaml"));
+    assert_eq!(
+        String::from_utf8(files["globals.yaml"].clone()).unwrap(),
+        "variables:\n  region: eu\n",
+        "globals move with their values shared"
+    );
     let (request, environment, secret) = store
         .call_blocking(|db| {
             Ok((

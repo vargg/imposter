@@ -15,7 +15,7 @@ use imposter_core::model::{
 };
 use imposter_core::select::Selector;
 use imposter_store::files::format::{
-    Collection, Environment, Folder, Project, Request, read, read_dir, render, slug,
+    Collection, Environment, Folder, Globals, Project, Request, read, read_dir, render, slug,
 };
 
 fn fixtures() -> PathBuf {
@@ -120,6 +120,11 @@ fn sample() -> Project {
         ..RequestTemplate::default()
     };
     Project {
+        globals: Some(Globals {
+            share_values: true,
+            variables: vars(&[("region", "eu"), ("user_agent", "imposter-tests")]),
+            saved_values: SavedValues::default(),
+        }),
         environments: vec![
             Environment {
                 id: "env-dev".into(),
@@ -356,6 +361,10 @@ fn a_malformed_folder_is_refused_naming_the_file() {
         let error = read(&files).unwrap_err();
         assert!(error.to_string().starts_with(path), "{path}: {error}");
     }
+    let mut files = good.clone();
+    append(&mut files, "globals.yaml", "extra: 1\n");
+    let error = read(&files).unwrap_err();
+    assert!(error.to_string().starts_with("globals.yaml"), "{error}");
     // Others' files beside the collections are not ours to read.
     let mut files = good;
     files.insert("README.yaml".into(), b"anything".to_vec());
@@ -387,4 +396,25 @@ fn reading_a_directory_skips_hidden_entries_and_other_files() {
     let files = read_dir(dir.path()).unwrap();
     assert_eq!(files.keys().collect::<Vec<_>>(), ["api/imposter.yaml"]);
     assert!(read_dir(&dir.path().join("missing")).unwrap().is_empty());
+}
+
+#[test]
+fn globals_that_are_not_shared_keep_only_their_names_in_the_file() {
+    let mut project = sample();
+    if let Some(globals) = &mut project.globals {
+        globals.share_values = false;
+    }
+    let files = render(&project);
+    let text = String::from_utf8(files["globals.yaml"].clone()).unwrap();
+    assert_eq!(
+        text,
+        "share_values: false\nvariables:\n  region: \"\"\n  user_agent: \"\"\n"
+    );
+    let back = read(&files).unwrap().globals.unwrap();
+    assert!(!back.share_values);
+    assert_eq!(back.variables, vars(&[("region", ""), ("user_agent", "")]));
+    assert!(
+        read(&BTreeMap::new()).unwrap().globals.is_none(),
+        "no file, no globals"
+    );
 }

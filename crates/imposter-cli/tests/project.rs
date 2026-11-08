@@ -85,6 +85,12 @@ fn written_by_the_app(data: &Path, base: &str) {
                 "Dev",
                 &[("base".to_owned(), base.clone())].into_iter().collect(),
             )?;
+            environments::set_globals(
+                db,
+                &[("stats_path".to_owned(), "stats".to_owned())]
+                    .into_iter()
+                    .collect(),
+            )?;
             let api = collections::create_collection(db, "API", "", &Variables::new())?;
             let flow = collections::create_folder(db, api.id, None, "Flow", "", 0)?;
             collections::create_request(db, api.id, Some(flow.id), &template(json!({
@@ -99,7 +105,7 @@ fn written_by_the_app(data: &Path, base: &str) {
             })))?;
             let admin = collections::create_collection(db, "Admin", "", &Variables::new())?;
             collections::create_request(db, admin.id, None, &template(json!({
-                "name": "Stats", "method": "GET", "url": "{{base}}/stats",
+                "name": "Stats", "method": "GET", "url": "{{base}}/{{stats_path}}",
                 "body": "", "body_type": "none",
             })))?;
             Ok(())
@@ -163,7 +169,11 @@ fn a_checkout_runs_with_no_profile() {
         empty.path(),
     );
     assert_eq!(json(&sent)["definition"]["source"], "project");
-    assert_eq!(serving.server.requests().last().unwrap().target(), "/stats");
+    assert_eq!(
+        serving.server.requests().last().unwrap().target(),
+        "/stats",
+        "the folder's shared globals apply"
+    );
 
     let listed = json(&run(&["list", "--project", dir], empty.path()));
     let paths: Vec<&str> = listed["requests"]

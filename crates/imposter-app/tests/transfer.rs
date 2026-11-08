@@ -134,7 +134,7 @@ async fn imports_never_overwrite_and_report_global_conflicts() {
     );
     import(&store.handle(), preview, false).await.unwrap();
 
-    let globals = store.call(|db| environments::globals(db)).await.unwrap();
+    let globals = store.call(environments::globals).await.unwrap();
     assert_eq!(globals["token"], "mine");
     assert_eq!(globals["file"], "upload.bin");
     let names: Vec<String> = store

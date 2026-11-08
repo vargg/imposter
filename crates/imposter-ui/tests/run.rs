@@ -186,7 +186,7 @@ fn a_folder_runs_from_its_menu_carrying_values_into_history_but_not_variables() 
         !collection.variables.contains_key("id"),
         "the captured id stayed in the run"
     );
-    let globals = store.call_blocking(|db| environments::globals(db)).unwrap();
+    let globals = store.call_blocking(environments::globals).unwrap();
     assert!(!globals.contains_key("id"));
 }
 

@@ -52,6 +52,9 @@ pub struct Model {
     pub folders: Vec<FolderRow>,
     pub requests: Vec<RequestRow>,
     pub environments: Vec<EnvironmentRow>,
+    /// As in `globals.yaml`: the shared values, or names when not shared; `None` without
+    /// the file.
+    pub globals: Option<format::Globals>,
 }
 
 impl Model {
@@ -69,6 +72,7 @@ impl Model {
                 scripts: collection.scripts,
             });
         }
+        model.globals = project.globals;
         model.environments = project
             .environments
             .into_iter()
@@ -142,6 +146,7 @@ impl Model {
                     saved_values: e.saved_values.clone(),
                 })
                 .collect(),
+            globals: self.globals.clone(),
         }
     }
 

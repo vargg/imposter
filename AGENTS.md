@@ -417,8 +417,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   collection to keep in step). The folder (`store::files`, format above) is loaded into
   memory when the store opens and is what every store function reads and changes, behind
   the same API as the tables it replaced, so the UI, executor, runner, catalog and transfer
-  did not change. SQLite keeps personal data only: History, settings, UI state, secrets,
-  globals and local values.
+  did not change. SQLite keeps personal data only: History, settings, UI state, secrets
+  and local values.
   - **Writes:** each command stages its changes on a copy; at commit only the files whose
     rendering changed are written, each atomically, at the path their name gives, and the
     old file of a renamed or moved item goes. A file kept under another name by hand stays
@@ -446,15 +446,26 @@ numbers, so both are excluded. Each logical change is its own commit.
     "Share values".
   Pinned by `imposter-store/tests/files.rs`, `imposter-ui/tests/project.rs` and the
   existing store, app and UI suites, which run on files.
-- **Variables are ordered maps** (in collection and environment files, and the single
-  `globals` row). No environment may be named `Global`, which names the globals scope. Why:
-  order is kept for display and export, and saving a scope replaces it whole, so a save
-  never merges.
+- **Variables are ordered maps** (in collection, environment and globals files). No
+  environment may be named `Global` in any case, which names the globals scope ("global"
+  beside it read as the same thing). Why: order is kept for display and export, and saving
+  a scope replaces it whole, so a save never merges.
+- **Globals are a file too** (`globals.yaml` at the top of the collections folder): the
+  variables every collection of the folder shares, with the same "Share values" switch
+  and local values as environments (local ones keyed by the folder, since the globals
+  are the folder's). Why: an exception for globals left a checkout and CI without values
+  requests used (they failed as unresolved there and worked here), and secrets and local
+  values already cover what is personal (user's choice, after weighing a personal layer
+  across folders). The old `globals` row moves to the file once, values shared (user's
+  choice over keeping them local), and stays unused. A `--project` run gets the shared
+  globals only, so a name whose value stays on someone's computer is unresolved, not sent
+  empty.
 - **Shared values in files, local values on this computer** (user's choice: a send must
   never dirty git). A collection's and an environment's file hold the shared values;
   `local_scopes` (V8) holds what captures, `vars.set` and the inspector's value swap set
-  (`scopes::set_current`, `choose_value`), and all of an environment's values when it does
-  not share them (`share_values: false`, its file then lists names only). The values in
+  (`scopes::set_current`, `choose_value`), and all of an environment's or the globals'
+  values when they do not share them (`share_values: false`, the file then lists names
+  only). The values in
   effect are local over shared. Saving on the Variables screen (`scopes::write`) makes what
   it shows the shared values and clears the local ones.
 - **An environment may have a color** (`model::EnvColor`: red, yellow, green, blue, purple,

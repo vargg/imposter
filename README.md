@@ -198,8 +198,9 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   set in **Settings → Collections folder**. Point it at a folder in your repository and your
   team reviews request and check edits as small diffs, and CI runs them with
   `imposter run … --project DIR`.
-- Values an environment shares are in its file; turn off **Share values** in its dialog to
-  keep them on this computer. Captures never change a file. Secrets never leave this
+- Values an environment shares are in its file, and shared globals in `globals.yaml`; turn
+  off **Share values** (the environment's dialog, or ⋯ on the Global page) to keep them on
+  this computer. Captures never change a file. Secrets never leave this
   computer.
 
 **Interface**
@@ -423,13 +424,14 @@ is left logically unchanged. An existing new database always wins; profiles are 
 A busy, unreadable, corrupt or newer-schema legacy profile produces an error with recovery
 instructions instead of silently starting empty. Close Poster and retry a busy copy.
 
-Collections and environments are files in a collections folder, by default
-`~/.imposter/collections/`: one YAML file per request, folder, collection and environment
-(`shop-api/users/create-user.yaml`), so a change is a small diff and the folder can live in a
-git repository. Your personal data stays in one SQLite database, `~/.imposter/imposter.db`:
-History, settings, window state, secrets, global variables, and the values that stay on this
-computer (what captures set, and an environment's values when it does not share them). Saving
-on the Variables screen writes a collection's or environment's shared values to its file; a
+Collections, environments and global variables are files in a collections folder, by
+default `~/.imposter/collections/`: one YAML file per request, folder, collection and
+environment (`shop-api/users/create-user.yaml`), and `globals.yaml`, so a change is a small
+diff and the folder can live in a git repository. Your personal data stays in one SQLite
+database, `~/.imposter/imposter.db`: History, settings, window state, secrets, and the values
+that stay on this computer (what captures set, and the values of an environment or of the
+globals when they are not shared). Saving on the Variables screen writes shared values to
+the file; a
 send never changes a file. If a file changed outside I’mposter since it was read, an edit to
 it is refused and the edit is kept; restart to pick the outside change up. The first start
 of this version moves existing collections and environments from the database into the
