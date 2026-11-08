@@ -496,3 +496,71 @@ async fn a_request_whose_folder_is_gone_keeps_its_collections_scripts() {
         "a deleted folder's scripts are gone"
     );
 }
+
+/// `secrets.get` reads a stored secret to sign with; `secrets.set` stores a token as a
+/// secret of the active environment, never a variable; History holds neither value.
+#[tokio::test]
+async fn scripts_read_and_store_secrets_that_history_never_keeps() {
+    use imposter_core::variables::SecretScope;
+    use imposter_store::{scopes, secrets};
+
+    let (_dir, store) = open();
+    let server = ok_server().await;
+    let request = saved(
+        &store,
+        &server.url,
+        r#"request.set_header("x-signature", hex(hmac_sha256(secrets.get("signing_key"), request.body)));
+           request.set_header("x-key", secrets.get("signing_key"));"#,
+        r#"secrets.set("issued", "tok-" + response.path("$.id") + "-abcdef");
+           test("seen at once", secrets.get("issued") == "tok-" + response.path("$.id") + "-abcdef");"#,
+    )
+    .await;
+    let dev = store
+        .call(|db| {
+            let dev = environments::active_environment(db)?.unwrap();
+            secrets::write(
+                db,
+                SecretScope::Global,
+                &[("signing_key".to_owned(), "key-123456".to_owned())]
+                    .into_iter()
+                    .collect(),
+            )?;
+            Ok(dev)
+        })
+        .await
+        .unwrap();
+    let executed = send(&store, request).await.unwrap();
+    let received = received(&server);
+    assert_eq!(received.header("x-key"), Some("key-123456"));
+    assert_eq!(received.header("x-signature").map(str::len), Some(64));
+    let tests = &executed.response.script.as_ref().unwrap().tests;
+    assert!(tests[0].passed, "{tests:?}");
+    let issued = executed.writes.iter().find(|w| w.name == "issued").unwrap();
+    assert!(issued.secret);
+    imposter_app::executor::write_captures(&store.handle(), executed.writes.clone())
+        .await
+        .unwrap();
+    let id = executed.record.unwrap();
+    let (stored, variables, payload) = store
+        .call(move |db| {
+            Ok((
+                secrets::read(db, SecretScope::Environment(dev))?,
+                scopes::read(db, Scope::Environment(dev))?.0,
+                db.query_row(
+                    "SELECT payload FROM executions WHERE id = ?1",
+                    [id.0],
+                    |row| row.get::<_, String>(0),
+                )?,
+            ))
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        stored.get("issued").map(String::as_str),
+        Some("tok-7-abcdef")
+    );
+    assert!(variables.is_empty(), "a secret set is not a variable");
+    for secret in ["key-123456", "tok-7-abcdef"] {
+        assert!(!payload.contains(secret), "{secret} reached History");
+    }
+}

@@ -108,6 +108,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 | After response | `response.body, response.json(), response.path(jsonpath)` | The body as text, parsed as JSON, or the value a JSONPath selects (several values as an array, none as ()). |
 | After response | `test(name, condition), test(name, \|\| { … })` | A test, shown with the checks and kept in History. A closure fails when it returns false or throws. |
 | Request scripts | `vars.get(name), vars.set(name, value)` | Read a variable, or set one for later requests: it goes where captures go (the scope that defines it, else the active environment, else Global). |
+| Request scripts | `secrets.get(name), secrets.set(name, value)` | Read a secret ({{secret:name}}), or store one for later requests: it goes where a secret capture goes (the secrets that define it, else the active environment's, else the global ones), never into a variable or History. |
 | Mock responses | `request.method, request.path, request.query(name), request.header(name), request.headers` | The request the route matched, read-only; headers by name, ignoring case. |
 | Mock responses | `request.body, request.json()` | The request's body as text (up to 1 MiB), or parsed as JSON. |
 | Mock responses | `response.status, response.body, response.set_header(name, value), response.remove_header(name)` | The answer, starting from the route's status, headers and body. Statuses are 200 to 599; the server sets Content-Length itself. |

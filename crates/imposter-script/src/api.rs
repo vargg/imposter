@@ -134,6 +134,12 @@ pub const API: &[ApiEntry] = &[
         r#"vars.set("last_run", now_iso()); let host = vars.get("host");"#,
     ),
     entry(
+        Phase::Requests,
+        "secrets.get(name), secrets.set(name, value)",
+        "Read a secret ({{secret:name}}), or store one for later requests: it goes where a secret capture goes (the secrets that define it, else the active environment's, else the global ones), never into a variable or History.",
+        r#"let key = secrets.get("api_key"); secrets.set("session", "s-" + uuid());"#,
+    ),
+    entry(
         Phase::Mock,
         "request.method, request.path, request.query(name), request.header(name), request.headers",
         "The request the route matched, read-only; headers by name, ignoring case.",

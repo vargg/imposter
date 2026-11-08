@@ -550,6 +550,11 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Captures** marked secret write to the secrets where the name is defined, else the
     active environment's, else the global ones (`capture::secret_target`), never to a
     variable; in a run they stay in the run, under `secret:<name>`.
+  - **Scripts** read a secret with `secrets.get(name)` and store one with
+    `secrets.set(name, value)` (`imposter_script::values::Secrets`), which goes where a
+    secret capture goes; a later script in the chain sees it at once. Kept apart from
+    `vars` so a set token never becomes a variable. A secret written into a script's
+    source is code, stored with the request as written.
   - **History keeps no secret value.** `executor::record` removes every value given for
     a `secret:` name (stored, given to the run or captured by it, at least
     `redact::MIN_SECRET` long) from the stored copy: the request as sent, checks,

@@ -334,7 +334,7 @@ fn register_response(engine: &mut Engine) {
 /// Variables: what the request resolved against, plus this run's `vars.set`.
 #[derive(Clone)]
 pub struct Vars {
-    values: Arc<Variables>,
+    pub(crate) values: Arc<Variables>,
     pub sets: Arc<Mutex<Vec<(String, String)>>>,
 }
 
@@ -367,6 +367,53 @@ fn register_vars(engine: &mut Engine) {
                     return Err(format!("{name:?} is not a valid variable name").into());
                 }
                 lock(&v.sets).push((name.to_owned(), value.to_string()));
+                Ok(())
+            },
+        );
+}
+
+/// Secrets: those the request resolved against (its `secret:` names), plus this run's
+/// `secrets.set`. Kept apart from `vars`, so a set never becomes a variable.
+#[derive(Clone)]
+pub struct Secrets {
+    values: Arc<Variables>,
+    pub sets: Arc<Mutex<Vec<(String, String)>>>,
+}
+
+impl Secrets {
+    pub fn new(values: Arc<Variables>) -> Self {
+        Self {
+            values,
+            sets: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+fn register_secrets(engine: &mut Engine) {
+    engine
+        .register_type_with_name::<Secrets>("Secrets")
+        .register_fn("get", |s: &mut Secrets, name: &str| {
+            let name = name.trim();
+            let set = lock(&s.sets)
+                .iter()
+                .rev()
+                .find(|(n, _)| n == name)
+                .map(|(_, value)| value.clone());
+            set.or_else(|| {
+                s.values
+                    .get(&imposter_core::variables::secret_key(name))
+                    .cloned()
+            })
+            .map_or(Dynamic::UNIT, Dynamic::from)
+        })
+        .register_fn(
+            "set",
+            |s: &mut Secrets, name: &str, value: Dynamic| -> Result<()> {
+                let name = name.trim();
+                if name.is_empty() || name.contains(['{', '}', '\n']) {
+                    return Err(format!("{name:?} is not a valid secret name").into());
+                }
+                lock(&s.sets).push((name.to_owned(), value.to_string()));
                 Ok(())
             },
         );
@@ -487,5 +534,6 @@ pub fn register(engine: &mut Engine) {
     register_request(engine);
     register_response(engine);
     register_vars(engine);
+    register_secrets(engine);
     register_mock(engine);
 }

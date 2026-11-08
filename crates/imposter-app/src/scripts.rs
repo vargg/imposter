@@ -105,6 +105,8 @@ pub struct Before {
     pub template: RequestTemplate,
     /// `vars.set` calls, in order.
     pub sets: Vec<(String, String)>,
+    /// `secrets.set` calls, in order.
+    pub secret_sets: Vec<(String, String)>,
     pub console: Vec<String>,
 }
 
@@ -115,6 +117,7 @@ pub struct After {
     /// One line per script that failed, naming it.
     pub errors: Vec<String>,
     pub sets: Vec<(String, String)>,
+    pub secret_sets: Vec<(String, String)>,
     pub console: Vec<String>,
 }
 
@@ -167,6 +170,11 @@ impl CompiledChain {
                     values.insert(name.clone(), value.clone());
                     done.sets.push((name, value));
                 }
+                // A later script reads a secret set here as `secrets.get` would.
+                for (name, value) in outcome.secret_sets {
+                    values.insert(imposter_core::variables::secret_key(&name), value.clone());
+                    done.secret_sets.push((name, value));
+                }
             }
             Ok(done)
         })
@@ -208,6 +216,11 @@ impl CompiledChain {
                 for (name, value) in outcome.sets {
                     values.insert(name.clone(), value.clone());
                     done.sets.push((name, value));
+                }
+                // A later script reads a secret set here as `secrets.get` would.
+                for (name, value) in outcome.secret_sets {
+                    values.insert(imposter_core::variables::secret_key(&name), value.clone());
+                    done.secret_sets.push((name, value));
                 }
             }
             done

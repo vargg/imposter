@@ -105,6 +105,8 @@ pub struct Outcome {
     pub tests: Vec<ScriptTest>,
     /// `vars.set` calls in order; the caller decides each one's scope.
     pub sets: Vec<(String, String)>,
+    /// `secrets.set` calls in order, stored as secrets where the caller decides.
+    pub secret_sets: Vec<(String, String)>,
     pub console: Vec<String>,
     pub error: Option<ScriptError>,
 }
@@ -137,6 +139,7 @@ struct Run {
     console: Arc<Mutex<Console>>,
     tests: Arc<Mutex<Vec<ScriptTest>>>,
     vars: Vars,
+    secrets: values::Secrets,
 }
 
 /// An `Entropy` behind a lock, as the registered functions need.
@@ -404,6 +407,7 @@ fn execute(
 ) -> Result<(), ScriptError> {
     if vars {
         scope.push("vars", run.vars.clone());
+        scope.push("secrets", run.secrets.clone());
     }
     engine
         .run_ast_with_scope(scope, &script.0)
@@ -419,10 +423,13 @@ fn not_compiled(error: ScriptError) -> Outcome {
 }
 
 fn new_run(values: &Variables) -> Run {
+    let vars = Vars::new(values.clone());
+    let secrets = values::Secrets::new(vars.values.clone());
     Run {
         console: Arc::new(Mutex::new(Console::default())),
         tests: Arc::new(Mutex::new(Vec::new())),
-        vars: Vars::new(values.clone()),
+        vars,
+        secrets,
     }
 }
 
@@ -430,6 +437,7 @@ fn finish(run: &Run, error: Option<ScriptError>) -> Outcome {
     Outcome {
         tests: lock(&run.tests).clone(),
         sets: lock(&run.vars.sets).clone(),
+        secret_sets: lock(&run.secrets.sets).clone(),
         console: lock(&run.console).lines.clone(),
         error,
     }

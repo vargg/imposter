@@ -503,10 +503,14 @@ pub async fn run(
     // The after-response script sees the before-sending script's sets, and runs only on a
     // response, as checks do.
     let mut sets = before.sets;
+    let mut secret_sets = before.secret_sets;
     response.console = before.console;
     if chain.has_after() && response.outcome == Outcome::Response {
         for (name, value) in &sets {
             values.insert(name.clone(), value.clone());
+        }
+        for (name, value) in &secret_sets {
+            values.insert(imposter_core::variables::secret_key(name), value.clone());
         }
         let after = chain
             .after(
@@ -523,6 +527,7 @@ pub async fn run(
             error: after.errors.join("\n"),
         });
         sets.extend(after.sets);
+        secret_sets.extend(after.secret_sets);
     }
     // Scripts set variables where captures would, after the captures.
     writes.extend(sets.into_iter().map(|(name, value)| Write {
@@ -530,6 +535,12 @@ pub async fn run(
         name,
         value,
         secret: false,
+    }));
+    writes.extend(secret_sets.into_iter().map(|(name, value)| Write {
+        scope: destination.of_secret(&name).0,
+        name,
+        value,
+        secret: true,
     }));
     let mut secrets: Vec<String> = inputs.snapshot.secret_values().map(str::to_owned).collect();
     secrets.extend(writes.iter().filter(|w| w.secret).map(|w| w.value.clone()));
