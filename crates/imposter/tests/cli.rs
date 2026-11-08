@@ -310,3 +310,82 @@ async fn saved_requests_are_listed_beside_the_open_app() {
         .unwrap();
     assert!(history.is_empty(), "listing writes nothing");
 }
+
+/// A profile folder as one run, beside the open app: Ctrl+C while the second request waits
+/// reports the run cancelled, the second request cancelled and the third skipped, and only
+/// what was sent reaches History.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_run_of_saved_requests_stops_on_an_interrupt() {
+    use imposter_app::core::model::{RequestTemplate, Variables};
+    use imposter_app::store::{Store, collections, executions};
+    let (arrived, mut wait) = tokio::sync::mpsc::unbounded_channel();
+    let (_release, hold) = std::sync::mpsc::channel::<()>();
+    let hold = std::sync::Mutex::new(hold);
+    let server = Server::start(move |_, received| {
+        if received.target() == "/hold" {
+            let _ = arrived.send(());
+            // The server holds one worker until the test ends; the other runs the test.
+            let _ = hold.lock().unwrap().recv();
+        }
+        response("200 OK", &[], b"")
+    })
+    .await;
+    let home = tempfile::tempdir().unwrap();
+    let data = home.path().join("data");
+    std::fs::create_dir(&data).unwrap();
+    let app = Store::open(&data.join("imposter.db")).unwrap();
+    let base = server.url.clone();
+    app.call(move |db| {
+        let api = collections::create_collection(db, "API", "", &Variables::new())?;
+        let flow = collections::create_folder(db, api.id, None, "Flow", "", 0)?;
+        for (position, name, path) in [
+            (0, "First", "/ok"),
+            (1, "Second", "/hold"),
+            (2, "Third", "/ok"),
+        ] {
+            let mut template = RequestTemplate {
+                name: name.into(),
+                method: "GET".into(),
+                url: format!("{base}{path}"),
+                ..RequestTemplate::default()
+            };
+            template.position = position;
+            collections::create_request(db, api.id, Some(flow.id), &template)?;
+        }
+        Ok(())
+    })
+    .await
+    .unwrap();
+
+    let mut command = imposter(home.path());
+    command.args(["run", "API / Flow"]);
+    let child = command.spawn().unwrap();
+    wait.recv().await.unwrap();
+    let status = Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let output = tokio::task::spawn_blocking(move || child.wait_with_output().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(output.status.code(), Some(130), "{output:?}");
+    let report = json_of(&output);
+    assert_eq!(report["outcome"], "cancelled");
+    assert_eq!(report["steps"][0]["ran"]["outcome"], "no_checks");
+    assert_eq!(report["steps"][1]["ran"]["outcome"], "cancelled");
+    assert_eq!(
+        report["steps"][2]["skipped"]["reason"],
+        "the run was cancelled"
+    );
+    let history = app
+        .call(|db| executions::page(db, None, 0, 10))
+        .await
+        .unwrap();
+    assert_eq!(
+        history.len(),
+        2,
+        "the first request and the cancelled second"
+    );
+}

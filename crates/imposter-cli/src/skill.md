@@ -47,6 +47,19 @@ it); then the path may leave out the collection's name, and nothing is written t
 
 {{options}}
 
+## Running several requests
+
+`imposter run <TARGET>` runs every request of a collection (`Shop API`), a folder
+(`Shop API / Orders`) or one request as one run, in the order the app shows them. Values a
+request captures or sets reach the requests after it, so a login's token is used by the
+rest. It stops at the first request that does not pass and reports the rest as skipped;
+`--keep-going` runs them all. It takes the same options as `send`, plus `--junit FILE`.
+
+The report on stdout has `outcome`, `summary`, `totals`, and `steps`: each request's full
+result under `ran`, or `skipped` with the reason. To find what broke, read the first step
+whose `outcome` is not `passed` or `no_checks`. Use `run` rather than several `send`
+calls whenever later requests need what earlier ones return.
+
 ## Secrets
 
 Never put a token, password or key on the command line or into the file. Ask the user which

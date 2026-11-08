@@ -58,7 +58,7 @@ impl Default for SendArgs {
 }
 
 /// Why a run sent nothing, before the engine ran.
-struct Unsent(RunOutcome, String);
+pub(crate) struct Unsent(pub(crate) RunOutcome, pub(crate) String);
 
 impl From<String> for Unsent {
     fn from(message: String) -> Self {
@@ -67,7 +67,7 @@ impl From<String> for Unsent {
 }
 
 /// Read every input before anything is sent; a missing one stops the run.
-fn read_inputs(
+pub(crate) fn read_inputs(
     inputs: &[InputArg],
     var: &dyn Fn(&str) -> Option<String>,
     redactor: &mut Redactor,
@@ -170,6 +170,17 @@ pub async fn send(
     result.redacted(&redactor)
 }
 
+/// SHA-256 of a file's bytes in hex: the revision of the definitions that ran.
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .fold(String::with_capacity(64), |mut hex, byte| {
+            // Writing to a String cannot fail.
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        })
+}
+
 /// What a run produced: its record, the capture limit it ran under, and notes.
 type Ran = (ExecutionRecord, u64, Vec<String>);
 
@@ -209,14 +220,7 @@ async fn run_file(
         .await
         .map_err(|_| "The file could not be read".to_owned())?
         .map_err(|e| e.to_string())?;
-    definition.sha256 = Some(Sha256::digest(&bytes).iter().fold(
-        String::with_capacity(64),
-        |mut hex, byte| {
-            // Writing to a String cannot fail.
-            let _ = write!(hex, "{byte:02x}");
-            hex
-        },
-    ));
+    definition.sha256 = Some(sha256_hex(&bytes));
     let document = native::decode(&bytes).map_err(|e| e.to_string())?;
     let values = read_inputs(&args.inputs, var, redactor)?;
     let selected = document::select(&document, path, args.environment.as_deref(), &values)

@@ -283,6 +283,7 @@ imposter send "Shop API / Users / Create user" --env Dev --secret token=API_TOKE
 | `imposter show <REQUEST> [--env NAME] [--file FILE] [--max-body BYTES] [--text]` | Show a request as stored, with the variables it uses and where each is defined for --env. Placeholders only, never values. |
 | `imposter envs [--file FILE] [--text]` | List environments (red is production), globals and collections with their variable names, never values. |
 | `imposter send <REQUEST> [OPTIONS]` | Run a saved request as Send does and print its checked, redacted result. Kept in History as the command line's. |
+| `imposter run <TARGET> [OPTIONS]` | Run every request of a collection, a folder or one request in order, carrying captured values forward; stops at the first that does not pass. |
 | `imposter skill` | Print instructions for a coding agent. |
 | `imposter mcp [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--max-body BYTES]` | Experimental: an MCP server over stdio. |
 
@@ -317,6 +318,29 @@ file's SHA-256.
 | `--secret VAR=PROCESS_VAR` | As --input, and remove its value from the result and error output. Repeatable. |
 | `--out FILE` | Also write the result to FILE; History opens it (⋯ → Open result file…). |
 | `--max-body BYTES` | Show at most BYTES of each body in the result (default 65536; 0 shows none). |
+
+`imposter run` runs every request of a collection, a folder or one request as one run, in
+the order the sidebar shows them. Values a request captures or its scripts set reach the
+requests after it, so a login's token is used by the rest; none of your variables change.
+The run stops at the first request that does not pass and reports the rest as skipped,
+unless you add `--keep-going`. It passes when no request failed or errored and at least one
+check ran; a request without checks (a login that only captures) just needs a response, so
+give it a check if its status matters.
+
+```sh
+imposter run "Shop API / Orders" --env Dev --secret token=API_TOKEN --junit report.xml
+```
+
+It takes the options of `send` and these:
+
+| Run option | Meaning |
+|---|---|
+| `--keep-going` | Run every request even after one does not pass (by default the rest are skipped). |
+| `--junit FILE` | Also write the run as JUnit XML to FILE, one test case per request, for CI. |
+
+stdout is one report: the outcome, totals, and each request's result or why it was
+skipped. stderr shows one line per request as it ends. For CI, see
+[docs/ci.md](docs/ci.md).
 
 Every outcome has its own exit status, so CI can tell a failed check from a server that was
 not there. A response with no checks is not a pass: nothing was verified.

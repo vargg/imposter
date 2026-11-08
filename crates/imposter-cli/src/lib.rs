@@ -13,6 +13,7 @@ use imposter_core::run_result::RunOutcome;
 
 pub mod catalog;
 pub mod mcp;
+pub mod run;
 pub mod send;
 
 pub use send::{InputArg, SendArgs};
@@ -35,7 +36,7 @@ pub struct CommandHelp {
 }
 
 /// Every command, in the order an agent uses them.
-pub const COMMANDS: [CommandHelp; 6] = [
+pub const COMMANDS: [CommandHelp; 7] = [
     CommandHelp {
         name: "list",
         arguments: "[FILTER] [--file FILE] [--text]",
@@ -55,6 +56,11 @@ pub const COMMANDS: [CommandHelp; 6] = [
         name: "send",
         arguments: "<REQUEST> [OPTIONS]",
         help: "Run a saved request as Send does and print its checked, redacted result. Kept in History as the command line's.",
+    },
+    CommandHelp {
+        name: "run",
+        arguments: "<TARGET> [OPTIONS]",
+        help: "Run every request of a collection, a folder or one request in order, carrying captured values forward; stops at the first that does not pass.",
     },
     CommandHelp {
         name: "skill",
@@ -112,6 +118,31 @@ pub const SEND_FLAGS: [Flag; 6] = [
     },
 ];
 
+/// The flags `run` adds to those it shares with `send` (all but `--out`, which it keeps).
+pub const RUN_FLAGS: [Flag; 2] = [
+    Flag {
+        name: "--keep-going",
+        value: "",
+        help: "Run every request even after one does not pass (by default the rest are skipped).",
+    },
+    Flag {
+        name: "--junit",
+        value: "FILE",
+        help: "Also write the run as JUnit XML to FILE, one test case per request, for CI.",
+    },
+];
+
+/// The README's `run` option table rows, generated from [`RUN_FLAGS`].
+pub fn readme_run_flag_rows() -> Vec<String> {
+    RUN_FLAGS
+        .iter()
+        .map(|f| {
+            let call = format!("{} {}", f.name, f.value);
+            format!("| `{}` | {} |", call.trim_end(), f.help)
+        })
+        .collect()
+}
+
 /// What each outcome means to a caller, beside its exit status.
 pub fn outcome_help(outcome: RunOutcome) -> &'static str {
     match outcome {
@@ -168,7 +199,12 @@ pub fn usage() -> String {
         let left = format!("{} {}", flag.name, flag.value);
         let _ = writeln!(text, "  {left:<26} {}", flag.help);
     }
-    text.push_str("\nsend exit status:\n");
+    text.push_str("\nrun takes the send options and:\n");
+    for flag in RUN_FLAGS {
+        let left = format!("{} {}", flag.name, flag.value);
+        let _ = writeln!(text, "  {:<26} {}", left.trim_end(), flag.help);
+    }
+    text.push_str("\nsend and run exit status:\n");
     for (status, name, help) in exit_statuses() {
         let _ = writeln!(text, "  {status:<4} {name:<16} {help}");
     }
@@ -247,6 +283,7 @@ enum Command {
     Version,
     Skill,
     Send(SendArgs),
+    Run(run::RunArgs),
     Catalog(catalog::CatalogArgs),
     /// The experimental MCP server: a FILE and the run's environment and inputs.
     Mcp(SendArgs),
@@ -268,11 +305,12 @@ fn parse(args: Vec<OsString>) -> Result<Command, String> {
             None => Ok(Command::Skill),
             Some(other) => Err(other.unexpected().to_string()),
         },
-        "send" => parse_send(&mut parser, false),
+        "send" => parse_send(&mut parser, Mode::Send),
+        "run" => parse_send(&mut parser, Mode::Run),
         "list" => parse_list(&mut parser),
         "show" => parse_catalog(&mut parser, catalog::Kind::Show),
         "envs" => parse_catalog(&mut parser, catalog::Kind::Envs),
-        "mcp" => parse_send(&mut parser, true),
+        "mcp" => parse_send(&mut parser, Mode::Mcp),
         other => Err(format!("unknown command {other:?}")),
     }
 }
@@ -378,10 +416,22 @@ fn parse_catalog(parser: &mut lexopt::Parser, kind: catalog::Kind) -> Result<Com
     Ok(Command::Catalog(args))
 }
 
-/// `send`'s arguments, or with `mcp` the server's: a FILE without a REQUEST (the agent
-/// chooses it per call) and no `--out`.
-fn parse_send(parser: &mut lexopt::Parser, mcp: bool) -> Result<Command, String> {
+/// Which command's arguments [`parse_send`] reads: `send`'s, `run`'s (the same with a target
+/// and two more flags), or the MCP server's (no request, no `--out`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Send,
+    Run,
+    Mcp,
+}
+
+/// `send`'s arguments, `run`'s, or with `mcp` the server's: no REQUEST (the agent chooses it
+/// per call) and no `--out`.
+fn parse_send(parser: &mut lexopt::Parser, mode: Mode) -> Result<Command, String> {
     use lexopt::prelude::*;
+    let mcp = mode == Mode::Mcp;
+    let mut keep_going = false;
+    let mut junit = None;
     let mut positional: Vec<OsString> = Vec::new();
     let mut args = SendArgs::default();
     while let Some(arg) = parser.next().map_err(|e| e.to_string())? {
@@ -399,6 +449,8 @@ fn parse_send(parser: &mut lexopt::Parser, mcp: bool) -> Result<Command, String>
             Long("secret") => args.inputs.push(input(value(parser)?, true)?),
             Long("out") if !mcp => args.out = Some(PathBuf::from(value(parser)?)),
             Long("file") => args.file = Some(PathBuf::from(value(parser)?)),
+            Long("keep-going") if mode == Mode::Run => keep_going = true,
+            Long("junit") if mode == Mode::Run => junit = Some(PathBuf::from(value(parser)?)),
             Long("max-body") => {
                 args.max_body = value(parser)?
                     .into_string()
@@ -418,12 +470,24 @@ fn parse_send(parser: &mut lexopt::Parser, mcp: bool) -> Result<Command, String>
         };
     }
     let (Some(request), None) = (positional.next(), positional.next()) else {
-        return Err("send takes one REQUEST (use --file FILE for a collection file)".into());
+        return Err(if mode == Mode::Run {
+            "run takes one TARGET: a collection, a folder or a request".into()
+        } else {
+            "send takes one REQUEST (use --file FILE for a collection file)".into()
+        });
     };
     args.request = request
         .into_string()
         .map_err(|_| "REQUEST must be valid UTF-8".to_owned())?;
-    Ok(Command::Send(args))
+    Ok(if mode == Mode::Run {
+        Command::Run(run::RunArgs {
+            send: args,
+            keep_going,
+            junit,
+        })
+    } else {
+        Command::Send(args)
+    })
 }
 
 /// Run the command line and return the process exit status. Ctrl+C cancels a running send,
@@ -452,6 +516,29 @@ pub fn main(args: Vec<OsString>, io: &mut Io<'_>) -> u8 {
         Command::Skill => {
             let _ = io.stdout.write_all(skill().as_bytes());
             0
+        }
+        Command::Run(args) => {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    let _ = writeln!(io.stderr, "error: cannot start: {error}");
+                    return USAGE_STATUS;
+                }
+            };
+            let cancel = tokio_util::sync::CancellationToken::new();
+            let interrupt = cancel.clone();
+            let report = runtime.block_on(async {
+                tokio::spawn(async move {
+                    if tokio::signal::ctrl_c().await.is_ok() {
+                        interrupt.cancel();
+                    }
+                });
+                run::run(&args, io.var, cancel, io.stderr).await
+            });
+            run::report(&args, &report, io.stdout, io.stderr)
         }
         Command::Catalog(args) => {
             let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -698,6 +785,10 @@ mod tests {
             readme_command_rows()
         );
         assert_eq!(readme_table("| Option | Meaning |"), readme_flag_rows());
+        assert_eq!(
+            readme_table("| Run option | Meaning |"),
+            readme_run_flag_rows()
+        );
         assert_eq!(
             readme_table("| Status | Outcome | Meaning |"),
             readme_status_rows()

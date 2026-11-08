@@ -961,9 +961,14 @@ numbers, so both are excluded. Each logical change is its own commit.
   The run passes when no request failed, errored or had an undecidable check and at least
   one check ran (user's choice: a login that only captures needs no check of its own); a
   run with no checks is `no_checks`, an empty selection `not_sent`; otherwise the outcome
-  that says least was verified wins (`RunReport::new`). Pinned by
-  `imposter-app/tests/runner.rs`, `imposter-core/tests/run_report.rs` and the JUnit golden
-  file `tests/fixtures/results/run.junit.xml`.
+  that says least was verified wins (`RunReport::new`). On the command line it is
+  `imposter run <TARGET>` (`imposter_cli::run`): `send`'s options plus `--keep-going` and
+  `--junit FILE` (`RUN_FLAGS`, kept equal to the README by a test); stderr gets one line per
+  request as it ends, stdout the redacted report, and `--out`/`--junit` are written
+  atomically. `docs/ci.md` shows a CI job running it from an exported file. Pinned by
+  `imposter-app/tests/runner.rs`, `imposter-core/tests/run_report.rs`, the JUnit golden
+  file `tests/fixtures/results/run.junit.xml`, `imposter-cli/tests/run.rs` and a process
+  test of an interrupted run in `imposter/tests/cli.rs`.
 - **`imposter skill` prints the instructions a coding agent needs** (`skill.md` in
   `imposter-cli`): how to choose a request, pass secrets by process variable name, read
   the result and propose a check as a reviewable diff. Its option, exit status and
