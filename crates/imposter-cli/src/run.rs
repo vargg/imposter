@@ -19,7 +19,7 @@ use imposter_core::run_result::{
 use tokio_util::sync::CancellationToken;
 
 use crate::USAGE_STATUS;
-use crate::send::{SendArgs, Unsent, read_inputs, sha256_hex};
+use crate::send::{SendArgs, Unsent, read_inputs, sha256_hex, without_secrets};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RunArgs {
@@ -183,10 +183,12 @@ pub async fn run(
                 path,
                 record,
                 notes,
+                secrets,
             } => {
+                let record = without_secrets(record, secrets, &mut redactor);
                 redactor.credentials(&record.resolved.template, &record.settings);
                 let mut result = RunResult::sent(
-                    record,
+                    &record,
                     run_result::Meta {
                         run: RunInfo {
                             id: uuid(),

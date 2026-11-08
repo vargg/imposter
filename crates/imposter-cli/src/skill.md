@@ -62,11 +62,19 @@ calls whenever later requests need what earlier ones return.
 
 ## Secrets
 
-Never put a token, password or key on the command line or into the file. Ask the user which
-process variable holds it, and pass it by name: `--secret token=API_TOKEN` sets the
-collection variable `token` from the process variable `API_TOKEN` and removes its value from
-the output. Use `--input` for values that are not secret. Only the variables named this way
-are read; a missing one stops the run before anything is sent.
+Never put a token, password or key on the command line, into a request or into the file.
+Requests refer to secrets as `{{secret:name}}`; their values live in the user's profile
+(each environment's secrets, then the global ones) and never in a file. `imposter envs`
+lists secret names, `show` says where each `{{secret:…}}` comes from, never a value. A
+profile run uses the stored secrets of the environment named with `--env`.
+
+Without the profile (a `--file` run, CI), ask the user which process variable holds a
+secret and pass it by name: `--secret token=API_TOKEN` fills `{{secret:token}}` (and the
+variable `token`) from the process variable `API_TOKEN` and removes its value from the
+output. Use `--input` for values that are not secret. Only the variables named this way are
+read; a missing one stops the run before anything is sent. When a login returns a token,
+propose a capture with `"secret": true`, so the token is stored as a secret, never as a
+variable.
 
 The result replaces known secrets, the request's credentials, `user:password@` in URLs and
 `Authorization`, `Cookie` and `Set-Cookie` values with `«redacted»`. A server can still

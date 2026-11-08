@@ -5,8 +5,9 @@ copy of your I’mposter data, so it runs from an exported collection file.
 
 1. In the app, open the collection's **⋯** menu → **Export Collection…** and tick the
    environments the run needs. Commit the `.imposter.json` next to your code. Environments
-   in the export hold their variables' values, so keep secrets out of them: leave a secret
-   variable empty or undefined and pass it with `--secret` instead.
+   in the export hold their variables' values, so keep secrets out of variables: write
+   `{{secret:token}}` in requests and keep the value in the environment's secrets, which
+   are never exported. In CI, pass it with `--secret token=API_TOKEN`.
 2. Add a job that installs I’mposter and runs the collection, a folder or one request:
 
 ```yaml

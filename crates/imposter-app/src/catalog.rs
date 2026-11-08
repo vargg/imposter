@@ -10,7 +10,7 @@ use imposter_core::model::{
 };
 use imposter_core::redact::{SECRET_HEADERS, shown};
 use imposter_core::run_result::Source;
-use imposter_core::variables::{self, Source as Defined};
+use imposter_core::variables::{self, SecretScope, Source as Defined};
 use imposter_store::{StoreError, StoreHandle, collections, environments};
 use imposter_transfer::native::NativeDocument;
 use serde::Serialize;
@@ -412,6 +412,9 @@ pub struct Scope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<EnvColor>,
     pub variables: Vec<String>,
+    /// Its secrets' names (`{{secret:name}}`), never their values; a file has none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<String>,
 }
 
 /// The environments, the globals and each collection's variables, by name only.
@@ -420,6 +423,9 @@ pub struct Environments {
     pub source: Source,
     pub environments: Vec<Scope>,
     pub globals: Vec<String>,
+    /// The global secrets' names.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub global_secrets: Vec<String>,
     pub collections: Vec<Scope>,
 }
 
@@ -437,13 +443,16 @@ pub fn environments_file(document: &NativeDocument) -> Environments {
                 name: e.name.as_str().to_owned(),
                 color: e.color,
                 variables: names(&e.variables),
+                secrets: Vec::new(),
             })
             .collect(),
         globals: names(&document.globals),
+        global_secrets: Vec::new(),
         collections: vec![Scope {
             name: document.collection.name.as_str().to_owned(),
             color: None,
             variables: names(&document.collection.variables),
+            secrets: Vec::new(),
         }],
     }
 }
@@ -451,23 +460,34 @@ pub fn environments_file(document: &NativeDocument) -> Environments {
 pub async fn environments_profile(store: &StoreHandle) -> Result<Environments, StoreError> {
     store
         .call(|db| {
+            let secret_names = imposter_store::secrets::names(db)?;
+            let secrets_of = |scope: SecretScope| -> Vec<String> {
+                secret_names
+                    .iter()
+                    .filter(|(s, _)| *s == scope)
+                    .map(|(_, name)| name.clone())
+                    .collect()
+            };
             Ok(Environments {
                 source: Source::Profile,
                 environments: environments::environments(db)?
                     .into_iter()
                     .map(|e| Scope {
+                        secrets: secrets_of(SecretScope::Environment(e.id)),
                         name: e.name,
                         color: e.color,
                         variables: names(&e.variables),
                     })
                     .collect(),
                 globals: names(&environments::globals(db)?),
+                global_secrets: secrets_of(SecretScope::Global),
                 collections: collections::collections(db)?
                     .into_iter()
                     .map(|c| Scope {
                         name: c.name,
                         color: None,
                         variables: names(&c.variables),
+                        secrets: Vec::new(),
                     })
                     .collect(),
             })

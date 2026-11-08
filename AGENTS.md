@@ -563,6 +563,14 @@ numbers, so both are excluded. Each logical change is its own commit.
     own value is removed whatever its length. The live response pane keeps the values:
     it is on screen only. Why: History is kept for weeks and searched; the request as
     sent there shows `«redacted»` instead.
+  - **The command line:** `--secret VAR=PROCESS_VAR` fills `{{secret:VAR}}` as well as
+    `{{VAR}}`, so commands written before secrets keep working. A profile run reads the
+    named environment's stored secrets with its variables; a `--file` run has none. Every
+    secret a run used, captured or set goes into its redactor (`Ran::secrets`, carried on
+    `runner::Step::Ran`), and a secret capture's value is replaced whatever its length
+    (`send::without_secrets`). `imposter envs` lists secret names per environment and
+    the global ones; `show` reports a `secret:` name as "Dev secrets", "Global secrets"
+    or undefined. Pinned by `imposter-cli/tests/secrets.rs`.
   - **Exports never carry one:** exports read the variables, never the `secrets` table;
     references are kept as written.
   Pinned by `imposter-core` unit tests, `imposter-store/tests/secrets.rs` and

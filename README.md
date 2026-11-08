@@ -332,7 +332,7 @@ file's SHA-256.
 | `--file FILE` | Read a collection file (.imposter.json) instead of your I’mposter data, as CI does. Nothing is written to History. |
 | `--env NAME` | Use environment NAME; without it, only globals and collection variables apply, whatever the app has active. |
 | `--input VAR=PROCESS_VAR` | Set variable VAR from the process variable PROCESS_VAR, above every scope. Repeatable. |
-| `--secret VAR=PROCESS_VAR` | As --input, and remove its value from the result and error output. Repeatable. |
+| `--secret VAR=PROCESS_VAR` | As --input, also filling {{secret:VAR}}, and remove its value from the result and error output. Repeatable. |
 | `--out FILE` | Also write the result to FILE; History opens it (⋯ → Open result file…). |
 | `--max-body BYTES` | Show at most BYTES of each body in the result (default 65536; 0 shows none). |
 
@@ -374,8 +374,11 @@ not there. A response with no checks is not a pass: nothing was verified.
 | 7 | `no_checks` | a response arrived but the request has no checks: nothing verified |
 | 130 | `cancelled` | interrupted (Ctrl+C) |
 
-Secrets given with `--secret`, and the credentials the request sends (Basic and Digest
-passwords, Bearer tokens, the client key password), are replaced by `«redacted»` everywhere
+A run from your profile uses the named environment's stored secrets (`{{secret:name}}`)
+and records each request in History without their values. Secrets given with `--secret`
+or stored in the profile, secrets a request captures, and the credentials the request
+sends (Basic and Digest passwords, Bearer tokens, the client key password), are replaced
+by `«redacted»` everywhere
 in the result and on stderr, as are `user:password@` in URLs and the values of
 `Authorization`, `Cookie` and `Set-Cookie` headers. This removes known values only: a server
 can return other sensitive data, which a result shows like any body. Copy as curl in the app

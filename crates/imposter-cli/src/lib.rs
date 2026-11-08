@@ -104,7 +104,7 @@ pub const SEND_FLAGS: [Flag; 6] = [
     Flag {
         name: "--secret",
         value: "VAR=PROCESS_VAR",
-        help: "As --input, and remove its value from the result and error output. Repeatable.",
+        help: "As --input, also filling {{secret:VAR}}, and remove its value from the result and error output. Repeatable.",
     },
     Flag {
         name: "--out",

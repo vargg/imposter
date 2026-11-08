@@ -335,6 +335,13 @@ fn scope_line(text: &mut String, name: &str, variables: &[String]) {
     let _ = writeln!(text, "  {name}: {names}");
 }
 
+/// Secret names under their scope's line; nothing when there are none.
+fn secret_line(text: &mut String, secrets: &[String]) {
+    if !secrets.is_empty() {
+        let _ = writeln!(text, "    secrets: {}", secrets.join(", "));
+    }
+}
+
 fn envs_text(environments: &Environments) -> String {
     let mut text = String::from("Environments:\n");
     if environments.environments.is_empty() {
@@ -356,9 +363,11 @@ fn envs_text(environments: &Environments) -> String {
             None => environment.name.clone(),
         };
         scope_line(&mut text, &name, &environment.variables);
+        secret_line(&mut text, &environment.secrets);
     }
     text.push_str("Globals:\n");
     scope_line(&mut text, "Global", &environments.globals);
+    secret_line(&mut text, &environments.global_secrets);
     text.push_str("Collections:\n");
     for collection in &environments.collections {
         scope_line(&mut text, &collection.name, &collection.variables);

@@ -89,6 +89,11 @@ pub(crate) fn read_inputs(
                 .into());
             }
             redactor.secret(&value);
+            // `{{secret:name}}` too, so a request written for the app's secrets runs.
+            values.insert(
+                imposter_core::variables::secret_key(&input.variable),
+                value.clone(),
+            );
         }
         values.insert(input.variable.clone(), value);
     }
@@ -181,6 +186,25 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
         })
 }
 
+/// `record` as a result may show it: every secret the run used, captured or set is added
+/// to `redactor`, and a secret capture's value is replaced whatever its length.
+pub(crate) fn without_secrets(
+    record: &ExecutionRecord,
+    secrets: &[String],
+    redactor: &mut Redactor,
+) -> ExecutionRecord {
+    for secret in secrets.iter().filter(|s| s.chars().count() >= MIN_SECRET) {
+        redactor.secret(secret);
+    }
+    let mut record = record.clone();
+    for captured in record.response.captures.iter_mut().filter(|c| c.secret) {
+        if let imposter_core::capture::Taken::Value(value) = &mut captured.taken {
+            imposter_core::redact::MARK.clone_into(value);
+        }
+    }
+    record
+}
+
 /// What a run produced: its record, the capture limit it ran under, and notes.
 type Ran = (ExecutionRecord, u64, Vec<String>);
 
@@ -229,7 +253,8 @@ async fn run_file(
     let ran = executor::run(&selected.inputs, selected.request, cancel)
         .await
         .map_err(unsent)?;
-    Ok((ran.record, capture_bytes, Vec::new()))
+    let record = without_secrets(&ran.record, &ran.secrets, redactor);
+    Ok((record, capture_bytes, Vec::new()))
 }
 
 /// A saved request from the personal profile: read in one database command, run, and
@@ -265,7 +290,7 @@ async fn run_profile(
             .await
             .map_err(unsent)?;
         ran.record.via = Via::CommandLine;
-        let record = ran.record.clone();
+        let record = without_secrets(&ran.record, &ran.secrets, redactor);
         let executed = executor::record(&handle, ran).await;
         let notes = if executed.record.is_none() {
             vec![executed.response.history_error]

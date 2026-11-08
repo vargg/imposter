@@ -32,6 +32,8 @@ pub enum Step {
         record: Box<ExecutionRecord>,
         /// A History write that failed.
         notes: Vec<String>,
+        /// The secret values it used, captured or set, for a report to remove.
+        secrets: Vec<String>,
     },
     /// It could not be sent: an unresolved variable, a bad URL, a before-sending script.
     NotSent {
@@ -140,5 +142,6 @@ async fn record(path: String, mut ran: Ran, store: Option<&(StoreHandle, Via)>) 
         path,
         record: Box::new(ran.record),
         notes,
+        secrets: ran.secrets,
     }
 }
