@@ -2,7 +2,7 @@
 
 use imposter_core::ids::EnvironmentId;
 use imposter_core::model::{EnvColor, Variables};
-use imposter_core::variables::{Scope, VariableContext};
+use imposter_core::variables::{Scope, SecretScope, VariableContext};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::kv::{self, Table};
@@ -212,6 +212,7 @@ pub fn variable_context_for(
                 id: Some(env.id),
                 name: env.name,
                 values: env.variables,
+                secrets: crate::secrets::read(db, SecretScope::Environment(env.id))?,
             }),
             None => None,
         },
@@ -221,5 +222,6 @@ pub fn variable_context_for(
         globals: globals(db)?,
         global_saved: scopes::saved_values(db, Scope::Global)?,
         environment,
+        global_secrets: crate::secrets::read(db, SecretScope::Global)?,
     })
 }

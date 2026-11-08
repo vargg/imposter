@@ -247,6 +247,7 @@ fn context(
                     name: one.name.as_str().to_owned(),
                     values: one.variables.clone(),
                     saved: one.saved_values.clone(),
+                    secrets: Variables::new(),
                 }),
                 [] => {
                     return Err(DocumentError::NoEnvironment {
@@ -271,6 +272,7 @@ fn context(
         globals: document.globals.clone(),
         global_saved: document.saved_globals.clone(),
         environment,
+        global_secrets: Variables::new(),
     })
 }
 

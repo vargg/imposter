@@ -100,7 +100,7 @@
   },
   {
     "name": "unsupported version",
-    "document": "{\"format\": \"imposter\", \"version\": 4, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 5, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
     "accepted": false
   },
   {
@@ -700,5 +700,71 @@
       "environments": [],
       "globals": {}
     }
+  },
+  {
+    "name": "secret capture in version 4",
+    "document": "{\"format\": \"imposter\", \"version\": 4, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Login\", \"method\": \"POST\", \"url\": \"https://x/login\", \"captures\": [{\"variable\": \"token\", \"selector\": {\"json\": \"$.token\"}, \"secret\": true}]}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "imposter",
+      "version": 4,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "Login",
+            "description": "",
+            "method": "POST",
+            "protocol": "",
+            "url": "https://x/login",
+            "path": "",
+            "auth": {
+              "type": null,
+              "basic": null,
+              "digest": null,
+              "bearer_token": null
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            },
+            "captures": [
+              {
+                "enabled": true,
+                "variable": "token",
+                "selector": {
+                  "json": "$.token"
+                },
+                "secret": true
+              }
+            ]
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "secret capture before version 4",
+    "document": "{\"format\": \"imposter\", \"version\": 3, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Login\", \"method\": \"POST\", \"url\": \"https://x/login\", \"captures\": [{\"variable\": \"token\", \"selector\": {\"json\": \"$.token\"}, \"secret\": true}]}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   }
 ]

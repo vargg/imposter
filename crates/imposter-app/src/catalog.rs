@@ -192,8 +192,9 @@ pub struct LevelView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct VariableView {
     pub name: String,
-    /// The scope in effect (`Dev`, `Global`, a collection, `Input`), `generated` for a
-    /// generated value, or `undefined`.
+    /// The scope in effect (`Dev`, `Global`, a collection, `Input`), `Dev secrets` or
+    /// `Global secrets` for a stored secret, `generated` for a generated value, or
+    /// `undefined`.
     pub defined_in: String,
     /// Scopes that also define it, overridden, highest first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -275,6 +276,7 @@ fn options(template: &RequestTemplate) -> serde_json::Map<String, serde_json::Va
 fn label(source: &Defined) -> String {
     match source {
         Defined::Captured => "captured collection (deleted)".to_owned(),
+        Defined::Secret { .. } => format!("{} secrets", source.label()),
         other => other.label().to_owned(),
     }
 }

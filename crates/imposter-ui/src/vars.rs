@@ -122,6 +122,7 @@ pub fn scope_label(source: &Source) -> &'static str {
         Source::Input => "Input",
         Source::Run => "This run",
         Source::Environment { .. } => "Environment",
+        Source::Secret { .. } => "Secret",
     }
 }
 
@@ -134,6 +135,10 @@ pub fn where_defined(source: &Source) -> String {
         Source::Captured => format!("the {}", Source::CAPTURED_NAME.to_lowercase()),
         Source::Input => "a command-line input".to_owned(),
         Source::Run => "an earlier request of this run".to_owned(),
+        Source::Secret { environment: None } => "the global secrets".to_owned(),
+        Source::Secret {
+            environment: Some((_, name)),
+        } => format!("the {name} secrets"),
     }
 }
 
@@ -295,6 +300,7 @@ mod tests {
                     name: "Dev".into(),
                     values: env,
                     saved: SavedValues::default(),
+                    secrets: Variables::new(),
                 }),
                 ..VariableContext::default()
             },

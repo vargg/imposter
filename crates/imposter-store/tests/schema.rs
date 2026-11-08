@@ -22,6 +22,7 @@ const RELEASED: &[u64] = &[
     0x8368_840d_9797_2675,
     0x9dee_fccd_4832_126b,
     0x3faf_9e64_8716_257b,
+    0xe4d7_12b9_36a5_e601,
 ];
 
 #[test]

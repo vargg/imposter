@@ -8,6 +8,7 @@ pub mod kv;
 pub mod profile;
 pub mod schema;
 pub mod scopes;
+pub mod secrets;
 mod store;
 
 pub use error::{Conflict, StoreError};

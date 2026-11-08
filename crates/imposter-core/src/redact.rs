@@ -6,6 +6,9 @@ use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 use regex::Regex;
 
+use crate::capture::Taken;
+use crate::check::Verdict;
+use crate::execution::{ExecutionRecord, Response};
 use crate::model::{Auth, RequestTemplate};
 use crate::settings::AppSettings;
 
@@ -128,17 +131,85 @@ impl Redactor {
         self.secret(&settings.password);
     }
 
-    /// `text` with every known secret and any `user:password@` in a URL replaced by [`MARK`].
-    pub fn text(&self, text: &str) -> String {
-        let mut out = userinfo()
-            .replace_all(text, format!("${{1}}{MARK}@").as_str())
-            .into_owned();
+    /// Whether nothing was given to remove.
+    pub fn is_empty(&self) -> bool {
+        self.needles.is_empty()
+    }
+
+    /// `text` with every known secret replaced by [`MARK`], and nothing else changed: what
+    /// History keeps, where a `user:password@` the user typed is theirs to see.
+    pub fn known(&self, text: &str) -> String {
+        let mut out = text.to_owned();
         for needle in &self.needles {
             if out.contains(needle.as_str()) {
                 out = out.replace(needle.as_str(), MARK);
             }
         }
         out
+    }
+
+    /// `bytes` through [`Redactor::known`] when they are UTF-8; other bytes stay as they are.
+    pub fn bytes(&self, bytes: &mut Vec<u8>) {
+        if let Ok(text) = std::str::from_utf8(bytes) {
+            let out = self.known(text);
+            if out != text {
+                *bytes = out.into_bytes();
+            }
+        }
+    }
+
+    /// Every field of `template` a variable can fill, as resolution walks them.
+    pub fn template(&self, template: &mut RequestTemplate) {
+        // A body that is not text is left as it is; the fields before it are done.
+        let _ = crate::variables::visit_texts(template, &mut |text| *text = self.known(text));
+    }
+
+    /// Everything of `response` a server or a check could echo a value into: headers,
+    /// body, reason, checks, captures and script results. A secret capture's value goes
+    /// whole, however short.
+    pub fn response(&self, response: &mut Response) {
+        for (_, value) in &mut response.headers {
+            *value = self.known(value);
+        }
+        self.bytes(&mut response.body);
+        response.reason = self.known(&response.reason);
+        for result in &mut response.checks {
+            result.check.expected = self.known(&result.check.expected);
+            if let Some(actual) = &mut result.actual {
+                *actual = self.known(actual);
+            }
+            if let Verdict::Unchecked(reason) = &mut result.verdict {
+                *reason = self.known(reason);
+            }
+        }
+        for captured in &mut response.captures {
+            if let Taken::Value(value) = &mut captured.taken {
+                *value = if captured.secret {
+                    MARK.to_owned()
+                } else {
+                    self.known(value)
+                };
+            }
+        }
+        if let Some(script) = &mut response.script {
+            for test in &mut script.tests {
+                test.message = self.known(&test.message);
+            }
+            script.error = self.known(&script.error);
+        }
+    }
+
+    /// A History record without the secrets: the request as sent and the response.
+    pub fn record(&self, record: &mut ExecutionRecord) {
+        self.template(&mut record.resolved.template);
+        self.template(&mut record.template.template);
+        self.response(&mut record.response);
+    }
+
+    /// `text` with every known secret and any `user:password@` in a URL replaced by [`MARK`].
+    pub fn text(&self, text: &str) -> String {
+        let out = userinfo().replace_all(text, format!("${{1}}{MARK}@").as_str());
+        self.known(&out)
     }
 
     /// A header as reported: credential headers lose their whole value.
@@ -284,5 +355,85 @@ mod tests {
             value,
             serde_json::json!({"a": ["«redacted»", 1, null, {"«redacted»": "x «redacted»"}]})
         );
+    }
+
+    #[test]
+    fn a_record_loses_known_secrets_and_keeps_everything_else() {
+        use crate::capture::Captured;
+        use crate::check::{Check, CheckResult, Op};
+        use crate::execution::ExecutionRecord;
+        use crate::model::{BodyType, ParamItem, Request};
+        use crate::select::Selector;
+
+        let mut resolved = RequestTemplate {
+            url: "https://user:pass@x/items?key=sk-12345".into(),
+            headers: vec![ParamItem::new("x-api-key", "sk-12345")],
+            body_type: BodyType::Json,
+            body: br#"{"key": "sk-12345"}"#.to_vec(),
+            ..RequestTemplate::default()
+        };
+        resolved.auth.bearer_token = Some(crate::model::BearerToken {
+            token: "sk-12345".into(),
+        });
+        let mut record = ExecutionRecord {
+            timestamp: crate::execution::Timestamp(0),
+            request_id: None,
+            template: Request::default(),
+            settings: AppSettings::default(),
+            environment_id: None,
+            environment: String::new(),
+            via: crate::execution::Via::default(),
+            resolved: Request {
+                template: resolved,
+                ..Request::default()
+            },
+            response: Response {
+                headers: vec![("x-echo".into(), "sk-12345".into())],
+                body: br#"{"token": "tok-999", "echo": "sk-12345"}"#.to_vec(),
+                checks: vec![CheckResult {
+                    check: Check::new(Selector::Status, Op::Equals, "sk-12345"),
+                    verdict: Verdict::Failed,
+                    actual: Some("sk-12345".into()),
+                }],
+                captures: vec![
+                    Captured {
+                        variable: "token".into(),
+                        taken: Taken::Value("t1".into()),
+                        target: "Dev secrets".into(),
+                        secret: true,
+                    },
+                    Captured {
+                        variable: "id".into(),
+                        taken: Taken::Value("7".into()),
+                        target: "Dev".into(),
+                        secret: false,
+                    },
+                ],
+                ..Response::default()
+            },
+        };
+        redactor(&["sk-12345"]).record(&mut record);
+        let template = &record.resolved.template;
+        assert_eq!(
+            template.url, "https://user:pass@x/items?key=«redacted»",
+            "userinfo is the user's"
+        );
+        assert_eq!(template.headers[0].value, MARK);
+        assert_eq!(template.body, r#"{"key": "«redacted»"}"#.as_bytes());
+        assert_eq!(template.auth.bearer_token.as_ref().unwrap().token, MARK);
+        let response = &record.response;
+        assert_eq!(response.headers[0].1, MARK);
+        assert_eq!(
+            response.body,
+            r#"{"token": "tok-999", "echo": "«redacted»"}"#.as_bytes()
+        );
+        assert_eq!(response.checks[0].check.expected, MARK);
+        assert_eq!(response.checks[0].actual.as_deref(), Some(MARK));
+        assert_eq!(
+            response.captures[0].taken,
+            Taken::Value(MARK.into()),
+            "short, but a secret"
+        );
+        assert_eq!(response.captures[1].taken, Taken::Value("7".into()));
     }
 }

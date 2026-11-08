@@ -110,7 +110,8 @@ fn the_marker_and_a_known_version_are_required() {
     };
     assert!(decode(with("imposter", "2").as_bytes()).is_ok());
     assert!(decode(with("imposter", "3").as_bytes()).is_ok());
-    for (format, version) in [("poster", "1"), ("imposter", "1"), ("imposter", "4")] {
+    assert!(decode(with("imposter", "4").as_bytes()).is_ok());
+    for (format, version) in [("poster", "1"), ("imposter", "1"), ("imposter", "5")] {
         assert!(
             decode(with(format, version).as_bytes()).is_err(),
             "{format} {version}"

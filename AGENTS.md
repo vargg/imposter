@@ -527,6 +527,42 @@ numbers, so both are excluded. Each logical change is its own commit.
     find every sensitive value a server returns, and the README says so. Pinned by
     `imposter-core/tests/run_result.rs` and its golden file
     `tests/fixtures/results/sent.imposter-result.json`.
+- **Secrets are references, `{{secret:name}}`, to values kept apart from variables**
+  (user's choice, after Postman's `{{vault:name}}`; `{{$name}}` stays for generated
+  values). Why: a token typed into an environment, or captured from a login, was an
+  ordinary variable value, bound for exports, History and the project files M2 will
+  write; the roadmap's rule is that secrets are references resolved from sources the
+  user named.
+  - **Scope:** each environment has its own secrets, falling back to the global ones,
+    as variables do (user's choice over one flat vault). Collections have none.
+  - **Storage:** the `secrets` table (migration V7), keyed by environment (NULL for
+    global) and name, read and written by `store::secrets`. Not encrypted (user's choice):
+    pure Rust on every OS, and encryption can come later without changing the syntax.
+    Yaak's encrypted values inside synced files were rejected: secrets would still be in
+    the files, and a key would have to travel to every teammate. Backups copy the table
+    like the rest of the profile.
+  - **Resolution:** the variable context carries the secrets that apply
+    (`VariableContext::global_secrets`, `ActiveEnvironment::secrets`, read with the
+    variables in one transaction), and `Snapshot::build` adds them as definitions keyed
+    `secret:<name>` from `Source::Secret`. Resolution, checks, the inspector and the
+    catalog therefore treat them as one more name; a missing one is unresolved like any
+    variable. Resolution and redaction walk the same fields (`variables::visit_texts`).
+  - **Captures** marked secret write to the secrets where the name is defined, else the
+    active environment's, else the global ones (`capture::secret_target`), never to a
+    variable; in a run they stay in the run, under `secret:<name>`.
+  - **History keeps no secret value.** `executor::record` removes every value given for
+    a `secret:` name (stored, given to the run or captured by it, at least
+    `redact::MIN_SECRET` long) from the stored copy: the request as sent, checks,
+    captures, the response and the URL column (`Redactor::record`, which changes nothing
+    else, so a `user:password@` the user typed stays theirs to see). A secret capture's
+    own value is removed whatever its length. The live response pane keeps the values:
+    it is on screen only. Why: History is kept for weeks and searched; the request as
+    sent there shows `«redacted»` instead.
+  - **Exports never carry one:** exports read the variables, never the `secrets` table;
+    references are kept as written.
+  Pinned by `imposter-core` unit tests, `imposter-store/tests/secrets.rs` and
+  `imposter-app/tests/secrets.rs` (the bytes received carry the secret; History,
+  its URL column and both exports do not).
 - **Requests that cannot be sent are not history.** Unresolved variables, a bad URL, auth or
   cookie conflicts, a failed before-sending script are reported and nothing is recorded: a
   URL error is not a transport error, since nothing was sent. Cancelled and failed sends are recorded with their outcome. A failed
@@ -1040,7 +1076,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   the icon cannot drift from the theme.
 - **Release profile keeps `panic = "unwind"`.** Why: a panic in one background task is caught by
   tokio and must not abort the app.
-- **Native format: `.imposter.json`, marked `"format": "imposter"`, version 2 or 3.** Version 2
+- **Native format: `.imposter.json`, marked `"format": "imposter"`, version 2, 3 or 4.** Version 2
   holds a collection with its folders, requests, checks, captures, variables, saved values,
   environments and colors. The marker and version are required and unknown fields are
   refused at every level, so a file from another tool is refused rather than half-read; a
@@ -1058,6 +1094,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   import review says how many requests have scripts. A script changes only its own request
   and reads only the variables that request could already use, so it adds no way out
   that a plain imported request lacks.
+  Version 4 adds captures stored as secrets (`Capture::secret`); `fit_version` picks it
+  only for a document with one, and an older version holding one is refused, naming the
+  request, as scripts are below 3.
 - **Checks are data, not scripts** (`core::check`): a selector (status, a header, a JSONPath,
   the body, duration, size), an operator and an expected value that may use `{{variables}}`,
   stored in the request template. The executor evaluates them after every response with the

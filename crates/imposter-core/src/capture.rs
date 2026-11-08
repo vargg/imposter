@@ -7,10 +7,18 @@ use serde_json::Value;
 
 use crate::execution::{Outcome, Response};
 use crate::select::{ResponseView, Selector};
-use crate::variables::{Scope, Snapshot, Source, VariableContext};
+use crate::variables::{Scope, SecretScope, Snapshot, Source, VariableContext, secret_key};
 
 fn yes() -> bool {
     true
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes a reference"
+)]
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +28,9 @@ pub struct Capture {
     pub enabled: bool,
     pub variable: String,
     pub selector: Selector,
+    /// Store the value as a secret (`{{secret:variable}}`), never as a variable.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub secret: bool,
 }
 
 impl Capture {
@@ -28,6 +39,7 @@ impl Capture {
             enabled: true,
             variable: variable.into(),
             selector,
+            secret: false,
         }
     }
 }
@@ -52,15 +64,38 @@ pub struct Captured {
     pub taken: Taken,
     /// The scope the value is written to, by name.
     pub target: String,
+    /// Written as a secret: its value is never shown or kept.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub secret: bool,
 }
 
 /// A value to write: the current value of `name` in `scope`, or in the run only when
-/// `scope` is `None` (nothing is stored).
+/// `scope` is `None` (nothing is stored). A secret goes to the secrets of `scope`, which
+/// is then the globals or an environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Write {
     pub scope: Option<Scope>,
     pub name: String,
     pub value: String,
+    pub secret: bool,
+}
+
+impl Write {
+    /// The placeholder name the value answers to: `name`, or `secret:name`.
+    pub fn key(&self) -> String {
+        if self.secret {
+            secret_key(&self.name)
+        } else {
+            self.name.clone()
+        }
+    }
+
+    /// Where a secret is stored; `None` for a variable or a write kept in the run.
+    pub fn secret_scope(&self) -> Option<SecretScope> {
+        self.scope
+            .filter(|_| self.secret)
+            .and_then(SecretScope::of_scope)
+    }
 }
 
 /// Where a run's captures and script variables go.
@@ -83,6 +118,47 @@ impl Destination<'_> {
             Self::Scopes(snapshot, context) => target(snapshot, context, name),
             Self::Run => (None, Self::RUN_NAME.to_owned()),
         }
+    }
+
+    /// Where a secret `name` goes, and its name for people ("Dev secrets").
+    pub fn of_secret(&self, name: &str) -> (Option<Scope>, String) {
+        match self {
+            Self::Scopes(snapshot, context) => {
+                let (scope, label) = secret_target(snapshot, context, name);
+                (Some(scope.into()), label)
+            }
+            Self::Run => (None, Self::RUN_NAME.to_owned()),
+        }
+    }
+}
+
+/// Where a secret `name` is stored: where it is defined now, else the active
+/// environment's secrets, else the global ones. An environment read from a file has no
+/// stored secrets, so its writes go to the global ones.
+pub fn secret_target(
+    snapshot: &Snapshot,
+    context: &VariableContext,
+    name: &str,
+) -> (SecretScope, String) {
+    let defined = snapshot
+        .effective(&secret_key(name))
+        .and_then(|definition| match &definition.source {
+            Source::Secret { environment } => Some(environment.clone()),
+            _ => None,
+        });
+    let environment = match defined {
+        Some(environment) => environment,
+        None => context
+            .environment
+            .as_ref()
+            .and_then(|env| Some((env.id?, env.name.clone()))),
+    };
+    match environment {
+        Some((id, name)) => (SecretScope::Environment(id), format!("{name} secrets")),
+        None => (
+            SecretScope::Global,
+            format!("{} secrets", VariableContext::GLOBAL_NAME),
+        ),
     }
 }
 
@@ -130,7 +206,11 @@ pub fn evaluate(
         if !capture.enabled || name.is_empty() {
             continue;
         }
-        let (scope, label) = destination.of(name);
+        let (scope, label) = if capture.secret {
+            destination.of_secret(name)
+        } else {
+            destination.of(name)
+        };
         let taken = match view.read(&capture.selector) {
             Ok(Some(Value::String(text))) => Taken::Value(text),
             Ok(Some(value)) => Taken::Value(value.to_string()),
@@ -138,26 +218,28 @@ pub fn evaluate(
             Err(error) => Taken::Unreadable(error.to_string()),
         };
         if let Taken::Value(value) = &taken {
-            writes.retain(|w| w.name != name);
+            writes.retain(|w| w.name != name || w.secret != capture.secret);
             writes.push(Write {
                 scope,
                 name: name.to_owned(),
                 value: value.clone(),
+                secret: capture.secret,
             });
         }
         results.push(Captured {
             variable: name.to_owned(),
             taken,
             target: label,
+            secret: capture.secret,
         });
     }
     (results, writes)
 }
 
-/// The stored scopes `writes` touch, once each.
+/// The stored variable scopes `writes` touch, once each; secrets are not variables.
 pub fn scopes(writes: &[Write]) -> Vec<Scope> {
     let mut scopes: Vec<Scope> = Vec::new();
-    for scope in writes.iter().filter_map(|w| w.scope) {
+    for scope in writes.iter().filter(|w| !w.secret).filter_map(|w| w.scope) {
         if !scopes.contains(&scope) {
             scopes.push(scope);
         }
@@ -187,6 +269,7 @@ mod tests {
                 name: "Dev".into(),
                 values: vars(&[("token", "old")]),
                 saved: SavedValues::default(),
+                secrets: Variables::new(),
             }),
             ..VariableContext::default()
         }
@@ -386,6 +469,88 @@ mod tests {
         assert!(
             serde_json::from_str::<Capture>(r#"{"variable":"a","selector":"status","x":1}"#)
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn secret_captures_go_to_the_secrets_that_define_them_and_never_to_variables() {
+        let mut active = context(true);
+        active.global_secrets = vars(&[("api_key", "global-key")]);
+        if let Some(env) = &mut active.environment {
+            env.secrets = vars(&[("token", "dev-token")]);
+        }
+        let built = snapshot(&active, &Variables::new());
+        let dev = Scope::Environment(EnvironmentId(3));
+        assert_eq!(
+            secret_target(&built, &active, "token"),
+            (
+                SecretScope::Environment(EnvironmentId(3)),
+                "Dev secrets".into()
+            )
+        );
+        assert_eq!(
+            secret_target(&built, &active, "api_key"),
+            (SecretScope::Global, "Global secrets".into()),
+            "defined globally, replaced there"
+        );
+        assert_eq!(
+            secret_target(&built, &active, "fresh").0,
+            SecretScope::Environment(EnvironmentId(3)),
+            "a new secret goes to the active environment"
+        );
+        let global = context(false);
+        assert_eq!(
+            secret_target(&snapshot(&global, &Variables::new()), &global, "fresh"),
+            (SecretScope::Global, "Global secrets".into())
+        );
+
+        let mut capture = Capture::new("token", Selector::Json("$.token".into()));
+        capture.secret = true;
+        let plain = Capture::new("token", Selector::Json("$.user.id".into()));
+        let (results, writes) = evaluate(
+            &[plain, capture],
+            &response(),
+            Destination::Scopes(&built, &active),
+        );
+        assert_eq!(
+            writes.len(),
+            2,
+            "a secret and a variable of one name are apart"
+        );
+        let secret = writes.iter().find(|w| w.secret).unwrap();
+        assert_eq!(
+            (secret.key().as_str(), secret.value.as_str()),
+            ("secret:token", "new")
+        );
+        assert_eq!(
+            secret.secret_scope(),
+            Some(SecretScope::Environment(EnvironmentId(3)))
+        );
+        assert_eq!(results[1].target, "Dev secrets");
+        assert!(results[1].secret);
+        assert_eq!(
+            scopes(&writes),
+            [dev],
+            "only the variable is a variable write"
+        );
+
+        let (_, run) = evaluate(
+            &[Capture {
+                secret: true,
+                ..Capture::new("token", Selector::Json("$.token".into()))
+            }],
+            &response(),
+            Destination::Run,
+        );
+        assert_eq!(run[0].scope, None);
+        assert_eq!(run[0].secret_scope(), None, "kept in the run");
+        assert_eq!(
+            serde_json::to_string(&Capture {
+                secret: true,
+                ..Capture::new("t", Selector::Status)
+            })
+            .unwrap(),
+            r#"{"enabled":true,"variable":"t","selector":"status","secret":true}"#
         );
     }
 }

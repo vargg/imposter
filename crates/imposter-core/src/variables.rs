@@ -10,9 +10,7 @@ use std::ops::Range;
 use indexmap::IndexMap;
 
 use crate::ids::{CollectionId, EnvironmentId};
-use crate::model::{
-    FormBodyError, Options, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
-};
+use crate::model::{FormBodyError, Options, ParamItem, RequestTemplate, SavedValues, Variables};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Placeholder<'a> {
@@ -82,88 +80,92 @@ pub enum ResolveError {
     FormBody(#[from] FormBodyError),
 }
 
-struct Resolver<'a> {
-    values: &'a Variables,
-    missing: BTreeSet<String>,
+/// Every text of `template` that reaches the wire or configures the connection, in the
+/// order they are resolved: URL, rows, auth, options, then the body (file paths too, never
+/// file contents). Name and description are not visited. An error leaves the body
+/// unvisited; everything before it was.
+pub(crate) fn visit_texts(
+    template: &mut RequestTemplate,
+    visit: &mut dyn FnMut(&mut String),
+) -> Result<(), ResolveError> {
+    visit(&mut template.url);
+    for items in [
+        &mut template.headers,
+        &mut template.queries,
+        &mut template.cookies,
+    ] {
+        visit_items(items, visit);
+    }
+    for credentials in [template.auth.basic.as_mut(), template.auth.digest.as_mut()]
+        .into_iter()
+        .flatten()
+    {
+        visit(&mut credentials.username);
+        visit(&mut credentials.password);
+    }
+    if let Some(bearer) = &mut template.auth.bearer_token {
+        visit(&mut bearer.token);
+    }
+    visit_options(&mut template.options, visit);
+    visit_body(template, visit)
 }
 
-impl Resolver<'_> {
-    fn text(&mut self, text: &mut String) {
-        if text.contains("{{") {
-            *text = substitute(
-                text,
-                |name| self.values.get(name).map(String::as_str),
-                &mut self.missing,
-            );
-        }
+fn visit_items(items: &mut [ParamItem], visit: &mut dyn FnMut(&mut String)) {
+    for item in items {
+        visit(&mut item.name);
+        visit(&mut item.value);
     }
+}
 
-    fn optional(&mut self, text: &mut Option<String>) {
-        if let Some(text) = text {
-            self.text(text);
-        }
+fn visit_options(options: &mut Options, visit: &mut dyn FnMut(&mut String)) {
+    for field in [
+        &mut options.proxy_url,
+        &mut options.ca_bundle,
+        &mut options.certificate_path,
+        &mut options.key_file,
+        &mut options.password,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        visit(field);
     }
+}
 
-    fn items(&mut self, items: &mut [ParamItem]) {
-        for item in items {
-            self.text(&mut item.name);
-            self.text(&mut item.value);
+fn visit_body(
+    template: &mut RequestTemplate,
+    visit: &mut dyn FnMut(&mut String),
+) -> Result<(), ResolveError> {
+    use crate::model::BodyType;
+    match template.body_type {
+        BodyType::None => {}
+        BodyType::FormData | BodyType::Urlencoded => {
+            let mut fields = template.form_fields()?;
+            visit_items(&mut fields, visit);
+            template.set_form_fields(&fields);
         }
-    }
-
-    fn auth(&mut self, auth: &mut RequestAuth) {
-        for credentials in [auth.basic.as_mut(), auth.digest.as_mut()]
-            .into_iter()
-            .flatten()
-        {
-            self.text(&mut credentials.username);
-            self.text(&mut credentials.password);
-        }
-        if let Some(bearer) = &mut auth.bearer_token {
-            self.text(&mut bearer.token);
-        }
-    }
-
-    fn options(&mut self, options: &mut Options) {
-        for field in [
-            &mut options.proxy_url,
-            &mut options.ca_bundle,
-            &mut options.certificate_path,
-            &mut options.key_file,
-            &mut options.password,
-        ] {
-            self.optional(field);
-        }
-    }
-
-    fn body(&mut self, template: &mut RequestTemplate) -> Result<(), ResolveError> {
-        use crate::model::BodyType;
-        match template.body_type {
-            BodyType::None => {}
-            BodyType::FormData | BodyType::Urlencoded => {
-                let mut fields = template.form_fields()?;
-                self.items(&mut fields);
-                template.set_form_fields(&fields);
+        BodyType::Multipart => {
+            let mut fields = template.multipart_fields()?;
+            for field in &mut fields {
+                visit(&mut field.name);
+                visit(&mut field.value);
+                visit(&mut field.content_type);
+                visit(&mut field.filename);
             }
-            BodyType::Multipart => {
-                let mut fields = template.multipart_fields()?;
-                for field in &mut fields {
-                    self.text(&mut field.name);
-                    self.text(&mut field.value);
-                    self.text(&mut field.content_type);
-                    self.text(&mut field.filename);
-                }
-                template.set_multipart_fields(&fields);
-            }
-            BodyType::Json | BodyType::Plain | BodyType::Text | BodyType::Binary => {
-                let mut text = String::from_utf8(std::mem::take(&mut template.body))
-                    .map_err(|_| ResolveError::BodyNotUtf8)?;
-                self.text(&mut text);
-                template.body = text.into_bytes();
-            }
+            template.set_multipart_fields(&fields);
         }
-        Ok(())
+        BodyType::Json | BodyType::Plain | BodyType::Text | BodyType::Binary => {
+            let mut text =
+                String::from_utf8(std::mem::take(&mut template.body)).map_err(|error| {
+                    // Put the bytes back: a failed visit must not lose the body.
+                    template.body = error.into_bytes();
+                    ResolveError::BodyNotUtf8
+                })?;
+            visit(&mut text);
+            template.body = text.into_bytes();
+        }
     }
+    Ok(())
 }
 
 /// Resolve every field that reaches the wire or configures the connection: URL, rows, auth,
@@ -173,21 +175,20 @@ pub fn resolve_template(
     values: &Variables,
 ) -> Result<RequestTemplate, ResolveError> {
     let mut resolved = template.clone();
-    let mut walk = Resolver {
-        values,
-        missing: BTreeSet::new(),
-    };
-    walk.text(&mut resolved.url);
-    walk.items(&mut resolved.headers);
-    walk.items(&mut resolved.queries);
-    walk.items(&mut resolved.cookies);
-    walk.auth(&mut resolved.auth);
-    walk.options(&mut resolved.options);
-    walk.body(&mut resolved)?;
-    if walk.missing.is_empty() {
+    let mut missing = BTreeSet::new();
+    visit_texts(&mut resolved, &mut |text| {
+        if text.contains("{{") {
+            *text = substitute(
+                text,
+                |name| values.get(name).map(String::as_str),
+                &mut missing,
+            );
+        }
+    })?;
+    if missing.is_empty() {
         Ok(resolved)
     } else {
-        Err(ResolveError::Unresolved(walk.missing))
+        Err(ResolveError::Unresolved(missing))
     }
 }
 
@@ -196,27 +197,21 @@ pub fn resolve_template(
 /// broken form) adds nothing, but never hides the names elsewhere. Names scripts read with
 /// `vars.get` are not found: scripts are code, not templates.
 pub fn used(template: &RequestTemplate) -> Vec<String> {
-    let none = Variables::new();
     let mut resolved = template.clone();
-    let mut walk = Resolver {
-        values: &none,
-        missing: BTreeSet::new(),
-    };
-    walk.text(&mut resolved.url);
-    walk.items(&mut resolved.headers);
-    walk.items(&mut resolved.queries);
-    walk.items(&mut resolved.cookies);
-    walk.auth(&mut resolved.auth);
-    walk.options(&mut resolved.options);
-    let _ = walk.body(&mut resolved);
+    let mut missing = BTreeSet::new();
+    let _ = visit_texts(&mut resolved, &mut |text| {
+        if text.contains("{{") {
+            *text = substitute(text, |_| None, &mut missing);
+        }
+    });
     for check in &template.checks {
-        walk.missing.extend(
+        missing.extend(
             placeholders(&check.expected)
                 .into_iter()
                 .map(|p| p.name.to_owned()),
         );
     }
-    walk.missing.into_iter().collect()
+    missing.into_iter().collect()
 }
 
 /// The active environment's identity and values.
@@ -228,6 +223,8 @@ pub struct ActiveEnvironment {
     pub name: String,
     pub values: Variables,
     pub saved: SavedValues,
+    /// Its secrets, by name without the `secret:` prefix.
+    pub secrets: Variables,
 }
 
 /// Global and environment values captured before an execution's first await, so a later
@@ -236,6 +233,8 @@ pub struct ActiveEnvironment {
 pub struct VariableContext {
     pub globals: Variables,
     pub global_saved: SavedValues,
+    /// Secrets that apply under every environment, below the environment's own.
+    pub global_secrets: Variables,
     /// `None` when no environment is active (only globals apply).
     pub environment: Option<ActiveEnvironment>,
 }
@@ -289,6 +288,11 @@ pub enum Source {
     /// A value an earlier request of the same run captured or set, above the inputs: a
     /// login's token replaces the environment's for the requests after it.
     Run,
+    /// A secret, named `secret:<name>` in a template: the environment's (its id and name),
+    /// or a global one (`None`). Stored apart from variables and never exported.
+    Secret {
+        environment: Option<(EnvironmentId, String)>,
+    },
 }
 
 impl Source {
@@ -303,6 +307,51 @@ impl Source {
             Self::Input => Self::INPUT_NAME,
             Self::Run => Self::RUN_NAME,
             Self::Collection { name, .. } | Self::Environment { name, .. } => name,
+            Self::Secret { environment } => environment
+                .as_ref()
+                .map_or(VariableContext::GLOBAL_NAME, |(_, name)| name.as_str()),
+        }
+    }
+}
+
+/// What a template writes before a secret's name: `{{secret:token}}`.
+pub const SECRET_PREFIX: &str = "secret:";
+
+/// The placeholder name of the secret `name`: `secret:name`.
+pub fn secret_key(name: &str) -> String {
+    format!("{SECRET_PREFIX}{name}")
+}
+
+/// The secret a placeholder name refers to, when it refers to one.
+pub fn secret_name(key: &str) -> Option<&str> {
+    key.strip_prefix(SECRET_PREFIX).map(str::trim)
+}
+
+/// Where secrets are kept: the global ones, or an environment's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SecretScope {
+    #[default]
+    Global,
+    Environment(EnvironmentId),
+}
+
+impl From<SecretScope> for Scope {
+    /// The Variables screen page a secret is edited on.
+    fn from(scope: SecretScope) -> Self {
+        match scope {
+            SecretScope::Global => Self::Global,
+            SecretScope::Environment(id) => Self::Environment(id),
+        }
+    }
+}
+
+impl SecretScope {
+    /// The secrets of a Variables screen page; collections have none.
+    pub fn of_scope(scope: Scope) -> Option<Self> {
+        match scope {
+            Scope::Global => Some(Self::Global),
+            Scope::Environment(id) => Some(Self::Environment(id)),
+            Scope::Collection(_) => None,
         }
     }
 }
@@ -324,6 +373,11 @@ impl Scope {
             Source::Global => Some(Self::Global),
             Source::Environment { id, .. } => id.map(Self::Environment),
             Source::Collection { id, .. } => id.map(Self::Collection),
+            Source::Secret { environment } => Some(
+                environment
+                    .as_ref()
+                    .map_or(Self::Global, |(id, _)| Self::Environment(*id)),
+            ),
             Source::Captured | Source::Input | Source::Run => None,
         }
     }
@@ -347,7 +401,8 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Precedence: global, then collection, then the active environment.
+    /// Precedence: global, then collection, then the active environment; secrets, named
+    /// `secret:<name>`, global then the environment's.
     pub fn build(context: &VariableContext, collection: Option<CollectionScope<'_>>) -> Self {
         let mut snapshot = Self::default();
         let no_saved = SavedValues::default();
@@ -389,8 +444,40 @@ impl Snapshot {
                 },
             );
         }
+        snapshot.add_secrets(
+            &context.global_secrets,
+            &Source::Secret { environment: None },
+        );
+        if let Some(env) = &context.environment
+            && let Some(id) = env.id
+        {
+            snapshot.add_secrets(
+                &env.secrets,
+                &Source::Secret {
+                    environment: Some((id, env.name.clone())),
+                },
+            );
+        }
         snapshot.collection_values = collection_values;
         snapshot
+    }
+
+    fn add_secrets(&mut self, secrets: &Variables, source: &Source) {
+        let keyed: Variables = secrets
+            .iter()
+            .map(|(name, value)| (secret_key(name), value.clone()))
+            .collect();
+        self.add(&keyed, &SavedValues::default(), source);
+    }
+
+    /// Every value given for a `secret:` name, the shadowed ones too, whether stored, given
+    /// to the run or captured by it: what a record must not keep.
+    pub fn secret_values(&self) -> impl Iterator<Item = &str> {
+        self.definitions
+            .iter()
+            .filter(|(name, _)| secret_name(name).is_some())
+            .flat_map(|(_, definitions)| definitions)
+            .map(|d| d.value.as_str())
     }
 
     /// `inputs` above every scope, as a headless run's named inputs are.
@@ -501,7 +588,9 @@ mod tests {
                 name: "Dev".into(),
                 values: vars(&[("id", "42")]),
                 saved: saved("id", &["42", "77"]),
+                secrets: Variables::new(),
             }),
+            global_secrets: Variables::new(),
         };
         let collection = vars(&[("id", "c"), ("other", "o")]);
         let snapshot = Snapshot::build(
@@ -558,6 +647,7 @@ mod tests {
                 name: "Dev".into(),
                 values: vars(&[("a", "env"), ("e", "")]),
                 saved: SavedValues::default(),
+                secrets: Variables::new(),
             }),
             ..VariableContext::default()
         };
@@ -653,5 +743,82 @@ mod tests {
         assert_eq!(definition.value, "captured");
         assert_eq!(definition.source, Source::Captured);
         assert_eq!(definition.source.label(), "Captured collection (deleted)");
+    }
+
+    #[test]
+    fn secrets_resolve_by_their_prefix_the_environment_first() {
+        let context = VariableContext {
+            globals: [("token".into(), "a variable".into())]
+                .into_iter()
+                .collect(),
+            global_secrets: [
+                ("token".into(), "global-secret".into()),
+                ("key".into(), "global-key".into()),
+            ]
+            .into_iter()
+            .collect(),
+            environment: Some(ActiveEnvironment {
+                id: Some(EnvironmentId(2)),
+                name: "Dev".into(),
+                values: Variables::new(),
+                saved: SavedValues::default(),
+                secrets: [("token".into(), "dev-secret".into())]
+                    .into_iter()
+                    .collect(),
+            }),
+            ..VariableContext::default()
+        };
+        let snapshot = Snapshot::build(&context, None);
+        let token = snapshot.effective("secret:token").unwrap();
+        assert_eq!(token.value, "dev-secret");
+        assert_eq!(
+            token.source,
+            Source::Secret {
+                environment: Some((EnvironmentId(2), "Dev".into()))
+            }
+        );
+        assert_eq!(token.source.label(), "Dev");
+        assert_eq!(
+            Scope::of(&token.source),
+            Some(Scope::Environment(EnvironmentId(2)))
+        );
+        assert_eq!(snapshot.effective("token").unwrap().value, "a variable");
+        let mut secrets: Vec<&str> = snapshot.secret_values().collect();
+        secrets.sort_unstable();
+        assert_eq!(secrets, ["dev-secret", "global-key", "global-secret"]);
+
+        let template = RequestTemplate {
+            url: "https://x/{{ secret:token }}/{{secret:key}}/{{token}}".into(),
+            ..RequestTemplate::default()
+        };
+        let resolved = resolve_template(&template, &snapshot.values()).unwrap();
+        assert_eq!(resolved.url, "https://x/dev-secret/global-key/a variable");
+        let missing = RequestTemplate {
+            url: "{{secret:nope}}".into(),
+            ..RequestTemplate::default()
+        };
+        assert!(matches!(
+            resolve_template(&missing, &snapshot.values()),
+            Err(ResolveError::Unresolved(names)) if names.contains("secret:nope")
+        ));
+        assert_eq!(secret_name("secret: token "), Some("token"));
+        assert_eq!(secret_name("token"), None);
+        assert_eq!(
+            SecretScope::of_scope(Scope::Collection(CollectionId(1))),
+            None
+        );
+
+        // An environment read from a file has no stored secrets to add.
+        let mut file = context.clone();
+        if let Some(env) = &mut file.environment {
+            env.id = None;
+        }
+        assert_eq!(
+            Snapshot::build(&file, None)
+                .effective("secret:token")
+                .unwrap()
+                .value,
+            "global-secret"
+        );
     }
 }

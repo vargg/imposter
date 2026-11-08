@@ -536,7 +536,8 @@ pub fn main(args: Vec<OsString>, io: &mut Io<'_>) -> u8 {
                         interrupt.cancel();
                     }
                 });
-                run::run(&args, io.var, cancel, io.stderr).await
+                // Boxed: the run's future holds every step's record.
+                Box::pin(run::run(&args, io.var, cancel, io.stderr)).await
             });
             run::report(&args, &report, io.stdout, io.stderr)
         }

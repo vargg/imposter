@@ -86,7 +86,7 @@ pub async fn run(
             match executor::run(&inputs, selected.request, cancel.clone()).await {
                 Ok(ran) => {
                     for write in &ran.writes {
-                        carried.insert(write.name.clone(), write.value.clone());
+                        carried.insert(write.key(), write.value.clone());
                     }
                     record(path, ran, options.record.as_ref()).await
                 }
@@ -128,6 +128,7 @@ async fn record(path: String, mut ran: Ran, store: Option<&(StoreHandle, Via)>) 
             Ran {
                 record: copy,
                 writes: Vec::new(),
+                secrets: ran.secrets.clone(),
             },
         )
         .await;

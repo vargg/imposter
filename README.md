@@ -7,7 +7,8 @@ sent. It runs as one native binary per OS, with no account, no cloud and no tele
 ![Requests: collection tree, request editor and response viewer](docs/images/requests.png)
 
 I’mposter is written in Rust with [egui](https://github.com/emilk/egui). Collections export
-as `.imposter.json` (native version 3 when scripts are present, otherwise version 2).
+as `.imposter.json` (native version 4 when a capture stores a secret, 3 when scripts are
+present, otherwise version 2).
 
 On one M3 Pro Mac, the packaged 0.6.0 smoke workflow measured **218.6 ms median
 launch-to-request** and **106.1 MiB median peak resident memory** across ten runs after
@@ -166,9 +167,10 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 
 **Import and export**
 - Native `.imposter.json` (`"format": "imposter"`) carries request checks, captures, saved
-  variable values and environment colors. Exports use **version 3** when a request, folder
-  or collection has scripts, and **version 2** otherwise. Script-free exports remain
-  readable by Imposter 0.4.
+  variable values and environment colors. Exports use **version 4** when a capture stores
+  a secret, **version 3** when a request, folder or collection has scripts, and
+  **version 2** otherwise. Script-free exports remain readable by Imposter 0.4. Secret
+  values are never exported; `{{secret:name}}` references are.
 - Postman Collection v2.1 import and export, validated against the official schema, with
   environment and globals files. Anything Postman features Imposter cannot represent is listed
   before import; changes to how a request runs need explicit consent. Postman JavaScript

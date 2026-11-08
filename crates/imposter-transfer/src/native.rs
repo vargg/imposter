@@ -46,11 +46,13 @@ pub enum Format {
     Imposter,
 }
 
-/// Versions 2 and 3; anything else is rejected rather than guessed at.
+/// Versions 2, 3 (scripts) and 4 (captures stored as secrets); anything else is rejected
+/// rather than guessed at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Version {
     V2,
     V3,
+    V4,
 }
 
 impl Serialize for Version {
@@ -58,6 +60,7 @@ impl Serialize for Version {
         serializer.serialize_u8(match self {
             Self::V2 => 2,
             Self::V3 => 3,
+            Self::V4 => 4,
         })
     }
 }
@@ -67,6 +70,7 @@ impl<'de> Deserialize<'de> for Version {
         match u64::deserialize(deserializer)? {
             2 => Ok(Self::V2),
             3 => Ok(Self::V3),
+            4 => Ok(Self::V4),
             other => Err(serde::de::Error::custom(format!(
                 "unsupported version {other}"
             ))),
@@ -152,14 +156,25 @@ impl NativeDocument {
         }
     }
 
-    /// Version 3 when a request has scripts, else 2: the lowest that holds the document, so
-    /// older Imposter versions read what they can. For new Imposter documents only.
+    /// Version 4 when a capture is stored as a secret, else 3 when something has scripts,
+    /// else 2: the lowest that holds the document, so older Imposter versions read what
+    /// they can. For new Imposter documents only.
     pub fn fit_version(&mut self) {
-        self.version = if self.scripted().is_some() {
+        self.version = if self.secret_capture().is_some() {
+            Version::V4
+        } else if self.scripted().is_some() {
             Version::V3
         } else {
             Version::V2
         };
+    }
+
+    /// The first request with a capture stored as a secret, named for errors.
+    pub fn secret_capture(&self) -> Option<String> {
+        self.requests()
+            .into_iter()
+            .find(|r| r.captures.iter().any(|c| c.secret))
+            .map(|r| format!("Request {:?}", r.name))
     }
 
     /// The first thing with scripts, named for errors: a request, a folder or the
@@ -236,6 +251,8 @@ pub enum NativeError {
     Auth { request: String },
     #[error("{owner}: scripts need format version 3")]
     ScriptsNeedVersion3 { owner: String },
+    #[error("{owner}: a capture stored as a secret needs format version 4")]
+    SecretCaptureNeedsVersion4 { owner: String },
     #[error("Request {request:?}: {source}")]
     Body {
         request: String,
@@ -272,6 +289,11 @@ fn checked(document: NativeDocument) -> Result<NativeDocument, NativeError> {
         && let Some(owner) = document.scripted()
     {
         return Err(NativeError::ScriptsNeedVersion3 { owner });
+    }
+    if document.version < Version::V4
+        && let Some(owner) = document.secret_capture()
+    {
+        return Err(NativeError::SecretCaptureNeedsVersion4 { owner });
     }
     validate_templates(&document)?;
     Ok(document)

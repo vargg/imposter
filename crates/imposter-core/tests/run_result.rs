@@ -99,6 +99,7 @@ fn record() -> ExecutionRecord {
                 variable: "echo".into(),
                 taken: Taken::Value(SECRET.into()),
                 target: "this run".into(),
+                secret: false,
             }],
             script: Some(ScriptReport {
                 tests: vec![ScriptTest {

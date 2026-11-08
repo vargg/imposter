@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::StoreError;
 
 /// Every migration in order; the database's `user_version` counts how many have run.
-pub const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6];
+pub const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
 
 const V1: &str = r"
 CREATE TABLE collections (
@@ -110,6 +110,19 @@ ALTER TABLE folders ADD COLUMN scripts TEXT NOT NULL DEFAULT '{}';
 /// Which interface started an execution (`execution::Via`), for History's list to show.
 const V6: &str = r"
 ALTER TABLE executions ADD COLUMN via TEXT NOT NULL DEFAULT 'app' CHECK (via IN ('app', 'command_line'));
+";
+
+/// Secrets, apart from variables so no export or file ever reads them: global ones
+/// (`environment_id` NULL) and each environment's, which go with it. Rows keep their order
+/// by id.
+const V7: &str = r"
+CREATE TABLE secrets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    environment_id INTEGER REFERENCES environments(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    value TEXT NOT NULL
+);
+CREATE UNIQUE INDEX secrets_by_name ON secrets (coalesce(environment_id, 0), name);
 ";
 
 /// How long a write waits for another process (the app, or the command line beside it)

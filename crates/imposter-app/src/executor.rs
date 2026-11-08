@@ -190,10 +190,24 @@ pub struct Executed {
 pub async fn write_captures(store: &StoreHandle, writes: Vec<Write>) -> Result<(), StoreError> {
     store
         .call(move |db| {
+            let mut secret_scopes = Vec::new();
+            for scope in writes.iter().filter_map(Write::secret_scope) {
+                if !secret_scopes.contains(&scope) {
+                    secret_scopes.push(scope);
+                }
+            }
+            for scope in secret_scopes {
+                let values: Vec<(String, String)> = writes
+                    .iter()
+                    .filter(|w| w.secret_scope() == Some(scope))
+                    .map(|w| (w.name.clone(), w.value.clone()))
+                    .collect();
+                imposter_store::secrets::set(db, scope, &values)?;
+            }
             for scope in imposter_core::capture::scopes(&writes) {
                 let values: Vec<(String, String)> = writes
                     .iter()
-                    .filter(|w| w.scope == Some(scope))
+                    .filter(|w| !w.secret && w.scope == Some(scope))
                     .map(|w| (w.name.clone(), w.value.clone()))
                     .collect();
                 scopes::set_current(db, scope, &values)?;
@@ -376,6 +390,8 @@ pub struct Ran {
     pub record: ExecutionRecord,
     /// Values the request's captures and scripts set, to write where `Inputs::origin` says.
     pub writes: Vec<Write>,
+    /// The secret values it used, captured or set: History keeps none of them.
+    pub secrets: Vec<String>,
 }
 
 /// Send `request` and record it. `cancel` stops the network exchange; a cancelled execution
@@ -393,9 +409,18 @@ pub async fn execute(
 /// Record `ran` in History under the retention limits its settings carry. A failed write
 /// keeps the response and says so (`history_error`).
 pub async fn record(store: &StoreHandle, ran: Ran) -> Executed {
-    let Ran { record, writes } = ran;
+    let Ran {
+        mut record,
+        writes,
+        secrets,
+    } = ran;
+    // What is shown now keeps its values; what is stored keeps no secret.
     let mut response = record.response.clone();
     let sent = Box::new(record.resolved.clone());
+    let redactor = history_redactor(&secrets);
+    if !redactor.is_empty() || record.response.captures.iter().any(|c| c.secret) {
+        redactor.record(&mut record);
+    }
     let attach_cookies = record.settings.attach_cookies;
     let (entries, bytes) = (
         record.settings.history_max_entries,
@@ -419,6 +444,19 @@ pub async fn record(store: &StoreHandle, ran: Ran) -> Executed {
         sent,
         attach_cookies,
     }
+}
+
+/// What History removes: each secret long enough to find safely (`redact::MIN_SECRET`); a
+/// secret capture's own value goes whole whatever its length.
+fn history_redactor(secrets: &[String]) -> imposter_core::redact::Redactor {
+    let mut redactor = imposter_core::redact::Redactor::default();
+    for secret in secrets
+        .iter()
+        .filter(|s| s.chars().count() >= imposter_core::redact::MIN_SECRET)
+    {
+        redactor.secret(secret);
+    }
+    redactor
 }
 
 /// Run `request` with `inputs`: before-sending scripts, prepare, send, checks, captures and
@@ -491,7 +529,10 @@ pub async fn run(
         scope: destination.of(&name).0,
         name,
         value,
+        secret: false,
     }));
+    let mut secrets: Vec<String> = inputs.snapshot.secret_values().map(str::to_owned).collect();
+    secrets.extend(writes.iter().filter(|w| w.secret).map(|w| w.value.clone()));
 
     let mut template = request.clone();
     template
@@ -508,5 +549,9 @@ pub async fn run(
         response,
         via: imposter_core::execution::Via::App,
     };
-    Ok(Ran { record, writes })
+    Ok(Ran {
+        record,
+        writes,
+        secrets,
+    })
 }
