@@ -102,7 +102,19 @@ fn initialize(id: &Value, params: &Value) -> Value {
 
 /// The requests the server can send: those of its file, or every saved one.
 async fn list(id: &Value, args: &SendArgs, var: &dyn Fn(&str) -> Option<String>) -> Value {
-    let paths: Result<Vec<String>, String> = if let Some(file) = &args.file {
+    let paths: Result<Vec<String>, String> = if let (None, Some(dir)) = (&args.file, &args.project)
+    {
+        imposter_app::project::read(dir)
+            .map_err(|e| e.to_string())
+            .map(|folder| {
+                folder
+                    .documents
+                    .iter()
+                    .flat_map(|d| imposter_app::catalog::list_file(d).requests)
+                    .map(|r| r.path)
+                    .collect()
+            })
+    } else if let Some(file) = &args.file {
         native::read_document(file)
             .map_err(|e| e.to_string())
             .and_then(|bytes| native::decode(&bytes).map_err(|e| e.to_string()))

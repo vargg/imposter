@@ -42,8 +42,12 @@ do not look for a way around that, ask the user. Every run is kept in the app's 
 marked as the command line's, so the user can review what ran. Values that captures and
 scripts set stay in the run and change none of the user's variables.
 
-With `--file FILE` the request comes from an exported collection file instead (as CI runs
-it); then the path may leave out the collection's name, and nothing is written to History.
+The user's collections are files in their collections folder (one YAML file per request,
+`<collection>/<folder>/<request>.yaml`), which the commands read by default. With
+`--project DIR` they read another collections folder instead, such as the repository's
+checkout (as CI runs it); with `--file FILE`, an exported collection file. Neither reads
+the profile or writes History; a file's path may leave out the collection's name, and so
+may a folder's when it holds one collection.
 
 {{options}}
 
@@ -68,7 +72,7 @@ Requests refer to secrets as `{{secret:name}}`; their values live in the user's 
 lists secret names, `show` says where each `{{secret:…}}` comes from, never a value. A
 profile run uses the stored secrets of the environment named with `--env`.
 
-Without the profile (a `--file` run, CI), ask the user which process variable holds a
+Without the profile (a `--project` or `--file` run, CI), ask the user which process variable holds a
 secret and pass it by name: `--secret token=API_TOKEN` fills `{{secret:token}}` (and the
 variable `token`) from the process variable `API_TOKEN` and removes its value from the
 output. Use `--input` for values that are not secret. Only the variables named this way are
@@ -105,8 +109,8 @@ limit); look at the reason before concluding anything.
 ## Proposing a check
 
 A check is part of the saved request. Propose it to the user, who adds it in the app
-(the request's Tests tab); with `--file`, propose it as a diff to the request's `checks`
-list in the file. Never weaken an expected value to make a run pass. A check is written
+(the request's Tests tab), or as a diff to the `checks` list in the request's YAML file in
+the collections folder. Never weaken an expected value to make a run pass. A check is written
 like this:
 
 ```json

@@ -440,6 +440,7 @@ fn result_header(ui: &mut Ui, opened: &crate::app::OpenedResult, actions: &mut V
     let kept = match result.definition.source {
         imposter_app::core::run_result::Source::Profile => "also in History",
         imposter_app::core::run_result::Source::File => "from a file, not in History",
+        imposter_app::core::run_result::Source::Project => "from a folder, not in History",
     };
     let origin = format!(
         "From imposter send · {} · {environment} · run {run} · {kept} · secrets removed",

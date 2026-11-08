@@ -1,5 +1,6 @@
 //! `imposter list`, `show` and `envs`: what an agent or a person reads before running
-//! anything. They read the profile (or a `--file`) and write nothing; output is JSON, or
+//! anything. They read the profile (or a `--file` or `--project`) and write nothing; output
+//! is JSON, or
 //! readable text with `--text`.
 
 use std::fmt::Write as _;
@@ -10,6 +11,7 @@ use imposter_app::document::RequestPath;
 use imposter_app::formats::native::{self, NativeDocument};
 use imposter_app::paths;
 use imposter_app::store::Store;
+use imposter_core::run_result::Source;
 
 use crate::send::DEFAULT_MAX_BODY;
 
@@ -28,6 +30,7 @@ pub struct CatalogArgs {
     pub target: String,
     pub environment: Option<String>,
     pub file: Option<PathBuf>,
+    pub project: Option<PathBuf>,
     pub max_body: usize,
     pub text: bool,
 }
@@ -39,23 +42,37 @@ impl Default for CatalogArgs {
             target: String::new(),
             environment: None,
             file: None,
+            project: None,
             max_body: DEFAULT_MAX_BODY,
             text: false,
         }
     }
 }
 
-/// Where the definitions are read: a file, or the profile (closed when dropped).
+/// Where the definitions are read: a file, a collections folder, or the profile (closed
+/// when dropped).
 enum Opened {
     File(Box<NativeDocument>),
+    Project(Box<imposter_app::project::ProjectFolder>),
     Profile(Store),
 }
 
-/// Open the file `--file` names, or the personal profile.
+/// Open the file `--file` names, the folder `--project` names, or the personal profile.
 pub(crate) async fn open(
     file: Option<&std::path::Path>,
+    project: Option<&std::path::Path>,
     var: &dyn Fn(&str) -> Option<String>,
 ) -> Result<OpenedSource, String> {
+    if file.is_none()
+        && let Some(dir) = project
+    {
+        let dir = dir.to_owned();
+        let folder = tokio::task::spawn_blocking(move || imposter_app::project::read(&dir))
+            .await
+            .map_err(|_| "The collections folder could not be read".to_owned())?
+            .map_err(|e| e.to_string())?;
+        return Ok(OpenedSource(Opened::Project(Box::new(folder))));
+    }
     if let Some(file) = file {
         let file = file.to_owned();
         let bytes = tokio::task::spawn_blocking(move || native::read_document(&file))
@@ -93,7 +110,7 @@ pub async fn run(
     args: &CatalogArgs,
     var: &dyn Fn(&str) -> Option<String>,
 ) -> Result<String, String> {
-    let source = open(args.file.as_deref(), var).await?;
+    let source = open(args.file.as_deref(), args.project.as_deref(), var).await?;
     let output = render(args, &source.0).await;
     source.close().await;
     output
@@ -104,6 +121,16 @@ async fn render(args: &CatalogArgs, source: &Opened) -> Result<String, String> {
         Kind::List => {
             let listing = match source {
                 Opened::File(document) => catalog::list_file(document),
+                Opened::Project(folder) => {
+                    let mut listing = catalog::list_file(&folder.documents[0]);
+                    for document in &folder.documents[1..] {
+                        listing
+                            .requests
+                            .extend(catalog::list_file(document).requests);
+                    }
+                    listing.source = Source::Project;
+                    listing
+                }
                 Opened::Profile(store) => catalog::list_profile(&store.handle())
                     .await
                     .map_err(|e| e.to_string())?,
@@ -119,6 +146,13 @@ async fn render(args: &CatalogArgs, source: &Opened) -> Result<String, String> {
                     catalog::show_file(document, &path, environment, args.max_body)
                         .map_err(|e| e.to_string())?
                 }
+                Opened::Project(folder) => {
+                    let document = folder.document(&path).map_err(|e| e.to_string())?;
+                    let mut view = catalog::show_file(document, &path, environment, args.max_body)
+                        .map_err(|e| e.to_string())?;
+                    view.source = Source::Project;
+                    view
+                }
                 Opened::Profile(store) => {
                     catalog::show_profile(&store.handle(), &path, environment, args.max_body)
                         .await
@@ -130,6 +164,16 @@ async fn render(args: &CatalogArgs, source: &Opened) -> Result<String, String> {
         Kind::Envs => {
             let environments = match source {
                 Opened::File(document) => catalog::environments_file(document),
+                Opened::Project(folder) => {
+                    let mut environments = catalog::environments_file(&folder.documents[0]);
+                    for document in &folder.documents[1..] {
+                        environments
+                            .collections
+                            .extend(catalog::environments_file(document).collections);
+                    }
+                    environments.source = Source::Project;
+                    environments
+                }
                 Opened::Profile(store) => catalog::environments_profile(&store.handle())
                     .await
                     .map_err(|e| e.to_string())?,

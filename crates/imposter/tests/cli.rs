@@ -92,6 +92,40 @@ async fn send_runs_headless_and_touches_no_personal_data() {
     );
 }
 
+/// A checkout's collections folder, as a teammate gets it: the process reads it with no
+/// profile and creates none.
+#[tokio::test]
+async fn a_collections_folder_runs_from_a_checkout() {
+    let server = Server::start(|_, _| response("200 OK", &[], b"ok")).await;
+    let home = tempfile::tempdir().unwrap();
+    let api = home.path().join("checkout/api");
+    std::fs::create_dir_all(&api).unwrap();
+    std::fs::write(
+        api.join("imposter.yaml"),
+        format!(
+            "format: imposter-project\nversion: 1\nid: c1\nname: API\nvariables:\n  base: {}\n",
+            server.url
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        api.join("ping.yaml"),
+        "id: r1\nname: Ping\nurl: \"{{base}}/ping\"\nchecks:\n- selector: status\n  op: equals\n  expected: \"200\"\n",
+    )
+    .unwrap();
+    let mut command = imposter(home.path());
+    let folder = home.path().join("checkout");
+    command.args(["send", "API/Ping", "--project", folder.to_str().unwrap()]);
+    let output = output(command).await;
+
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let result = json_of(&output);
+    assert_eq!(result["outcome"], "passed");
+    assert_eq!(result["definition"]["source"], "project");
+    assert_eq!(server.requests()[0].target(), "/ping");
+    assert!(!home.path().join("data").exists(), "no profile was created");
+}
+
 #[tokio::test]
 async fn secrets_stay_out_of_stdout_and_stderr_even_with_trace_logs() {
     let server = Server::start(|_, received| {

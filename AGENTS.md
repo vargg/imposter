@@ -1090,6 +1090,17 @@ numbers, so both are excluded. Each logical change is its own commit.
     a horizontal row the response tools measured another width and covered the tabs at
     720 points (the layout lint).
   Pinned by `imposter-ui/tests/run.rs` and the layout lint's Run states.
+- **The command line reads the collections folder** the profile names, and `--project DIR`
+  names another one (a repository's checkout in CI), read straight from disk with no
+  profile at all (`imposter_app::project`): each collection becomes a native document
+  carrying the folder's environments, so `document::select`, the runner and the catalog
+  work on it as on an exported file. A path names its collection by its first part, or
+  may leave it out when the folder holds one. The result says `source: "project"`, with
+  the folder in `file` and, as `sha256`, a hash over every file's path, length and bytes
+  (`send::folder_revision`), so any edit is a new revision. `--file` and `--project` are
+  exclusive. Why: a teammate or CI runs a checkout without the author's database or an
+  export step (M2's exit). Pinned by `imposter-cli/tests/project.rs` and a process test
+  in `imposter/tests/cli.rs`.
 - **`imposter skill` prints the instructions a coding agent needs** (`skill.md` in
   `imposter-cli`): how to choose a request, pass secrets by process variable name, read
   the result and propose a check as a reviewable diff. Its option, exit status and

@@ -13,13 +13,13 @@ use imposter_app::runner::{self, Options};
 use imposter_app::{paths, profile};
 use imposter_core::redact::Redactor;
 use imposter_core::run_report::{self, RunReport, Step};
-use imposter_core::run_result::{
-    self, Definition, Input, Limits, RunInfo, RunOutcome, RunResult, Source,
-};
+use imposter_core::run_result::{self, Definition, Input, Limits, RunInfo, RunOutcome, RunResult};
 use tokio_util::sync::CancellationToken;
 
 use crate::USAGE_STATUS;
-use crate::send::{SendArgs, Unsent, read_inputs, sha256_hex, without_secrets};
+use crate::send::{
+    SendArgs, Unsent, read_inputs, read_project, sha256_hex, source_of, without_secrets,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RunArgs {
@@ -43,6 +43,18 @@ async fn select(
     definition: &mut Definition,
 ) -> Result<Requests, Unsent> {
     let target = RequestPath::parse(&args.request).map_err(|e| e.to_string())?;
+    if args.file.is_none()
+        && let Some(dir) = &args.project
+    {
+        let (folder, revision) = read_project(dir).await?;
+        definition.sha256 = Some(revision);
+        let document = folder.document(&target).map_err(|e| e.to_string())?;
+        let values = read_inputs(&args.inputs, var, redactor)?;
+        let selected =
+            document::select_all(document, &target, args.environment.as_deref(), &values)
+                .map_err(|e| e.to_string())?;
+        return Ok(Requests::File(selected));
+    }
     if let Some(file) = &args.file {
         let file = file.clone();
         let bytes = tokio::task::spawn_blocking(move || native::read_document(&file))
@@ -114,12 +126,13 @@ pub async fn run(
     let run_id = uuid();
     let mut redactor = Redactor::default();
     let mut definition = Definition {
-        source: if args.send.file.is_some() {
-            Source::File
-        } else {
-            Source::Profile
-        },
-        file: args.send.file.as_ref().map(|f| f.display().to_string()),
+        source: source_of(&args.send),
+        file: args
+            .send
+            .file
+            .as_ref()
+            .or(args.send.project.as_ref())
+            .map(|f| f.display().to_string()),
         sha256: None,
         request: args.send.request.clone(),
         environment: args.send.environment.clone(),

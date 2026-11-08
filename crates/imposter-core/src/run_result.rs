@@ -147,6 +147,8 @@ pub enum Source {
     Profile,
     /// A native collection file (`--file`).
     File,
+    /// A collections folder read straight from disk (`--project`).
+    Project,
 }
 
 /// What ran: where it was read, the request and the environment.
@@ -154,10 +156,11 @@ pub enum Source {
 #[serde(deny_unknown_fields)]
 pub struct Definition {
     pub source: Source,
-    /// The file as given, for a file run.
+    /// The file or folder as given, for a file or project run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
-    /// SHA-256 of the file's bytes, in hex, once the file was read: the revision that ran.
+    /// SHA-256 of the file's bytes (or a folder's files, by path), in hex, once read: the
+    /// revision that ran.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
     pub request: String,

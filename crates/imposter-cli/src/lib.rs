@@ -39,17 +39,17 @@ pub struct CommandHelp {
 pub const COMMANDS: [CommandHelp; 7] = [
     CommandHelp {
         name: "list",
-        arguments: "[FILTER] [--file FILE] [--text]",
+        arguments: "[FILTER] [--project DIR] [--file FILE] [--text]",
         help: "List saved requests with their method, URL, checks and scripts. FILTER is the sidebar's filter language (users, method:POST, -old).",
     },
     CommandHelp {
         name: "show",
-        arguments: "<REQUEST> [--env NAME] [--file FILE] [--max-body BYTES] [--text]",
+        arguments: "<REQUEST> [--env NAME] [--project DIR] [--file FILE] [--max-body BYTES] [--text]",
         help: "Show a request as stored, with the variables it uses and where each is defined for --env. Placeholders only, never values.",
     },
     CommandHelp {
         name: "envs",
-        arguments: "[--file FILE] [--text]",
+        arguments: "[--project DIR] [--file FILE] [--text]",
         help: "List environments (red is production), globals and collections with their variable names, never values.",
     },
     CommandHelp {
@@ -69,7 +69,7 @@ pub const COMMANDS: [CommandHelp; 7] = [
     },
     CommandHelp {
         name: "mcp",
-        arguments: "[--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--max-body BYTES]",
+        arguments: "[--project DIR] [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--max-body BYTES]",
         help: "Experimental: an MCP server over stdio.",
     },
 ];
@@ -85,7 +85,12 @@ pub fn readme_command_rows() -> Vec<String> {
         .collect()
 }
 
-pub const SEND_FLAGS: [Flag; 6] = [
+pub const SEND_FLAGS: [Flag; 7] = [
+    Flag {
+        name: "--project",
+        value: "DIR",
+        help: "Read the collections folder DIR (a repository's checkout) instead of your I’mposter data, as CI does. Nothing is written to History.",
+    },
     Flag {
         name: "--file",
         value: "FILE",
@@ -183,7 +188,8 @@ pub fn version() -> String {
 pub fn usage() -> String {
     let mut text = String::from(
         "Usage:\n  imposter                       open the app\n  imposter <COMMAND> [ARGUMENTS]\n\n\
-         Commands read your saved requests (or a collection file with --file). A REQUEST is\n\
+         Commands read your collections folder (another one with --project DIR, or a\n\
+         collection file with --file). A REQUEST is\n\
          its breadcrumb, collection first: \"Shop API / Users / Create user\" (write a \"/\"\n\
          inside a name as \"\\/\"). Output is JSON on stdout; list, show and envs take --text\n\
          for people.\n\nCommands:\n",
@@ -354,12 +360,31 @@ fn parse_list(parser: &mut lexopt::Parser) -> Result<Command, String> {
             _ if arg.starts_with("--file=") => {
                 args.file = Some(PathBuf::from(&arg["--file=".len()..]));
             }
+            "--project" => {
+                let dir = raw
+                    .next()
+                    .ok_or_else(|| "missing argument for option '--project'".to_owned())?;
+                args.project = Some(PathBuf::from(dir));
+            }
+            _ if arg.starts_with("--project=") => {
+                args.project = Some(PathBuf::from(&arg["--project=".len()..]));
+            }
             _ if arg.starts_with("--") => return Err(format!("invalid option '{arg}'")),
             _ => words.push(arg),
         }
     }
     args.target = words.join(" ");
+    one_source(args.file.as_ref(), args.project.as_ref())?;
     Ok(Command::Catalog(args))
+}
+
+/// `--file` and `--project` each name where the definitions come from; one may be given.
+fn one_source(file: Option<&PathBuf>, project: Option<&PathBuf>) -> Result<(), String> {
+    if file.is_some() && project.is_some() {
+        Err("--file and --project name different sources; give one".into())
+    } else {
+        Ok(())
+    }
 }
 
 /// `show` and `envs`: a request, or nothing.
@@ -376,6 +401,7 @@ fn parse_catalog(parser: &mut lexopt::Parser, kind: catalog::Kind) -> Result<Com
         match arg {
             Long("help") | Short('h') => return Ok(Command::Help),
             Long("file") => args.file = Some(PathBuf::from(value(parser)?)),
+            Long("project") => args.project = Some(PathBuf::from(value(parser)?)),
             Long("text") => args.text = true,
             Long("env") if kind == Kind::Show => {
                 args.environment = Some(
@@ -413,6 +439,7 @@ fn parse_catalog(parser: &mut lexopt::Parser, kind: catalog::Kind) -> Result<Com
             }
         }
     }
+    one_source(args.file.as_ref(), args.project.as_ref())?;
     Ok(Command::Catalog(args))
 }
 
@@ -449,6 +476,7 @@ fn parse_send(parser: &mut lexopt::Parser, mode: Mode) -> Result<Command, String
             Long("secret") => args.inputs.push(input(value(parser)?, true)?),
             Long("out") if !mcp => args.out = Some(PathBuf::from(value(parser)?)),
             Long("file") => args.file = Some(PathBuf::from(value(parser)?)),
+            Long("project") => args.project = Some(PathBuf::from(value(parser)?)),
             Long("keep-going") if mode == Mode::Run => keep_going = true,
             Long("junit") if mode == Mode::Run => junit = Some(PathBuf::from(value(parser)?)),
             Long("max-body") => {
@@ -462,6 +490,7 @@ fn parse_send(parser: &mut lexopt::Parser, mode: Mode) -> Result<Command, String
             other => return Err(other.unexpected().to_string()),
         }
     }
+    one_source(args.file.as_ref(), args.project.as_ref())?;
     let mut positional = positional.into_iter();
     if mcp {
         return match positional.next() {
@@ -656,6 +685,7 @@ mod tests {
             parsed,
             Command::Send(SendArgs {
                 file: Some("api.imposter.json".into()),
+                project: None,
                 request: "Users/Create user".into(),
                 environment: Some("Dev".into()),
                 inputs: vec![

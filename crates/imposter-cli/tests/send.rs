@@ -356,7 +356,7 @@ fn help_version_and_usage_errors() {
     assert!(help.stdout.contains("\n  send <REQUEST> [OPTIONS]\n"));
     assert!(
         help.stdout
-            .contains("\n  list [FILTER] [--file FILE] [--text]\n")
+            .contains("\n  list [FILTER] [--project DIR] [--file FILE] [--text]\n")
     );
     let version = run_with(&["--version"], &|_| None);
     assert_eq!(

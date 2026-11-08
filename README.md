@@ -303,13 +303,13 @@ imposter send "Shop API / Users / Create user" --env Dev --secret token=API_TOKE
 
 | Command | What it does |
 |---|---|
-| `imposter list [FILTER] [--file FILE] [--text]` | List saved requests with their method, URL, checks and scripts. FILTER is the sidebar's filter language (users, method:POST, -old). |
-| `imposter show <REQUEST> [--env NAME] [--file FILE] [--max-body BYTES] [--text]` | Show a request as stored, with the variables it uses and where each is defined for --env. Placeholders only, never values. |
-| `imposter envs [--file FILE] [--text]` | List environments (red is production), globals and collections with their variable names, never values. |
+| `imposter list [FILTER] [--project DIR] [--file FILE] [--text]` | List saved requests with their method, URL, checks and scripts. FILTER is the sidebar's filter language (users, method:POST, -old). |
+| `imposter show <REQUEST> [--env NAME] [--project DIR] [--file FILE] [--max-body BYTES] [--text]` | Show a request as stored, with the variables it uses and where each is defined for --env. Placeholders only, never values. |
+| `imposter envs [--project DIR] [--file FILE] [--text]` | List environments (red is production), globals and collections with their variable names, never values. |
 | `imposter send <REQUEST> [OPTIONS]` | Run a saved request as Send does and print its checked, redacted result. Kept in History as the command line's. |
 | `imposter run <TARGET> [OPTIONS]` | Run every request of a collection, a folder or one request in order, carrying captured values forward; stops at the first that does not pass. |
 | `imposter skill` | Print instructions for a coding agent. |
-| `imposter mcp [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--max-body BYTES]` | Experimental: an MCP server over stdio. |
+| `imposter mcp [--project DIR] [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--max-body BYTES]` | Experimental: an MCP server over stdio. |
 
 `list`, `show` and `envs` write nothing. They show templates as stored, with their
 `{{placeholders}}`, and only the names of variables, never their values; a credential
@@ -329,13 +329,16 @@ The result is one JSON document on stdout, led by a `summary` and an `outcome`, 
 request as sent, the response head, check and script results, captures and body excerpts.
 A one-line summary goes to stderr.
 
-For CI, or a machine without your data, export the collection (**⋯ → Export Collection…**,
-with the environments it needs) and add `--file api.imposter.json`. A file run uses the
-application defaults, writes no History and reads nothing else; the result records the
-file's SHA-256.
+Without `--project` or `--file`, the commands read your collections folder (the one set in
+Settings), with your secrets and local values. For CI, or a teammate's checkout, point them
+at a collections folder committed to the repository with `--project DIR`, or at an
+exported file with `--file api.imposter.json`. Either uses the application defaults,
+writes no History and reads nothing else; the result records the SHA-256 of the file, or of
+the folder's files.
 
 | Option | Meaning |
 |---|---|
+| `--project DIR` | Read the collections folder DIR (a repository's checkout) instead of your I’mposter data, as CI does. Nothing is written to History. |
 | `--file FILE` | Read a collection file (.imposter.json) instead of your I’mposter data, as CI does. Nothing is written to History. |
 | `--env NAME` | Use environment NAME; without it, only globals and collection variables apply, whatever the app has active. |
 | `--input VAR=PROCESS_VAR` | Set variable VAR from the process variable PROCESS_VAR, above every scope. Repeatable. |

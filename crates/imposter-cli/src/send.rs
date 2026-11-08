@@ -1,15 +1,18 @@
-//! `imposter send`: read the file once, choose the request, read only the named process
-//! variables, run it through the app's engine, and report a redacted result. Nothing is
-//! read from or written to the personal profile, and nothing goes to History.
+//! `imposter send`: read the request once (from the profile, a native file or a collections
+//! folder), read only the named process variables, run it through the app's engine, and
+//! report a redacted result. A file or folder run reads nothing from the personal profile
+//! and writes nothing to History.
 
 use std::fmt::Write as _;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use imposter_app::document::{self, RequestPath};
 use imposter_app::executor::{self, ExecuteError, SystemEntropy};
 use imposter_app::formats::native;
+use imposter_app::formats::native::NativeDocument;
+use imposter_app::project::{self, ProjectFolder};
 use imposter_app::{paths, profile};
 use imposter_core::execution::{ExecutionRecord, Via};
 use imposter_core::model::Variables;
@@ -34,6 +37,8 @@ pub struct InputArg {
 pub struct SendArgs {
     /// A native collection file to read instead of the personal profile.
     pub file: Option<PathBuf>,
+    /// A collections folder to read instead of the personal profile.
+    pub project: Option<PathBuf>,
     pub request: String,
     pub environment: Option<String>,
     pub inputs: Vec<InputArg>,
@@ -48,6 +53,7 @@ impl Default for SendArgs {
     fn default() -> Self {
         Self {
             file: None,
+            project: None,
             request: String::new(),
             environment: None,
             inputs: Vec::new(),
@@ -112,12 +118,12 @@ pub async fn send(
     let id = imposter_core::generate::generate("$uuid", &mut entropy).unwrap_or_default();
     let mut redactor = Redactor::default();
     let mut definition = Definition {
-        source: if args.file.is_some() {
-            Source::File
-        } else {
-            Source::Profile
-        },
-        file: args.file.as_ref().map(|f| f.display().to_string()),
+        source: source_of(args),
+        file: args
+            .file
+            .as_ref()
+            .or(args.project.as_ref())
+            .map(|f| f.display().to_string()),
         sha256: None,
         request: args.request.clone(),
         environment: args.environment.clone(),
@@ -175,15 +181,52 @@ pub async fn send(
     result.redacted(&redactor)
 }
 
+/// Where `args` reads the definitions.
+pub(crate) fn source_of(args: &SendArgs) -> Source {
+    match (&args.file, &args.project) {
+        (Some(_), _) => Source::File,
+        (None, Some(_)) => Source::Project,
+        (None, None) => Source::Profile,
+    }
+}
+
 /// SHA-256 of a file's bytes in hex: the revision of the definitions that ran.
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
+    hex(&Sha256::digest(bytes))
+}
+
+fn hex(digest: &[u8]) -> String {
+    digest
         .iter()
         .fold(String::with_capacity(64), |mut hex, byte| {
             // Writing to a String cannot fail.
             let _ = write!(hex, "{byte:02x}");
             hex
         })
+}
+
+/// SHA-256 over a folder's files, each as its path, a NUL, its length and its bytes, in
+/// path order: changing, adding or removing any file changes it.
+pub(crate) fn folder_revision(files: &std::collections::BTreeMap<String, Vec<u8>>) -> String {
+    let mut hasher = Sha256::new();
+    for (path, bytes) in files {
+        hasher.update(path.as_bytes());
+        hasher.update([0]);
+        hasher.update(u64::try_from(bytes.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(bytes);
+    }
+    hex(&hasher.finalize())
+}
+
+/// The folder `--project` names, read once, and the revision of its files.
+pub(crate) async fn read_project(dir: &Path) -> Result<(ProjectFolder, String), Unsent> {
+    let dir = dir.to_owned();
+    let folder = tokio::task::spawn_blocking(move || project::read(&dir))
+        .await
+        .map_err(|_| "The collections folder could not be read".to_owned())?
+        .map_err(|e| e.to_string())?;
+    let revision = folder_revision(&folder.files);
+    Ok((folder, revision))
 }
 
 /// `record` as a result may show it: every secret the run used, captured or set is added
@@ -223,15 +266,21 @@ async fn run(
     definition: &mut Definition,
 ) -> Result<Ran, Unsent> {
     let path = RequestPath::parse(&args.request).map_err(|e| e.to_string())?;
-    match &args.file {
-        Some(file) => run_file(args, file, &path, var, cancel, redactor, definition).await,
-        None => run_profile(args, &path, var, cancel, redactor).await,
+    match (&args.file, &args.project) {
+        (Some(file), _) => run_file(args, file, &path, var, cancel, redactor, definition).await,
+        (None, Some(dir)) => {
+            let (folder, revision) = read_project(dir).await?;
+            definition.sha256 = Some(revision);
+            let document = folder.document(&path).map_err(|e| e.to_string())?;
+            run_document(args, document, &path, var, cancel, redactor).await
+        }
+        (None, None) => run_profile(args, &path, var, cancel, redactor).await,
     }
 }
 
 async fn run_file(
     args: &SendArgs,
-    file: &std::path::Path,
+    file: &Path,
     path: &RequestPath,
     var: &dyn Fn(&str) -> Option<String>,
     cancel: CancellationToken,
@@ -246,8 +295,20 @@ async fn run_file(
         .map_err(|e| e.to_string())?;
     definition.sha256 = Some(sha256_hex(&bytes));
     let document = native::decode(&bytes).map_err(|e| e.to_string())?;
+    run_document(args, &document, path, var, cancel, redactor).await
+}
+
+/// A request of a document read from a file or a folder: nothing is recorded.
+async fn run_document(
+    args: &SendArgs,
+    document: &NativeDocument,
+    path: &RequestPath,
+    var: &dyn Fn(&str) -> Option<String>,
+    cancel: CancellationToken,
+    redactor: &mut Redactor,
+) -> Result<Ran, Unsent> {
     let values = read_inputs(&args.inputs, var, redactor)?;
-    let selected = document::select(&document, path, args.environment.as_deref(), &values)
+    let selected = document::select(document, path, args.environment.as_deref(), &values)
         .map_err(|e| e.to_string())?;
     let capture_bytes = selected.inputs.settings.download_limit.saturating_mul(1024);
     let ran = executor::run(&selected.inputs, selected.request, cancel)

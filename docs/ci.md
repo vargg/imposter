@@ -1,13 +1,13 @@
 # Running checks in CI
 
-`imposter run` can check an API in CI with the same requests you edit in the app. CI has no
-copy of your I’mposter data, so it runs from an exported collection file.
+`imposter run` can check an API in CI with the same requests you edit in the app. Your
+collections are files, so CI runs them straight from the repository: nothing to export.
 
-1. In the app, open the collection's **⋯** menu → **Export Collection…** and tick the
-   environments the run needs. Commit the `.imposter.json` next to your code. Environments
-   in the export hold their variables' values, so keep secrets out of variables: write
-   `{{secret:token}}` in requests and keep the value in the environment's secrets, which
-   are never exported. In CI, pass it with `--secret token=API_TOKEN`.
+1. In the app, set **Settings → Collections folder** to a folder in your repository (for
+   example `api/`) and commit it. Each request is its own YAML file, so an edit is a small
+   diff. Values your environments share are in their files; keep secrets out of them:
+   write `{{secret:token}}` in requests and keep the value in the environment's secrets,
+   which never leave your computer. In CI, pass it with `--secret token=API_TOKEN`.
 2. Add a job that installs I’mposter and runs the collection, a folder or one request:
 
 ```yaml
@@ -27,7 +27,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - name: Run the checks
         run: >
-          imposter run "Shop API / Smoke" --file api.imposter.json --env CI
+          imposter run "Shop API / Smoke" --project api --env CI
           --secret token=API_TOKEN --junit report.xml --out report.json
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
@@ -48,3 +48,6 @@ was not there (4). `report.xml` is JUnit XML, which most CI systems show as a te
 
 Secrets given with `--secret`, and the credentials requests send, are replaced by
 `«redacted»` in the report, the JUnit file and the log.
+
+Without a collections folder in the repository, export the collection instead
+(**⋯ → Export Collection…**) and give the file with `--file api.imposter.json`.
