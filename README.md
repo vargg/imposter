@@ -411,8 +411,18 @@ is left logically unchanged. An existing new database always wins; profiles are 
 A busy, unreadable, corrupt or newer-schema legacy profile produces an error with recovery
 instructions instead of silently starting empty. Close Poster and retry a busy copy.
 
-Everything lives in one SQLite database: `~/.imposter/imposter.db`. Set `IMPOSTER_DATA_DIR` to use
-another directory (for a second profile, or for testing):
+Collections and environments are files in a collections folder, by default
+`~/.imposter/collections/`: one YAML file per request, folder, collection and environment
+(`shop-api/users/create-user.yaml`), so a change is a small diff and the folder can live in a
+git repository. Your personal data stays in one SQLite database, `~/.imposter/imposter.db`:
+History, settings, window state, secrets, global variables, and the values that stay on this
+computer (what captures set, and an environment's values when it does not share them). Saving
+on the Variables screen writes a collection's or environment's shared values to its file; a
+send never changes a file. If a file changed outside I’mposter since it was read, an edit to
+it is refused and the edit is kept; restart to pick the outside change up. The first start
+of this version moves existing collections and environments from the database into the
+folder. Set `IMPOSTER_DATA_DIR` to use another directory for both (for a second profile, or for
+testing):
 
 ```sh
 IMPOSTER_DATA_DIR=/tmp/imposter-scratch imposter

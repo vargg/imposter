@@ -23,6 +23,7 @@ const RELEASED: &[u64] = &[
     0x9dee_fccd_4832_126b,
     0x3faf_9e64_8716_257b,
     0xe4d7_12b9_36a5_e601,
+    0xabac_add4_5a5a_e2ea,
 ];
 
 #[test]
@@ -76,12 +77,9 @@ fn upgrading_backs_up_the_database_first() {
     Store::open_with(&path, v1)
         .unwrap()
         .call_blocking(|db| {
-            imposter_store::collections::create_collection(
-                db,
-                "before",
-                "",
-                &imposter_core::model::Variables::new(),
-            )
+            // A version-1 database keeps collections in its own table.
+            db.execute("INSERT INTO collections (name) VALUES ('before')", [])?;
+            Ok(())
         })
         .unwrap();
     let mut next = v1.to_vec();

@@ -83,9 +83,13 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **The UI thread never blocks or awaits.** Background work starts through the app handle and
   its results come back over a channel drained at the start of each frame.
   Why: egui redraws every frame on that thread; any block freezes the whole window.
-- **One thread owns the SQLite connection**; every other part sends it commands, and one
-  command is one transaction.
-  Why: writes are serialized without locks, and a failed command rolls back as a unit.
+- **One thread owns the SQLite connection and the collections folder**; every other part
+  sends it commands, and one command is one transaction over both (`store::Tx`): the
+  folder's changed files are written just before SQLite commits, and a file that cannot be
+  written rolls the command back.
+  Why: writes are serialized without locks, a failed command rolls back as a unit, and the
+  database never gets ahead of the files. The files are small, so writing them on the
+  database thread is accepted.
   Another process (the command line beside the app) has its own connection; every
   connection waits up to `schema::BUSY_TIMEOUT` (5 s) for the other's write instead of
   failing at once with "database is locked".
@@ -131,9 +135,11 @@ numbers, so both are excluded. Each logical change is its own commit.
   Why: logs end up in bug reports and screenshots.
   Enforced by: `imposter-http/tests/logging.rs` (trace-level capture, dependencies included).
   Transport error messages drop the URL, which can carry `user:password@`.
-- **The app's data is `~/.imposter/imposter.db`, overridable with `IMPOSTER_DATA_DIR`.**
+- **The app's data is `~/.imposter/imposter.db` (personal data) and a collections folder,
+  by default `collections/` beside it; `IMPOSTER_DATA_DIR` moves both.**
   Why: one place to back up, and tests and second profiles point elsewhere without touching
-  it.
+  it. The folder can be set elsewhere (a repository); the profile remembers it
+  (`files::workspace::FOLDER_KEY`).
 
 ## Decisions
 
@@ -406,17 +412,46 @@ numbers, so both are excluded. Each logical change is its own commit.
   (`imposter-store/tests/schema.rs` pins their fingerprints); schema changes are new migrations.
   V5 adds a `scripts` column (JSON `model::Scripts`) to collections and folders; requests
   needed none, as their scripts live in the template JSON.
-- **A request row stores its template as JSON, the single source of truth.** The tree reads
-  `name`, `method` and `position` through generated columns, so it never decodes bodies;
-  rename and reorder use `json_set`, and saving a template keeps the stored position, since
-  the editor's copy goes stale when the tree is reordered (an autosave put a moved request
-  back). Why: one copy of every field, and new template fields need no migration (serde
-  defaults).
-- **Variables are ordered JSON objects** (collections, environments, the single `globals` row).
-  No environment may be named `Global`, which names the globals scope. Why: order is kept for
-  display and export, and saving a scope replaces it whole, so a save never merges.
+- **Collections and environments are files; there is no database copy** (user's choice,
+  after weighing an opt-in link that kept SQLite as the source: two copies and two kinds of
+  collection to keep in step). The folder (`store::files`, format above) is loaded into
+  memory when the store opens and is what every store function reads and changes, behind
+  the same API as the tables it replaced, so the UI, executor, runner, catalog and transfer
+  did not change. SQLite keeps personal data only: History, settings, UI state, secrets,
+  globals and local values.
+  - **Writes:** each command stages its changes on a copy; at commit only the files whose
+    rendering changed are written, each atomically, at the path their name gives, and the
+    old file of a renamed or moved item goes. A file kept under another name by hand stays
+    where it is until it changes.
+  - **Outside changes:** every file written or removed must still hold what Imposter read
+    or wrote, else the command fails naming the file and nothing is saved (a request edit
+    stays in the editor). The folder is read at every start; reloading while running is
+    the next stage. A folder that cannot be read leaves the store empty, says why
+    (`Tx::folder_error`) and is never written to.
+  - **Ids:** files carry UUIDs; `ids` (migration V8) gives each one a stable number, so
+    `RequestId`s survive restarts and History's `request_id` still opens its request.
+  - **Order and saves:** sibling order is `position`; saving a template keeps the stored
+    position, since the editor's copy goes stale when the tree is reordered (an autosave
+    put a moved request back).
+  - **Migration:** the first open after V8 moves the old tables' collections and
+    environments into an empty folder, keeping their ids (and so History links, the active
+    environment and secrets); a folder that already holds collections is left alone. The
+    old tables stay, unused.
+  Pinned by `imposter-store/tests/files.rs` and the existing store, app and UI suites,
+  which run on files.
+- **Variables are ordered maps** (in collection and environment files, and the single
+  `globals` row). No environment may be named `Global`, which names the globals scope. Why:
+  order is kept for display and export, and saving a scope replaces it whole, so a save
+  never merges.
+- **Shared values in files, local values on this computer** (user's choice: a send must
+  never dirty git). A collection's and an environment's file hold the shared values;
+  `local_scopes` (V8) holds what captures, `vars.set` and the inspector's value swap set
+  (`scopes::set_current`, `choose_value`), and all of an environment's values when it does
+  not share them (`share_values: false`, its file then lists names only). The values in
+  effect are local over shared. Saving on the Variables screen (`scopes::write`) makes what
+  it shows the shared values and clears the local ones.
 - **An environment may have a color** (`model::EnvColor`: red, yellow, green, blue, purple,
-  or none), stored by name in a column whose CHECK admits only those names (migration V4)
+  or none), stored by name in the environment's file, which refuses other names
   and exported in native version 2; Postman has no equivalent and leaves it out. A new
   environment is offered red when a whole word of its name is `prod`, `production` or `live`
   (`EnvColor::suggested_for`), so "delivery" is not. Why: the environment in use, above all
@@ -682,9 +717,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   environment shown is the one sends use, and "Clear All" sat beside "Add Variable" (the
   review's #37, #39; Phase 5 review Q22, Q25).
 - **Saved values: a list per variable, kept in the variable's scope beside its current value**
-  (`model::SavedValues`, the `saved_values` column of migration V2, `store::scopes`). The
+  (`model::SavedValues`, in the scope's file, or locally for an environment that does not
+  share its values; `store::scopes`). The
   current value stays the single source for execution, precedence, curl, history and exports;
-  swapping (`scopes::choose_value`, from the inspector) is a stored write, not a mode. Lists
+  swapping (`scopes::choose_value`, from the inspector) is a local value, not a mode. Lists
   live in the defining scope, so each environment has its own. The inspector does not offer a
   swap while the Variables screen has unsaved edits to that scope, so a later Save cannot
   undo it unseen, and a clean screen on that scope reloads. Saved values travel in native
@@ -928,8 +964,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   folder name shows its requests and a negation never brings a whole folder back; folders
   left without matches are hidden. Text that does not parse is searched as typed. Filtered
   folders are drawn open under their own collapse ids, so clearing the filter restores the
-  folders the user closed. The tree reads `url` through a virtual generated column
-  (migration V3), like `name` and `method`. Cmd/Ctrl+F over the sidebar focuses the filter,
+  folders the user closed. The tree's names, methods and URLs come from memory. Cmd/Ctrl+F
+  over the sidebar focuses the filter,
   as Find elsewhere applies to what is under the pointer. The clear button sits inside the
   field's right padding, so typing never changes the field's or the sidebar's width (the
   review's #52), and "5 of 9 requests" shows under it while filtering.
@@ -1265,8 +1301,8 @@ numbers, so both are excluded. Each logical change is its own commit.
 - **Captures set variables from a response, explicitly and visibly** (`core::capture`): a
   variable name and a selector, stored with the request. The value goes to the scope whose
   definition the request saw (so the value it used is the one replaced), else to the active
-  environment, else to the globals; current values only, saved values untouched
-  (`scopes::set_current`). Nothing is taken without a response, and a selector that names
+  environment, else to the globals; as local values only, never a file, saved values
+  untouched (`scopes::set_current`). Nothing is taken without a response, and a selector that names
   nothing leaves the variable alone. The executor only computes the writes; the app applies
   them in one transaction when the response arrives, even if the user has moved to another
   request, except for the scope the Variables screen has unsaved edits to: those are not

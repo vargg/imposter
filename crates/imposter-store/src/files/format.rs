@@ -586,7 +586,12 @@ fn ordered<T>(items: &[T], key: impl Fn(&T) -> (i64, &str)) -> Vec<&T> {
 
 /// Every file of `project`, by its path in the folder (`/`-separated).
 pub fn render(project: &Project) -> BTreeMap<String, Vec<u8>> {
-    let mut files = BTreeMap::new();
+    render_owned(project).into_values().collect()
+}
+
+/// Every file of `project` by the id of what it holds: its path and bytes.
+pub fn render_owned(project: &Project) -> HashMap<String, (String, Vec<u8>)> {
+    let mut files: Owned = HashMap::new();
     let mut taken = HashSet::new();
     for environment in ordered(&project.environments, |e| (0, e.id.as_str())) {
         let name = unique(&slug(&environment.name, "environment"), &mut taken, &[]);
@@ -610,7 +615,10 @@ pub fn render(project: &Project) -> BTreeMap<String, Vec<u8>> {
                 SavedValues::default()
             },
         };
-        files.insert(format!("{ENVIRONMENTS_DIR}/{name}.yaml"), yaml(&file));
+        files.insert(
+            environment.id.clone(),
+            (format!("{ENVIRONMENTS_DIR}/{name}.yaml"), yaml(&file)),
+        );
     }
     let mut taken = HashSet::new();
     for collection in ordered(&project.collections, |c| (0, c.id.as_str())) {
@@ -629,7 +637,10 @@ pub fn render(project: &Project) -> BTreeMap<String, Vec<u8>> {
             saved_values: collection.saved_values.clone(),
             scripts: collection.scripts.clone(),
         };
-        files.insert(format!("{dir}/{COLLECTION_FILE}"), yaml(&file));
+        files.insert(
+            collection.id.clone(),
+            (format!("{dir}/{COLLECTION_FILE}"), yaml(&file)),
+        );
         render_level(
             &mut files,
             &dir,
@@ -641,13 +652,10 @@ pub fn render(project: &Project) -> BTreeMap<String, Vec<u8>> {
     files
 }
 
-fn render_level(
-    files: &mut BTreeMap<String, Vec<u8>>,
-    dir: &str,
-    folders: &[Folder],
-    requests: &[Request],
-    top: bool,
-) {
+/// Rendered files by owner id: path and bytes.
+type Owned = HashMap<String, (String, Vec<u8>)>;
+
+fn render_level(files: &mut Owned, dir: &str, folders: &[Folder], requests: &[Request], top: bool) {
     let reserved: &[&str] = if top {
         &["imposter", "folder"]
     } else {
@@ -661,8 +669,11 @@ fn render_level(
             reserved,
         );
         files.insert(
-            format!("{dir}/{name}.yaml"),
-            yaml(&RequestFile::new(request)),
+            request.id.clone(),
+            (
+                format!("{dir}/{name}.yaml"),
+                yaml(&RequestFile::new(request)),
+            ),
         );
     }
     let mut taken_dirs = HashSet::new();
@@ -676,7 +687,10 @@ fn render_level(
             description: folder.description.clone(),
             scripts: folder.scripts.clone(),
         };
-        files.insert(format!("{path}/{FOLDER_FILE}"), yaml(&file));
+        files.insert(
+            folder.id.clone(),
+            (format!("{path}/{FOLDER_FILE}"), yaml(&file)),
+        );
         render_level(files, &path, &folder.folders, &folder.requests, false);
     }
 }
@@ -705,6 +719,13 @@ fn parse<T: serde::de::DeserializeOwned>(path: &str, bytes: &[u8]) -> Result<T, 
 /// A folder's files back into a project. `files` holds every `.yaml` file under the
 /// folder by its `/`-separated path; anything else in the folder is not part of it.
 pub fn read(files: &BTreeMap<String, Vec<u8>>) -> Result<Project, FormatError> {
+    read_owned(files).map(|(project, _)| project)
+}
+
+/// [`read`], with the path of each id's file.
+pub fn read_owned(
+    files: &BTreeMap<String, Vec<u8>>,
+) -> Result<(Project, HashMap<String, String>), FormatError> {
     let mut project = Project::default();
     let mut ids: HashMap<String, String> = HashMap::new();
     let mut claim = |id: &str, path: &str| -> Result<(), FormatError> {
@@ -775,7 +796,7 @@ pub fn read(files: &BTreeMap<String, Vec<u8>>) -> Result<Project, FormatError> {
         collection.requests = requests;
         project.collections.push(collection);
     }
-    Ok(project)
+    Ok((project, ids))
 }
 
 fn name(path: &str, name: String) -> Result<String, FormatError> {

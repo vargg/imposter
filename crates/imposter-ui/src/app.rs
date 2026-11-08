@@ -1828,13 +1828,12 @@ impl ImposterApp {
     }
 
     fn reload_collections(&mut self, select: Option<CollectionId>) {
-        self.task(
-            |db| collections::collections(db),
-            move |result| Message::Collections {
+        self.task(collections::collections, move |result| {
+            Message::Collections {
                 select,
                 result: result.map_err(failure),
-            },
-        );
+            }
+        });
     }
 
     fn load_tree(&mut self, id: CollectionId) {
@@ -2039,10 +2038,7 @@ impl ImposterApp {
                     match result {
                         Ok(created) => Message::Collections {
                             select: Some(created.id),
-                            result: db
-                                .call(|tx| collections::collections(tx))
-                                .await
-                                .map_err(failure),
+                            result: db.call(collections::collections).await.map_err(failure),
                         },
                         Err(error) => Message::Changed {
                             reload_collections: false,
@@ -3176,10 +3172,9 @@ impl ImposterApp {
     }
 
     fn load_request_index(&mut self) {
-        self.task(
-            |db| collections::request_index(db),
-            |result| Message::RequestIndex(result.map_err(failure)),
-        );
+        self.task(collections::request_index, |result| {
+            Message::RequestIndex(result.map_err(failure))
+        });
     }
 
     fn read_import(&mut self, path: PathBuf, companions: Vec<PathBuf>) {

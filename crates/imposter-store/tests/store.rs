@@ -17,7 +17,7 @@ fn a_command_commits_when_it_succeeds() {
         .unwrap();
 
     let names: Vec<String> = store
-        .call_blocking(|db| collections(db))
+        .call_blocking(collections)
         .unwrap()
         .into_iter()
         .map(|c| c.name)
@@ -36,7 +36,7 @@ fn a_failing_command_rolls_back_every_write_it_made() {
     });
 
     assert!(matches!(result, Err(StoreError::NotFound("thing"))));
-    assert_eq!(store.call_blocking(|db| collections(db)).unwrap(), []);
+    assert_eq!(store.call_blocking(collections).unwrap(), []);
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn a_panicking_command_rolls_back_and_the_database_keeps_working() {
     });
 
     assert!(matches!(result, Err(StoreError::Panicked)));
-    assert_eq!(store.call_blocking(|db| collections(db)).unwrap(), []);
+    assert_eq!(store.call_blocking(collections).unwrap(), []);
     store
         .call_blocking(|db| create_collection(db, "kept", "", &Variables::new()))
         .unwrap();
@@ -81,7 +81,7 @@ fn commands_from_many_threads_run_one_at_a_time_in_send_order_per_thread() {
         handle.join().unwrap();
     }
 
-    let all = store.call_blocking(|db| collections(db)).unwrap();
+    let all = store.call_blocking(collections).unwrap();
     assert_eq!(all.len(), 100);
     for thread in 0..4 {
         let prefix = format!("t{thread}-");
@@ -127,12 +127,12 @@ fn closing_finishes_queued_work_and_later_calls_fail() {
     store.close().unwrap();
 
     assert!(matches!(
-        handle.call_blocking(|db| collections(db)),
+        handle.call_blocking(collections),
         Err(StoreError::Closed)
     ));
     let reopened = Store::open(&path).unwrap();
     assert_eq!(
-        reopened.call_blocking(|db| collections(db)).unwrap()[0].name,
+        reopened.call_blocking(collections).unwrap()[0].name,
         "queued"
     );
 }

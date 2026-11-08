@@ -54,7 +54,7 @@ fn collections_are_listed_by_name() {
         })
         .unwrap();
     let names: Vec<_> = store
-        .call_blocking(|db| collections(db))
+        .call_blocking(collections)
         .unwrap()
         .into_iter()
         .map(|c| c.name)
@@ -357,10 +357,7 @@ fn saving_a_request_keeps_its_place() {
 
     store
         .call_blocking(move |db| {
-            db.execute(
-                "UPDATE requests SET template = json_set(template, '$.position', 5) WHERE id = ?1",
-                [a.0],
-            )?;
+            place(db, Item::Request(a), None, usize::MAX)?;
             let mut edited = stale;
             edited.url = "https://edited".into();
             update_request(db, a, &edited)
@@ -373,7 +370,7 @@ fn saving_a_request_keeps_its_place() {
         .unwrap();
     assert_eq!(
         (read.template.url.as_str(), read.template.position),
-        ("https://edited", 5)
+        ("https://edited", 1)
     );
     let order: Vec<_> = store
         .call_blocking(move |db| tree(db, collection_id))

@@ -13,7 +13,4 @@ pub mod secrets;
 mod store;
 
 pub use error::{Conflict, StoreError};
-pub use store::{Store, StoreHandle};
-
-/// The transaction a store command runs in.
-pub type Tx<'a> = rusqlite::Transaction<'a>;
+pub use store::{Store, StoreHandle, Tx};

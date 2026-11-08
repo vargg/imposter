@@ -215,7 +215,7 @@ fn environments_are_created_renamed_and_deleted() {
         .harness
         .state()
         .store()
-        .call_blocking(|db| environments::environments(db))
+        .call_blocking(environments::environments)
         .unwrap()
         .into_iter()
         .map(|e| e.name)
@@ -230,7 +230,7 @@ fn environments_are_created_renamed_and_deleted() {
         app.harness
             .state()
             .store()
-            .call_blocking(|db| environments::environments(db))
+            .call_blocking(environments::environments)
             .unwrap(),
         []
     );

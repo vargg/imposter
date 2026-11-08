@@ -887,7 +887,7 @@ fn switching_collections_clears_a_request_from_another_collection_and_deleting_o
         .harness
         .state()
         .store()
-        .call_blocking(|db| collections::collections(db))
+        .call_blocking(collections::collections)
         .unwrap()
         .into_iter()
         .map(|c| c.name)
@@ -1124,7 +1124,7 @@ fn duplication_of_closed_requests_and_failures_preserve_the_editor() {
         "http://closed"
     );
     app.harness.state().store().call_blocking(|db| {
-        db.execute_batch("CREATE TRIGGER reject_copy BEFORE INSERT ON requests BEGIN SELECT RAISE(FAIL, 'injected write failure'); END;")?;
+        db.execute_batch("CREATE TRIGGER reject_copy BEFORE INSERT ON ids BEGIN SELECT RAISE(FAIL, 'injected write failure'); END;")?;
         Ok(())
     }).unwrap();
     app.harness.get_by_label("GET Closed").click_secondary();

@@ -63,7 +63,7 @@ fn an_empty_database_offers_to_create_a_collection() {
         .harness
         .state()
         .store()
-        .call_blocking(|db| collections::collections(db))
+        .call_blocking(collections::collections)
         .unwrap();
     assert_eq!(
         stored.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
@@ -215,7 +215,7 @@ fn switching_requests_with_unsaved_changes_asks_and_discard_restores_the_saved_s
         .harness
         .state()
         .store()
-        .call_blocking(|db| collections::collections(db))
+        .call_blocking(collections::collections)
         .unwrap()[0]
         .id;
     let tree = app

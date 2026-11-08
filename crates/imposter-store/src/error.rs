@@ -27,6 +27,9 @@ pub enum StoreError {
     Conflict(#[from] Conflict),
     #[error(transparent)]
     Settings(#[from] SettingsError),
+    /// The collections folder could not be written, or a file there changed on disk.
+    #[error("{0}")]
+    Files(String),
     #[error("Execution exceeds the history storage budget")]
     HistoryBudget,
     #[error("Cannot back up the database before upgrading it: {0}")]

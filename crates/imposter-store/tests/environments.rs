@@ -86,14 +86,14 @@ fn the_active_environment_feeds_the_variable_context() {
         })
         .unwrap();
 
-    let before = store.call_blocking(|db| variable_context(db)).unwrap();
+    let before = store.call_blocking(variable_context).unwrap();
     assert_eq!(before.environment, None);
     assert_eq!(before.environment_name(), "Global");
 
     store
         .call_blocking(move |db| set_active_environment(db, Some(env.id)))
         .unwrap();
-    let after = store.call_blocking(|db| variable_context(db)).unwrap();
+    let after = store.call_blocking(variable_context).unwrap();
     assert_eq!(after.environment_name(), "Dev");
     assert_eq!(after.environment.unwrap().values, vars(&[("e", "2")]));
     assert_eq!(after.globals, vars(&[("g", "1")]));
@@ -114,10 +114,7 @@ fn deleting_the_active_environment_falls_back_to_globals() {
         .call_blocking(move |db| delete_environment(db, env.id))
         .unwrap();
 
-    assert_eq!(
-        store.call_blocking(|db| active_environment(db)).unwrap(),
-        None
-    );
+    assert_eq!(store.call_blocking(active_environment).unwrap(), None);
     assert!(matches!(
         store.call_blocking(|db| set_active_environment(db, Some(EnvironmentId(99)))),
         Err(StoreError::NotFound(_))
@@ -140,13 +137,13 @@ fn environments_are_listed_by_name() {
         })
         .unwrap();
     let names: Vec<_> = store
-        .call_blocking(|db| environments(db))
+        .call_blocking(environments)
         .unwrap()
         .into_iter()
         .map(|e| e.name)
         .collect();
     assert_eq!(names, ["a", "b"]);
-    let mut all = store.call_blocking(|db| environment_names(db)).unwrap();
+    let mut all = store.call_blocking(environment_names).unwrap();
     all.sort();
     assert_eq!(all, ["a", "b"]);
 }
@@ -172,7 +169,7 @@ fn an_environment_keeps_its_color_until_cleared() {
     };
     assert_eq!(read(&store), Some(EnvColor::Red));
     assert_eq!(
-        store.call_blocking(|db| environments(db)).unwrap()[0].color,
+        store.call_blocking(environments).unwrap()[0].color,
         Some(EnvColor::Red)
     );
     store
@@ -195,14 +192,15 @@ fn an_environment_keeps_its_color_until_cleared() {
 }
 
 #[test]
-fn the_color_column_refuses_unknown_names() {
-    let (_dir, store) = store();
-    store
-        .call_blocking(|db| create_environment(db, "Dev", &vars(&[])))
-        .unwrap();
-    let result = store.call_blocking(|db| {
-        db.execute("UPDATE environments SET color = 'pink'", [])
-            .map_err(StoreError::from)
-    });
-    assert!(result.is_err());
+fn an_environment_file_with_an_unknown_color_is_refused() {
+    let mut files = std::collections::BTreeMap::new();
+    files.insert(
+        "environments/dev.yaml".to_owned(),
+        b"id: e1\nname: Dev\ncolor: pink\n".to_vec(),
+    );
+    let error = imposter_store::files::format::read(&files).unwrap_err();
+    assert!(
+        error.to_string().starts_with("environments/dev.yaml"),
+        "{error}"
+    );
 }

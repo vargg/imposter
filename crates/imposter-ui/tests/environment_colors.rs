@@ -18,7 +18,7 @@ fn stored(app: &support::App) -> Vec<(String, Option<EnvColor>)> {
     app.harness
         .state()
         .store()
-        .call_blocking(|db| environments::environments(db))
+        .call_blocking(environments::environments)
         .unwrap()
         .into_iter()
         .map(|e| (e.name, e.color))

@@ -97,7 +97,7 @@ fn dev(app: &support::App) -> imposter_app::core::ids::EnvironmentId {
     app.harness
         .state()
         .store()
-        .call_blocking(|db| environments::active_environment(db))
+        .call_blocking(environments::active_environment)
         .unwrap()
         .unwrap()
 }

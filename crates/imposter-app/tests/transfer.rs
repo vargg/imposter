@@ -61,7 +61,7 @@ async fn round_trip(store: &Store, path: PathBuf, out: PathBuf) {
     let names = preview.environment_names.clone();
     let id = import(&store.handle(), preview, false).await.unwrap();
     let environment_ids: Vec<_> = store
-        .call(|db| environments::environments(db))
+        .call(environments::environments)
         .await
         .unwrap()
         .into_iter()
@@ -138,7 +138,7 @@ async fn imports_never_overwrite_and_report_global_conflicts() {
     assert_eq!(globals["token"], "mine");
     assert_eq!(globals["file"], "upload.bin");
     let names: Vec<String> = store
-        .call(|db| collections::collections(db))
+        .call(collections::collections)
         .await
         .unwrap()
         .into_iter()
@@ -241,20 +241,10 @@ async fn postman_imports_need_consent_for_losses_that_change_requests() {
         import(&store.handle(), preview.clone(), false).await,
         Err(TransferError::ConsentRequired)
     ));
-    assert_eq!(
-        store.call(|db| collections::collections(db)).await.unwrap(),
-        []
-    );
+    assert_eq!(store.call(collections::collections).await.unwrap(), []);
 
     import(&store.handle(), preview, true).await.unwrap();
-    assert_eq!(
-        store
-            .call(|db| collections::collections(db))
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(store.call(collections::collections).await.unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -313,10 +303,7 @@ async fn native_imports_apply_the_version_rules() {
         matches!(&refused, Err(TransferError::Native(native::NativeError::Json(e))) if e.to_string().contains("poster")),
         "{refused:?}"
     );
-    assert_eq!(
-        store.call(|db| collections::collections(db)).await.unwrap(),
-        []
-    );
+    assert_eq!(store.call(collections::collections).await.unwrap(), []);
 }
 
 #[tokio::test]
@@ -343,10 +330,7 @@ async fn bad_files_are_rejected_before_anything_is_written() {
     ));
     let missing = read_preview(&store.handle(), dir.path().join("missing.json"), Vec::new()).await;
     assert!(missing.is_err());
-    assert_eq!(
-        store.call(|db| collections::collections(db)).await.unwrap(),
-        []
-    );
+    assert_eq!(store.call(collections::collections).await.unwrap(), []);
 }
 
 #[tokio::test]
@@ -721,7 +705,7 @@ async fn environment_colors_travel_with_exports() {
         .unwrap();
     import(&store2.handle(), preview, false).await.unwrap();
     let colors = store2
-        .call(|db| environments::environments(db))
+        .call(environments::environments)
         .await
         .unwrap()
         .into_iter()

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::StoreError;
 
 /// Every migration in order; the database's `user_version` counts how many have run.
-pub const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
+pub const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8];
 
 const V1: &str = r"
 CREATE TABLE collections (
@@ -122,6 +122,35 @@ CREATE TABLE secrets (
     name TEXT NOT NULL,
     value TEXT NOT NULL
 );
+CREATE UNIQUE INDEX secrets_by_name ON secrets (coalesce(environment_id, 0), name);
+";
+
+/// Collections and environments move to files (`files`): `ids` gives each file's id a
+/// stable number, `local_scopes` holds the values that stay on this computer (what captures
+/// set, and an environment's values when it does not share them), and secrets lose their
+/// reference to the environments table, which files replace.
+const V8: &str = r"
+CREATE TABLE ids (
+    uid TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('collection', 'folder', 'request', 'environment')),
+    id INTEGER NOT NULL,
+    UNIQUE (kind, id)
+);
+CREATE TABLE local_scopes (
+    scope TEXT PRIMARY KEY,
+    variables TEXT NOT NULL DEFAULT '{}',
+    saved_values TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE secrets_v8 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    environment_id INTEGER,
+    name TEXT NOT NULL,
+    value TEXT NOT NULL
+);
+INSERT INTO secrets_v8 (id, environment_id, name, value)
+    SELECT id, environment_id, name, value FROM secrets;
+DROP TABLE secrets;
+ALTER TABLE secrets_v8 RENAME TO secrets;
 CREATE UNIQUE INDEX secrets_by_name ON secrets (coalesce(environment_id, 0), name);
 ";
 

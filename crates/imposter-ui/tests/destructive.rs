@@ -138,7 +138,7 @@ fn variables_ask_before_they_are_cleared_reverted_or_deleted() {
         .harness
         .state()
         .store()
-        .call_blocking(|db| environments::environments(db))
+        .call_blocking(environments::environments)
         .unwrap();
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].variables, vars(&[("a", "1"), ("b", "2")]));

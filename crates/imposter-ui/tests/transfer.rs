@@ -36,7 +36,7 @@ fn collection_names(app: &support::App) -> Vec<String> {
     app.harness
         .state()
         .store()
-        .call_blocking(|db| collections::collections(db))
+        .call_blocking(collections::collections)
         .unwrap()
         .into_iter()
         .map(|c| c.name)
@@ -178,7 +178,7 @@ fn postman_imports_offer_companions_and_require_consent_for_losses() {
         .harness
         .state()
         .store()
-        .call_blocking(|db| environments::environments(db))
+        .call_blocking(environments::environments)
         .unwrap()
         .into_iter()
         .map(|e| e.name)
