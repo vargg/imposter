@@ -65,7 +65,9 @@ Protect these. The milestones run on them.
 - Basic, Bearer and Digest auth. Per-request settings. TLS, proxies, and client
   certificates matched to an exact host.
 - Variables in global, collection and environment scopes, with saved values, generated
-  values and environment colours.
+  values and environment colours. Secrets as references, `{{secret:name}}`, kept per
+  environment and globally apart from variables, never exported or kept in History, and
+  filled by `--secret` on the command line.
 - History, search, restore, and the request as it was sent.
 - Response viewer: virtualized rows, highlighting, JSONPath filter and fold, a bounded
   preview, and saving the full body.
@@ -265,7 +267,9 @@ This is in place before an agent can execute a request. It is a planned guarante
 tests, not a claim about today's logs alone.
 
 - Secrets are references, resolved from sources the user named. The first headless form
-  is named process-environment inputs, not the whole environment. A missing input fails
+  is named process-environment inputs, not the whole environment. Done for references
+  (8 November 2026): `{{secret:name}}` resolves from the profile's secrets or `--secret`,
+  and History and exports keep no value. A missing input fails
   the run.
 - Shared project files, agent output, reports and the default result exclude or redact
   secret values. Redaction covers URLs, headers, bodies, variable values, check

@@ -251,6 +251,15 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                             state.variables.rows.push(vars::Row::new("", ""));
                         }
                     });
+                    if imposter_app::core::variables::SecretScope::of_scope(current).is_some() {
+                        let widths = (name_width, value_width, height);
+                        edited |= secrets_section(
+                            ui,
+                            &mut state.variables.secrets,
+                            widths,
+                            highlight.as_deref(),
+                        );
+                    }
                 });
         });
     if edited {
@@ -258,6 +267,87 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     }
 
     state.actions.extend(actions);
+}
+
+/// The scope's secrets under its variables: values masked, each with an eye to show it for
+/// the session, never saved values. Returns whether a row changed.
+fn secrets_section(
+    ui: &mut Ui,
+    rows: &mut Vec<vars::Row>,
+    (name_width, value_width, height): (f32, f32, f32),
+    highlight: Option<&str>,
+) -> bool {
+    let mut edited = false;
+    ui.add_space(16.0);
+    ui.label(egui::RichText::new("Secrets").font(crate::theme::semibold(13.0)));
+    ui.add(
+        egui::Label::new(tone_text(
+            "Used as {{secret:name}}. Kept only on this computer: never exported, and removed from History.",
+            Tone::Muted,
+        ))
+        .wrap(),
+    );
+    ui.add_space(4.0);
+    let eye = icons::size() + ui.spacing().item_spacing.x;
+    let value_width = (value_width - eye).max(120.0);
+    if !rows.is_empty() {
+        ui.horizontal(|ui| {
+            crate::widgets::heading_cell(ui, name_width, "Secret name");
+            crate::widgets::heading_cell(ui, value_width, "Value");
+        });
+    }
+    let mut remove = None;
+    for (index, row) in rows.iter_mut().enumerate() {
+        ui.horizontal(|ui| {
+            let field = ui.add_sized(
+                [name_width, height],
+                egui::TextEdit::singleline(&mut row.name)
+                    .id_salt(("secret", row.key, "name"))
+                    .hint_text("name"),
+            );
+            name(&field, &format!("Secret {} name", index + 1));
+            if highlight.and_then(imposter_app::core::variables::secret_name)
+                == Some(row.name.as_str())
+            {
+                field.scroll_to_me(Some(Align::Center));
+                field.request_focus();
+            }
+            // Shown or not is remembered for the session only, never stored.
+            let shown_id = ui.make_persistent_id(("secret shown", row.key));
+            let mut shown: bool = ui.data(|d| d.get_temp(shown_id)).unwrap_or(false);
+            let value = ui.add_sized(
+                [value_width, height],
+                egui::TextEdit::singleline(&mut row.value)
+                    .id_salt(("secret", row.key, "value"))
+                    .password(!shown)
+                    .hint_text("value"),
+            );
+            name(&value, &format!("Secret {} value", index + 1));
+            let (icon, action) = if shown {
+                (Icon::EyeOff, format!("Hide secret {}", index + 1))
+            } else {
+                (Icon::Eye, format!("Show secret {}", index + 1))
+            };
+            if icons::button(ui, icon, &action, false).clicked() {
+                shown = !shown;
+            }
+            ui.data_mut(|d| d.insert_temp(shown_id, shown));
+            edited |= field.changed() || value.changed();
+            let what = format!("secret {}", index + 1);
+            let id = egui::Id::unique(("remove secret", row.key));
+            if crate::widgets::remove_button(ui, id, &what, height) {
+                remove = Some(index);
+            }
+        });
+    }
+    if let Some(index) = remove {
+        rows.remove(index);
+        edited = true;
+    }
+    if ui.button("Add Secret").clicked() {
+        rows.push(vars::Row::new("", ""));
+    }
+    edited
 }
 
 /// Wide enough for a value, "current" and the remove button.

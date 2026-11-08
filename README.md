@@ -45,6 +45,13 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   value throughout a send, so the same `{{$uuid}}` in the URL and the body match; add a word
   for another value (`{{$uuid second}}`). Postman's `$guid`, `$randomUUID`, `$timestamp`,
   `$isoTimestamp` and `$randomInt` work as imported. Type `{{$` for the list.
+- Secrets: write `{{secret:token}}` for a token, password or key. Its value lives on the
+  Variables screen's **Secrets** section, per environment or global (the active
+  environment's first), masked, and only on this computer: never exported, and removed from
+  History, which shows `«redacted»` instead. The inspector always masks it until Reveal. A
+  capture's lock stores a login's token as a secret instead of a variable, and scripts
+  have `secrets.get` and `secrets.set`. Secrets are kept unencrypted in your profile
+  database (and its upgrade backups), like the rest of your data.
 - Saved values: keep several values of one variable (user IDs, names) in its scope, then swap
   the current one from the placeholder's inspector in one click. Each environment keeps its
   own list. Native exports carry saved values with their variables; Postman exports carry the

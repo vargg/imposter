@@ -364,7 +364,11 @@ fn capture_target(
     snapshot: Option<&Snapshot>,
     fallback: Option<&str>,
     variable: &str,
+    secret: bool,
 ) -> (String, String) {
+    if secret {
+        return secret_target(snapshot, fallback, variable);
+    }
     if let Some(definition) = snapshot.and_then(|s| s.effective(variable))
         && crate::vars::Scope::of(&definition.source).is_some()
     {
@@ -392,6 +396,35 @@ fn capture_target(
     }
 }
 
+/// Where a secret capture of `name` stores it (`capture::secret_target`): the secrets that
+/// define it, else the active environment's, else the global ones.
+fn secret_target(
+    snapshot: Option<&Snapshot>,
+    fallback: Option<&str>,
+    name: &str,
+) -> (String, String) {
+    let key = imposter_app::core::variables::secret_key(name);
+    if let Some(definition) = snapshot.and_then(|s| s.effective(&key))
+        && let imposter_app::core::variables::Source::Secret { .. } = definition.source
+    {
+        let place = format!("{} secrets", definition.source.label());
+        let why = format!("Stores {name} as a secret in {place}, which define it");
+        return (place, why);
+    }
+    match fallback {
+        Some(environment) => (
+            format!("{environment} secrets"),
+            format!(
+                "No secret {name} yet, so it goes to the active environment's secrets, {environment}"
+            ),
+        ),
+        None => (
+            "Global secrets".to_owned(),
+            format!("No secret {name} yet and no environment is active, so it goes to Global"),
+        ),
+    }
+}
+
 /// Captures in a fixed grid: enabled, variable, where it goes, what to read and its path,
 /// remove: the Captures tab. `fallback` is the active environment, where a capture of a
 /// name nobody defines goes (Global without one). Returns whether anything changed.
@@ -409,14 +442,17 @@ pub fn captures_table(
     let height = ui.spacing().interact_size.y;
     let width = ui.available_width();
     let indent = checkbox + spacing;
+    // The lock that keeps a capture as a secret, after its variable.
+    let lock = crate::icons::size();
     let one = checkbox
         + VARIABLE_WIDTH
+        + lock
         + TARGET_WIDTH
         + SOURCE_WIDTH
         + REMOVE
-        + 5.0 * spacing
+        + 6.0 * spacing
         + MIN_FIELD;
-    let two = checkbox + MIN_FIELD + TARGET_WIDTH + REMOVE + 3.0 * spacing;
+    let two = checkbox + MIN_FIELD + lock + TARGET_WIDTH + REMOVE + 4.0 * spacing;
     let lines = if width >= one {
         Lines::One
     } else if width >= two {
@@ -428,22 +464,23 @@ pub fn captures_table(
     let (variable_width, source_width, path_width) = match lines {
         Lines::One => (VARIABLE_WIDTH, SOURCE_WIDTH, width - one + MIN_FIELD),
         Lines::Two => (
-            width - checkbox - TARGET_WIDTH - REMOVE - 3.0 * spacing,
+            width - checkbox - lock - TARGET_WIDTH - REMOVE - 4.0 * spacing,
             SOURCE_WIDTH,
             (rest - SOURCE_WIDTH - spacing).max(MIN_FIELD),
         ),
-        Lines::Stacked => (width - checkbox - REMOVE - 2.0 * spacing, rest, rest),
+        Lines::Stacked => (width - checkbox - lock - REMOVE - 3.0 * spacing, rest, rest),
     };
     if captures.is_empty() {
         ui.label(tone_text(
             "Values taken from each response go into variables: the scope that defines the \
-             name, or the active environment.",
+             name, or the active environment. The lock stores one as a secret instead.",
             Tone::Muted,
         ));
     }
     for (index, capture) in captures.iter_mut().enumerate() {
         let row = format!("Capture {}", index + 1);
-        let (target, why) = capture_target(snapshot, fallback, capture.variable.trim());
+        let (target, why) =
+            capture_target(snapshot, fallback, capture.variable.trim(), capture.secret);
         let target_cell = |ui: &mut Ui, width: f32| {
             ui.allocate_ui_with_layout(
                 egui::vec2(width, height),
@@ -472,6 +509,28 @@ pub fn captures_table(
             );
             name(&field, &format!("{row} variable"));
             changed |= field.changed();
+            let (label, hint) = if capture.secret {
+                (
+                    format!("{row} stored as a secret"),
+                    "Stored as a secret ({{secret:name}}): click to store it as a variable",
+                )
+            } else {
+                (
+                    format!("{row} stored as a variable"),
+                    "Store as a secret ({{secret:name}}) instead of a variable",
+                )
+            };
+            let toggle = crate::icons::button_with_hint(
+                ui,
+                crate::icons::Icon::Lock,
+                &label,
+                hint,
+                capture.secret,
+            );
+            if toggle.clicked() {
+                capture.secret = !capture.secret;
+                changed = true;
+            }
             if lines != Lines::Stacked {
                 target_cell(ui, TARGET_WIDTH);
             }
@@ -724,6 +783,10 @@ fn tinted(ui: &mut Ui, failed: bool, add: impl FnOnce(&mut Ui)) {
 
 fn captured_text(capture: &Captured) -> (&'static str, Tone, String) {
     match &capture.taken {
+        // A secret's value is never shown, only where it went.
+        Taken::Value(_) if capture.secret => {
+            ("Stored", Tone::Ok, format!("secret in {}", capture.target))
+        }
         Taken::Value(value) => {
             let shown = match value.char_indices().nth(SHOWN_VALUE) {
                 Some((cut, _)) => format!("{}…", &value[..cut]),

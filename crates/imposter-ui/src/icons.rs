@@ -29,6 +29,8 @@ pub enum Icon {
     Filter,
     /// Values kept for later.
     Bookmark,
+    /// Kept as a secret.
+    Lock,
     /// Show a hidden value.
     Eye,
     /// Hide a shown value: the eye, struck through.
@@ -394,6 +396,27 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
                     point(12.0, 14.0),
                     point(8.0, 10.5),
                     point(4.0, 14.0),
+                ],
+                stroke,
+            ));
+        }
+        Icon::Lock => {
+            // A body with a shackle over it.
+            painter.rect_stroke(
+                Rect::from_min_max(point(3.0, 7.5), point(13.0, 14.0)),
+                1.5,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+            painter.add(egui::Shape::line(
+                vec![
+                    point(5.5, 7.5),
+                    point(5.5, 5.0),
+                    point(6.5, 3.0),
+                    point(8.0, 2.5),
+                    point(9.5, 3.0),
+                    point(10.5, 5.0),
+                    point(10.5, 7.5),
                 ],
                 stroke,
             ));

@@ -571,6 +571,15 @@ numbers, so both are excluded. Each logical change is its own commit.
     (`send::without_secrets`). `imposter envs` lists secret names per environment and
     the global ones; `show` reports a `secret:` name as "Dev secrets", "Global secrets"
     or undefined. Pinned by `imposter-cli/tests/secrets.rs`.
+  - **The app:** the Variables screen has a Secrets section under the variables of Global
+    and each environment (none for a collection), saved with the page and guarded with
+    it; values are masked with an eye per row (shown for the session only), have no
+    saved values, and are refused under `redact::MIN_SECRET` characters so they can be
+    removed reliably. The inspector always masks a secret until Reveal. A capture row
+    has a lock (`Icon::Lock`) that stores it as a secret, its target then "→ Dev secrets";
+    the response's Tests tab says "Stored … secret in Dev secrets" without the value. A
+    blocked send offers "Define {{secret:x}} in Dev secrets", which adds the secret row.
+    Pinned by `imposter-ui/tests/secrets.rs` and the layout lint.
   - **Exports never carry one:** exports read the variables, never the `secrets` table;
     references are kept as written.
   Pinned by `imposter-core` unit tests, `imposter-store/tests/secrets.rs` and

@@ -2035,10 +2035,16 @@ fn blocked_card(
             ui.horizontal_wrapped(|ui| {
                 // The headline names the variable; the button says where it goes, which a
                 // long name would cut off. Hover and screen readers get both.
-                let full = format!("Define {{{{{first}}}}} in {scope_name}");
+                // A secret is defined among the scope's secrets.
+                let place = if imposter_app::core::variables::secret_name(first).is_some() {
+                    format!("{scope_name} secrets")
+                } else {
+                    scope_name.to_owned()
+                };
+                let full = format!("Define {{{{{first}}}}} in {place}");
                 let define = ui
                     .add(
-                        egui::Button::new(format!("Define in {scope_name}"))
+                        egui::Button::new(format!("Define in {place}"))
                             .wrap_mode(egui::TextWrapMode::Truncate),
                     )
                     .on_hover_text(full.as_str());

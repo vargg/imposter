@@ -247,10 +247,14 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
             ),
             Check::new(Selector::Header("Content-Type".into()), Op::Exists, ""),
         ];
-        pane.editor.captures = vec![Capture::new(
-            "first_user",
-            Selector::Json("$.users[0].id".into()),
-        )];
+        pane.editor.captures = vec![
+            Capture::new("first_user", Selector::Json("$.users[0].id".into())),
+            // Stored as a secret: its lock is on and its target names the secrets.
+            Capture {
+                secret: true,
+                ..Capture::new("session_token", Selector::Header("Set-Cookie".into()))
+            },
+        ];
         pane.tab = imposter_ui::app::EditorTab::Tests;
     }
     check(app, "tests tab");
@@ -484,6 +488,13 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     settle(&mut app.harness);
     click(&mut app.harness, "Variables");
     settle(&mut app.harness);
+    // The Secrets section under the variables, a long name and a masked value.
+    app.harness.state_mut().state.variables.secrets = vec![
+        imposter_ui::vars::Row::new("api_key", "k-123456"),
+        imposter_ui::vars::Row::new("a_rather_long_secret_name_for_the_column", "v-123456"),
+    ];
+    check(app, "variables with secrets");
+    app.harness.state_mut().state.variables.secrets.clear();
     click(&mut app.harness, "New environment");
     check(app, "environment dialog");
     app.harness.key_press(egui::Key::Escape);

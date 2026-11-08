@@ -1114,6 +1114,10 @@ pub fn inspector(
     blocked: Option<vars::Scope>,
 ) -> Option<InspectorAction> {
     let current = inspection.as_mut()?;
+    // A secret stays hidden until revealed, whatever field it was opened from.
+    if imposter_app::core::variables::secret_name(&current.name).is_some() {
+        current.masked = true;
+    }
     let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let mut open = None;
     let reveal_id = egui::Id::unique(("inspector reveal", current.name.as_str()));

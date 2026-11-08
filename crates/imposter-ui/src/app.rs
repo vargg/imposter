@@ -16,7 +16,7 @@ use imposter_app::core::ids::{CollectionId, EnvironmentId, ExecutionId, FolderId
 use imposter_app::core::model::{EnvColor, FormItem, Request, SavedValues, Variables};
 use imposter_app::core::run_result::RunResult;
 use imposter_app::core::settings::AppSettings;
-use imposter_app::core::variables::Snapshot;
+use imposter_app::core::variables::{SecretScope, Snapshot};
 use imposter_app::executor::{self, ExecuteError, Executed};
 use imposter_app::formats::native::NativeDocument;
 use imposter_app::runtime::{Bridge, TaskId};
@@ -25,7 +25,7 @@ use imposter_app::store::collections::{self, Collection, IndexedRequest, Tree};
 use imposter_app::store::environments::{self, Environment};
 use imposter_app::store::executions::{self, ExecutionSummary};
 use imposter_app::store::kv::{self, Table};
-use imposter_app::store::{Store, StoreError, StoreHandle, scopes};
+use imposter_app::store::{Store, StoreError, StoreHandle, scopes, secrets};
 use imposter_app::transfer::{self, ExportScope, ImportKind, ImportPreview};
 use imposter_app::{ops, store};
 use serde_json::Value;
@@ -205,7 +205,8 @@ pub enum Message {
     },
     VariablesLoaded {
         scope: Scope,
-        result: Result<(Variables, SavedValues), Failure>,
+        /// Its variables, saved values and secrets (none for a collection).
+        result: Result<(Variables, SavedValues, Variables), Failure>,
     },
     ValueChosen {
         scope: Scope,
@@ -561,6 +562,9 @@ pub struct VariablesScreen {
     pub scope: Scope,
     pub rows: Vec<vars::Row>,
     baseline: Vec<vars::Entry>,
+    /// The scope's secrets, edited and saved with its variables; a collection has none.
+    pub secrets: Vec<vars::Row>,
+    secret_baseline: Vec<vars::Entry>,
     /// A problem the save controls show until the next edit; otherwise the state follows
     /// from the rows.
     pub status: Option<SaveWord>,
@@ -575,7 +579,9 @@ pub struct VariablesScreen {
 
 impl VariablesScreen {
     pub fn dirty(&self) -> bool {
-        self.loaded && vars::entries(&self.rows) != self.baseline
+        self.loaded
+            && (vars::entries(&self.rows) != self.baseline
+                || vars::entries(&self.secrets) != self.secret_baseline)
     }
 
     pub fn is_saving(&self) -> bool {
@@ -2761,6 +2767,7 @@ impl ImposterApp {
                 let screen = &mut self.state.variables;
                 if screen.scope == scope {
                     screen.rows.clear();
+                    screen.secrets.clear();
                     screen.status = None;
                 }
             }
@@ -3349,7 +3356,14 @@ impl ImposterApp {
         self.state.variables.scope = scope;
         self.state.variables.loaded = false;
         self.task(
-            move |db| scopes::read(db, scope),
+            move |db| {
+                let (variables, saved) = scopes::read(db, scope)?;
+                let secrets = match SecretScope::of_scope(scope) {
+                    Some(scope) => secrets::read(db, scope)?,
+                    None => Variables::new(),
+                };
+                Ok((variables, saved, secrets))
+            },
             move |result| Message::VariablesLoaded {
                 scope,
                 result: result.map_err(failure),
@@ -3360,21 +3374,30 @@ impl ImposterApp {
     fn variables_loaded(
         &mut self,
         scope: Scope,
-        result: Result<(Variables, SavedValues), Failure>,
+        result: Result<(Variables, SavedValues, Variables), Failure>,
     ) {
         let screen = &mut self.state.variables;
         if scope != screen.scope {
             return;
         }
         match result {
-            Ok((variables, saved)) => {
+            Ok((variables, saved, secrets)) => {
                 screen.rows = vars::rows(&variables, &saved);
                 screen.baseline = vars::entries(&screen.rows);
+                screen.secrets = vars::rows(&secrets, &SavedValues::default());
+                screen.secret_baseline = vars::entries(&screen.secrets);
                 screen.loaded = true;
                 screen.status = None;
                 if let Some(name) = screen.define.take() {
-                    if !screen.rows.iter().any(|row| row.name == name) {
-                        screen.rows.push(vars::Row::new(name.clone(), ""));
+                    // "Define {{secret:x}}" adds a secret; any other name, a variable.
+                    let (rows, row_name) = match imposter_app::core::variables::secret_name(&name) {
+                        Some(secret) if SecretScope::of_scope(scope).is_some() => {
+                            (&mut screen.secrets, secret.to_owned())
+                        }
+                        _ => (&mut screen.rows, name.clone()),
+                    };
+                    if !rows.iter().any(|row| row.name == row_name) {
+                        rows.push(vars::Row::new(row_name, ""));
                     }
                     screen.highlight = Some(name);
                 }
@@ -3494,13 +3517,16 @@ impl ImposterApp {
 
     fn revert_variables(&mut self) {
         let screen = &mut self.state.variables;
-        screen.rows = screen
-            .baseline
-            .iter()
-            .map(|(name, value, saved)| {
-                vars::Row::with_saved(name.clone(), value.clone(), saved.clone())
-            })
-            .collect();
+        let rows = |baseline: &[vars::Entry]| -> Vec<vars::Row> {
+            baseline
+                .iter()
+                .map(|(name, value, saved)| {
+                    vars::Row::with_saved(name.clone(), value.clone(), saved.clone())
+                })
+                .collect()
+        };
+        screen.rows = rows(&screen.baseline);
+        screen.secrets = rows(&screen.secret_baseline);
         screen.status = None;
     }
 
@@ -3536,8 +3562,18 @@ impl ImposterApp {
             .into_iter()
             .partition(|w| w.scope.is_some() && w.scope == blocked);
         if !writes.is_empty() {
-            let scopes = imposter_app::core::capture::scopes(&writes);
-            let names: Vec<String> = writes.iter().map(|w| w.name.clone()).collect();
+            // The pages whose rows change, secrets included, so a clean one reloads.
+            let mut scopes: Vec<Scope> = Vec::new();
+            for scope in writes.iter().filter_map(|w| w.scope) {
+                if !scopes.contains(&scope) {
+                    scopes.push(scope);
+                }
+            }
+            // Names only: `secret:token` says a secret was stored without its value.
+            let names: Vec<String> = writes
+                .iter()
+                .map(imposter_app::core::capture::Write::key)
+                .collect();
             let db = self.db.clone();
             self.bridge.spawn(move |_| async move {
                 Message::CapturesWritten {
@@ -3548,7 +3584,10 @@ impl ImposterApp {
             });
         }
         (!kept.is_empty()).then(|| {
-            let names: Vec<&str> = kept.iter().map(|w| w.name.as_str()).collect();
+            let names: Vec<String> = kept
+                .iter()
+                .map(imposter_app::core::capture::Write::key)
+                .collect();
             format!(
                 "Not set: {} — the Variables screen has unsaved changes to that scope",
                 names.join(", ")
@@ -3604,21 +3643,30 @@ impl ImposterApp {
         if !screen.loaded || screen.saving {
             return;
         }
-        let (variables, saved) = match vars::to_scope(&screen.rows) {
-            Ok(scope) => scope,
+        let checked = vars::to_scope(&screen.rows)
+            .map_err(|e| e.to_string())
+            .and_then(|scope| Ok((scope, vars::to_secrets(&screen.secrets)?)));
+        let ((variables, saved), secret_values) = match checked {
+            Ok(checked) => checked,
             Err(error) => {
                 screen.status = Some(SaveWord::Invalid);
                 if screen.pending.take() == Some(VarTransition::Close) {
                     self.state.close = CloseState::Open;
                 }
-                self.request_status(&error.to_string(), Tone::Error);
+                self.request_status(&error, Tone::Error);
                 return;
             }
         };
         screen.saving = true;
         let scope = screen.scope;
         self.task(
-            move |db| scopes::write(db, scope, &variables, &saved),
+            move |db| {
+                scopes::write(db, scope, &variables, &saved)?;
+                match SecretScope::of_scope(scope) {
+                    Some(scope) => secrets::write(db, scope, &secret_values),
+                    None => Ok(()),
+                }
+            },
             move |result| Message::VariablesSaved {
                 scope,
                 result: result.map_err(failure),
@@ -3633,6 +3681,7 @@ impl ImposterApp {
             Ok(()) => {
                 if scope == screen.scope {
                     screen.baseline = vars::entries(&screen.rows);
+                    screen.secret_baseline = vars::entries(&screen.secrets);
                     screen.status = None;
                 }
                 if let Some(transition) = screen.pending.take() {
@@ -3670,7 +3719,7 @@ impl ImposterApp {
             }
             VariablesAction::ClearAll => {
                 let scope = self.state.variables.scope;
-                let count = self.state.variables.rows.len();
+                let count = self.state.variables.rows.len() + self.state.variables.secrets.len();
                 if count > 0 {
                     self.state.dialog = Some(Dialog::clear_variables(
                         scope,

@@ -276,6 +276,30 @@ pub fn to_scope(rows: &[Row]) -> Result<(Variables, SavedValues), DuplicateName>
     Ok((variables, saved))
 }
 
+/// The secret rows as their scope stores them: names unique and valid, values long enough
+/// to remove from output safely (`redact::MIN_SECRET`).
+pub fn to_secrets(rows: &[Row]) -> Result<Variables, String> {
+    let min = imposter_app::core::redact::MIN_SECRET;
+    let mut secrets = Variables::new();
+    for (name, value, _) in entries(rows) {
+        if name.contains(['{', '}', '\n']) {
+            return Err(format!("Secret \"{name}\": names cannot contain braces"));
+        }
+        if secrets.contains_key(&name) {
+            return Err(format!(
+                "Secret names must be unique within a scope (\"{name}\" repeats)"
+            ));
+        }
+        if value.chars().count() < min {
+            return Err(format!(
+                "Secret \"{name}\" needs at least {min} characters, so it can be removed from output reliably"
+            ));
+        }
+        secrets.insert(name, value);
+    }
+    Ok(secrets)
+}
+
 #[cfg(test)]
 mod tests {
     use imposter_app::core::ids::{CollectionId, EnvironmentId};
