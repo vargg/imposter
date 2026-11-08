@@ -122,16 +122,11 @@ fn totals(steps: &[Step]) -> Totals {
     totals
 }
 
-/// The run's outcome: the step outcome that says least was verified, then whether any
-/// check ran at all.
-fn outcome(steps: &[Step], totals: &Totals) -> RunOutcome {
-    let ran: Vec<RunOutcome> = steps
-        .iter()
-        .filter_map(|step| match step {
-            Step::Ran(result) => Some(result.outcome),
-            Step::Skipped { .. } => None,
-        })
-        .collect();
+/// The run's outcome from its requests' (`None` for a skipped one) and how many checks
+/// passed: nothing run is not sent; then the outcome that says least was verified; then
+/// `no_checks` when no check passed anywhere. One rule for the command line and the app.
+pub fn outcome(outcomes: &[Option<RunOutcome>], checks_passed: usize) -> RunOutcome {
+    let ran: Vec<RunOutcome> = outcomes.iter().flatten().copied().collect();
     if ran.is_empty() {
         return RunOutcome::NotSent;
     }
@@ -147,11 +142,21 @@ fn outcome(steps: &[Step], totals: &Totals) -> RunOutcome {
             return worst;
         }
     }
-    if totals.checks_passed == 0 {
+    if checks_passed == 0 {
         RunOutcome::NoChecks
     } else {
         RunOutcome::Passed
     }
+}
+
+fn step_outcomes(steps: &[Step]) -> Vec<Option<RunOutcome>> {
+    steps
+        .iter()
+        .map(|step| match step {
+            Step::Ran(result) => Some(result.outcome),
+            Step::Skipped { .. } => None,
+        })
+        .collect()
 }
 
 fn plural(count: usize, word: &str) -> String {
@@ -198,7 +203,7 @@ fn summary(steps: &[Step], totals: &Totals, outcome: RunOutcome, elapsed_ms: u64
 impl RunReport {
     pub fn new(steps: Vec<Step>, meta: Meta) -> Self {
         let totals = totals(&steps);
-        let outcome = outcome(&steps, &totals);
+        let outcome = outcome(&step_outcomes(&steps), totals.checks_passed);
         Self {
             format: Format::ImposterRun,
             version: VERSION,
@@ -382,6 +387,23 @@ fn escape(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_pass_rule_works_on_outcomes_alone() {
+        use RunOutcome as O;
+        assert_eq!(outcome(&[], 0), O::NotSent);
+        assert_eq!(outcome(&[None, None], 0), O::NotSent, "all skipped");
+        assert_eq!(outcome(&[Some(O::NoChecks), Some(O::Passed)], 1), O::Passed);
+        assert_eq!(outcome(&[Some(O::NoChecks)], 0), O::NoChecks);
+        assert_eq!(
+            outcome(&[Some(O::Failed), Some(O::TransportError), None], 0),
+            O::TransportError
+        );
+        assert_eq!(
+            outcome(&[Some(O::NotChecked), Some(O::Passed)], 3),
+            O::NotChecked
+        );
+    }
 
     #[test]
     fn xml_escapes_markup_and_drops_control_characters() {

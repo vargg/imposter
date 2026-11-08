@@ -173,7 +173,9 @@ pub async fn run(
     };
     let options = Options {
         keep_going: args.keep_going,
-        record: store.as_ref().map(imposter_app::store::Store::handle),
+        record: store
+            .as_ref()
+            .map(|store| (store.handle(), imposter_core::execution::Via::CommandLine)),
     };
     runner::run(requests, options, cancel, |ended| {
         let step = match ended {

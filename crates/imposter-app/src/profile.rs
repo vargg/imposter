@@ -304,16 +304,28 @@ fn select_all_in(
         ordered(&tree, folder, &mut ids);
     }
     let chosen = chosen_environment(db, environment, Purpose::Run)?;
+    Ok(selected_requests(db, &tree, ids, chosen, values)?)
+}
+
+/// `ids` of `tree`'s collection, each ready to run with `environment` and `values` on top;
+/// captures stay in the run.
+fn selected_requests(
+    db: &imposter_store::Tx<'_>,
+    tree: &collections::Tree,
+    ids: Vec<imposter_core::ids::RequestId>,
+    environment: Option<imposter_core::ids::EnvironmentId>,
+    values: &Variables,
+) -> Result<Vec<Selected>, StoreError> {
     let mut selected = Vec::with_capacity(ids.len());
     for id in ids {
         let Some(request) = collections::request(db, id)? else {
             continue;
         };
-        let mut place = vec![collection.name.clone()];
-        place.extend(folder_names(&tree, request.folder_id));
+        let mut place = vec![tree.collection.name.clone()];
+        place.extend(folder_names(tree, request.folder_id));
         let names: Vec<&str> = place.iter().map(String::as_str).collect();
         let path = RequestPath::new(&names, &request.template.name);
-        let mut inputs = read_inputs(db, &request, EnvironmentChoice::Chosen(chosen))?;
+        let mut inputs = read_inputs(db, &request, EnvironmentChoice::Chosen(environment))?;
         inputs.writes = Writes::Run;
         inputs.snapshot = inputs.snapshot.with_inputs(values);
         selected.push(Selected {
@@ -323,4 +335,29 @@ fn select_all_in(
         });
     }
     Ok(selected)
+}
+
+/// Every saved request under `folder` of `collection` (the whole collection for `None`), in
+/// the tree's order, read in one database command. For the app, which names the target by
+/// id and asks about a production environment itself; a folder that no longer exists
+/// selects nothing.
+pub async fn select_under(
+    store: &StoreHandle,
+    collection: imposter_core::ids::CollectionId,
+    folder: Option<imposter_core::ids::FolderId>,
+    environment: Option<imposter_core::ids::EnvironmentId>,
+) -> Result<Vec<Selected>, StoreError> {
+    store
+        .call(move |db| {
+            let Some(tree) = collections::tree(db, collection)? else {
+                return Ok(Vec::new());
+            };
+            if folder.is_some_and(|id| !tree.folders.iter().any(|f| f.id == id)) {
+                return Ok(Vec::new());
+            }
+            let mut ids = Vec::new();
+            ordered(&tree, folder, &mut ids);
+            selected_requests(db, &tree, ids, environment, &Variables::new())
+        })
+        .await
 }

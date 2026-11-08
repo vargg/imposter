@@ -257,7 +257,7 @@ async fn the_profile_runs_the_same_steps_and_records_them_frozen_at_the_start() 
         from_profile,
         Options {
             keep_going: false,
-            record: Some(store.handle()),
+            record: Some((store.handle(), Via::CommandLine)),
         },
         CancellationToken::new(),
         |_| {},
@@ -291,4 +291,64 @@ async fn the_profile_runs_the_same_steps_and_records_them_frozen_at_the_start() 
         5,
         "the whole collection"
     );
+}
+
+/// The app names a run's target by id: the same requests as by path, and a run started in
+/// the app is recorded as Send's runs are.
+#[tokio::test]
+async fn the_app_selects_by_id_and_records_its_runs_as_its_own() {
+    let server = Server::start(reply).await;
+    let document = document(&server.url);
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("api.imposter.json");
+    std::fs::write(&file, native::encode(&document)).unwrap();
+    let store = Store::open(&dir.path().join("imposter.db")).unwrap();
+    let preview = read_preview(&store.handle(), file, Vec::new())
+        .await
+        .unwrap();
+    import(&store.handle(), preview, false).await.unwrap();
+    let (collection, flow) = store
+        .call(|db| {
+            let collection = collections::collections(db)?[0].id;
+            let flow = collections::tree(db, collection)?
+                .unwrap()
+                .folders
+                .into_iter()
+                .find(|f| f.name == "Flow")
+                .map(|f| f.id);
+            Ok((collection, flow))
+        })
+        .await
+        .unwrap();
+    let by_id = profile::select_under(&store.handle(), collection, flow, None)
+        .await
+        .unwrap();
+    let by_path = profile::select_all(&store.handle(), &path("API/Flow"), None, &Variables::new())
+        .await
+        .unwrap();
+    let names = |steps: &[imposter_app::document::Selected]| -> Vec<String> {
+        steps.iter().map(|s| s.path.to_string()).collect()
+    };
+    assert_eq!(names(&by_id), names(&by_path));
+    let whole = profile::select_under(&store.handle(), collection, None, None)
+        .await
+        .unwrap();
+    assert_eq!(whole.len(), 5);
+
+    run(
+        by_id,
+        Options {
+            keep_going: false,
+            record: Some((store.handle(), Via::App)),
+        },
+        CancellationToken::new(),
+        |_| {},
+    )
+    .await;
+    let history = store
+        .call(|db| executions::page(db, None, 0, 10))
+        .await
+        .unwrap();
+    assert_eq!(history.len(), 3);
+    assert!(history.iter().all(|h| h.via == Via::App));
 }

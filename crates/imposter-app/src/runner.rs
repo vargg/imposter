@@ -2,7 +2,8 @@
 //! values earlier requests captured or set layered above every scope (`Source::Run`), so a
 //! login's token reaches the requests after it. By default the run stops at the first
 //! request that does not pass; the rest are skipped. Nothing is written to the user's
-//! variables; a run from the profile records each request in History as the command line's.
+//! variables; a run from the profile records each request in History, marked with where it
+//! was started (the command line or the app).
 
 use imposter_core::execution::{ExecutionRecord, Via};
 use imposter_core::model::Variables;
@@ -18,8 +19,8 @@ use crate::executor::{self, ExecuteError, Ran};
 pub struct Options {
     /// Run every request even after one did not pass.
     pub keep_going: bool,
-    /// Record each request in this profile's History.
-    pub record: Option<StoreHandle>,
+    /// Record each request in this profile's History, marked as started from here.
+    pub record: Option<(StoreHandle, Via)>,
 }
 
 /// How one request of the run ended.
@@ -117,10 +118,10 @@ pub async fn run(
     done
 }
 
-async fn record(path: String, mut ran: Ran, store: Option<&StoreHandle>) -> Step {
+async fn record(path: String, mut ran: Ran, store: Option<&(StoreHandle, Via)>) -> Step {
     let mut notes = Vec::new();
-    if let Some(store) = store {
-        ran.record.via = Via::CommandLine;
+    if let Some((store, via)) = store {
+        ran.record.via = *via;
         let copy = ran.record.clone();
         let executed = executor::record(
             store,
