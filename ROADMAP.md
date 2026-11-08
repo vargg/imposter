@@ -83,7 +83,8 @@ Protect these. The milestones run on them.
   line's), or from a native file with `--file` for CI. It takes named secret inputs and
   gives a redacted JSON result, an exit status per outcome and a result file History
   opens. `imposter run` runs a folder or a collection as one run, carrying captured
-  values forward, with JUnit for CI. `imposter list`, `show` and `envs` let an agent find a request and read it
+  values forward, with JUnit for CI; the Run screen (Tools → Run) does the same in the
+  app, by the same rule. `imposter list`, `show` and `envs` let an agent find a request and read it
   (placeholders and variable names, never values) before running it. `imposter skill`
   prints the agent instructions. `imposter mcp` is the
   experimental spike below.
@@ -95,7 +96,6 @@ In milestone order. MCP is not in this table; it is an experiment below.
 | Work | Why it is core | When |
 |---|---|---|
 | Project folder: YAML, one file per request and per folder | Teams review definitions next to the code. | M2 |
-| A runner in the app (the command line has `imposter run` since 8 November 2026) | A check pays off when the set runs together. | M2 |
 | OAuth 2.0, API-key auth, a cookie jar | A pasted bearer token goes stale, and a login's cookies are not kept. | M3 |
 | SSE responses | A body that appears only at the end hides a stream. | M3 |
 
@@ -348,7 +348,8 @@ source; the file stays for CI until then.
 - Revision checks, the single writer, conflict handling, and reload of clean editors.
 - A sequential runner in the app and `imposter run`, for a folder or the collection:
   run-local captures, JSON and JUnit output, and an exit status that fails when a
-  required check failed, was not checked, or the run did not finish.
+  required check failed, was not checked, or the run did not finish. Done (8 November
+  2026): `imposter run` and the app's Run screen share one runner and one pass rule.
 - A minimal CI example. The skill text gains `run`, still printed by `imposter skill`.
 
 Not in this milestone: a git UI, merging, parallel runs, retries, a scheduler.

@@ -11,6 +11,7 @@ pub mod json_typing;
 pub mod layout;
 pub mod load_screen;
 pub mod palette;
+pub mod run_screen;
 pub mod scripts_tab;
 pub mod settings_screen;
 pub mod shortcuts;

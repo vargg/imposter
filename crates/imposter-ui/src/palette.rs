@@ -516,6 +516,9 @@ fn fixed_items(state: &State) -> Vec<Item> {
             action("Load Test This Request", None, Action::LoadTarget(target));
         }
     }
+    if let Some(target) = crate::run_screen::RunTarget::from_tree(state, None) {
+        action("Run Collection", None, Action::RunTarget(target));
+    }
     action(
         if state.layout.sidebar_visible {
             "Hide Sidebar"
@@ -540,6 +543,7 @@ fn fixed_items(state: &State) -> Vec<Item> {
         (Screen::Settings, "Go to Settings"),
         (Screen::Mocks, "Go to Mocks"),
         (Screen::Load, "Go to Load"),
+        (Screen::Run, "Go to Run"),
     ] {
         if state.screen != screen {
             let shortcut = (screen == Screen::Settings).then_some(&shortcuts::SETTINGS);

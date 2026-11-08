@@ -37,6 +37,8 @@ pub enum ConfirmPurpose {
     PostmanExport,
     /// Start a load test against a red (production) environment.
     StartLoad,
+    /// Start a run against a red (production) environment.
+    StartRun,
 }
 
 /// Whose scripts a scripts dialog edits.
@@ -782,6 +784,15 @@ impl Dialog {
             ),
             "Start load test",
             ConfirmPurpose::StartLoad,
+        )
+    }
+
+    pub fn start_run(environment: &str, target: &str) -> Self {
+        Self::confirm(
+            &format!("Run against {environment}?"),
+            format!("This sends every request in \"{target}\" with the {environment} environment."),
+            "Start run",
+            ConfirmPurpose::StartRun,
         )
     }
 

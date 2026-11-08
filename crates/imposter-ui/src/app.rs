@@ -146,6 +146,11 @@ pub enum Message {
         generation: u64,
         result: Result<imposter_app::load::Report, NotSent>,
     },
+    /// A run ended; `Err` when it could not start (its requests could not be read).
+    RunFinished {
+        generation: u64,
+        result: Result<(), String>,
+    },
     Collections {
         select: Option<CollectionId>,
         result: Result<Vec<Collection>, Failure>,
@@ -381,6 +386,11 @@ pub enum Action {
     LoadTarget(crate::load_screen::Target),
     /// The same for a request of the open collection's tree.
     LoadRequest(RequestId),
+    Run(crate::run_screen::RunAction),
+    /// Run this collection or folder: make it the Run screen's target and go there.
+    RunTarget(crate::run_screen::RunTarget),
+    /// The same for the open collection (`None`) or one of its folders.
+    RunFolder(Option<FolderId>),
     /// Copy the open request as a curl command with resolved values.
     CopyCurl,
     /// The editor changed: `url` when the URL itself was edited, `params` for the query rows.
@@ -399,6 +409,7 @@ pub enum Screen {
     Settings,
     Mocks,
     Load,
+    Run,
 }
 
 /// The Settings screen: the form, the saved baseline it is compared with, and save state.
@@ -774,6 +785,7 @@ impl ResponseFilter {
 pub enum PaneKind {
     Request,
     History,
+    Run,
 }
 
 /// A filter run to start in the background.
@@ -997,6 +1009,7 @@ pub struct State {
     pub settings_screen: SettingsScreen,
     pub mocks: crate::mock_screen::MockScreen,
     pub load: crate::load_screen::LoadScreen,
+    pub run: crate::run_screen::RunScreen,
     /// Bumped by every navigation; results of older work are ignored.
     pub generation: u64,
     tree_generation: u64,
@@ -1083,6 +1096,7 @@ impl ImposterApp {
                 settings_screen: SettingsScreen::default(),
                 mocks: crate::mock_screen::MockScreen::default(),
                 load: crate::load_screen::LoadScreen::default(),
+                run: crate::run_screen::RunScreen::default(),
                 generation: 0,
                 tree_generation: 0,
                 autosave_due: None,
@@ -1323,6 +1337,7 @@ impl ImposterApp {
                 }
             }
             Message::LoadFinished { generation, result } => self.load_finished(generation, result),
+            Message::RunFinished { generation, result } => self.run_finished(generation, result),
             Message::MockStopped { generation, result } => {
                 if generation == self.state.mocks.generation {
                     self.state.mocks.run = None;
@@ -2767,6 +2782,9 @@ impl ImposterApp {
                         confirmed: true,
                     }));
             }
+            ConfirmPurpose::StartRun => {
+                self.run_action(crate::run_screen::RunAction::Start { confirmed: true });
+            }
         }
     }
 
@@ -2894,7 +2912,7 @@ impl ImposterApp {
                 Screen::Settings => self.save_settings(),
                 Screen::Mocks => self.save_mocks(),
                 Screen::Requests if self.state.guard.is_none() => self.save_current(),
-                Screen::Requests | Screen::History | Screen::Load => {}
+                Screen::Requests | Screen::History | Screen::Load | Screen::Run => {}
             },
             Action::Mock(action) => self.mock_action(action),
             Action::Load(action) => self.load_action(action, now),
@@ -2909,6 +2927,18 @@ impl ImposterApp {
                     self.state.load.error = None;
                 }
                 self.state.screen = Screen::Load;
+            }
+            Action::Run(action) => self.run_action(action),
+            Action::RunFolder(folder) => {
+                if let Some(target) = crate::run_screen::RunTarget::from_tree(&self.state, folder) {
+                    self.handle(Action::RunTarget(target), now);
+                }
+            }
+            Action::RunTarget(target) => {
+                if self.state.run.run.is_none() {
+                    self.state.run.target = Some(target);
+                }
+                self.state.screen = Screen::Run;
             }
             Action::SettingsEdited => self.state.settings_screen.refresh_status(),
             Action::CheckPath(path) => {
@@ -4080,6 +4110,138 @@ impl ImposterApp {
         }
     }
 
+    fn run_action(&mut self, action: crate::run_screen::RunAction) {
+        use crate::run_screen::RunAction;
+        let screen = &mut self.state.run;
+        match action {
+            RunAction::Choose(target) => {
+                if screen.run.is_none() {
+                    screen.target = Some(target);
+                }
+            }
+            RunAction::Show(index) => {
+                if index < screen.runs.len() && screen.run.is_none() {
+                    screen.shown = index;
+                    screen.selected = None;
+                    screen.pane = ResponsePane::default();
+                }
+            }
+            RunAction::Select(index) => screen.select(index),
+            RunAction::Stop => {
+                if let Some(run) = &mut screen.run {
+                    run.stopping = true;
+                    self.bridge.cancel(run.task);
+                }
+            }
+            RunAction::Start { confirmed } => self.run_start(confirmed),
+        }
+    }
+
+    fn run_start(&mut self, confirmed: bool) {
+        use crate::run_screen::EnvironmentChoice;
+        if self.state.close != CloseState::Open || self.state.run.run.is_some() {
+            return;
+        }
+        let Some(target) = self.state.run.target.clone() else {
+            return;
+        };
+        let chosen = match self.state.run.environment {
+            EnvironmentChoice::Active => self.state.active_environment,
+            EnvironmentChoice::Chosen(id) => id,
+        };
+        let environment = chosen.and_then(|id| self.state.environments.iter().find(|e| e.id == id));
+        // Red marks production: a whole run against it is worth a second look.
+        if !confirmed
+            && let Some(environment) = environment.filter(|e| e.color == Some(EnvColor::Red))
+        {
+            self.state.dialog = Some(Dialog::start_run(&environment.name, &target.label));
+            return;
+        }
+        let environment_name =
+            environment.map_or_else(|| "No environment".to_owned(), |e| e.name.clone());
+        let screen = &mut self.state.run;
+        screen.generation += 1;
+        screen.selected = None;
+        screen.pane = ResponsePane::default();
+        let generation = screen.generation;
+        let shared = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let pushed = shared.clone();
+        let db = self.db.clone();
+        let keep_going = screen.keep_going;
+        let (collection, folder) = (target.collection, target.folder);
+        let task = self.bridge.spawn(move |cancel| async move {
+            let requests =
+                match imposter_app::profile::select_under(&db, collection, folder, chosen).await {
+                    Ok(requests) => requests,
+                    Err(error) => {
+                        return Message::RunFinished {
+                            generation,
+                            result: Err(error.to_string()),
+                        };
+                    }
+                };
+            let options = imposter_app::runner::Options {
+                keep_going,
+                record: Some((db, imposter_app::core::execution::Via::App)),
+            };
+            imposter_app::runner::run(requests, options, cancel, |step| {
+                if let Ok(mut steps) = pushed.lock() {
+                    steps.push(step.clone());
+                }
+            })
+            .await;
+            Message::RunFinished {
+                generation,
+                result: Ok(()),
+            }
+        });
+        screen.run = Some(crate::run_screen::Running {
+            task,
+            shared,
+            steps: Vec::new(),
+            target,
+            environment: environment_name,
+            stopping: false,
+        });
+    }
+
+    fn run_finished(&mut self, generation: u64, result: Result<(), String>) {
+        let screen = &mut self.state.run;
+        if generation != screen.generation {
+            return;
+        }
+        let Some(mut run) = screen.run.take() else {
+            return;
+        };
+        run.drain();
+        let ran_any = !run.steps.is_empty();
+        let finished = crate::run_screen::FinishedRun {
+            target: run.target,
+            environment: run.environment,
+            steps: run.steps,
+            when: crate::viewer::clock_time(executor::now()),
+            error: result.err(),
+        };
+        let text = match &finished.error {
+            Some(error) => format!("Run not started · {error}"),
+            None => format!(
+                "Run finished · {}",
+                crate::run_screen::summary(&finished.steps).1
+            ),
+        };
+        screen.finished(finished);
+        if ran_any {
+            // Each request sent is in History now.
+            if self.state.screen == Screen::History {
+                self.load_history();
+            }
+            if let Some(id) = self.state.editor.as_ref().and_then(|pane| pane.editor.id()) {
+                self.load_runs(id);
+            }
+        }
+        self.status(&text);
+    }
+
     fn mocks_transition(&mut self, next: crate::mock_screen::Transition) {
         if self.state.mocks.dirty() {
             self.state.mocks.pending = Some(next);
@@ -4315,6 +4477,7 @@ impl ImposterApp {
         }
         self.mock_action(crate::mock_screen::MockAction::Stop);
         self.load_action(crate::load_screen::LoadAction::Stop, 0.0);
+        self.run_action(crate::run_screen::RunAction::Stop);
         self.state.close = CloseState::Draining;
         self.state.autosave_due = None;
         if let Some(execution) = &self.state.execution {
@@ -4403,13 +4566,14 @@ impl ImposterApp {
         match kind {
             PaneKind::Request => &mut self.state.response,
             PaneKind::History => &mut self.state.history.response,
+            PaneKind::Run => &mut self.state.run.pane,
         }
     }
 
     /// Start the filter runs the response viewers need; parsing large bodies stays off the UI
     /// thread.
     fn start_filters(&mut self) {
-        for kind in [PaneKind::Request, PaneKind::History] {
+        for kind in [PaneKind::Request, PaneKind::History, PaneKind::Run] {
             let Some(job) = self.pane(kind).filter_job() else {
                 continue;
             };

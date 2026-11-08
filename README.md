@@ -122,6 +122,19 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 | Every script | `parse_json(text), to_json(value)` | JSON text to a value and back. |
 | Every script | `print(value), debug(value)` | Write to the console: under the response (not kept in History), or in the Mocks screen's request log. |
 
+**Runs**
+- Send every request of a collection or a folder in the sidebar's order from the Run screen
+  (Tools → Run, "Run…" in a collection's ⋯ menu or a folder's right-click menu, or the
+  command palette), as `imposter run` does. A value a request captures reaches the requests
+  after it; your variables do not change.
+- The environment is the active one unless you choose another for the run; with a red one,
+  Start asks first. The run stops at the first request that does not pass and skips the
+  rest, unless "Keep going after a failure" is ticked.
+- Each request shows its outcome as it ends; select one to see its response, checks and the
+  request as sent. The summary uses the command line's rule: a run passes when no request
+  failed and at least one check ran. Every request sent is in History; the last ten runs of
+  the session stay a menu away.
+
 **Load tests**
 - Send one request many times from the Load screen (Tools → Load, a request's right-click menu,
   or the command palette), as `ab` does: total requests, concurrency, an optional time
@@ -171,7 +184,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   paste) to replace the open request; copy any request as a ready-to-run curl command.
 
 **Interface**
-- Requests, Variables and History stay in the header. Tools opens Mocks and Load; the
+- Requests, Variables and History stay in the header. Tools opens Mocks, Load and Run; the
   gear opens application Settings. Running tools stay visible in the status bar: click
   their status to return to the screen. Unsaved mock edits mark Tools, even with its menu
   closed; unsaved application settings mark the gear.
@@ -234,8 +247,9 @@ and xkbcommon. File dialogs go through the XDG desktop portal
 2. Enter a URL, choose a method, add what the request needs in the tabs below, and **Send**.
 3. Put shared values on the **Variables** screen (globals, an environment, or the
    collection) and use them as `{{name}}`. Choose the active environment at the top right.
-4. Find any earlier execution on the **History** screen.
-5. Application defaults (timeout, proxy, TLS, history limits, autosave) are behind the
+4. Run a whole folder in order with **Run…** in its right-click menu (Tools → Run).
+5. Find any earlier execution on the **History** screen.
+6. Application defaults (timeout, proxy, TLS, history limits, autosave) are behind the
    **Settings** gear in the header.
 
 ### Keyboard shortcuts

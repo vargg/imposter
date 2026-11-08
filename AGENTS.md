@@ -257,11 +257,11 @@ numbers, so both are excluded. Each logical change is its own commit.
 
   Why: an orange outline on every hover diluted the accent until it meant nothing (the
   review's #60). Checked in `theme.rs` tests.
-- **The header keeps Requests, Variables and History together.** Mocks and Load live in
-  a named Tools menu; application Settings is a gear at the far right, beside Tools and
+- **The header keeps Requests, Variables and History together.** Mocks, Load and Run live
+  in a named Tools menu; application Settings is a gear at the far right, beside Tools and
   the environment picker. Why: variables belong to everyday request work, while the two
   supporting tools need less prominence and settings is application configuration.
-  Tools is selected while either tool is open, and each screen has its own title.
+  Tools is selected while any tool is open, and each screen has its own title.
   Unsaved mock edits mark Tools even when its menu is closed; the menu names running,
   stopping and unsaved states. Settings keeps its own unsaved marker. Running tools are
   clickable in the status bar, including while starting or stopping, with room reserved
@@ -955,13 +955,15 @@ numbers, so both are excluded. Each logical change is its own commit.
   written back to the user's variables. The run stops at the first request that did not
   pass and reports the rest as skipped, unless told to keep going (user's choice: later
   requests usually depend on what failed). A run from the profile records each request in
-  History as the command line's; a production environment is refused once, up front. The
+  History, marked with who started it (`runner::Options::record`: `Via::CommandLine` or
+  `Via::App`); on the command line a production environment is refused once, up front. The
   report (`core::run_report::RunReport`, `imposter-run` version 1) has each request's
   redacted `RunResult` or the reason it was skipped, totals, one outcome and JUnit XML.
   The run passes when no request failed, errored or had an undecidable check and at least
   one check ran (user's choice: a login that only captures needs no check of its own); a
   run with no checks is `no_checks`, an empty selection `not_sent`; otherwise the outcome
-  that says least was verified wins (`RunReport::new`). On the command line it is
+  that says least was verified wins (`run_report::outcome`, which the app's Run screen
+  uses too, so both give the same verdict). On the command line it is
   `imposter run <TARGET>` (`imposter_cli::run`): `send`'s options plus `--keep-going` and
   `--junit FILE` (`RUN_FLAGS`, kept equal to the README by a test); stderr gets one line per
   request as it ends, stdout the redacted report, and `--out`/`--junit` are written
@@ -969,6 +971,31 @@ numbers, so both are excluded. Each logical change is its own commit.
   `imposter-app/tests/runner.rs`, `imposter-core/tests/run_report.rs`, the JUnit golden
   file `tests/fixtures/results/run.junit.xml`, `imposter-cli/tests/run.rs` and a process
   test of an interrupted run in `imposter/tests/cli.rs`.
+- **The Run screen runs a collection or a folder in the app** (`run_screen.rs`, Tools →
+  Run, "Run…" in the collection's ⋯ menu and a folder's context menu, and the palette's
+  "Run Collection" and "Go to Run"), through the same runner as `imposter run`. Its target
+  is chosen by id (`profile::select_under`), so a renamed folder cannot make it run
+  another. Opened with nothing chosen it takes the open collection.
+  - **Environment:** the active one by default, changeable for the run (user's choice);
+    with a red one Start asks first ("Run against Prod?"), as Load does, instead of the
+    command line's refusal: the person at the screen is the one deciding.
+  - **Captured values stay in the run**, never written back (user's choice), as on the
+    command line. Each request sent is recorded in History as the app's (`Via::App`).
+  - **The open request's unsaved edits are not sent**: the run reads every request as
+    stored when it starts, and one line says so when the open request is inside the
+    target. Sending the editor's copy for one request of a run would make the run depend
+    on what happens to be open.
+  - **Progress:** the runner's `on_step` pushes each step into a shared list the screen
+    reads every frame, as Load reads its counters; the summary uses `run_report::outcome`.
+    The status bar shows "Run running" ("Run stopping…" after Stop), and Stop cancels the
+    request in flight and skips the rest.
+  - **Results:** each row is the outcome word in its tone and the path; selecting one
+    shows its response, checks and request as sent in the response viewer, with its
+    JSONPath filter (`PaneKind::Run`). The last ten runs of the session are kept in
+    memory, as Load's are. The list and the details are laid out in fixed rectangles: in
+    a horizontal row the response tools measured another width and covered the tabs at
+    720 points (the layout lint).
+  Pinned by `imposter-ui/tests/run.rs` and the layout lint's Run states.
 - **`imposter skill` prints the instructions a coding agent needs** (`skill.md` in
   `imposter-cli`): how to choose a request, pass secrets by process variable name, read
   the result and propose a check as a reviewable diff. Its option, exit status and

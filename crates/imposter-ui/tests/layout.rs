@@ -16,13 +16,15 @@ use imposter_ui::theme::{Density, ThemeChoice};
 use support::{click, click_button, collection, request, settle, start_with, type_into};
 
 /// The status bar's own controls.
-const STATUS_BAR: [&str; 8] = [
+const STATUS_BAR: [&str; 10] = [
     "Hide Collections",
     "Show Collections",
     "Stack request and response",
     "Put request and response side by side",
     "Load running",
     "Load stopping…",
+    "Run running",
+    "Run stopping…",
     "Mocks starting…",
     "Mocks stopping…",
 ];
@@ -410,6 +412,22 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         );
     }
     check(app, "Load result with a script error");
+    // The Run screen on the collection: idle, asking about production, running, and a
+    // finished run (no checks, a refused connection, the rest skipped) with a row open.
+    support::open_screen(&mut app.harness, "Run");
+    settle(&mut app.harness);
+    check(app, "Run");
+    click(&mut app.harness, "Start the run");
+    check(app, "Run production question");
+    click_button(&mut app.harness, "Start run");
+    check(app, "Run running");
+    settle(&mut app.harness);
+    check(app, "Run result");
+    if let Some(row) = app.harness.query_all_by_label_contains("Run step ").next() {
+        row.click();
+    }
+    settle(&mut app.harness);
+    check(app, "Run result with a response");
     click(&mut app.harness, "History");
     settle(&mut app.harness);
     if let Some(row) = app

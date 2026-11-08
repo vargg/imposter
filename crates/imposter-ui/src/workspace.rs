@@ -187,6 +187,16 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
             .show(ui, |ui| crate::load_screen::draw(state, ui));
         return;
     }
+    if state.screen == Screen::Run {
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(palette().background)
+                    .inner_margin(16),
+            )
+            .show(ui, |ui| crate::run_screen::draw(state, ui));
+        return;
+    }
     if state.screen == Screen::Settings {
         egui::CentralPanel::default()
             .frame(
@@ -359,6 +369,9 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                         NamePurpose::RenameCollection(id),
                     )));
                 }
+                if ui.button("Run…").clicked() {
+                    state.actions.push(Action::RunFolder(None));
+                }
                 if ui.button("Collection Scripts…").clicked()
                     && let Some(collection) = state.collections.iter().find(|c| c.id == id)
                 {
@@ -488,6 +501,9 @@ fn node_menu(
                     parent: Some(folder.id),
                 },
             )));
+        }
+        if ui.button("Run…").clicked() {
+            actions.push(Action::RunFolder(Some(folder.id)));
         }
         if ui.button("Scripts…").clicked() {
             actions.push(Action::Prompt(Dialog::Scripts {
@@ -1024,7 +1040,7 @@ fn context_bar(
 }
 
 fn tools_text(screen: Screen) -> RichText {
-    if matches!(screen, Screen::Mocks | Screen::Load) {
+    if matches!(screen, Screen::Mocks | Screen::Load | Screen::Run) {
         RichText::new("Tools")
             .font(crate::theme::semibold(13.0))
             .color(palette().accent)
@@ -1034,7 +1050,7 @@ fn tools_text(screen: Screen) -> RichText {
 }
 
 fn tools_menu(state: &mut State, ui: &mut Ui) {
-    let selected = matches!(state.screen, Screen::Mocks | Screen::Load);
+    let selected = matches!(state.screen, Screen::Mocks | Screen::Load | Screen::Run);
     let button = widgets::menu_text_button(ui, tools_text(state.screen), "Tools");
     button
         .ctx
@@ -1056,6 +1072,13 @@ fn tools_menu(state: &mut State, ui: &mut Ui) {
                 "Load",
                 state.load.running(),
                 state.load.run.as_ref().is_some_and(|run| run.stopping),
+                false,
+            ),
+            (
+                Screen::Run,
+                "Run",
+                state.run.running(),
+                state.run.run.as_ref().is_some_and(|run| run.stopping),
                 false,
             ),
         ] {
@@ -1111,6 +1134,16 @@ fn status_context(state: &mut State, ui: &mut Ui) {
         };
         if activity_button(ui, label, hint).clicked() {
             state.actions.push(Action::Screen(Screen::Load));
+        }
+    }
+    if let Some(run) = &state.run.run {
+        let (label, hint) = if run.stopping {
+            ("Run stopping…", "Run stopping")
+        } else {
+            ("Run running", "Run in progress")
+        };
+        if activity_button(ui, label, hint).clicked() {
+            state.actions.push(Action::Screen(Screen::Run));
         }
     }
     if let Some(run) = &state.mocks.run {

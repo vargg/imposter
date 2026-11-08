@@ -74,7 +74,7 @@ pub fn click(harness: &mut Harness<'_, ImposterApp>, label: &str) {
 
 /// Navigate through the visible header, including the supporting tools' menu.
 pub fn open_screen(harness: &mut Harness<'_, ImposterApp>, label: &str) {
-    if matches!(label, "Mocks" | "Load") {
+    if matches!(label, "Mocks" | "Load" | "Run") {
         click(harness, "Tools");
     }
     click_button(harness, label);

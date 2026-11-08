@@ -24,7 +24,7 @@ fn the_workspace_stays_visible_and_tools_are_named_in_the_menu() {
     for label in ["Requests", "Variables", "History", "Tools", "Settings"] {
         app.harness.get_by_role_and_label(Role::Button, label);
     }
-    for label in ["Mocks", "Load"] {
+    for label in ["Mocks", "Load", "Run"] {
         assert!(
             app.harness
                 .query_by_role_and_label(Role::Button, label)
@@ -32,7 +32,11 @@ fn the_workspace_stays_visible_and_tools_are_named_in_the_menu() {
         );
     }
     support::assert_icon_button(&app.harness, "Settings");
-    for (label, screen) in [("Mocks", Screen::Mocks), ("Load", Screen::Load)] {
+    for (label, screen) in [
+        ("Mocks", Screen::Mocks),
+        ("Load", Screen::Load),
+        ("Run", Screen::Run),
+    ] {
         open_screen(&mut app.harness, label);
         settle(&mut app.harness);
         assert_eq!(app.harness.state().state.screen, screen);
@@ -105,7 +109,11 @@ fn tools_and_settings_work_from_the_keyboard_and_palette() {
     app.harness.key_press(Key::Enter);
     settle(&mut app.harness);
     assert_eq!(app.harness.state().state.screen, Screen::Settings);
-    for (query, screen) in [("Go to Mocks", Screen::Mocks), ("Go to Load", Screen::Load)] {
+    for (query, screen) in [
+        ("Go to Mocks", Screen::Mocks),
+        ("Go to Load", Screen::Load),
+        ("Go to Run", Screen::Run),
+    ] {
         app.harness.key_press_modifiers(Modifiers::COMMAND, Key::K);
         settle(&mut app.harness);
         type_into(&mut app.harness, "Command palette search", query);
@@ -201,7 +209,7 @@ fn long_environments_leave_every_header_control_visible_in_both_densities() {
                 );
                 click(&mut app.harness, "Tools");
                 app.harness.run_steps(2);
-                for label in ["Mocks", "Load"] {
+                for label in ["Mocks", "Load", "Run"] {
                     assert!(
                         window.contains_rect(
                             app.harness
