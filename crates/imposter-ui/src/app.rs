@@ -25,7 +25,7 @@ use imposter_app::store::collections::{self, Collection, IndexedRequest, Tree};
 use imposter_app::store::environments::{self, Environment};
 use imposter_app::store::executions::{self, ExecutionSummary};
 use imposter_app::store::kv::{self, Table};
-use imposter_app::store::{Store, StoreError, StoreHandle, scopes, secrets};
+use imposter_app::store::{Store, StoreError, StoreHandle, files, scopes, secrets};
 use imposter_app::transfer::{self, ExportScope, ImportKind, ImportPreview};
 use imposter_app::{ops, store};
 use serde_json::Value;
@@ -81,6 +81,18 @@ pub struct Startup {
     layout: Value,
     draft: Option<Request>,
     load_form: crate::load_screen::LoadForm,
+    folder: PathBuf,
+    folder_error: Option<String>,
+}
+
+/// The collections folder just switched to, and what it holds.
+#[derive(Debug, Clone)]
+pub struct Switched {
+    folder: PathBuf,
+    folder_error: Option<String>,
+    collections: Vec<Collection>,
+    environments: Vec<Environment>,
+    active_environment: Option<EnvironmentId>,
 }
 
 /// The last selection, restored at startup.
@@ -123,6 +135,9 @@ struct SmokeTest {
 #[derive(Debug)]
 pub enum Message {
     Started(Result<Box<Startup>, Failure>),
+    /// The folder chosen for the collections, if one was.
+    FolderPicked(Option<PathBuf>),
+    FolderSwitched(Result<Box<Switched>, Failure>),
     Filtered(PaneKind, Box<Filtered>),
     MocksLoaded(Result<imposter_app::core::mock::MockConfig, Failure>),
     MocksSaved {
@@ -310,6 +325,9 @@ enum FileDialog {
         name: &'static str,
         filter: Option<(&'static str, &'static str)>,
     },
+    Folder {
+        title: &'static str,
+    },
 }
 
 /// What the user asked for while drawing a frame.
@@ -353,6 +371,8 @@ pub enum Action {
     ToggleLayout,
     /// Choose and remember the theme and density.
     SetAppearance(Appearance),
+    /// Choose another collections folder (Settings).
+    ChooseCollectionsFolder,
     /// A curl command pasted over the whole URL: it replaces the open request's contents.
     PasteCurl(String),
     /// Re-indent a JSON body, its tokens and placeholders as typed.
@@ -607,6 +627,8 @@ enum Navigation {
         name: String,
     },
     CreateCollection(String),
+    /// Read the collections from another folder.
+    SwitchFolder(PathBuf),
     /// Put a request in the editor as an unsaved draft (from history or curl), then show
     /// `status`.
     Restore {
@@ -993,6 +1015,10 @@ pub struct Filtered {
 pub struct State {
     pub settings: AppSettings,
     pub collections: Vec<Collection>,
+    /// Where the collections are files.
+    pub collections_folder: PathBuf,
+    /// Why that folder could not be read, when it could not; nothing is written to it.
+    pub folder_error: Option<String>,
     pub collection: Option<CollectionId>,
     pub tree: Option<TreeView>,
     pub selected: Option<NodeId>,
@@ -1073,6 +1099,8 @@ impl ImposterApp {
             state: State {
                 settings: AppSettings::default(),
                 collections: Vec::new(),
+                collections_folder: PathBuf::new(),
+                folder_error: None,
                 collection: None,
                 tree: None,
                 selected: None,
@@ -1152,6 +1180,8 @@ impl ImposterApp {
                         .ok()
                         .flatten()
                         .unwrap_or_default(),
+                    folder: db.folder(),
+                    folder_error: db.folder_error(),
                 })
             },
             |result| Message::Started(result.map(Box::new).map_err(failure)),
@@ -1234,7 +1264,7 @@ impl ImposterApp {
                         paths.push(path);
                     }
                 }
-                FileDialog::Open { .. } | FileDialog::Save { .. } => {
+                FileDialog::Open { .. } | FileDialog::Save { .. } | FileDialog::Folder { .. } => {
                     paths.extend(answers.pop_front().flatten());
                 }
             }
@@ -1255,6 +1285,14 @@ impl ImposterApp {
                         .map(|file| file.path().to_owned())
                         .collect()
                 }
+                FileDialog::Folder { title } => rfd::AsyncFileDialog::new()
+                    .set_title(title)
+                    .set_can_create_directories(true)
+                    .pick_folder()
+                    .await
+                    .into_iter()
+                    .map(|folder| folder.path().to_owned())
+                    .collect(),
                 FileDialog::OpenMany { title } => rfd::AsyncFileDialog::new()
                     .set_title(title)
                     .add_filter("JSON", &["json"])
@@ -1353,11 +1391,20 @@ impl ImposterApp {
                     });
                 }
             }
-            Message::Done => {}
+            Message::Done | Message::FolderPicked(None) => {}
             Message::Started(Ok(startup)) => {
                 self.started(*startup);
                 self.start_smoke();
             }
+            Message::FolderPicked(Some(folder)) => {
+                if folder != self.state.collections_folder {
+                    self.navigate(Navigation::SwitchFolder(folder));
+                }
+            }
+            Message::FolderSwitched(result) => match result {
+                Ok(switched) => self.folder_switched(*switched),
+                Err(error) => self.error("Cannot use that collections folder", error),
+            },
             Message::Started(Err(error)) => {
                 self.state.started = true;
                 if self.smoke.is_some() {
@@ -1750,6 +1797,8 @@ impl ImposterApp {
         state.recent = startup.recent;
         state.appearance = startup.appearance;
         state.load.form = startup.load_form;
+        state.collections_folder = startup.folder;
+        state.folder_error = startup.folder_error;
         if let Some(draft) = startup.draft {
             self.load_editor(&draft);
             self.request_status("Restored the draft you left open", Tone::Muted);
@@ -1765,6 +1814,49 @@ impl ImposterApp {
         self.state.collection = target;
         if let Some(id) = target {
             self.load_tree(id);
+        }
+        if let Some(error) = self.state.folder_error.clone() {
+            self.status_for(
+                &format!(
+                    "The collections folder could not be read; nothing is written to it: {error}"
+                ),
+                Tone::Error,
+                STATUS_SECONDS * 4.0,
+            );
+        }
+    }
+
+    /// Show the collections of the folder just switched to; the open request was another
+    /// folder's, so the editor starts empty.
+    fn folder_switched(&mut self, switched: Switched) {
+        self.clear_editor();
+        let state = &mut self.state;
+        state.collections_folder = switched.folder;
+        state.folder_error = switched.folder_error;
+        state.collections = switched.collections;
+        state.environments = switched.environments;
+        state.active_environment = switched.active_environment;
+        state.tree = None;
+        state.variables.loaded = false;
+        state.collection = state.collections.first().map(|c| c.id);
+        if let Some(id) = state.collection {
+            self.load_tree(id);
+        }
+        if self.state.screen == Screen::Variables {
+            self.load_variables(Scope::Global);
+        }
+        match self.state.folder_error.clone() {
+            Some(error) => self.status_for(
+                &format!(
+                    "The collections folder could not be read; nothing is written to it: {error}"
+                ),
+                Tone::Error,
+                STATUS_SECONDS * 4.0,
+            ),
+            None => self.status(&format!(
+                "Collections from {}",
+                self.state.collections_folder.display()
+            )),
         }
     }
 
@@ -2048,6 +2140,19 @@ impl ImposterApp {
                 });
             }
             Navigation::Close => self.variables_navigate(VarTransition::Close),
+            Navigation::SwitchFolder(folder) => self.task(
+                move |db| {
+                    files::switch(db, &folder)?;
+                    Ok(Switched {
+                        folder: db.folder(),
+                        folder_error: db.folder_error(),
+                        collections: collections::collections(db)?,
+                        environments: environments::environments(db)?,
+                        active_environment: environments::active_environment(db)?,
+                    })
+                },
+                |result| Message::FolderSwitched(result.map(Box::new).map_err(failure)),
+            ),
             Navigation::Import {
                 preview,
                 remove_unsupported,
@@ -2300,6 +2405,13 @@ impl ImposterApp {
     }
 
     fn saved(&mut self, id: RequestId, result: Result<(), Failure>) {
+        // Why a save failed (a file changed on disk, a folder that cannot be written) is
+        // longer than the Save word: the status line says it while the request is open.
+        if let Err(error) = &result
+            && self.state.editor.as_ref().and_then(|p| p.editor.id()) == Some(id)
+        {
+            self.request_status(&format!("Not saved: {error}"), Tone::Error);
+        }
         self.state.saver.finish(result);
         // The tree shows each request's method and name; refresh it when a save changed them.
         let stale = match (
@@ -2651,6 +2763,7 @@ impl ImposterApp {
         id: Option<EnvironmentId>,
         name: String,
         color: Option<EnvColor>,
+        share: bool,
     ) {
         let db = self.db.clone();
         self.bridge.spawn(move |_| async move {
@@ -2664,6 +2777,9 @@ impl ImposterApp {
                         None => environments::create_environment(tx, &name, &Variables::new())?.id,
                     };
                     environments::set_environment_color(tx, id, color)?;
+                    if environments::environment(tx, id)?.is_some_and(|e| e.share_values != share) {
+                        environments::set_share_values(tx, id, share)?;
+                    }
                     Ok((
                         id,
                         environments::environments(tx)?,
@@ -2897,6 +3013,12 @@ impl ImposterApp {
             Action::ToggleSidebar => {
                 self.state.layout.sidebar_visible = !self.state.layout.sidebar_visible;
             }
+            Action::ChooseCollectionsFolder => self.pick(
+                FileDialog::Folder {
+                    title: "Choose the collections folder",
+                },
+                |paths| Message::FolderPicked(paths.into_iter().next()),
+            ),
             Action::SetAppearance(appearance) => {
                 self.state.appearance = appearance;
                 let stored = serde_json::to_value(appearance).unwrap_or(Value::Null);
@@ -3048,9 +3170,14 @@ impl ImposterApp {
                 self.state.dialog = None;
                 self.named(purpose, name);
             }
-            Outcome::Environment { id, name, color } => {
+            Outcome::Environment {
+                id,
+                name,
+                color,
+                share,
+            } => {
                 self.state.dialog = None;
-                self.environment_named(id, name, color);
+                self.environment_named(id, name, color, share);
             }
             Outcome::Confirmed(purpose) => {
                 self.state.dialog = None;
@@ -3424,16 +3551,14 @@ impl ImposterApp {
                 self.state.dialog = Some(Dialog::new_environment());
             }
             VarTransition::RenameEnvironment(id) => {
-                let color = self
-                    .state
-                    .environments
-                    .iter()
-                    .find(|e| e.id == id)
-                    .and_then(|e| e.color);
+                let environment = self.state.environments.iter().find(|e| e.id == id);
+                let color = environment.and_then(|e| e.color);
+                let share = environment.is_none_or(|e| e.share_values);
                 self.state.dialog = Some(Dialog::rename_environment(
                     id,
                     &self.environment_name(id),
                     color,
+                    share,
                 ));
             }
             VarTransition::DeleteEnvironment(id) => {

@@ -437,8 +437,15 @@ numbers, so both are excluded. Each logical change is its own commit.
     environments into an empty folder, keeping their ids (and so History links, the active
     environment and secrets); a folder that already holds collections is left alone. The
     old tables stay, unused.
-  Pinned by `imposter-store/tests/files.rs` and the existing store, app and UI suites,
-  which run on files.
+  - **The app:** Settings → Collections folder shows the folder (in red with why, when
+    it could not be read) and "Change…" picks another (`FileDialog::Folder`), switched
+    at once through the unsaved-changes guard (`Navigation::SwitchFolder`,
+    `files::switch`); the editor starts empty, since the open request was the old
+    folder's. It is not part of Save: it replaces every collection shown. A refused save
+    says why on the status line and keeps the edit for Retry. The environment dialog has
+    "Share values".
+  Pinned by `imposter-store/tests/files.rs`, `imposter-ui/tests/project.rs` and the
+  existing store, app and UI suites, which run on files.
 - **Variables are ordered maps** (in collection and environment files, and the single
   `globals` row). No environment may be named `Global`, which names the globals scope. Why:
   order is kept for display and export, and saving a scope replaces it whole, so a save

@@ -76,6 +76,8 @@ pub enum Dialog {
         color: Option<EnvColor>,
         /// Whether the user chose the color; until then a new environment's follows its name.
         chosen: bool,
+        /// Write its values to its file; off keeps them on this computer.
+        share: bool,
     },
     /// Unsaved changes before navigating; `failed` after an autosave or save attempt failed.
     Guard {
@@ -141,6 +143,7 @@ pub enum Outcome {
         id: Option<EnvironmentId>,
         name: String,
         color: Option<EnvColor>,
+        share: bool,
     },
     Confirmed(ConfirmPurpose),
     Guard(GuardChoice),
@@ -268,15 +271,22 @@ impl Dialog {
             name: String::new(),
             color: None,
             chosen: false,
+            share: true,
         }
     }
 
-    pub fn rename_environment(id: EnvironmentId, name: &str, color: Option<EnvColor>) -> Self {
+    pub fn rename_environment(
+        id: EnvironmentId,
+        name: &str,
+        color: Option<EnvColor>,
+        share: bool,
+    ) -> Self {
         Self::Environment {
             id: Some(id),
             name: name.to_owned(),
             color,
             chosen: true,
+            share,
         }
     }
 
@@ -348,6 +358,7 @@ impl Dialog {
                     name: value,
                     color,
                     chosen,
+                    share,
                 } => {
                     ui.heading(if id.is_some() {
                         "Edit Environment"
@@ -376,6 +387,22 @@ impl Dialog {
                                 .small(),
                         );
                     }
+                    ui.add_space(8.0);
+                    ui.checkbox(share, "Share values");
+                    ui.add(
+                        egui::Label::new(
+                            tone_text(
+                                if *share {
+                                    "Its values are written to its file in the collections folder."
+                                } else {
+                                    "Its file lists the names only; the values stay on this computer."
+                                },
+                                Tone::Muted,
+                            )
+                            .small(),
+                        )
+                        .wrap(),
+                    );
                     let valid = !value.trim().is_empty();
                     let enter = enter_pressed && (field.lost_focus() || field.has_focus());
                     let verb = if id.is_some() { "Save" } else { "Create" };
@@ -390,6 +417,7 @@ impl Dialog {
                                 id: *id,
                                 name: value.trim().to_owned(),
                                 color: *color,
+                                share: *share,
                             };
                         }
                         None if valid && enter => {
@@ -397,6 +425,7 @@ impl Dialog {
                                 id: *id,
                                 name: value.trim().to_owned(),
                                 color: *color,
+                                share: *share,
                             };
                         }
                         None => {}

@@ -193,6 +193,15 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   or cmd) to open it as a draft, or paste it over the whole URL field (Cmd/Ctrl+L, then
   paste) to replace the open request; copy any request as a ready-to-run curl command.
 
+**Collections on disk**
+- Every collection is a folder of YAML files, one per request, in the collections folder
+  set in **Settings → Collections folder**. Point it at a folder in your repository and your
+  team reviews request and check edits as small diffs, and CI runs them with
+  `imposter run … --project DIR`.
+- Values an environment shares are in its file; turn off **Share values** in its dialog to
+  keep them on this computer. Captures never change a file. Secrets never leave this
+  computer.
+
 **Interface**
 - Requests, Variables and History stay in the header. Tools opens Mocks, Load and Run; the
   gear opens application Settings. Running tools stay visible in the status bar: click

@@ -5,7 +5,7 @@ use imposter_app::core::settings::{AppSettings, HostIdentity};
 
 use crate::app::{Action, State};
 use crate::theme::Tone;
-use crate::widgets::{SaveStatus, SaveWord, save_controls};
+use crate::widgets::{SaveStatus, SaveWord, save_controls, tone_text};
 use imposter_app::store::executions::Usage;
 
 const MIB: u64 = 1024 * 1024;
@@ -180,7 +180,7 @@ fn storage_help(usage: Option<Usage>) -> String {
 }
 
 fn help_text(text: &str) -> egui::RichText {
-    crate::widgets::tone_text(text, Tone::Muted).small()
+    tone_text(text, Tone::Muted).small()
 }
 
 fn text(ui: &mut Ui, value: &mut String, hint: &str, password: bool) -> egui::Response {
@@ -246,7 +246,7 @@ fn path(
         match paths.get(trimmed) {
             None => actions.push(Action::CheckPath(trimmed.to_owned())),
             Some(Some(false)) => {
-                ui.label(crate::widgets::tone_text("File not found", Tone::Error));
+                ui.label(tone_text("File not found", Tone::Error));
             }
             Some(_) => {}
         }
@@ -313,6 +313,29 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             if appearance != state.appearance {
                 state.actions.push(Action::SetAppearance(appearance));
             }
+            // The folder applies at once, through the unsaved-changes guard: it replaces
+            // every collection shown, so it is not part of Save.
+            let folder = state.collections_folder.display().to_string();
+            let folder_error = state.folder_error.clone();
+            section(ui, "Collections", |ui| {
+                let help = match &folder_error {
+                    Some(_) => "It could not be read, so nothing is written to it. Fix the file it names, or choose another folder.",
+                    None => "Each request is a file here. Choose a folder in your repository to share collections with your team and CI.",
+                };
+                row(ui, "Collections folder", Some(help), |ui| {
+                    ui.horizontal(|ui| {
+                        let change = ui.button("Change…");
+                        crate::widgets::name(&change, "Change collections folder");
+                        if change.clicked() {
+                            actions.push(Action::ChooseCollectionsFolder);
+                        }
+                        let tone = if folder_error.is_some() { Tone::Error } else { Tone::Normal };
+                        ui.add(egui::Label::new(tone_text(&folder, tone)).truncate())
+                            .on_hover_text(folder_error.as_deref().unwrap_or(&folder));
+                    })
+                    .response
+                });
+            });
             ui.add_enabled_ui(loaded, |ui| {
                 let paths = &screen.paths;
                 let form = &mut screen.form;

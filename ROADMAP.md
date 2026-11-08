@@ -97,7 +97,7 @@ In milestone order. MCP is not in this table; it is an experiment below.
 
 | Work | Why it is core | When |
 |---|---|---|
-| Project folder: YAML, one file per request and per folder | Teams review definitions next to the code. | M2 |
+| Reloading the collections folder while the app runs (a git pull, another editor), with clean editors reloading | Today the folder is read at start, and an outside change refuses the next save until a restart. | M2 |
 | OAuth 2.0, API-key auth, a cookie jar | A pasted bearer token goes stale, and a login's cookies are not kept. | M3 |
 | SSE responses | A body that appears only at the end hides a stream. | M3 |
 
@@ -202,21 +202,20 @@ that shows this binary cannot run without a display.
 
 ### Files and the private store
 
-Two modes.
-
-- The personal SQLite workspace stays as it is. Opening a project does not convert it.
-  The command line runs its saved requests directly (decided 7 November 2026, after M1
-  shipped file-only): editing in the app and exporting after every change only added
-  manual steps. Only the environment named runs, production needs a switch in the app,
-  captures stay in the run, and each run is recorded in History as the command line's.
-- An opted-in project links a collection to a folder. For that collection the files are
-  the shared definitions. SQLite holds history, UI state, secrets and a rebuildable
-  cache. It is not a second copy that can win a conflict.
+Decided 8 November 2026, replacing the earlier two modes (a personal SQLite workspace
+plus opted-in linked folders): every collection and environment definition is files in
+one collections folder, set in Settings; there is no database copy and no linked or
+unlinked collection. SQLite keeps personal data only: History, settings, UI state,
+secrets, globals and local values. The command line reads the same folder, or another one
+with `--project DIR`. Only the environment named runs, production needs a switch in the
+app, captures stay in the run, and each run from the profile is recorded in History as the
+command line's.
 
 Layout, from the start:
 
-- Our own YAML. One file per request, one per folder, and a collection file. A small
-  manifest names the collection, stable request ids and the environments.
+- Our own YAML. One file per request, one per folder, a collection file per collection,
+  and `environments/*.yaml` shared by the folder's collections. Each file carries its
+  stable id; there is no separate manifest.
 - Fidelity matches the native format: checks, captures, scripts, saved values,
   environment colours.
 - Field order is stable. A multi-line body or script is a block scalar. An edit changes
@@ -228,14 +227,15 @@ Layout, from the start:
 
 Sync:
 
-- Linking writes the folder. Edits in the app write the files. A clean editor reloads
-  changes from disk.
+- Edits in the app write the files (done). A clean editor reloads changes from disk
+  (next).
 - A conflict with unsaved edits goes through the unsaved-changes guard. The app keeps
   both versions.
 - One writer at a time, with an expected revision. Saves are atomic. A stale write fails
   and stays recoverable. There is no merge UI and no git client.
-- Environment files carry no secret values. Secrets stay in the local store, a
-  gitignored `.env`, or named process-environment inputs.
+- Environment files carry no secret values: secrets are `{{secret:name}}` references to
+  the local store or named process-environment inputs (done). An environment may keep
+  all its values local (`share_values: false`).
 
 ### What a run means
 
@@ -347,9 +347,11 @@ source; the file stays for CI until then.
 
 ### M2 — The project folder and the runner
 
-- The YAML layout, the manifest, stable ids, relative fixture paths and secret
-  references. Explicit Open project. Personal data stays put.
-- Revision checks, the single writer, conflict handling, and reload of clean editors.
+- The YAML layout, stable ids and secret references: done (8 November 2026), with the
+  collections folder replacing the database for definitions. Relative fixture paths
+  remain.
+- Revision checks, the single writer and refusing a stale write: done. Reloading the
+  folder while running and reloading clean editors: next.
 - A sequential runner in the app and `imposter run`, for a folder or the collection:
   run-local captures, JSON and JUnit output, and an exit status that fails when a
   required check failed, was not checked, or the run did not finish. Done (8 November

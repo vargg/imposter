@@ -188,10 +188,12 @@ fn titles_use_the_title_style() {
         title,
         "Settings group headings"
     );
+    // Every group heading comes from the same helper; the host certificates' heading is now
+    // below the window, under the collections folder.
     assert_eq!(
-        font_of(&app, "Host client certificates", "Host client certificates"),
+        font_of(&app, "Collections", "Collections"),
         title,
-        "and the heading of the host certificates"
+        "and the heading of the collections folder"
     );
 }
 
