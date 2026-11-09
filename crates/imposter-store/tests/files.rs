@@ -417,3 +417,125 @@ fn a_version_7_database_moves_its_collections_into_the_folder_once() {
             .is_none()
     );
 }
+
+#[test]
+fn a_reload_adopts_outside_changes_and_ignores_the_stores_own_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let (api, login, list) = store
+        .call_blocking(|db| {
+            let api = collections::create_collection(db, "API", "", &vars(&[("base", "x")]))?;
+            let users = collections::create_folder(db, api.id, None, "Users", "", 0)?;
+            let login = collections::create_request(db, api.id, None, &template("Login"))?;
+            let list = collections::create_request(db, api.id, Some(users.id), &template("List"))?;
+            Ok((api.id, login.id.unwrap(), list.id.unwrap()))
+        })
+        .unwrap();
+    let reload = || store.call_blocking(files::reload).unwrap();
+    assert!(reload().is_empty(), "the store's own writes are no change");
+
+    // Another editor changes Login, adds a request and the collection's variables.
+    let root = dir.path().join("collections/api");
+    let text = std::fs::read_to_string(root.join("login.yaml")).unwrap();
+    std::fs::write(
+        root.join("login.yaml"),
+        text.replace("method: GET", "method: POST"),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("new.yaml"),
+        "id: r-new\nname: New\nurl: http://x/new\n",
+    )
+    .unwrap();
+    let collection = std::fs::read_to_string(root.join("imposter.yaml")).unwrap();
+    std::fs::write(
+        root.join("imposter.yaml"),
+        collection.replace("base: x", "base: y"),
+    )
+    .unwrap();
+    let changes = reload();
+    assert_eq!(changes.requests_changed, [login]);
+    assert_eq!(changes.requests_removed, []);
+    assert!(changes.collections_changed);
+    assert_eq!(changes.scopes_changed, [Scope::Collection(api)]);
+    let (method, names, variables) = store
+        .call_blocking(move |db| {
+            Ok((
+                collections::request(db, login)?.unwrap().template.method,
+                collections::tree(db, api)?
+                    .unwrap()
+                    .requests
+                    .into_iter()
+                    .map(|r| r.name)
+                    .collect::<Vec<_>>(),
+                collections::collection(db, api)?.unwrap().variables,
+            ))
+        })
+        .unwrap();
+    assert_eq!(method, "POST");
+    assert!(names.contains(&"New".to_owned()));
+    assert_eq!(variables, vars(&[("base", "y")]));
+    assert!(reload().is_empty(), "read once, then nothing new");
+
+    // A `git checkout` that renames the folder and deletes Login.
+    std::fs::rename(root.join("users"), root.join("people")).unwrap();
+    std::fs::remove_file(root.join("login.yaml")).unwrap();
+    let changes = reload();
+    assert_eq!(changes.requests_removed, [login]);
+    assert!(
+        changes.requests_changed.is_empty(),
+        "a moved file is the same request"
+    );
+    let still = store
+        .call_blocking(move |db| collections::request(db, list))
+        .unwrap();
+    assert!(still.is_some(), "its id survives the move");
+
+    // After a reload the store saves over what it read, as any edit does.
+    store
+        .call_blocking(move |db| collections::rename_request(db, list, "List all"))
+        .unwrap();
+    assert!(root.join("people/list-all.yaml").exists());
+}
+
+#[test]
+fn a_folder_that_does_not_read_keeps_the_last_good_one_until_it_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let login = store
+        .call_blocking(|db| {
+            let api = collections::create_collection(db, "API", "", &Variables::new())?;
+            Ok(
+                collections::create_request(db, api.id, None, &template("Login"))?
+                    .id
+                    .unwrap(),
+            )
+        })
+        .unwrap();
+    let file = dir.path().join("collections/api/login.yaml");
+    let good = std::fs::read_to_string(&file).unwrap();
+    // A half-done merge.
+    std::fs::write(&file, format!("<<<<<<< HEAD\n{good}=======\n")).unwrap();
+    let changes = store.call_blocking(files::reload).unwrap();
+    assert!(
+        changes
+            .error
+            .as_deref()
+            .is_some_and(|e| e.contains("api/login.yaml")),
+        "{changes:?}"
+    );
+    let shown = store
+        .call_blocking(move |db| collections::request(db, login))
+        .unwrap();
+    assert!(shown.is_some(), "the last good collections stay");
+    let refused = store.call_blocking(move |db| collections::rename_request(db, login, "X"));
+    assert!(matches!(refused, Err(StoreError::Files(_))), "{refused:?}");
+
+    std::fs::write(&file, good.replace("GET", "PUT")).unwrap();
+    let changes = store.call_blocking(files::reload).unwrap();
+    assert_eq!(changes.error, None);
+    assert_eq!(changes.requests_changed, [login]);
+    store
+        .call_blocking(move |db| collections::rename_request(db, login, "Sign in"))
+        .unwrap();
+}

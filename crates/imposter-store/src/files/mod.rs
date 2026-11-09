@@ -7,7 +7,9 @@ pub mod workspace;
 
 use std::path::Path;
 
+use imposter_core::ids::{CollectionId, EnvironmentId, RequestId};
 use imposter_core::model::{EnvColor, RequestTemplate, SavedValues, Scripts, Variables};
+use imposter_core::variables::Scope;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 use crate::StoreError;
@@ -26,6 +28,128 @@ pub fn switch(db: &crate::Tx<'_>, dir: &Path) -> Result<(), StoreError> {
     let state = State::load(db, dir)?;
     db.replace(state);
     Ok(())
+}
+
+/// What a reload found changed on disk, by the ids the app knows them by.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Reloaded {
+    /// Requests whose file now says something else.
+    pub requests_changed: Vec<RequestId>,
+    /// Requests whose file is gone.
+    pub requests_removed: Vec<RequestId>,
+    /// Anything the collections list, the tree or the palette shows changed.
+    pub collections_changed: bool,
+    /// Environments were added, removed, renamed or recolored.
+    pub environments_changed: bool,
+    /// Variable scopes whose shared values or saved values changed.
+    pub scopes_changed: Vec<Scope>,
+    /// Why the folder does not read now; the last good one stays, and nothing is written.
+    pub error: Option<String>,
+}
+
+impl Reloaded {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Read the folder again and adopt what changed on disk since it was read or written:
+/// another editor, a `git pull`, an agent. The store's own writes match what it remembers,
+/// so they are no change. A folder that does not read keeps the last good model, refusing
+/// writes until a later reload reads it.
+pub fn reload(db: &crate::Tx<'_>) -> Result<Reloaded, StoreError> {
+    let root = db.folder();
+    let bytes = format::read_dir(&root).map_err(|e| StoreError::Files(e.to_string()))?;
+    let (same, had_error) = db.read(|state| (state.files == bytes, state.error.is_some()));
+    if same && !had_error {
+        return Ok(Reloaded::default());
+    }
+    if let Err(error) = format::read_owned(&bytes) {
+        let message = error.to_string();
+        let mut kept = db.read(Clone::clone);
+        kept.error = Some(message.clone());
+        db.replace(kept);
+        return Ok(Reloaded {
+            error: Some(message),
+            ..Reloaded::default()
+        });
+    }
+    let fresh = State::load(db, &root)?;
+    let changes = db.read(|old| difference(old, &fresh));
+    db.replace(fresh);
+    Ok(changes)
+}
+
+/// What differs between two readings of the folder, by id.
+fn difference(old: &State, new: &State) -> Reloaded {
+    use std::collections::HashMap;
+    let id = |state: &State, uid: &str| state.ids.id(uid).unwrap_or(0);
+    let mut changes = Reloaded::default();
+    let new_requests: HashMap<&str, &RequestRow> = new
+        .model
+        .requests
+        .iter()
+        .map(|r| (r.uid.as_str(), r))
+        .collect();
+    for request in &old.model.requests {
+        match new_requests.get(request.uid.as_str()) {
+            None => changes
+                .requests_removed
+                .push(RequestId(id(old, &request.uid))),
+            Some(now) if *now != request => changes
+                .requests_changed
+                .push(RequestId(id(new, &request.uid))),
+            Some(_) => {}
+        }
+    }
+    let sorted = |model: &Model| {
+        let mut collections = model.collections.clone();
+        collections.sort_by(|a, b| a.uid.cmp(&b.uid));
+        let mut folders = model.folders.clone();
+        folders.sort_by(|a, b| a.uid.cmp(&b.uid));
+        let mut requests: Vec<String> = model.requests.iter().map(|r| r.uid.clone()).collect();
+        requests.sort();
+        (collections, folders, requests)
+    };
+    changes.collections_changed = sorted(&old.model) != sorted(&new.model)
+        || !changes.requests_changed.is_empty()
+        || !changes.requests_removed.is_empty();
+    for collection in &new.model.collections {
+        let before = old
+            .model
+            .collections
+            .iter()
+            .find(|c| c.uid == collection.uid);
+        if before.is_none_or(|b| {
+            b.variables != collection.variables || b.saved_values != collection.saved_values
+        }) {
+            changes
+                .scopes_changed
+                .push(Scope::Collection(CollectionId(id(new, &collection.uid))));
+        }
+    }
+    let mut old_environments = old.model.environments.clone();
+    let mut new_environments = new.model.environments.clone();
+    old_environments.sort_by(|a, b| a.uid.cmp(&b.uid));
+    new_environments.sort_by(|a, b| a.uid.cmp(&b.uid));
+    changes.environments_changed = old_environments
+        .iter()
+        .map(|e| (&e.uid, &e.name, e.color, e.share_values))
+        .ne(new_environments
+            .iter()
+            .map(|e| (&e.uid, &e.name, e.color, e.share_values)));
+    for environment in &new_environments {
+        let before = old_environments.iter().find(|e| e.uid == environment.uid);
+        if before.is_none_or(|b| b != environment) {
+            changes
+                .scopes_changed
+                .push(Scope::Environment(EnvironmentId(id(new, &environment.uid))));
+        }
+    }
+    if old.model.globals != new.model.globals {
+        changes.scopes_changed.push(Scope::Global);
+    }
+    changes
 }
 
 /// Set once the old `globals` row was moved to `globals.yaml`.

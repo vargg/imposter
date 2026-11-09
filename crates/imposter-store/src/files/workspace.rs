@@ -231,6 +231,7 @@ impl State {
         }
         let old = format::render_owned(&before.model.to_project());
         let new = format::render_owned(&self.model.to_project());
+        let target = kept_directories(&old, &new, &before.paths);
         let mut paths = before.paths.clone();
         let mut writes: Vec<(String, Vec<u8>)> = Vec::new();
         let mut removals: Vec<String> = Vec::new();
@@ -238,13 +239,14 @@ impl State {
             if old.get(uid) == Some(&(path.clone(), bytes.clone())) {
                 continue;
             }
+            let path = target(path);
             if let Some(current) = before.paths.get(uid)
-                && current != path
+                && *current != path
             {
                 removals.push(current.clone());
             }
             writes.push((path.clone(), bytes.clone()));
-            paths.insert(uid.clone(), path.clone());
+            paths.insert(uid.clone(), path);
         }
         for uid in old.keys().filter(|uid| !new.contains_key(*uid)) {
             if let Some(current) = before.paths.get(uid) {
@@ -256,7 +258,7 @@ impl State {
         for (path, _) in &writes {
             let owner = paths.iter().find(|(_, p)| *p == path).map(|(uid, _)| uid);
             if let Some(owner) = owner
-                && new.get(owner).is_none_or(|(p, _)| p != path)
+                && new.get(owner).is_none_or(|(p, _)| target(p) != *path)
             {
                 return Err(StoreError::Files(format!(
                     "{path} belongs to another item; rename one of them"
@@ -292,6 +294,46 @@ impl State {
         self.files = files;
         self.paths = paths;
         Ok(())
+    }
+}
+
+/// Where a rendered path goes on disk: under the directory a collection or folder really
+/// has, when it is unchanged and sits elsewhere than its name gives (renamed by hand, or by
+/// a checkout). A changed item writes where its name says, and so do its new contents.
+fn kept_directories<'a>(
+    old: &HashMap<String, (String, Vec<u8>)>,
+    new: &HashMap<String, (String, Vec<u8>)>,
+    actual: &'a HashMap<String, String>,
+) -> impl Fn(&str) -> String + 'a {
+    let mut moved: Vec<(String, String)> = Vec::new();
+    for (uid, rendered) in new {
+        let Some(actual) = actual.get(uid) else {
+            continue;
+        };
+        let is_directory = rendered.0.ends_with(&format!("/{}", format::FOLDER_FILE))
+            || rendered
+                .0
+                .ends_with(&format!("/{}", format::COLLECTION_FILE));
+        if is_directory && old.get(uid) == Some(rendered) && *actual != rendered.0 {
+            let dir = |path: &str| {
+                path.rsplit_once('/')
+                    .map_or(String::new(), |(d, _)| d.to_owned())
+            };
+            moved.push((
+                format!("{}/", dir(&rendered.0)),
+                format!("{}/", dir(actual)),
+            ));
+        }
+    }
+    // Deepest first, so a folder inside a kept folder maps by its own directory.
+    moved.sort_by_key(|(canonical, _)| std::cmp::Reverse(canonical.len()));
+    move |path: &str| {
+        for (canonical, kept) in &moved {
+            if let Some(rest) = path.strip_prefix(canonical.as_str()) {
+                return format!("{kept}{rest}");
+            }
+        }
+        path.to_owned()
     }
 }
 

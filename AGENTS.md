@@ -428,6 +428,14 @@ numbers, so both are excluded. Each logical change is its own commit.
     stays in the editor). The folder is read at every start; reloading while running is
     the next stage. A folder that cannot be read leaves the store empty, says why
     (`Tx::folder_error`) and is never written to.
+  - **Reloading** (`files::reload`): reads the folder again and adopts what changed on
+    disk since it was read or written, reporting it by id (`Reloaded`: requests changed
+    and removed, collections, environments, scopes). The store's own writes match what it
+    remembers, so they are no change. A folder that does not read (a half-done merge)
+    keeps the last good model with `error` set, refusing writes until a reload reads it.
+    A collection or folder whose directory was renamed outside the app keeps that
+    directory: unchanged parents map the canonical path of what is written under them
+    (`kept_directories`), so a changed request never lands away from its `folder.yaml`.
   - **Ids:** files carry UUIDs; `ids` (migration V8) gives each one a stable number, so
     `RequestId`s survive restarts and History's `request_id` still opens its request.
   - **Order and saves:** sibling order is `position`; saving a template keeps the stored
