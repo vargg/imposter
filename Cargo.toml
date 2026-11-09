@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.8.1"
+version = "0.8.2"
 edition = "2024"
 rust-version = "1.99"
 publish = false
@@ -60,6 +60,9 @@ jiff = "0.2.38"
 indexmap = { version = "2.14.2", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
+# Watching the collections folder for outside changes: the OS's own notifications
+# (FSEvents, inotify, ReadDirectoryChangesW), no other system library.
+notify = "8"
 # RFC 9535 JSONPath for response filters, checks and extraction; pure Rust.
 serde_json_path = "0.7.2"
 # YAML for OpenAPI imports: pure Rust, panic-free, with limits against alias bombs.

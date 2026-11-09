@@ -436,6 +436,14 @@ numbers, so both are excluded. Each logical change is its own commit.
     A collection or folder whose directory was renamed outside the app keeps that
     directory: unchanged parents map the canonical path of what is written under them
     (`kept_directories`), so a changed request never lands away from its `folder.yaml`.
+  - **Watching** (`imposter_app::watch`, the `notify` crate): the folder is watched
+    recursively with the OS's own notifications (FSEvents, inotify,
+    ReadDirectoryChangesW; no other system library). Bursts are coalesced until the
+    folder is quiet for `watch::QUIET` (250 ms), then one callback says that something
+    may have changed; `files::reload` finds out what. Events under hidden directories
+    (`.git`) and reads are ignored; a watcher error counts as a change, since events may
+    have been lost. Pinned by `imposter-app/tests/watch.rs`, which probes until the watch
+    reports instead of sleeping.
   - **Ids:** files carry UUIDs; `ids` (migration V8) gives each one a stable number, so
     `RequestId`s survive restarts and History's `request_id` still opens its request.
   - **Order and saves:** sibling order is `position`; saving a template keeps the stored

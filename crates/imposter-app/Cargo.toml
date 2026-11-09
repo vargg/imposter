@@ -17,6 +17,7 @@ imposter-store.workspace = true
 imposter-transfer.workspace = true
 getrandom.workspace = true
 jiff.workspace = true
+notify.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true

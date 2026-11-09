@@ -15,6 +15,7 @@ pub mod runtime;
 pub mod saver;
 pub mod scripts;
 pub mod transfer;
+pub mod watch;
 
 pub use imposter_core as core;
 pub use imposter_http as http;
