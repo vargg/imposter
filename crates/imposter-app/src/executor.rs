@@ -7,7 +7,7 @@ use imposter_core::capture::{Destination, Write};
 use imposter_core::execution::{ExecutionRecord, Outcome, Response, Timestamp};
 use imposter_core::generate::Entropy;
 use imposter_core::ids::ExecutionId;
-use imposter_core::model::{Request, SavedValues, Variables};
+use imposter_core::model::{Request, RequestTemplate, SavedValues, Variables};
 use imposter_core::prepare::prepare;
 use imposter_core::settings::AppSettings;
 use imposter_core::variables::{
@@ -29,6 +29,9 @@ pub struct Inputs {
     /// are added by the caller (`ScriptChain::with_request`).
     pub scripts: crate::scripts::ScriptChain,
     pub writes: Writes,
+    /// Where relative file paths in the request are found: the collections folder, or the
+    /// file a request was read from. `None` leaves them to the working directory.
+    pub base_dir: Option<std::path::PathBuf>,
 }
 
 /// Where an execution's captures and script variables go.
@@ -116,6 +119,7 @@ pub fn read_inputs(
                 snapshot,
                 scripts,
                 writes: Writes::Scopes,
+                base_dir: Some(db.folder()),
             })
         }
     }
@@ -311,13 +315,76 @@ pub fn resolve_with(
         }
         other => ExecuteError::Invalid(other.to_string()),
     })?;
-    let settings = settings.resolve(&template.options);
+    let mut settings = settings.resolve(&template.options);
+    let mut template = template;
+    if let Some(base) = &inputs.base_dir {
+        root_template(&mut template, base);
+        root_settings(&mut settings, base);
+    }
     let resolved = Request {
         template,
         collection_variables_snapshot: inputs.snapshot.collection_values.clone(),
         ..request.clone()
     };
     Ok((resolved, settings, values))
+}
+
+/// `path` under `base` when it is relative; empty and absolute paths stay as they are.
+fn rooted(path: &str, base: &std::path::Path) -> Option<String> {
+    let relative = !path.is_empty() && std::path::Path::new(path).is_relative();
+    relative.then(|| base.join(path).display().to_string())
+}
+
+/// Join the request's file paths to `base` when relative: a binary body and multipart
+/// files. Run again after the before-sending scripts, which may set paths of their own.
+pub fn root_template(template: &mut RequestTemplate, base: &std::path::Path) {
+    use imposter_core::model::{BodyType, FormKind};
+    match template.body_type {
+        BodyType::Binary => {
+            if let Some(path) = std::str::from_utf8(&template.body)
+                .ok()
+                .and_then(|path| rooted(path, base))
+            {
+                template.body = path.into_bytes();
+            }
+        }
+        BodyType::Multipart => {
+            if let Ok(mut fields) = template.multipart_fields() {
+                let mut changed = false;
+                for field in fields.iter_mut().filter(|f| f.kind == FormKind::File) {
+                    if let Some(path) = rooted(&field.value, base) {
+                        field.value = path;
+                        changed = true;
+                    }
+                }
+                if changed {
+                    template.set_multipart_fields(&fields);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Join the TLS file settings to `base` when relative: the CA bundle, the client
+/// certificate and its key, and every host identity's.
+pub fn root_settings(settings: &mut AppSettings, base: &std::path::Path) {
+    for path in [
+        &mut settings.ca_bundle,
+        &mut settings.certificate_path,
+        &mut settings.key_file,
+    ] {
+        if let Some(rooted) = rooted(path, base) {
+            *path = rooted;
+        }
+    }
+    for identity in &mut settings.host_identities {
+        for path in [&mut identity.certificate_path, &mut identity.key_file] {
+            if let Some(rooted) = rooted(path, base) {
+                *path = rooted;
+            }
+        }
+    }
 }
 
 /// `request` as a curl command with what Send would send now: variables resolved, auth
@@ -338,10 +405,13 @@ pub async fn curl_with_identity_notice(
     let (resolved, settings, values) =
         resolve_with(request, &inputs, &mut SystemEntropy::default())?;
     // What Send would send includes the before-sending scripts' changes.
-    let before = chain
+    let mut before = chain
         .before(resolved.template, values, CancellationToken::new())
         .await
         .map_err(ExecuteError::Script)?;
+    if let Some(base) = &inputs.base_dir {
+        root_template(&mut before.template, base);
+    }
     let prepared = prepare(&before.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
     Ok((
@@ -475,6 +545,9 @@ pub async fn run(
         .await
         .map_err(ExecuteError::Script)?;
     resolved.template = before.template;
+    if let Some(base) = &inputs.base_dir {
+        root_template(&mut resolved.template, base);
+    }
     let prepared = prepare(&resolved.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
 
@@ -484,6 +557,7 @@ pub async fn run(
         settings: inputs.settings.clone(),
         options: request.template.options.clone(),
         variables: values.clone(),
+        base_dir: inputs.base_dir.clone(),
     }));
     let mut response = match imposter_http::send(&prepared, &policy, &cancel).await {
         Ok(response) => response,

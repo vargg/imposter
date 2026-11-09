@@ -202,6 +202,14 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   off **Share values** (the environment's dialog, or ⋯ on the Global page) to keep them on
   this computer. Captures never change a file. Secrets never leave this
   computer.
+- Changes made outside I’mposter (a `git pull`, another editor, an agent) show up within a
+  second. A request you are not editing reloads in place; one with unsaved edits shows
+  **Changed on disk** with **Take theirs** (your edits are kept beside it as "… (your
+  edits)") and **Keep mine** (your next save writes over the file). A file that does not
+  read, such as a half-done merge, keeps the last good collections on screen until it does.
+- File paths in requests (an uploaded file, a multipart file, a client certificate or CA
+  bundle) may be relative to the collections folder, `fixtures/avatar.png`, so the request
+  works in any checkout; Browse stores a file inside the folder that way.
 
 **Interface**
 - Requests, Variables and History stay in the header. Tools opens Mocks, Load and Run; the
@@ -432,8 +440,7 @@ database, `~/.imposter/imposter.db`: History, settings, window state, secrets, a
 that stay on this computer (what captures set, and the values of an environment or of the
 globals when they are not shared). Saving on the Variables screen writes shared values to
 the file; a
-send never changes a file. If a file changed outside I’mposter since it was read, an edit to
-it is refused and the edit is kept; restart to pick the outside change up. The first start
+send never changes a file. Changes made outside I’mposter are picked up as they happen. The first start
 of this version moves existing collections and environments from the database into the
 folder. Set `IMPOSTER_DATA_DIR` to use another directory for both (for a second profile, or for
 testing):

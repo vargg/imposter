@@ -255,3 +255,44 @@ fn the_folder_must_be_one_and_its_collection_named() {
     let from_profile = run(&["send", "Admin/Stats", "--env", "Dev"], author.path());
     assert_eq!(json(&from_profile)["definition"]["source"], "profile");
 }
+
+/// A checkout whose request uploads `fixtures/data.bin`: the path is the folder's, so the
+/// run works from any working directory (this test's is the crate's).
+#[test]
+fn relative_files_are_found_in_the_checkout() {
+    let serving = serve();
+    let checkout = tempfile::tempdir().unwrap();
+    let api = checkout.path().join("api");
+    std::fs::create_dir_all(checkout.path().join("fixtures")).unwrap();
+    std::fs::create_dir_all(&api).unwrap();
+    std::fs::write(
+        checkout.path().join("fixtures/data.bin"),
+        b"from-the-checkout",
+    )
+    .unwrap();
+    std::fs::write(
+        api.join("imposter.yaml"),
+        format!(
+            "format: imposter-project\nversion: 1\nid: c1\nname: API\nvariables:\n  base: {}\n",
+            serving.server.url
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        api.join("upload.yaml"),
+        "id: r1\nname: Upload\nmethod: POST\nurl: \"{{base}}/upload\"\nbody:\n  file: fixtures/data.bin\n",
+    )
+    .unwrap();
+    let empty = tempfile::tempdir().unwrap();
+    let ran = run(
+        &[
+            "send",
+            "API/Upload",
+            "--project",
+            checkout.path().to_str().unwrap(),
+        ],
+        empty.path(),
+    );
+    assert_eq!(ran.status, 7, "no checks, but sent: {}", ran.stdout);
+    assert_eq!(serving.server.requests()[0].body, b"from-the-checkout");
+}

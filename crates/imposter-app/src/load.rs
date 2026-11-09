@@ -147,6 +147,7 @@ pub async fn run(
         settings: inputs.settings.clone(),
         options: request.template.options.clone(),
         variables: values,
+        base_dir: inputs.base_dir.clone(),
     }));
     let keep = if reads_body(&request.template.checks) || scripts.has_after() {
         policy.capture_limit.unwrap_or(u64::MAX)
@@ -269,7 +270,11 @@ async fn one(run: &Run, entropy: &mut SystemEntropy) -> Sample {
             for (name, value) in before.sets {
                 values.insert(name, value);
             }
-            before.template
+            let mut template = before.template;
+            if let Some(base) = &run.inputs.base_dir {
+                crate::executor::root_template(&mut template, base);
+            }
+            template
         }
         Err(message) => {
             run.script_failed(message);

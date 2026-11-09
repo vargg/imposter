@@ -2879,6 +2879,10 @@ impl ImposterApp {
             }
             return;
         }
+        // A file inside the collections folder is kept relative to it, so the request finds
+        // it in any checkout of the folder.
+        let path = relative_to(&self.state.collections_folder, std::path::Path::new(&path))
+            .unwrap_or(path);
         let Some(pane) = &mut self.state.editor else {
             return;
         };
@@ -5055,6 +5059,18 @@ impl ImposterApp {
             Message::Flushed(result.map_err(failure))
         });
     }
+}
+
+/// `path` relative to `folder` when it lies inside it, with `/` between its parts on every
+/// OS so the request reads the same in any checkout.
+fn relative_to(folder: &std::path::Path, path: &std::path::Path) -> Option<String> {
+    // By name only: the UI thread reads no files to canonicalize them.
+    let inside = path.strip_prefix(folder).ok()?;
+    let parts: Vec<String> = inside
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    (!parts.is_empty()).then(|| parts.join("/"))
 }
 
 impl ImposterApp {

@@ -35,6 +35,14 @@ enum Requests {
     Profile(imposter_app::store::Store, Vec<Selected>),
 }
 
+/// `selected` with relative file paths found under `base`.
+fn based(mut selected: Vec<Selected>, base: Option<&std::path::Path>) -> Vec<Selected> {
+    for one in &mut selected {
+        one.inputs.base_dir = base.map(std::path::Path::to_path_buf);
+    }
+    selected
+}
+
 /// The requests to run, read once at the start.
 async fn select(
     args: &SendArgs,
@@ -53,11 +61,11 @@ async fn select(
         let selected =
             document::select_all(document, &target, args.environment.as_deref(), &values)
                 .map_err(|e| e.to_string())?;
-        return Ok(Requests::File(selected));
+        return Ok(Requests::File(based(selected, Some(dir))));
     }
     if let Some(file) = &args.file {
-        let file = file.clone();
-        let bytes = tokio::task::spawn_blocking(move || native::read_document(&file))
+        let reading = file.clone();
+        let bytes = tokio::task::spawn_blocking(move || native::read_document(&reading))
             .await
             .map_err(|_| "The file could not be read".to_owned())?
             .map_err(|e| e.to_string())?;
@@ -67,7 +75,7 @@ async fn select(
         let selected =
             document::select_all(&document, &target, args.environment.as_deref(), &values)
                 .map_err(|e| e.to_string())?;
-        return Ok(Requests::File(selected));
+        return Ok(Requests::File(based(selected, file.parent())));
     }
     let values = read_inputs(&args.inputs, var, redactor)?;
     let explicit = var(paths::DATA_DIR_VARIABLE).map(std::ffi::OsString::from);

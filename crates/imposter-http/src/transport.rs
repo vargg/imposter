@@ -40,6 +40,8 @@ pub struct IdentityRouting {
     pub settings: AppSettings,
     pub options: imposter_core::model::Options,
     pub variables: imposter_core::model::Variables,
+    /// Where relative certificate and key paths are found.
+    pub base_dir: Option<std::path::PathBuf>,
 }
 
 impl IdentityRouting {
@@ -53,8 +55,12 @@ impl IdentityRouting {
                 &mut missing,
             )
         };
-        tls.certificate = path_setting(&resolve(&settings.certificate_path));
-        tls.key = path_setting(&resolve(&settings.key_file));
+        let rooted = |path: Option<std::path::PathBuf>| match (&self.base_dir, path) {
+            (Some(base), Some(path)) if path.is_relative() => Some(base.join(path)),
+            (_, path) => path,
+        };
+        tls.certificate = rooted(path_setting(&resolve(&settings.certificate_path)));
+        tls.key = rooted(path_setting(&resolve(&settings.key_file)));
         tls.password = resolve(&settings.password);
         if !missing.is_empty() {
             return Err(SendError::new(
@@ -78,6 +84,7 @@ impl Policy {
                     settings: settings.clone(),
                     options: imposter_core::model::Options::default(),
                     variables: imposter_core::model::Variables::new(),
+                    base_dir: None,
                 })
             }),
             timeout: Duration::from_secs_f64(settings.timeout),

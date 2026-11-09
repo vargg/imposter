@@ -462,6 +462,16 @@ numbers, so both are excluded. Each logical change is its own commit.
       says so again once it reads.
     Pinned by `imposter-ui/tests/project.rs` (driven by `reload_folder`, not the
     watcher's timing) and the layout lint's banners.
+  - **Relative paths** in a request (a binary body, multipart files) and in the TLS
+    settings it resolves (CA bundle, certificate, key, host identities) are found under
+    `Inputs::base_dir`: the collections folder for the app and profile runs, the folder for
+    `--project`, the file's directory for `--file`. They are joined after variables
+    resolve and again after the before-sending scripts (`executor::root_template`,
+    `root_settings`, `IdentityRouting::base_dir`), so History and Copy as curl show the
+    joined path. Browse keeps a file inside the folder relative, with `/` on every OS.
+    Why: a checkout must run on any machine (M2's exit); paths relative to the working
+    directory only worked from the right one. Pinned by `imposter-app/tests/paths.rs` and
+    `imposter-cli/tests/project.rs`.
   - **Ids:** files carry UUIDs; `ids` (migration V8) gives each one a stable number, so
     `RequestId`s survive restarts and History's `request_id` still opens its request.
   - **Order and saves:** sibling order is `position`; saving a template keeps the stored

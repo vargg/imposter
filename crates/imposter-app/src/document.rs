@@ -317,6 +317,8 @@ fn selected(
             snapshot,
             scripts: ScriptChain(levels),
             writes: Writes::Run,
+            // The caller knows where the document came from (`--file`, `--project`).
+            base_dir: None,
         },
     }
 }

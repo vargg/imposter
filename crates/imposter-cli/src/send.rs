@@ -272,7 +272,7 @@ async fn run(
             let (folder, revision) = read_project(dir).await?;
             definition.sha256 = Some(revision);
             let document = folder.document(&path).map_err(|e| e.to_string())?;
-            run_document(args, document, &path, var, cancel, redactor).await
+            run_document(args, document, &path, Some(dir), var, cancel, redactor).await
         }
         (None, None) => run_profile(args, &path, var, cancel, redactor).await,
     }
@@ -287,29 +287,33 @@ async fn run_file(
     redactor: &mut Redactor,
     definition: &mut Definition,
 ) -> Result<Ran, Unsent> {
-    let file = file.to_owned();
+    let reading = file.to_owned();
     // Read once: an edit to the file during the run cannot change it.
-    let bytes = tokio::task::spawn_blocking(move || native::read_document(&file))
+    let bytes = tokio::task::spawn_blocking(move || native::read_document(&reading))
         .await
         .map_err(|_| "The file could not be read".to_owned())?
         .map_err(|e| e.to_string())?;
     definition.sha256 = Some(sha256_hex(&bytes));
     let document = native::decode(&bytes).map_err(|e| e.to_string())?;
-    run_document(args, &document, path, var, cancel, redactor).await
+    run_document(args, &document, path, file.parent(), var, cancel, redactor).await
 }
 
 /// A request of a document read from a file or a folder: nothing is recorded.
+/// Relative file paths in its requests are found under `base`: the folder, or the file's
+/// own directory.
 async fn run_document(
     args: &SendArgs,
     document: &NativeDocument,
     path: &RequestPath,
+    base: Option<&Path>,
     var: &dyn Fn(&str) -> Option<String>,
     cancel: CancellationToken,
     redactor: &mut Redactor,
 ) -> Result<Ran, Unsent> {
     let values = read_inputs(&args.inputs, var, redactor)?;
-    let selected = document::select(document, path, args.environment.as_deref(), &values)
+    let mut selected = document::select(document, path, args.environment.as_deref(), &values)
         .map_err(|e| e.to_string())?;
+    selected.inputs.base_dir = base.map(Path::to_path_buf);
     let capture_bytes = selected.inputs.settings.download_limit.saturating_mul(1024);
     let ran = executor::run(&selected.inputs, selected.request, cancel)
         .await

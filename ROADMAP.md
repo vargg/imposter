@@ -97,7 +97,6 @@ In milestone order. MCP is not in this table; it is an experiment below.
 
 | Work | Why it is core | When |
 |---|---|---|
-| Reloading the collections folder while the app runs (a git pull, another editor), with clean editors reloading | Today the folder is read at start, and an outside change refuses the next save until a restart. | M2 |
 | OAuth 2.0, API-key auth, a cookie jar | A pasted bearer token goes stale, and a login's cookies are not kept. | M3 |
 | SSE responses | A body that appears only at the end hides a stream. | M3 |
 
@@ -345,13 +344,21 @@ redacted results with an exit status per outcome, result files opened in History
 runs on Linux before any display library is installed. M2's project folder becomes a third
 source; the file stays for CI until then.
 
-### M2 — The project folder and the runner
+### M2 — Complete: the project folder and the runner
 
-- The YAML layout, stable ids and secret references: done (8 November 2026), with the
-  collections folder replacing the database for definitions. Relative fixture paths
-  remain.
-- Revision checks, the single writer and refusing a stale write: done. Reloading the
-  folder while running and reloading clean editors: next.
+Completed 9 November 2026. The exit evidence: `imposter-cli/tests/project.rs` (a checkout
+with relative fixtures runs with no personal database), `imposter-store/tests/files.rs`
+(one file per edit, an outside change refusing a stale write and rolling back, a reload,
+a half-written file keeping the last good folder, the move from the database),
+`imposter-ui/tests/project.rs` (live reload and the "Changed on disk" choices),
+`imposter-app/tests/runner.rs` and `imposter-ui/tests/run.rs` (create, capture, a later
+request and a check as one run, the same rule in the app and the CLI), and the native
+import tests (an upgrade from a native export).
+
+- The YAML layout, stable ids, secret references and relative fixture paths: done (8 and
+  9 November 2026), with the collections folder replacing the database for definitions.
+- Revision checks, the single writer, refusing a stale write, reloading the folder while
+  running and reloading clean editors: done (9 November 2026).
 - A sequential runner in the app and `imposter run`, for a folder or the collection:
   run-local captures, JSON and JUnit output, and an exit status that fails when a
   required check failed, was not checked, or the run did not finish. Done (8 November
