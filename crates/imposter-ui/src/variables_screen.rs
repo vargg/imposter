@@ -195,6 +195,21 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         });
     });
     ui.separator();
+    if state.variables_changed_on_disk {
+        use crate::app::DiskChoice;
+        match crate::workspace::notice_banner(
+            ui,
+            "These variables changed on disk. Your unsaved rows are here.",
+            &[
+                ("Keep mine", "Keep my rows; Save writes them over the file"),
+                ("Reload", "Reload the variables from the file"),
+            ],
+        ) {
+            Some(0) => actions.push(Action::Disk(DiskChoice::KeepVariables)),
+            Some(_) => actions.push(Action::Disk(DiskChoice::ReloadVariables)),
+            None => {}
+        }
+    }
     if !state.variables.loaded {
         ui.label(tone_text("Loading…", Tone::Muted));
         state.actions.extend(actions);

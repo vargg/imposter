@@ -334,6 +334,32 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         pane.editor.options.verify_ssl.inherit = false;
     }
     check(app, "request settings tab");
+    // The banners over a request whose file changed, or went, on disk.
+    let open = app
+        .harness
+        .state()
+        .state
+        .editor
+        .as_ref()
+        .and_then(|pane| pane.editor.id());
+    if let Some(id) = open {
+        for deleted in [false, true] {
+            app.harness.state_mut().state.disk_change = Some(imposter_ui::app::DiskChange {
+                id,
+                name: "A request with a long name that has to be cut in a narrow window".into(),
+                deleted,
+            });
+            check(
+                app,
+                if deleted {
+                    "deleted on disk banner"
+                } else {
+                    "changed on disk banner"
+                },
+            );
+        }
+        app.harness.state_mut().state.disk_change = None;
+    }
     // Auth: a label column, fields to the pane's edge, an eye on secrets.
     for kind in [
         imposter_app::core::model::AuthKind::Basic,
@@ -494,6 +520,9 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         imposter_ui::vars::Row::new("a_rather_long_secret_name_for_the_column", "v-123456"),
     ];
     check(app, "variables with secrets");
+    app.harness.state_mut().state.variables_changed_on_disk = true;
+    check(app, "variables changed on disk banner");
+    app.harness.state_mut().state.variables_changed_on_disk = false;
     app.harness.state_mut().state.variables.secrets.clear();
     // The Global page's menu, with its Share values switch.
     click(&mut app.harness, "Variable actions");

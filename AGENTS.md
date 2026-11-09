@@ -444,6 +444,24 @@ numbers, so both are excluded. Each logical change is its own commit.
     (`.git`) and reads are ignored; a watcher error counts as a change, since events may
     have been lost. Pinned by `imposter-app/tests/watch.rs`, which probes until the watch
     reports instead of sleeping.
+  - **Live reload in the app:** the app watches its collections folder (replaced with
+    the folder) and checks it again when the window regains focus, since a watcher can
+    miss events; each signal is `Message::FolderChanged`, then a reload task.
+    - A clean open request is reloaded in place, on the same tab.
+    - One with unsaved edits gets a banner and its writes are held (`Saver::hold`): after
+      a reload the store's cache equals the disk, so a stale save would otherwise pass
+      the conflict check and silently overwrite the outside change.
+    - Its choices (user's choice: a banner, not a dialog that pops up while typing):
+      "Take theirs" shows the file's version and keeps the edit beside it as
+      "… (your edits)" (`ops::copy_beside`), so nothing is lost; "Keep mine" lets the
+      next save write over the file on purpose. A request deleted on disk closes when
+      clean, or offers "Keep as draft" and "Close".
+    - The Variables screen reloads a changed scope when clean, or shows the same kind of
+      banner (Reload, Keep mine).
+    - A folder that does not read keeps the tree and says why on the status line, and
+      says so again once it reads.
+    Pinned by `imposter-ui/tests/project.rs` (driven by `reload_folder`, not the
+    watcher's timing) and the layout lint's banners.
   - **Ids:** files carry UUIDs; `ids` (migration V8) gives each one a stable number, so
     `RequestId`s survive restarts and History's `request_id` still opens its request.
   - **Order and saves:** sibling order is `position`; saving a template keeps the stored

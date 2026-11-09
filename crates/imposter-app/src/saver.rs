@@ -20,6 +20,9 @@ pub struct Saver {
     in_flight: Option<(RequestId, Request)>,
     /// The last failure per request, until it is saved or discarded.
     failures: HashMap<RequestId, String>,
+    /// A request whose writes wait: its file changed on disk, and the user has not chosen
+    /// between their edit and the file's version yet.
+    held: Option<RequestId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,15 +120,25 @@ impl Saver {
         }
     }
 
+    /// Keep `id`'s edits pending without writing them (`None` lets every write go again).
+    pub fn hold(&mut self, id: Option<RequestId>) {
+        self.held = id;
+    }
+
+    pub fn held(&self) -> Option<RequestId> {
+        self.held
+    }
+
     /// The next write to perform: the given request only, or any. `None` while a write is in
-    /// flight, so writes never overlap.
+    /// flight, so writes never overlap, and never the held request.
     pub fn next_write(&mut self, only: Option<RequestId>) -> Option<(RequestId, Request)> {
         if self.in_flight.is_some() {
             return None;
         }
+        let held = self.held;
         let id = match only {
-            Some(id) => self.pending.contains_key(&id).then_some(id)?,
-            None => *self.pending.keys().next()?,
+            Some(id) => (self.pending.contains_key(&id) && held != Some(id)).then_some(id)?,
+            None => *self.pending.keys().find(|id| held != Some(**id))?,
         };
         let snapshot = self.pending.get(&id)?.clone();
         self.in_flight = Some((id, snapshot.clone()));
@@ -277,5 +290,23 @@ mod tests {
         saver.forget(RequestId(1));
         assert!(!saver.has_pending());
         saver.finish(Ok(()));
+    }
+
+    #[test]
+    fn a_held_request_keeps_its_edit_and_waits() {
+        let mut saver = Saver::default();
+        saver.remember(&request(1, "a"));
+        saver.remember(&request(2, "x"));
+        saver.update(&request(1, "b"));
+        saver.update(&request(2, "y"));
+        saver.hold(Some(RequestId(1)));
+        assert!(saver.next_write(Some(RequestId(1))).is_none());
+        let (next, _) = saver.next_write(None).unwrap();
+        assert_eq!(next, RequestId(2), "the others still save");
+        saver.finish(Ok(()));
+        assert_eq!(saver.state(RequestId(1)), State::Dirty, "the edit is kept");
+        assert!(saver.next_write(None).is_none());
+        saver.hold(None);
+        assert_eq!(saver.next_write(None).unwrap().0, RequestId(1));
     }
 }

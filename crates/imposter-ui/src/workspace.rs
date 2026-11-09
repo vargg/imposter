@@ -245,6 +245,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
             }
             context_bar(state, ui, save, save_text);
             ui.add_space(8.0);
+            disk_banner(state, ui);
             draft_banner(state, ui);
             command_bar(state, ui, executing);
             ui.add_space(12.0);
@@ -784,6 +785,80 @@ fn draft_banner(state: &mut State, ui: &mut Ui) {
             });
         });
     ui.add_space(8.0);
+}
+
+/// A one-line notice over a pane, with its choices as buttons at its end (the first
+/// rightmost). Returns the index of the button clicked, in `buttons`' order.
+pub(crate) fn notice_banner(ui: &mut Ui, text: &str, buttons: &[(&str, &str)]) -> Option<usize> {
+    let mut clicked = None;
+    egui::Frame::new()
+        .fill(palette().hover)
+        .stroke(egui::Stroke::new(1.0, palette().field_border))
+        .corner_radius(BAR_RADIUS)
+        .inner_margin(egui::Margin::symmetric(10, 4))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    for (index, (label, accessible)) in buttons.iter().enumerate().rev() {
+                        let button = ui.button(*label);
+                        name(&button, accessible);
+                        if button.clicked() {
+                            clicked = Some(index);
+                        }
+                    }
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        ui.add(egui::Label::new(text).truncate())
+                            .on_hover_text(text);
+                    });
+                });
+            });
+        });
+    ui.add_space(8.0);
+    clicked
+}
+
+/// Over the open request when its file changed or went away on disk while it had unsaved
+/// edits: the user chooses, and its edits wait meanwhile.
+fn disk_banner(state: &mut State, ui: &mut Ui) {
+    use crate::app::DiskChoice;
+    let Some(change) = state.disk_change.clone() else {
+        return;
+    };
+    if state.editor.as_ref().and_then(|p| p.editor.id()) != Some(change.id) {
+        return;
+    }
+    let (text, buttons, choices): (String, [(&str, &str); 2], [DiskChoice; 2]) = if change.deleted {
+        (
+            format!(
+                "{} was deleted on disk. Your unsaved edits are here.",
+                change.name
+            ),
+            [
+                ("Close", "Close the deleted request"),
+                ("Keep as draft", "Keep the edits as a draft"),
+            ],
+            [DiskChoice::Close, DiskChoice::KeepAsDraft],
+        )
+    } else {
+        (
+            format!("{} changed on disk. Your unsaved edits wait.", change.name),
+            [
+                (
+                    "Keep mine",
+                    "Keep my edits; the next save writes over the file",
+                ),
+                (
+                    "Take theirs",
+                    "Take the file's version; keep my edits beside it",
+                ),
+            ],
+            [DiskChoice::KeepMine, DiskChoice::TakeTheirs],
+        )
+    };
+    if let Some(index) = notice_banner(ui, &text, &buttons) {
+        state.actions.push(Action::Disk(choices[index]));
+    }
 }
 
 /// The request bar's corner radius.

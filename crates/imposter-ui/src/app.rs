@@ -86,6 +86,44 @@ pub struct Startup {
     globals_shared: bool,
 }
 
+/// The open request's file changed on disk while it had unsaved edits: the user chooses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiskChange {
+    pub id: RequestId,
+    pub name: String,
+    /// Its file is gone, rather than changed.
+    pub deleted: bool,
+}
+
+/// What a banner about a change on disk asks the user to choose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiskChoice {
+    /// Show the file's version; keep the edit as a sibling "(your edits)".
+    TakeTheirs,
+    /// Keep editing; the next save writes over the file on purpose.
+    KeepMine,
+    /// The file is gone: keep the editor as a draft that Save puts back.
+    KeepAsDraft,
+    /// The file is gone: close the editor.
+    Close,
+    /// The Variables screen's scope changed on disk: show the file's values.
+    ReloadVariables,
+    /// Keep the Variables screen's unsaved rows; Save writes them over the file.
+    KeepVariables,
+}
+
+/// What a reload of the collections folder found, and what the app shows of it now.
+#[derive(Debug, Clone)]
+pub struct Reloaded {
+    changes: files::Reloaded,
+    /// The open request as its file says now, when it changed.
+    open: Option<Request>,
+    collections: Vec<Collection>,
+    environments: Vec<Environment>,
+    active_environment: Option<EnvironmentId>,
+    globals_shared: bool,
+}
+
 /// The collections folder just switched to, and what it holds.
 #[derive(Debug, Clone)]
 pub struct Switched {
@@ -139,6 +177,11 @@ pub enum Message {
     Started(Result<Box<Startup>, Failure>),
     /// The folder chosen for the collections, if one was.
     FolderPicked(Option<PathBuf>),
+    /// Something in the collections folder may have changed (the watcher, or focus).
+    FolderChanged,
+    FolderReloaded(Result<Box<Reloaded>, Failure>),
+    /// The edit kept beside its request, and the request as its file says.
+    TookTheirs(Result<Box<(Request, Request)>, Failure>),
     FolderSwitched(Result<Box<Switched>, Failure>),
     Filtered(PaneKind, Box<Filtered>),
     MocksLoaded(Result<imposter_app::core::mock::MockConfig, Failure>),
@@ -377,6 +420,8 @@ pub enum Action {
     SetAppearance(Appearance),
     /// Choose another collections folder (Settings).
     ChooseCollectionsFolder,
+    /// Answer a banner about a change on disk.
+    Disk(DiskChoice),
     /// A curl command pasted over the whole URL: it replaces the open request's contents.
     PasteCurl(String),
     /// Re-indent a JSON body, its tokens and placeholders as typed.
@@ -1028,6 +1073,10 @@ pub struct State {
     pub folder_error: Option<String>,
     /// Whether the globals' values are written to `globals.yaml`.
     pub globals_shared: bool,
+    /// The open request changed on disk while it had unsaved edits.
+    pub disk_change: Option<DiskChange>,
+    /// The Variables screen's scope changed on disk while it had unsaved rows.
+    pub variables_changed_on_disk: bool,
     pub collection: Option<CollectionId>,
     pub tree: Option<TreeView>,
     pub selected: Option<NodeId>,
@@ -1088,6 +1137,10 @@ pub struct ImposterApp {
     smoke: Option<SmokeTest>,
     /// The appearance last installed in egui, to reinstall only on a change.
     applied: Option<Appearance>,
+    /// The collections folder being watched; replaced when the folder is.
+    watching: Option<imposter_app::watch::Watching>,
+    /// Whether the window had focus last frame, to check the folder when it comes back.
+    focused: Option<bool>,
 }
 
 impl ImposterApp {
@@ -1111,6 +1164,8 @@ impl ImposterApp {
                 collections_folder: PathBuf::new(),
                 folder_error: None,
                 globals_shared: true,
+                disk_change: None,
+                variables_changed_on_disk: false,
                 collection: None,
                 tree: None,
                 selected: None,
@@ -1163,6 +1218,8 @@ impl ImposterApp {
             file_answers: None,
             smoke: None,
             applied: None,
+            watching: None,
+            focused: None,
         };
         app.state.response.clear();
         app.task(
@@ -1403,6 +1460,24 @@ impl ImposterApp {
                 }
             }
             Message::Done | Message::FolderPicked(None) => {}
+            Message::FolderChanged => self.reload_folder(),
+            Message::FolderReloaded(result) => match result {
+                Ok(reloaded) => self.folder_reloaded(*reloaded),
+                Err(error) => self.status_for(
+                    &format!("The collections folder could not be read again: {error}"),
+                    Tone::Error,
+                    STATUS_SECONDS,
+                ),
+            },
+            Message::TookTheirs(result) => match result {
+                Ok(pair) => {
+                    let (copy, theirs) = *pair;
+                    self.reload_editor(&theirs);
+                    self.reload_tree();
+                    self.status(&format!("Your edits are kept as {}", copy.template.name));
+                }
+                Err(error) => self.error("Your edits could not be kept beside it", error),
+            },
             Message::Started(Ok(startup)) => {
                 self.started(*startup);
                 self.start_smoke();
@@ -1826,6 +1901,7 @@ impl ImposterApp {
         state.collections_folder = startup.folder;
         state.folder_error = startup.folder_error;
         state.globals_shared = startup.globals_shared;
+        self.watch_folder();
         if let Some(draft) = startup.draft {
             self.load_editor(&draft);
             self.request_status("Restored the draft you left open", Tone::Muted);
@@ -1861,6 +1937,8 @@ impl ImposterApp {
         state.collections_folder = switched.folder;
         state.folder_error = switched.folder_error;
         state.globals_shared = switched.globals_shared;
+        self.watch_folder();
+        let state = &mut self.state;
         state.collections = switched.collections;
         state.environments = switched.environments;
         state.active_environment = switched.active_environment;
@@ -1885,6 +1963,213 @@ impl ImposterApp {
                 "Collections from {}",
                 self.state.collections_folder.display()
             )),
+        }
+    }
+
+    /// Watch the collections folder, replacing an earlier watch; changes arrive as
+    /// `FolderChanged`. Without a watch the folder is still checked when the window gets
+    /// focus.
+    fn watch_folder(&mut self) {
+        self.watching = None;
+        let notify = self.bridge.notifier();
+        match imposter_app::watch::watch(&self.state.collections_folder, move || {
+            notify(Message::FolderChanged);
+        }) {
+            Ok(watching) => self.watching = Some(watching),
+            Err(error) => tracing::warn!(%error, "the collections folder is not watched"),
+        }
+    }
+
+    /// Stop watching the folder, so a test decides when it is read again.
+    #[doc(hidden)]
+    pub fn stop_watching(&mut self) {
+        self.watching = None;
+    }
+
+    /// Read the collections folder again and show what changed on disk.
+    pub fn reload_folder(&mut self) {
+        let open = self.state.editor.as_ref().and_then(|p| p.editor.id());
+        self.task(
+            move |db| {
+                let changes = files::reload(db)?;
+                let open = match open {
+                    Some(id) if changes.requests_changed.contains(&id) => {
+                        collections::request(db, id)?
+                    }
+                    _ => None,
+                };
+                Ok(Box::new(Reloaded {
+                    changes,
+                    open,
+                    collections: collections::collections(db)?,
+                    environments: environments::environments(db)?,
+                    active_environment: environments::active_environment(db)?,
+                    globals_shared: environments::globals_shared(db),
+                }))
+            },
+            |result| Message::FolderReloaded(result.map_err(failure)),
+        );
+    }
+
+    fn folder_reloaded(&mut self, view: Reloaded) {
+        let changes = view.changes;
+        if let Some(error) = changes.error {
+            self.state.folder_error = Some(error.clone());
+            self.status_for(
+                &format!(
+                    "The collections folder does not read now; nothing is written to it: {error}"
+                ),
+                Tone::Error,
+                STATUS_SECONDS * 4.0,
+            );
+            return;
+        }
+        if self.state.folder_error.take().is_some() {
+            self.status("The collections folder reads again");
+        }
+        if changes.is_empty() {
+            return;
+        }
+        let state = &mut self.state;
+        state.globals_shared = view.globals_shared;
+        if changes.environments_changed || !changes.scopes_changed.is_empty() {
+            state.environments = view.environments;
+            state.active_environment = view.active_environment;
+        }
+        if changes.collections_changed {
+            state.collections = view.collections;
+            if !state
+                .collection
+                .is_some_and(|id| state.collections.iter().any(|c| c.id == id))
+            {
+                state.collection = state.collections.first().map(|c| c.id);
+                state.tree = None;
+            }
+            match state.collection {
+                Some(id) => self.load_tree(id),
+                None => self.state.tree = None,
+            }
+        }
+        if let Some(pane) = &self.state.editor
+            && let Some(id) = pane.editor.id()
+        {
+            let name = pane.editor.name().to_owned();
+            let removed = changes.requests_removed.contains(&id);
+            if removed || changes.requests_changed.contains(&id) {
+                if self.is_dirty() {
+                    self.state.disk_change = Some(DiskChange {
+                        id,
+                        name,
+                        deleted: removed,
+                    });
+                    self.state.saver.hold(Some(id));
+                } else if removed {
+                    self.clear_editor();
+                    self.status(&format!("{name} was deleted on disk"));
+                } else if let Some(request) = &view.open {
+                    self.reload_editor(request);
+                    self.request_status(&format!("Reloaded {name}: changed on disk"), Tone::Muted);
+                }
+            }
+        }
+        let screen = &self.state.variables;
+        if screen.loaded && changes.scopes_changed.contains(&screen.scope) {
+            if screen.dirty() {
+                self.state.variables_changed_on_disk = true;
+            } else {
+                self.load_variables(screen.scope);
+            }
+        }
+        self.load_snapshot();
+    }
+
+    /// Show `request` as its file says now, on the same tab, keeping the response shown.
+    fn reload_editor(&mut self, request: &Request) {
+        let tab = self.state.editor.as_ref().map(|p| p.tab);
+        if let Some(id) = request.id {
+            self.state.saver.forget(id);
+        }
+        let editor = Editor::load(request);
+        if let Ok(normalized) = editor.to_request() {
+            self.state.saver.remember(&normalized);
+        }
+        let mut pane = EditorPane::new(editor);
+        if let Some(tab) = tab {
+            pane.tab = tab;
+        }
+        self.state.editor = Some(pane);
+        self.state.disk_change = None;
+        self.state.saver.hold(None);
+        self.state.inspect = None;
+        self.load_snapshot();
+    }
+
+    fn disk_choice(&mut self, choice: DiskChoice) {
+        match choice {
+            DiskChoice::ReloadVariables => {
+                self.state.variables_changed_on_disk = false;
+                let scope = self.state.variables.scope;
+                self.load_variables(scope);
+                return;
+            }
+            DiskChoice::KeepVariables => {
+                self.state.variables_changed_on_disk = false;
+                return;
+            }
+            _ => {}
+        }
+        let Some(change) = self.state.disk_change.clone() else {
+            return;
+        };
+        match choice {
+            DiskChoice::TakeTheirs => {
+                let Some(edited) = self
+                    .state
+                    .editor
+                    .as_ref()
+                    .and_then(|p| p.editor.to_request().ok())
+                else {
+                    return;
+                };
+                let id = change.id;
+                self.task(
+                    move |db| {
+                        let copy = ops::copy_beside(db, id, Some(edited.template), "your edits")?;
+                        let theirs =
+                            collections::request(db, id)?.ok_or(StoreError::NotFound("request"))?;
+                        Ok(Box::new((copy, theirs)))
+                    },
+                    |result| Message::TookTheirs(result.map_err(failure)),
+                );
+            }
+            DiskChoice::KeepMine => {
+                self.state.disk_change = None;
+                self.state.saver.hold(None);
+                if self.state.settings.autosave {
+                    self.pump_saves(Some(change.id));
+                }
+            }
+            DiskChoice::KeepAsDraft => {
+                self.state.disk_change = None;
+                self.state.saver.hold(None);
+                self.state.saver.forget(change.id);
+                if let Some(pane) = &mut self.state.editor {
+                    let identity = Request {
+                        id: None,
+                        folder_id: None,
+                        ..pane.editor.identity().clone()
+                    };
+                    pane.editor.adopt_identity(&identity);
+                }
+                self.state.selected = None;
+                self.status("Kept as a draft: Save puts it back in the collection");
+            }
+            DiskChoice::Close => {
+                self.state.disk_change = None;
+                self.state.saver.hold(None);
+                self.clear_editor();
+            }
+            DiskChoice::ReloadVariables | DiskChoice::KeepVariables => {}
         }
     }
 
@@ -3042,6 +3327,7 @@ impl ImposterApp {
             Action::ToggleSidebar => {
                 self.state.layout.sidebar_visible = !self.state.layout.sidebar_visible;
             }
+            Action::Disk(choice) => self.disk_choice(choice),
             Action::ChooseCollectionsFolder => self.pick(
                 FileDialog::Folder {
                     title: "Choose the collections folder",
@@ -4822,6 +5108,15 @@ impl eframe::App for ImposterApp {
         if ctx.input(|i| i.viewport().close_requested()) && self.state.close != CloseState::Ready {
             ctx.send_viewport_cmd(ViewportCommand::CancelClose);
             self.request_close();
+        }
+        // Coming back to the window checks the folder too: a watcher can miss events (a
+        // network drive), and an editor elsewhere may have just saved.
+        let focused = ctx.input(|i| i.viewport().focused);
+        if focused == Some(true) && self.focused == Some(false) {
+            self.reload_folder();
+        }
+        if focused.is_some() {
+            self.focused = focused;
         }
         self.remember_window(ctx);
         self.autosave_tick(ctx);

@@ -2293,7 +2293,7 @@ dependencies = [
 
 [[package]]
 name = "imposter"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "anyhow",
  "eframe",
@@ -2311,7 +2311,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-app"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "getrandom 0.4.3",
  "imposter-core",
@@ -2334,7 +2334,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-cli"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "imposter-app",
  "imposter-core",
@@ -2350,7 +2350,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-core"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "base64",
  "indexmap",
@@ -2365,7 +2365,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-http"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "base64",
  "bytes",
@@ -2398,7 +2398,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-script"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "base64",
  "hmac",
@@ -2413,7 +2413,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-store"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "base64",
  "getrandom 0.4.3",
@@ -2430,7 +2430,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-testkit"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "pkcs8",
  "rcgen",
@@ -2442,7 +2442,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-transfer"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "imposter-core",
  "indexmap",
@@ -2457,7 +2457,7 @@ dependencies = [
 
 [[package]]
 name = "imposter-ui"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "eframe",
  "egui",

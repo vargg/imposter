@@ -2,7 +2,7 @@
 
 use imposter_core::ids::{CollectionId, FolderId, RequestId};
 use imposter_core::model::{Request, RequestTemplate};
-use imposter_store::{StoreError, StoreHandle, collections};
+use imposter_store::{StoreError, StoreHandle, Tx, collections};
 
 /// A new request named `name`, last among its siblings, with the template defaults.
 pub async fn create_request(
@@ -35,35 +35,43 @@ pub async fn duplicate_request(
     edited: Option<RequestTemplate>,
 ) -> Result<Request, StoreError> {
     store
-        .call(move |db| {
-            let source = collections::request(db, id)?.ok_or(StoreError::NotFound("request"))?;
-            let collection = source
-                .collection_id
-                .ok_or(StoreError::NotFound("collection"))?;
-            let tree =
-                collections::tree(db, collection)?.ok_or(StoreError::NotFound("collection"))?;
-            let mut template = edited.unwrap_or(source.template);
-            let original = template.name.clone();
-            let mut number = 1;
-            loop {
-                template.name = if number == 1 {
-                    format!("{original} (copy)")
-                } else {
-                    format!("{original} (copy {number})")
-                };
-                if !tree
-                    .requests
-                    .iter()
-                    .any(|r| r.folder_id == source.folder_id && r.name == template.name)
-                {
-                    break;
-                }
-                number += 1;
-            }
-            template.position = collections::next_position(db, collection, source.folder_id)?;
-            collections::create_request(db, collection, source.folder_id, &template)
-        })
+        .call(move |db| copy_beside(db, id, edited, "copy"))
         .await
+}
+
+/// A new sibling of `id` holding `template` (the stored one when `None`), named after it
+/// with `label`: "Login (copy)", "Login (copy 2)"…, last among its siblings.
+pub fn copy_beside(
+    db: &Tx<'_>,
+    id: RequestId,
+    template: Option<RequestTemplate>,
+    label: &str,
+) -> Result<Request, StoreError> {
+    let source = collections::request(db, id)?.ok_or(StoreError::NotFound("request"))?;
+    let collection = source
+        .collection_id
+        .ok_or(StoreError::NotFound("collection"))?;
+    let tree = collections::tree(db, collection)?.ok_or(StoreError::NotFound("collection"))?;
+    let mut template = template.unwrap_or(source.template);
+    let original = template.name.clone();
+    let mut number = 1;
+    loop {
+        template.name = if number == 1 {
+            format!("{original} ({label})")
+        } else {
+            format!("{original} ({label} {number})")
+        };
+        if !tree
+            .requests
+            .iter()
+            .any(|r| r.folder_id == source.folder_id && r.name == template.name)
+        {
+            break;
+        }
+        number += 1;
+    }
+    template.position = collections::next_position(db, collection, source.folder_id)?;
+    collections::create_request(db, collection, source.folder_id, &template)
 }
 
 /// A new folder, last among its siblings.
