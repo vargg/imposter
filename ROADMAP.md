@@ -226,8 +226,8 @@ Layout, from the start:
 
 Sync:
 
-- Edits in the app write the files (done). A clean editor reloads changes from disk
-  (next).
+- Edits in the app write the files (done). A clean editor reloads changes from disk,
+  and the app watches the folder for them (done, 9 November 2026).
 - A conflict with unsaved edits goes through the unsaved-changes guard. The app keeps
   both versions.
 - One writer at a time, with an expected revision. Saves are atomic. A stale write fails
