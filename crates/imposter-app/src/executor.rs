@@ -330,9 +330,16 @@ pub fn resolve_with(
 }
 
 /// `path` under `base` when it is relative; empty and absolute paths stay as they are.
+/// Joined part by part, so the result has the OS's separators throughout: a stored
+/// `fixtures/data.bin` reads `C:\api\fixtures\data.bin` on Windows in curl and History.
 fn rooted(path: &str, base: &std::path::Path) -> Option<String> {
-    let relative = !path.is_empty() && std::path::Path::new(path).is_relative();
-    relative.then(|| base.join(path).display().to_string())
+    let path = std::path::Path::new(path);
+    let relative = !path.as_os_str().is_empty() && path.is_relative();
+    relative.then(|| {
+        let mut joined = base.to_path_buf();
+        joined.extend(path.components());
+        joined.display().to_string()
+    })
 }
 
 /// Join the request's file paths to `base` when relative: a binary body and multipart

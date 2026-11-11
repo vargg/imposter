@@ -26,7 +26,8 @@ async fn saved(store: &Store, template: RequestTemplate) -> Request {
 async fn a_relative_upload_is_read_from_the_collections_folder() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(&dir.path().join("imposter.db")).unwrap();
-    let fixtures = dir.path().join("collections/fixtures");
+    // Built part by part: the joined path must use the OS's separators throughout.
+    let fixtures = dir.path().join("collections").join("fixtures");
     std::fs::create_dir_all(&fixtures).unwrap();
     std::fs::write(fixtures.join("data.bin"), b"binary-from-the-folder").unwrap();
     std::fs::write(fixtures.join("avatar.txt"), b"avatar-from-the-folder").unwrap();
@@ -112,12 +113,12 @@ fn only_relative_paths_are_joined() {
     root_settings(&mut settings, base);
     assert_eq!(
         settings.ca_bundle,
-        base.join("certs/ca.pem").display().to_string()
+        base.join("certs").join("ca.pem").display().to_string()
     );
     assert_eq!(settings.certificate_path, "");
     assert_eq!(settings.key_file, absolute);
     assert_eq!(
         settings.host_identities[0].certificate_path,
-        base.join("certs/client.pem").display().to_string()
+        base.join("certs").join("client.pem").display().to_string()
     );
 }

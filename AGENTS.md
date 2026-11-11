@@ -468,7 +468,9 @@ numbers, so both are excluded. Each logical change is its own commit.
     `--project`, the file's directory for `--file`. They are joined after variables
     resolve and again after the before-sending scripts (`executor::root_template`,
     `root_settings`, `IdentityRouting::base_dir`), so History and Copy as curl show the
-    joined path. Browse keeps a file inside the folder relative, with `/` on every OS.
+    joined path. It is joined part by part, so it has the OS's separators throughout
+    (`fixtures/data.bin` gave `C:\api\fixtures/data.bin` on Windows). Browse keeps a file
+    inside the folder relative, with `/` on every OS.
     Why: a checkout must run on any machine (M2's exit); paths relative to the working
     directory only worked from the right one. Pinned by `imposter-app/tests/paths.rs` and
     `imposter-cli/tests/project.rs`.
