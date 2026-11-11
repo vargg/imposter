@@ -39,17 +39,25 @@ impl Drop for Watching {
 }
 
 /// Whether an event can change what the folder holds: not a read, and not only under a
-/// hidden directory (`.git`), which a commit or fetch changes on every run.
-fn matters(event: &Event, root: &Path) -> bool {
+/// hidden directory (`.git`), which a commit or fetch changes on every run. Only the part
+/// of a path inside the folder is judged, found under any of `roots`: the folder as given
+/// and as canonical, since Windows reports the first (`C:\Users\RUNNER~1\…`) and
+/// canonicalizing gives another (`\\?\C:\Users\runneradmin\…`). A path under none of
+/// them is a change: judged whole, every event under `~/.imposter/collections` was hidden.
+fn matters(event: &Event, roots: &[PathBuf]) -> bool {
     if matches!(event.kind, EventKind::Access(_)) {
         return false;
     }
     event.paths.is_empty()
         || event.paths.iter().any(|path| {
-            let inside = path.strip_prefix(root).unwrap_or(path);
-            !inside.components().any(
-                |c| matches!(c, Component::Normal(name) if name.to_string_lossy().starts_with('.')),
-            )
+            roots
+                .iter()
+                .find_map(|root| path.strip_prefix(root).ok())
+                .is_none_or(|inside| {
+                    !inside.components().any(|c| {
+                        matches!(c, Component::Normal(name) if name.to_string_lossy().starts_with('.'))
+                    })
+                })
         })
 }
 
@@ -57,8 +65,10 @@ fn matters(event: &Event, root: &Path) -> bool {
 /// watcher's own thread, once per burst of changes.
 pub fn watch(dir: &Path, on_change: impl Fn() + Send + 'static) -> Result<Watching, WatchError> {
     std::fs::create_dir_all(dir).map_err(|e| WatchError::Create(dir.display().to_string(), e))?;
-    // Events name canonical paths on some systems (/private/var on macOS).
-    let root: PathBuf = dir.canonicalize().unwrap_or_else(|_| dir.to_owned());
+    // Events name canonical paths on some systems (/private/var on macOS), and the path as
+    // given on others (Windows).
+    let mut roots = vec![dir.to_owned()];
+    roots.extend(dir.canonicalize().ok().filter(|canonical| canonical != dir));
     let (sender, events) = mpsc::channel::<notify::Result<Event>>();
     let mut watcher = notify::recommended_watcher(sender)?;
     watcher.watch(dir, RecursiveMode::Recursive)?;
@@ -67,7 +77,7 @@ pub fn watch(dir: &Path, on_change: impl Fn() + Send + 'static) -> Result<Watchi
         .spawn(move || {
             while let Ok(event) = events.recv() {
                 // An error from the watcher may mean events were lost: check the folder.
-                if event.as_ref().is_ok_and(|e| !matters(e, &root)) {
+                if event.as_ref().is_ok_and(|e| !matters(e, &roots)) {
                     continue;
                 }
                 // Coalesce the burst: wait until nothing has come for QUIET.
@@ -86,4 +96,40 @@ pub fn watch(dir: &Path, on_change: impl Fn() + Send + 'static) -> Result<Watchi
         watcher: Some(watcher),
         thread: Some(thread),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use notify::event::CreateKind;
+
+    fn created(path: &str) -> Event {
+        Event::new(EventKind::Create(CreateKind::File)).add_path(PathBuf::from(path))
+    }
+
+    /// Windows names events by the folder as given, which differs from its canonical
+    /// form; the folder's own dotted ancestors must not make every event hidden.
+    #[test]
+    fn events_are_judged_inside_the_folder_as_given_or_canonical() {
+        let roots = [
+            PathBuf::from("/home/me/.imposter/collections"),
+            PathBuf::from("/real/me/.imposter/collections"),
+        ];
+        assert!(matters(
+            &created("/home/me/.imposter/collections/api/login.yaml"),
+            &roots
+        ));
+        assert!(matters(
+            &created("/real/me/.imposter/collections/api/login.yaml"),
+            &roots
+        ));
+        assert!(!matters(
+            &created("/home/me/.imposter/collections/.git/index"),
+            &roots
+        ));
+        assert!(
+            matters(&created("/elsewhere/.hidden/x.yaml"), &roots),
+            "a path under no root is a change, not judged by its ancestors"
+        );
+    }
 }

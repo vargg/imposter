@@ -80,3 +80,15 @@ fn a_missing_folder_is_created_and_watched() {
     let (_watching, _calls) = watching(&folder);
     assert!(folder.is_dir());
 }
+
+/// The default folder is `~/.imposter/collections`: a dotted directory above the folder
+/// does not make what changes inside it hidden (on Windows it did, and every change was
+/// ignored).
+#[test]
+fn a_folder_under_a_dotted_directory_is_watched() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join(".imposter").join("collections");
+    let (_watching, calls) = watching(&folder);
+    std::fs::write(folder.join("login.yaml"), "id: z\n").unwrap();
+    calls.recv_timeout(DEADLINE).expect("a change is reported");
+}

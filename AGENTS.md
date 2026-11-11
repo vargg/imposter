@@ -442,8 +442,12 @@ numbers, so both are excluded. Each logical change is its own commit.
     folder is quiet for `watch::QUIET` (250 ms), then one callback says that something
     may have changed; `files::reload` finds out what. Events under hidden directories
     (`.git`) and reads are ignored; a watcher error counts as a change, since events may
-    have been lost. Pinned by `imposter-app/tests/watch.rs`, which probes until the watch
-    reports instead of sleeping.
+    have been lost. Only the part of a path inside the folder is judged hidden, found
+    under the folder as given or as canonical (Windows reports the first, macOS the
+    second); a path under neither is a change. Judged whole, every event under the default
+    `~/.imposter/collections` read as hidden on Windows. Pinned by
+    `imposter-app/tests/watch.rs`, which probes until the watch reports instead of
+    sleeping.
   - **Live reload in the app:** the app watches its collections folder (replaced with
     the folder) and checks it again when the window regains focus, since a watcher can
     miss events; each signal is `Message::FolderChanged`, then a reload task.
