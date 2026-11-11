@@ -4,7 +4,7 @@
 use egui::text::LayoutJob;
 use egui::{Color32, FontId, RichText, TextFormat, Ui};
 use imposter_app::core::model::{
-    AuthKind, EnvColor, FormItem, FormKind, ParamItem, STANDARD_METHODS, is_method_token,
+    ApiKeyIn, AuthKind, EnvColor, FormItem, FormKind, ParamItem, STANDARD_METHODS, is_method_token,
 };
 use imposter_app::core::settings::AppSettings;
 
@@ -1747,6 +1747,33 @@ pub fn auth_form(ui: &mut Ui, auth: &mut AuthForm, vars: &mut VarUi) -> bool {
                 Some(AuthKind::BearerToken) => {
                     ui.label("Token");
                     changed |= secret_edit(ui, &mut auth.token, "Token", width, vars);
+                    ui.end_row();
+                }
+                Some(AuthKind::ApiKey) => {
+                    let caption = ui.label("Add to");
+                    let places = [(ApiKeyIn::Header, "Header"), (ApiKeyIn::Query, "Query")];
+                    let shown = places
+                        .iter()
+                        .find(|(place, _)| *place == auth.key_in)
+                        .map_or("Header", |(_, label)| label);
+                    egui::ComboBox::from_id_salt("api key place")
+                        .selected_text(shown)
+                        .show_ui(ui, |ui| {
+                            for (place, label) in places {
+                                changed |= ui
+                                    .selectable_value(&mut auth.key_in, place, label)
+                                    .changed();
+                            }
+                        })
+                        .response
+                        .labelled_by(caption.id);
+                    ui.end_row();
+                    ui.label("Key name");
+                    changed |=
+                        var_edit(ui, &mut auth.key_name, "Key name", width, false, vars).changed();
+                    ui.end_row();
+                    ui.label("Value");
+                    changed |= secret_edit(ui, &mut auth.key_value, "Value", width, vars);
                     ui.end_row();
                 }
             }

@@ -3,6 +3,12 @@ position: 1
 name: Search
 method: POST
 url: "{{base}}/search"
+auth:
+  type: api_key
+  api_key:
+    name: api_key
+    value: "{{secret:search_key}}"
+    in: query
 queries:
 - name: page
   value: "1"

@@ -9,6 +9,7 @@ use imposter_app::catalog::{
 };
 use imposter_app::document::RequestPath;
 use imposter_app::transfer::{import, read_preview};
+use imposter_core::model::ApiKeyIn;
 use imposter_store::Store;
 use imposter_transfer::native::{self, NativeDocument};
 use serde_json::json;
@@ -265,4 +266,41 @@ async fn environments_list_names_colours_and_variable_names() {
     assert_eq!(from_profile.environments[0].variables, ["token", "name"]);
     assert_eq!(from_profile.globals, ["client", "token"]);
     assert_eq!(from_profile.collections[0].variables, ["base"]);
+}
+
+/// `show` names an API key's place and header or parameter, and shows its value only as
+/// placeholders.
+#[test]
+fn an_api_key_shows_its_place_and_only_placeholders() {
+    let shown = |value: &str| {
+        let document = native::decode_value(json!({
+            "format": "imposter",
+            "version": 5,
+            "collection": {"name": "Shop API", "description": "", "variables": {}, "folders": [],
+                "requests": [{"name": "Pets", "method": "GET", "url": "https://x/pets",
+                    "auth": {"type": "api_key", "api_key": {"name": "api_key", "value": value, "in": "query"}}}]},
+            "environments": [],
+            "globals": {},
+        }))
+        .unwrap();
+        show_file(&document, &path("Pets"), None, 1024)
+            .unwrap()
+            .auth
+    };
+    assert_eq!(
+        shown("{{secret:key}}"),
+        AuthView::ApiKey {
+            name: "api_key".into(),
+            value: "{{secret:key}}".into(),
+            location: ApiKeyIn::Query,
+        }
+    );
+    assert_eq!(
+        shown("literal-key-value"),
+        AuthView::ApiKey {
+            name: "api_key".into(),
+            value: "«redacted»".into(),
+            location: ApiKeyIn::Query,
+        }
+    );
 }

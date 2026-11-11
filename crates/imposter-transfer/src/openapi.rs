@@ -6,7 +6,7 @@ use std::collections::HashSet;
 
 use imposter_core::check::{Check, Op};
 use imposter_core::model::{
-    BodyType, FormItem, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
+    ApiKeyIn, BodyType, FormItem, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
     is_method_token,
 };
 use imposter_core::select::Selector;
@@ -631,6 +631,7 @@ impl<'a> Walk<'a> {
             .find(|names| names.iter().all(|name| self.native_scheme(name)))
             .or_else(|| alternatives.first());
         let mut slot: Option<String> = None;
+        let mut keys: Vec<(String, String, ApiKeyIn)> = Vec::new();
         for name in chosen.into_iter().flatten() {
             match self.credential(name) {
                 Some(Credential::Auth(auth)) => {
@@ -645,16 +646,31 @@ impl<'a> Walk<'a> {
                     }
                 }
                 Some(Credential::Header(header, value)) => {
-                    request.headers.push(ParamItem::new(header, value));
+                    keys.push((header, value, ApiKeyIn::Header));
                 }
                 Some(Credential::Query(query, value)) => {
-                    request.queries.push(ParamItem::new(query, value));
+                    keys.push((query, value, ApiKeyIn::Query));
                 }
                 Some(Credential::Cookie(cookie, value)) => {
                     request.cookies.push(ParamItem::new(cookie, value));
                 }
                 None => {}
             }
+        }
+        // One API key with no other scheme in the auth slot is the request's API-key auth;
+        // beside another scheme, or another key, each stays a row so all of them go.
+        if slot.is_none()
+            && keys.len() == 1
+            && let Some((name, value, place)) = keys.pop()
+        {
+            request.auth = RequestAuth::api_key(name, value, place);
+        }
+        for (name, value, place) in keys {
+            let rows = match place {
+                ApiKeyIn::Header => &mut request.headers,
+                ApiKeyIn::Query => &mut request.queries,
+            };
+            rows.push(ParamItem::new(name, value));
         }
     }
 

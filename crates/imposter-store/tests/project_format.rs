@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use imposter_core::capture::Capture;
 use imposter_core::check::{Check, Op};
 use imposter_core::model::{
-    BodyType, EnvColor, FormItem, Options, ParamItem, RequestAuth, RequestTemplate, SavedValues,
-    Scripts, Variables,
+    ApiKeyIn, BodyType, EnvColor, FormItem, Options, ParamItem, RequestAuth, RequestTemplate,
+    SavedValues, Scripts, Variables,
 };
 use imposter_core::select::Selector;
 use imposter_store::files::format::{
@@ -97,6 +97,7 @@ fn sample() -> Project {
         body_type: BodyType::Urlencoded,
         queries: vec![ParamItem::new("page", "1")],
         cookies: vec![ParamItem::new("session", "{{secret:session}}")],
+        auth: RequestAuth::api_key("api_key", "{{secret:search_key}}", ApiKeyIn::Query),
         ..RequestTemplate::default()
     };
     form.set_form_fields(&[ParamItem::new("q", "shoes")]);

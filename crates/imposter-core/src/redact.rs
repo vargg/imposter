@@ -123,6 +123,8 @@ impl Redactor {
             }
             Ok(Some(Auth::Digest(credentials))) => self.secret(&credentials.password),
             Ok(Some(Auth::Bearer(token))) => self.secret(&token.token),
+            // Its percent-encoded form covers a key sent in the query.
+            Ok(Some(Auth::ApiKey(key))) => self.secret(&key.value),
             Ok(None) | Err(_) => {}
         }
         if let Some(password) = &template.options.password {
@@ -325,6 +327,20 @@ mod tests {
             &AppSettings::default(),
         );
         assert_eq!(bearer.text("tok-123"), MARK);
+
+        let mut key = Redactor::default();
+        key.credentials(
+            &RequestTemplate {
+                auth: RequestAuth::api_key("key", "k3y/+v", crate::model::ApiKeyIn::Query),
+                ..RequestTemplate::default()
+            },
+            &AppSettings::default(),
+        );
+        assert_eq!(
+            key.text("https://h/a?key=k3y%2F%2Bv and k3y/+v"),
+            "https://h/a?key=«redacted» and «redacted»",
+            "an API key goes, as typed and as sent in the query"
+        );
     }
 
     #[test]

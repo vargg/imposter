@@ -62,7 +62,7 @@ Protect these. The milestones run on them.
 
 - Requests: any method, headers, cookies, and bodies as JSON, text (including XML and a
   GraphQL document sent as an ordinary POST), form, multipart or a file. Uploads stream.
-- Basic, Bearer and Digest auth. Per-request settings. TLS, proxies, and client
+- Basic, Bearer, Digest and API-key auth. Per-request settings. TLS, proxies, and client
   certificates matched to an exact host.
 - Variables in global, collection and environment scopes, with saved values, generated
   values and environment colours. Secrets as references, `{{secret:name}}`, kept per
@@ -97,7 +97,7 @@ In milestone order. MCP is not in this table; it is an experiment below.
 
 | Work | Why it is core | When |
 |---|---|---|
-| OAuth 2.0, API-key auth, a cookie jar | A pasted bearer token goes stale, and a login's cookies are not kept. | M3 |
+| OAuth 2.0, a cookie jar | A pasted bearer token goes stale, and a login's cookies are not kept. | M3 |
 | SSE responses | A body that appears only at the end hides a stream. | M3 |
 
 ## Frozen: keep, and stop growing
@@ -383,7 +383,7 @@ proceed with a supplied token. That pull does not drag SSE with it.
 - OAuth 2.0: client credentials, and authorization code with PKCE through the system
   browser and a loopback redirect. Tokens are cached per project and environment,
   refreshed before expiry, and stored as secrets.
-- API-key auth, in a header or the query.
+- API-key auth, in a header or the query. Done (11 November 2026).
 - A cookie jar scoped by project and environment, so two projects do not share one.
   Visible, editable and clearable, with an explicit on/off choice, and used by Send,
   the runner and the CLI.

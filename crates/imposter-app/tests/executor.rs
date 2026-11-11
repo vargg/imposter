@@ -6,7 +6,9 @@ use std::time::Duration;
 use imposter_app::executor::{ExecuteError, HISTORY_ERROR, execute, inputs};
 use imposter_core::execution::Outcome;
 use imposter_core::ids::CollectionId;
-use imposter_core::model::{BodyType, ParamItem, Request, RequestTemplate, Variables};
+use imposter_core::model::{
+    ApiKeyIn, BodyType, ParamItem, Request, RequestAuth, RequestTemplate, Variables,
+};
 use imposter_core::settings::AppSettings;
 use imposter_core::variables::Source;
 use imposter_store::{Store, collections, environments, executions, kv};
@@ -749,4 +751,51 @@ async fn a_chosen_saved_value_is_what_the_next_send_uses_in_its_own_environment(
         .map(|r| r.target().to_owned())
         .collect();
     assert_eq!(targets, ["/users/77", "/users/1"]);
+}
+
+/// An API key goes as its header or after the query, and a key kept as a secret stays out
+/// of History.
+#[tokio::test]
+async fn an_api_key_reaches_the_server_and_a_secret_one_stays_out_of_history() {
+    let (_dir, store) = open();
+    let server = Server::start(|_, _| response("200 OK", &[], b"ok")).await;
+    let request = setup(&store, &server.url).await;
+    store
+        .call(|db| {
+            imposter_store::secrets::set(
+                db,
+                imposter_core::variables::SecretScope::Global,
+                &[("key".into(), "k3y-in-header".into())],
+            )
+        })
+        .await
+        .unwrap();
+
+    let mut header = request.clone();
+    header.template.auth = RequestAuth::api_key("X-API-Key", "{{secret:key}}", ApiKeyIn::Header);
+    let executed = execute(&store.handle(), header, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(executed.response.status, 200);
+    let received = server.requests().remove(0);
+    assert_eq!(received.header("x-api-key"), Some("k3y-in-header"));
+    let id = executed.record.unwrap();
+    let record = store
+        .call(move |db| executions::execution(db, id))
+        .await
+        .unwrap()
+        .unwrap();
+    let stored = serde_json::to_string(&record).unwrap();
+    assert!(!stored.contains("k3y-in-header"), "{stored}");
+
+    let mut query = request;
+    query.template.url = "{{base}}/items?page=2".into();
+    query.template.auth = RequestAuth::api_key("api_key", "plain key", ApiKeyIn::Query);
+    execute(&store.handle(), query, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        server.requests()[1].request_line,
+        "POST /items?page=2&api_key=plain+key HTTP/1.1"
+    );
 }

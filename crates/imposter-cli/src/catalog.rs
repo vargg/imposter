@@ -11,6 +11,7 @@ use imposter_app::document::RequestPath;
 use imposter_app::formats::native::{self, NativeDocument};
 use imposter_app::paths;
 use imposter_app::store::Store;
+use imposter_core::model::ApiKeyIn;
 use imposter_core::run_result::Source;
 
 use crate::send::DEFAULT_MAX_BODY;
@@ -282,6 +283,17 @@ fn show_text(view: &RequestView) -> String {
         }
         AuthView::Bearer { token } => {
             let _ = writeln!(text, "Auth: Bearer {token}");
+        }
+        AuthView::ApiKey {
+            name,
+            value,
+            location,
+        } => {
+            let place = match location {
+                ApiKeyIn::Header => "header",
+                ApiKeyIn::Query => "query",
+            };
+            let _ = writeln!(text, "Auth: API key in {place}, {name} = {value}");
         }
     }
     if view.body.bytes > 0 {

@@ -364,13 +364,21 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     for kind in [
         imposter_app::core::model::AuthKind::Basic,
         imposter_app::core::model::AuthKind::BearerToken,
+        imposter_app::core::model::AuthKind::ApiKey,
     ] {
         let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
         pane.editor.auth.kind = Some(kind);
+        // The longest place, so its picker is measured at its widest.
+        pane.editor.auth.key_in = imposter_app::core::model::ApiKeyIn::Query;
         pane.tab = imposter_ui::app::EditorTab::Auth;
         check(app, &format!("auth {kind:?}"));
     }
-    app.harness.state_mut().state.editor.as_mut().unwrap().tab = imposter_ui::app::EditorTab::Body;
+    {
+        // The screens after this send the request: a key without a name could not go.
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.editor.auth.kind = None;
+        pane.tab = imposter_ui::app::EditorTab::Body;
+    }
     // A custom method being typed takes the method picker's place in the request bar.
     click(&mut app.harness, "HTTP method");
     click(&mut app.harness, "Custom method…");

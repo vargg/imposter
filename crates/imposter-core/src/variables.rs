@@ -106,6 +106,10 @@ pub(crate) fn visit_texts(
     if let Some(bearer) = &mut template.auth.bearer_token {
         visit(&mut bearer.token);
     }
+    if let Some(key) = &mut template.auth.api_key {
+        visit(&mut key.name);
+        visit(&mut key.value);
+    }
     visit_options(&mut template.options, visit);
     visit_body(template, visit)
 }

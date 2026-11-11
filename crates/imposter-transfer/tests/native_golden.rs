@@ -111,7 +111,8 @@ fn the_marker_and_a_known_version_are_required() {
     assert!(decode(with("imposter", "2").as_bytes()).is_ok());
     assert!(decode(with("imposter", "3").as_bytes()).is_ok());
     assert!(decode(with("imposter", "4").as_bytes()).is_ok());
-    for (format, version) in [("poster", "1"), ("imposter", "1"), ("imposter", "5")] {
+    assert!(decode(with("imposter", "5").as_bytes()).is_ok());
+    for (format, version) in [("poster", "1"), ("imposter", "1"), ("imposter", "6")] {
         assert!(
             decode(with(format, version).as_bytes()).is_err(),
             "{format} {version}"
@@ -248,4 +249,22 @@ fn collection_and_folder_scripts_need_version_3_and_round_trip() {
             "{warnings:?}"
         );
     }
+}
+
+/// An export takes version 5 only when a request has API-key auth.
+#[test]
+fn api_key_auth_needs_version_5_and_only_then() {
+    use imposter_core::model::{ApiKeyIn, RequestAuth, RequestTemplate};
+    let minimal = std::fs::read(fixtures().join("native/minimal.imposter.json")).unwrap();
+    let mut document = decode(&minimal).unwrap();
+    document.collection.requests.push(RequestTemplate {
+        name: "Pets".into(),
+        auth: RequestAuth::api_key("X-API-Key", "{{secret:key}}", ApiKeyIn::Header),
+        ..RequestTemplate::default()
+    });
+    document.fit_version();
+    assert_eq!(document.version, Version::V5);
+    document.collection.requests[0].auth = RequestAuth::bearer("t");
+    document.fit_version();
+    assert_eq!(document.version, Version::V2, "readable by older Imposter");
 }

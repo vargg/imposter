@@ -6,7 +6,8 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use imposter_core::model::{
-    BodyType, FormItem, FormKind, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
+    ApiKeyIn, BodyType, Credentials, FormItem, FormKind, ParamItem, RequestAuth, RequestTemplate,
+    SavedValues, Variables,
 };
 use imposter_core::url;
 use serde_json::{Map, Value, json};
@@ -276,7 +277,7 @@ impl Decoder {
             None | Some(Value::Null) => "None".to_owned(),
             Some(other) => spaced_json(other),
         };
-        if !matches!(kind_text.as_str(), "basic" | "digest" | "bearer") {
+        if !matches!(kind_text.as_str(), "basic" | "digest" | "bearer" | "apikey") {
             self.loss(location, &format!("{kind_text} authentication"), true);
             return RequestAuth::default();
         }
@@ -290,10 +291,10 @@ impl Decoder {
                 }
             }
         }
-        let supported: &[&str] = if kind_text == "bearer" {
-            &["token"]
-        } else {
-            &["username", "password"]
+        let supported: &[&str] = match kind_text.as_str() {
+            "bearer" => &["token"],
+            "apikey" => &["key", "value", "in"],
+            _ => &["username", "password"],
         };
         if attributes
             .iter()
@@ -310,6 +311,18 @@ impl Decoder {
         };
         match kind_text.as_str() {
             "bearer" => RequestAuth::bearer(get("token")),
+            // Postman sends a key without `in` as a header.
+            "apikey" => {
+                let place = match get("in").as_str() {
+                    "query" => ApiKeyIn::Query,
+                    "header" | "" => ApiKeyIn::Header,
+                    other => {
+                        self.loss(location, &format!("API keys in {other:?}"), true);
+                        return RequestAuth::default();
+                    }
+                };
+                RequestAuth::api_key(get("key"), get("value"), place)
+            }
             "basic" => RequestAuth::basic(get("username"), get("password")),
             _ => RequestAuth::digest(get("username"), get("password")),
         }
@@ -663,6 +676,14 @@ fn export_pairs(items: &[ParamItem]) -> Value {
     )
 }
 
+fn credentials(label: &str, credentials: Option<&Credentials>) -> Result<Value, PostmanError> {
+    let credentials = credentials.ok_or(PostmanError::Credentials)?;
+    Ok(json!({"type": label, label: [
+        {"key": "username", "value": credentials.username, "type": "string"},
+        {"key": "password", "value": credentials.password, "type": "string"},
+    ]}))
+}
+
 fn export_auth(auth: &RequestAuth) -> Result<Value, PostmanError> {
     use imposter_core::model::AuthKind;
     Ok(match auth.kind {
@@ -674,17 +695,20 @@ fn export_auth(auth: &RequestAuth) -> Result<Value, PostmanError> {
                 .ok_or(PostmanError::Credentials)?;
             json!({"type": "bearer", "bearer": [{"key": "token", "value": token.token, "type": "string"}]})
         }
-        Some(kind) => {
-            let (label, credentials) = match kind {
-                AuthKind::Basic => ("basic", auth.basic.as_ref()),
-                _ => ("digest", auth.digest.as_ref()),
+        Some(AuthKind::ApiKey) => {
+            let key = auth.api_key.as_ref().ok_or(PostmanError::Credentials)?;
+            let place = match key.location {
+                ApiKeyIn::Header => "header",
+                ApiKeyIn::Query => "query",
             };
-            let credentials = credentials.ok_or(PostmanError::Credentials)?;
-            json!({"type": label, label: [
-                {"key": "username", "value": credentials.username, "type": "string"},
-                {"key": "password", "value": credentials.password, "type": "string"},
+            json!({"type": "apikey", "apikey": [
+                {"key": "key", "value": key.name, "type": "string"},
+                {"key": "value", "value": key.value, "type": "string"},
+                {"key": "in", "value": place, "type": "string"},
             ]})
         }
+        Some(AuthKind::Basic) => credentials("basic", auth.basic.as_ref())?,
+        Some(AuthKind::Digest) => credentials("digest", auth.digest.as_ref())?,
     })
 }
 

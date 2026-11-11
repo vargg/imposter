@@ -5,7 +5,7 @@
 
 use imposter_app::core::ids::RequestId;
 use imposter_app::core::model::{
-    AuthKind, BodyType, FormItem, Options, ParamItem, Request, RequestAuth, Variables,
+    ApiKeyIn, AuthKind, BodyType, FormItem, Options, ParamItem, Request, RequestAuth, Variables,
 };
 use imposter_app::core::settings::AppSettings;
 use imposter_app::core::url;
@@ -21,11 +21,12 @@ pub const BODY_CHOICES: [(BodyType, &str); 6] = [
     (BodyType::Binary, "Binary file"),
 ];
 
-pub const AUTH_CHOICES: [(Option<AuthKind>, &str); 4] = [
+pub const AUTH_CHOICES: [(Option<AuthKind>, &str); 5] = [
     (None, "None"),
     (Some(AuthKind::Basic), "Basic"),
     (Some(AuthKind::BearerToken), "Bearer"),
     (Some(AuthKind::Digest), "Digest"),
+    (Some(AuthKind::ApiKey), "API Key"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -34,6 +35,9 @@ pub struct AuthForm {
     pub username: String,
     pub password: String,
     pub token: String,
+    pub key_name: String,
+    pub key_value: String,
+    pub key_in: ApiKeyIn,
 }
 
 impl AuthForm {
@@ -43,6 +47,7 @@ impl AuthForm {
         } else {
             auth.digest.as_ref()
         };
+        let key = auth.api_key.as_ref();
         Self {
             kind: auth.kind,
             username: credentials.map(|c| c.username.clone()).unwrap_or_default(),
@@ -52,6 +57,9 @@ impl AuthForm {
                 .as_ref()
                 .map(|b| b.token.clone())
                 .unwrap_or_default(),
+            key_name: key.map(|k| k.name.clone()).unwrap_or_default(),
+            key_value: key.map(|k| k.value.clone()).unwrap_or_default(),
+            key_in: key.map(|k| k.location).unwrap_or_default(),
         }
     }
 
@@ -61,6 +69,9 @@ impl AuthForm {
             Some(AuthKind::Basic) => RequestAuth::basic(&self.username, &self.password),
             Some(AuthKind::Digest) => RequestAuth::digest(&self.username, &self.password),
             Some(AuthKind::BearerToken) => RequestAuth::bearer(&self.token),
+            Some(AuthKind::ApiKey) => {
+                RequestAuth::api_key(&self.key_name, &self.key_value, self.key_in)
+            }
         }
     }
 }

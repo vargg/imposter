@@ -5,7 +5,7 @@
 mod support;
 
 use egui_kittest::kittest::Queryable;
-use imposter_app::core::model::{AuthKind, BodyType, FormKind, RequestAuth};
+use imposter_app::core::model::{ApiKeyIn, AuthKind, BodyType, FormKind, RequestAuth};
 use imposter_app::store::collections;
 use imposter_ui::app::EditorTab;
 use support::{click, collection, request, settle, start_with, type_into};
@@ -91,6 +91,38 @@ fn bearer_tokens_are_saved() {
     type_into(&mut app.harness, "Token", "t0k");
 
     assert_eq!(saved(&mut app).template.auth, RequestAuth::bearer("t0k"));
+}
+
+#[test]
+fn api_keys_are_chosen_placed_and_saved() {
+    use egui::accesskit::Role;
+    let mut app = opened();
+    tab(&mut app, EditorTab::Auth);
+    app.harness
+        .get_by_role_and_label(Role::ComboBox, "Type")
+        .click();
+    app.harness.run_steps(3);
+    app.harness.get_by_label("API Key").click();
+    app.harness.run_steps(2);
+    app.harness
+        .get_by_role_and_label(Role::ComboBox, "Add to")
+        .click();
+    app.harness.run_steps(3);
+    // "Query" is also a tab: the option is the menu's, drawn last.
+    app.harness
+        .get_all_by_label("Query")
+        .next_back()
+        .unwrap()
+        .click();
+    app.harness.run_steps(2);
+    type_into(&mut app.harness, "Key name", "api_key");
+    type_into(&mut app.harness, "Value", "{{key}}");
+    app.harness.get_by_label("Show value");
+
+    assert_eq!(
+        saved(&mut app).template.auth,
+        RequestAuth::api_key("api_key", "{{key}}", ApiKeyIn::Query)
+    );
 }
 
 #[test]

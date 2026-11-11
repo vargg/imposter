@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use imposter_core::model::{
-    BodyType, FormItem, FormKind, ParamItem, RequestAuth, RequestTemplate, Variables,
+    ApiKeyIn, BodyType, FormItem, FormKind, ParamItem, RequestAuth, RequestTemplate, Variables,
 };
 use imposter_transfer::native::NativeDocument;
 use imposter_transfer::openapi::{OpenApiError, decode, is_openapi, parse_yaml};
@@ -138,11 +138,13 @@ fn parameters_land_in_their_rows_and_only_required_ones_are_enabled() {
     );
     assert_eq!(
         list.headers,
-        [
-            row("X-Trace", "", false),
-            row("X-API-Key", "{{api_key}}", true)
-        ],
-        "Accept is not a parameter; the API key comes from the default security"
+        [row("X-Trace", "", false)],
+        "Accept is not a parameter"
+    );
+    assert_eq!(
+        list.auth,
+        RequestAuth::api_key("X-API-Key", "{{api_key}}", ApiKeyIn::Header),
+        "the API key comes from the default security, as the request's auth"
     );
     assert_eq!(list.body_type, BodyType::None);
 
@@ -371,9 +373,33 @@ fn the_first_alternative_this_app_supports_is_chosen() {
         request.auth,
         RequestAuth::basic("{{username}}", "{{password}}")
     );
-    assert_eq!(request.queries, [row("key", "{{query}}", true)]);
+    assert_eq!(
+        request.queries,
+        [row("key", "{{query}}", true)],
+        "beside Basic, the key stays a row so both are sent"
+    );
     assert_eq!(request.cookies, [row("sid", "{{cookie}}", true)]);
     assert!(warnings.is_empty(), "{warnings:?}");
+
+    let (request, _, _) = single(
+        json!({"/": {"get": {"security": [{"query": []}]}}}),
+        schemes.clone(),
+    );
+    assert_eq!(
+        request.auth,
+        RequestAuth::api_key("key", "{{query}}", ApiKeyIn::Query)
+    );
+    assert_eq!(request.queries, []);
+    let (request, _, _) = single(
+        json!({"/": {"get": {"security": [{"query": [], "header": []}]}}}),
+        json!({"securitySchemes": {
+            "query": {"type": "apiKey", "in": "query", "name": "key"},
+            "header": {"type": "apiKey", "in": "header", "name": "X-Key"},
+        }}),
+    );
+    assert_eq!(request.auth, RequestAuth::default(), "two keys stay rows");
+    assert_eq!(request.queries, [row("key", "{{query}}", true)]);
+    assert_eq!(request.headers, [row("X-Key", "{{header}}", true)]);
     assert_eq!(
         variables.keys().collect::<Vec<_>>(),
         ["baseUrl", "username", "password", "query", "cookie"]

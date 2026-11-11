@@ -6,7 +6,7 @@
 use imposter_core::capture::Capture;
 use imposter_core::check::Check;
 use imposter_core::model::{
-    Auth, BodyType, EnvColor, ParamItem, RequestTemplate, Scripts, Variables,
+    ApiKeyIn, Auth, BodyType, EnvColor, ParamItem, RequestTemplate, Scripts, Variables,
 };
 use imposter_core::redact::{SECRET_HEADERS, shown};
 use imposter_core::run_result::Source;
@@ -155,9 +155,23 @@ fn items(rows: &[ParamItem], secret: impl Fn(&str) -> bool) -> Vec<Item> {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AuthView {
     None,
-    Basic { username: String, password: String },
-    Digest { username: String, password: String },
-    Bearer { token: String },
+    Basic {
+        username: String,
+        password: String,
+    },
+    Digest {
+        username: String,
+        password: String,
+    },
+    Bearer {
+        token: String,
+    },
+    ApiKey {
+        name: String,
+        value: String,
+        #[serde(rename = "in")]
+        location: ApiKeyIn,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -239,6 +253,11 @@ fn auth(template: &RequestTemplate) -> AuthView {
         },
         Ok(Some(Auth::Bearer(t))) => AuthView::Bearer {
             token: shown(&t.token),
+        },
+        Ok(Some(Auth::ApiKey(key))) => AuthView::ApiKey {
+            name: key.name.clone(),
+            value: shown(&key.value),
+            location: key.location,
         },
         Ok(None) | Err(_) => AuthView::None,
     }

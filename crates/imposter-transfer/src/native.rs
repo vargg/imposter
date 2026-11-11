@@ -9,7 +9,7 @@ use std::io::{Read as _, Write as _};
 use std::path::Path;
 
 use imposter_core::model::{
-    EnvColor, RequestTemplate, SavedValues, Scripts, Variables, is_method_token,
+    AuthKind, EnvColor, RequestTemplate, SavedValues, Scripts, Variables, is_method_token,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -46,13 +46,14 @@ pub enum Format {
     Imposter,
 }
 
-/// Versions 2, 3 (scripts) and 4 (captures stored as secrets); anything else is rejected
-/// rather than guessed at.
+/// Versions 2, 3 (scripts), 4 (captures stored as secrets) and 5 (API-key auth); anything
+/// else is rejected rather than guessed at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Version {
     V2,
     V3,
     V4,
+    V5,
 }
 
 impl Serialize for Version {
@@ -61,6 +62,7 @@ impl Serialize for Version {
             Self::V2 => 2,
             Self::V3 => 3,
             Self::V4 => 4,
+            Self::V5 => 5,
         })
     }
 }
@@ -71,6 +73,7 @@ impl<'de> Deserialize<'de> for Version {
             2 => Ok(Self::V2),
             3 => Ok(Self::V3),
             4 => Ok(Self::V4),
+            5 => Ok(Self::V5),
             other => Err(serde::de::Error::custom(format!(
                 "unsupported version {other}"
             ))),
@@ -156,17 +159,28 @@ impl NativeDocument {
         }
     }
 
-    /// Version 4 when a capture is stored as a secret, else 3 when something has scripts,
-    /// else 2: the lowest that holds the document, so older Imposter versions read what
-    /// they can. For new Imposter documents only.
+    /// Version 5 when a request uses API-key auth, else 4 when a capture is stored as a
+    /// secret, else 3 when something has scripts, else 2: the lowest that holds the
+    /// document, so older Imposter versions read what they can. For new Imposter documents
+    /// only.
     pub fn fit_version(&mut self) {
-        self.version = if self.secret_capture().is_some() {
+        self.version = if self.api_key().is_some() {
+            Version::V5
+        } else if self.secret_capture().is_some() {
             Version::V4
         } else if self.scripted().is_some() {
             Version::V3
         } else {
             Version::V2
         };
+    }
+
+    /// The first request with API-key auth, chosen or kept, named for errors.
+    pub fn api_key(&self) -> Option<String> {
+        self.requests()
+            .into_iter()
+            .find(|r| r.auth.kind == Some(AuthKind::ApiKey) || r.auth.api_key.is_some())
+            .map(|r| format!("Request {:?}", r.name))
     }
 
     /// The first request with a capture stored as a secret, named for errors.
@@ -253,6 +267,8 @@ pub enum NativeError {
     ScriptsNeedVersion3 { owner: String },
     #[error("{owner}: a capture stored as a secret needs format version 4")]
     SecretCaptureNeedsVersion4 { owner: String },
+    #[error("{owner}: API-key authentication needs format version 5")]
+    ApiKeyNeedsVersion5 { owner: String },
     #[error("Request {request:?}: {source}")]
     Body {
         request: String,
@@ -294,6 +310,11 @@ fn checked(document: NativeDocument) -> Result<NativeDocument, NativeError> {
         && let Some(owner) = document.secret_capture()
     {
         return Err(NativeError::SecretCaptureNeedsVersion4 { owner });
+    }
+    if document.version < Version::V5
+        && let Some(owner) = document.api_key()
+    {
+        return Err(NativeError::ApiKeyNeedsVersion5 { owner });
     }
     validate_templates(&document)?;
     Ok(document)

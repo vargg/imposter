@@ -3,7 +3,7 @@
 use base64::Engine as _;
 
 use crate::model::{
-    Auth, BodyType, Credentials, FormBodyError, FormItem, MissingCredentials, ParamItem,
+    ApiKeyIn, Auth, BodyType, Credentials, FormBodyError, FormItem, MissingCredentials, ParamItem,
     RequestTemplate, is_method_token,
 };
 use crate::url::{self, UrlParts};
@@ -18,7 +18,7 @@ pub enum PreparedBody {
 }
 
 /// Authentication left for the transport: Digest needs the server's challenge first.
-/// Basic and Bearer are already in the headers.
+/// Basic, Bearer and an API key are already in the headers or the URL.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PreparedAuth {
     None,
@@ -43,6 +43,9 @@ pub enum PrepareError {
     InvalidMethod,
     #[error("Use either Authentication or an Authorization header")]
     AuthConflict,
+    /// The place named: "header" or "query parameter".
+    #[error("Use either the API key or a {0} of the same name")]
+    ApiKeyConflict(&'static str),
     #[error("Use either Cookies or a Cookie header")]
     CookieConflict,
     #[error(transparent)]
@@ -89,12 +92,38 @@ pub fn request_url(template: &RequestTemplate) -> Result<String, PrepareError> {
     }))
 }
 
+/// `url` with `name=value` added after its query, which is left as it was.
+fn with_pair(url: &str, name: &str, value: &str) -> String {
+    let parts = url::split(url);
+    let pair = url::encode_pairs([(name, value)]);
+    let query = if parts.query.is_empty() {
+        pair
+    } else {
+        format!("{}&{pair}", parts.query)
+    };
+    url::join(&UrlParts { query, ..parts })
+}
+
 pub fn prepare(template: &RequestTemplate, attach_cookies: bool) -> Result<Prepared, PrepareError> {
-    let url = request_url(template)?;
+    let mut url = request_url(template)?;
     let mut headers: Vec<(String, String)> = sent(&template.headers)
         .map(|item| (item.name.clone(), item.value.clone()))
         .collect();
-    if template.auth.kind.is_some() && has_header(&headers, "authorization") {
+    // An API key names its own header or parameter; only that one can conflict.
+    if let Ok(Some(Auth::ApiKey(key))) = template.auth.active() {
+        let taken = match key.location {
+            ApiKeyIn::Header => has_header(&headers, &key.name),
+            ApiKeyIn::Query => url::parse_pairs(&url::split(&url).query)
+                .iter()
+                .any(|(name, _)| *name == key.name),
+        };
+        if taken {
+            return Err(PrepareError::ApiKeyConflict(match key.location {
+                ApiKeyIn::Header => "header",
+                ApiKeyIn::Query => "query parameter",
+            }));
+        }
+    } else if template.auth.kind.is_some() && has_header(&headers, "authorization") {
         return Err(PrepareError::AuthConflict);
     }
     if attach_cookies && !template.cookies.is_empty() {
@@ -166,6 +195,13 @@ pub fn prepare(template: &RequestTemplate, attach_cookies: bool) -> Result<Prepa
             PreparedAuth::None
         }
         Some(Auth::Digest(credentials)) => PreparedAuth::Digest(credentials.clone()),
+        Some(Auth::ApiKey(key)) => {
+            match key.location {
+                ApiKeyIn::Header => headers.push((key.name.clone(), key.value.clone())),
+                ApiKeyIn::Query => url = with_pair(&url, &key.name, &key.value),
+            }
+            PreparedAuth::None
+        }
     };
     if !is_method_token(&template.method) {
         return Err(PrepareError::InvalidMethod);
@@ -226,6 +262,75 @@ mod tests {
                 password: "p".into()
             })
         );
+    }
+
+    #[test]
+    fn an_api_key_goes_in_its_header_or_after_the_query() {
+        let header = RequestTemplate {
+            headers: vec![ParamItem::new("Accept", "*/*")],
+            auth: RequestAuth::api_key("X-API-Key", "k1", ApiKeyIn::Header),
+            ..get("http://h/a")
+        };
+        let prepared = prepare(&header, true).unwrap();
+        assert_eq!(
+            prepared.headers,
+            [
+                ("Accept".into(), "*/*".into()),
+                ("X-API-Key".into(), "k1".into())
+            ]
+        );
+        assert_eq!(prepared.url, "http://h/a");
+
+        let query = RequestTemplate {
+            auth: RequestAuth::api_key("api key", "a&b", ApiKeyIn::Query),
+            ..get("http://h/a?page=2#top")
+        };
+        let prepared = prepare(&query, true).unwrap();
+        assert_eq!(prepared.url, "http://h/a?page=2&api+key=a%26b");
+        assert_eq!(prepared.headers, Vec::<(String, String)>::new());
+        let bare = RequestTemplate {
+            auth: RequestAuth::api_key("key", "v", ApiKeyIn::Query),
+            ..get("http://h/a")
+        };
+        assert_eq!(prepare(&bare, true).unwrap().url, "http://h/a?key=v");
+    }
+
+    #[test]
+    fn an_api_key_conflicts_only_with_its_own_name() {
+        let header = RequestTemplate {
+            headers: vec![ParamItem::new("x-api-key", "other")],
+            auth: RequestAuth::api_key("X-API-Key", "k", ApiKeyIn::Header),
+            ..get("http://h")
+        };
+        assert_eq!(
+            prepare(&header, true).unwrap_err().to_string(),
+            "Use either the API key or a header of the same name"
+        );
+        let query = RequestTemplate {
+            auth: RequestAuth::api_key("key", "k", ApiKeyIn::Query),
+            ..get("http://h/?key=1")
+        };
+        assert_eq!(
+            prepare(&query, true).unwrap_err().to_string(),
+            "Use either the API key or a query parameter of the same name"
+        );
+        let beside = RequestTemplate {
+            headers: vec![ParamItem::new("Authorization", "Bearer t")],
+            auth: RequestAuth::api_key("X-API-Key", "k", ApiKeyIn::Header),
+            ..get("http://h")
+        };
+        assert!(
+            prepare(&beside, true).is_ok(),
+            "an Authorization header beside a key is the user's own"
+        );
+        let nameless = RequestTemplate {
+            auth: RequestAuth::api_key("", "k", ApiKeyIn::Header),
+            ..get("http://h")
+        };
+        assert!(matches!(
+            prepare(&nameless, true),
+            Err(PrepareError::Credentials(_))
+        ));
     }
 
     #[test]

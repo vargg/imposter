@@ -292,7 +292,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   `imposter-ui/tests/request_bar.rs` and the layout lint's custom-method state.
 - **The Auth tab is a two-column grid** (`widgets::auth_form`): one label column, fields to
   the pane's edge (sized from the pane, since a grid cell sees only itself), and an eye
-  button after each secret (password, token) that shows or hides it for the session; the
+  button after each secret (password, token, key value) that shows or hides it for the session; the
   choice is never stored. Why: labels were indented differently, the field had a fixed width,
   and a typed secret could not be checked (the review's #25).
 - **The request's Settings tab is one row per setting** (`widgets::options_form`), under a
@@ -563,6 +563,25 @@ numbers, so both are excluded. Each logical change is its own commit.
   of the same host); explicit `Cookie` headers are never carried to the next location. Why:
   reqwest cannot replay streamed uploads, and credentials must not follow a redirect to
   another origin.
+- **API-key auth sends one header or one query parameter** (`model::ApiKey`: name, value,
+  `in: header | query`). `prepare` adds it after the request's own headers, or after its
+  query, which keeps its order and encoding. A sent header (compared without case) or
+  query parameter of the same name is refused (`PrepareError::ApiKeyConflict`); an
+  `Authorization` header beside a key is the user's own; a key without a name is missing
+  credentials. The value is a credential: results redact it with its percent-encoded form
+  (so a key in the URL goes too), and `show` prints it only as placeholders. A key in a
+  cookie is not offered (OpenAPI allows it, Postman does not): a cookie row does that.
+  Postman `apikey` maps both ways (without `in` it is a header, as Postman sends it).
+  OpenAPI's `apiKey` in a header or the query becomes the request's API-key auth when no
+  other scheme of the requirement wants the auth slot; beside one, or beside another key,
+  it stays a row, so every scheme required together is still sent. The folder format
+  keeps version 1, writing `api_key` only where set. The Auth tab's place picker reads
+  "Header" or "Query" ("Query parameter" ran past the pane at 720 points, the layout
+  lint). Why: M3; a key typed as a header row was not treated as a credential. Pinned by
+  `prepare` and `redact` unit tests, `imposter-app/tests/executor.rs` (the bytes received,
+  History without a secret key), the native decode cases, `postman_golden.rs`,
+  `openapi.rs`, the project golden folder, `imposter-ui/tests/widgets.rs` and the layout
+  lint.
 - **Digest is answered once per hop** (MD5, SHA, SHA-256, SHA-512, `-sess`, qop `auth`; not
   `auth-int`), rebuilding the body for the retry. Verified against the RFC 2617/7616 vectors.
 - **Uploads stream with chunked transfer encoding** (no `Content-Length`) and are reopened for
@@ -624,7 +643,8 @@ numbers, so both are excluded. Each logical change is its own commit.
     not verified behavior (the roadmap's "What a run means").
   - **Redaction** (`core::redact::Redactor`) runs over every string of the result, keys
     included: the run's secret inputs and the credentials it sent (Basic and Digest
-    passwords, the Basic `user:password` pair, Bearer tokens, the client key password),
+    passwords, the Basic `user:password` pair, Bearer tokens, API keys, the client key
+    password),
     each also percent-encoded and base64 in both alphabets; `user:password@` in any URL;
     and the whole value of `Authorization`, `Proxy-Authorization`, `Cookie` and
     `Set-Cookie`. Bodies are redacted before the excerpt is cut, so a secret across the
@@ -1097,7 +1117,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   (`generated`, `undefined`), names only. `envs` gives environments with their colour,
   globals and collections, by variable name. Values never appear (user's choice:
   placeholders, not values), and a stored credential (Basic and Digest passwords, Bearer
-  tokens, the key password, `Authorization`, `Proxy-Authorization` and `Cookie` headers,
+  tokens, API key values, the key password, `Authorization`, `Proxy-Authorization` and `Cookie` headers,
   cookies) shows only when it is nothing but placeholders, optionally after a scheme word
   (`redact::shown`), else `«redacted»`; a secret pasted into a body cannot be told from
   data, and the README says so. Inspecting with a production environment is allowed
@@ -1235,7 +1255,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   that a plain imported request lacks.
   Version 4 adds captures stored as secrets (`Capture::secret`); `fit_version` picks it
   only for a document with one, and an older version holding one is refused, naming the
-  request, as scripts are below 3.
+  request, as scripts are below 3. Version 5 adds API-key auth (`RequestAuth::api_key`,
+  left out of the JSON when unset, so other documents keep their bytes), by the same rule.
 - **The collections folder format** (`store::files::format`, format `imposter-project`,
   version 1): one YAML file per request, per folder (`folder.yaml` in its directory),
   per collection (`imposter.yaml` in its directory) and per environment

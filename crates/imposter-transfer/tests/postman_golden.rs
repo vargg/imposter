@@ -158,3 +158,69 @@ fn generated_dynamic_variables_are_kept() {
     );
     assert!(decoder.requires_removal);
 }
+
+/// Postman's `apikey` auth comes in as API-key auth and goes back out the same way; a key
+/// in a place Imposter cannot send is removed only with consent.
+#[test]
+fn api_keys_travel_both_ways() {
+    use imposter_core::model::{ApiKeyIn, RequestAuth};
+    let collection = |auth: Value| {
+        serde_json::json!({
+            "info": {"name": "C", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+            "item": [{"name": "R", "request": {"method": "GET", "url": "http://h/", "auth": auth}}]
+        })
+    };
+    let mut decoder = Decoder::default();
+    let document = decoder
+        .decode(&collection(
+            serde_json::json!({"type": "apikey", "apikey": [
+                {"key": "key", "value": "api_key", "type": "string"},
+                {"key": "value", "value": "{{key}}", "type": "string"},
+                {"key": "in", "value": "query", "type": "string"},
+            ]}),
+        ))
+        .unwrap();
+    assert_eq!(
+        document.collection.requests[0].auth,
+        RequestAuth::api_key("api_key", "{{key}}", ApiKeyIn::Query)
+    );
+    assert!(!decoder.requires_removal);
+
+    let (postman, warnings) = encode(&document).unwrap();
+    assert_eq!(
+        postman["item"][0]["request"]["auth"],
+        serde_json::json!({"type": "apikey", "apikey": [
+            {"key": "key", "value": "api_key", "type": "string"},
+            {"key": "value", "value": "{{key}}", "type": "string"},
+            {"key": "in", "value": "query", "type": "string"},
+        ]})
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+
+    let mut decoder = Decoder::default();
+    let document = decoder
+        .decode(&collection(
+            serde_json::json!({"type": "apikey", "apikey": [
+                {"key": "key", "value": "X-Key"},
+                {"key": "value", "value": "v"},
+            ]}),
+        ))
+        .unwrap();
+    assert_eq!(
+        document.collection.requests[0].auth,
+        RequestAuth::api_key("X-Key", "v", ApiKeyIn::Header),
+        "Postman sends a key without a place as a header"
+    );
+
+    let mut decoder = Decoder::default();
+    let document = decoder
+        .decode(&collection(
+            serde_json::json!({"type": "apikey", "apikey": [
+                {"key": "key", "value": "k"},
+                {"key": "in", "value": "cookie"},
+            ]}),
+        ))
+        .unwrap();
+    assert_eq!(document.collection.requests[0].auth, RequestAuth::default());
+    assert!(decoder.requires_removal, "{:?}", decoder.warnings);
+}

@@ -100,7 +100,7 @@
   },
   {
     "name": "unsupported version",
-    "document": "{\"format\": \"imposter\", \"version\": 5, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
+    "document": "{\"format\": \"imposter\", \"version\": 6, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": []}, \"environments\": [], \"globals\": {}}",
     "accepted": false
   },
   {
@@ -761,6 +761,82 @@
       "environments": [],
       "globals": {}
     }
+  },
+  {
+    "name": "api key in version 5",
+    "document": "{\"format\": \"imposter\", \"version\": 5, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Pets\", \"method\": \"GET\", \"url\": \"https://x/pets\", \"auth\": {\"type\": \"api_key\", \"api_key\": {\"name\": \"X-API-Key\", \"value\": \"{{secret:key}}\", \"in\": \"query\"}}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "imposter",
+      "version": 5,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "Pets",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "https://x/pets",
+            "path": "",
+            "auth": {
+              "type": "api_key",
+              "basic": null,
+              "digest": null,
+              "bearer_token": null,
+              "api_key": {
+                "name": "X-API-Key",
+                "value": "{{secret:key}}",
+                "in": "query"
+              }
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "api key before version 5",
+    "document": "{\"format\": \"imposter\", \"version\": 4, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Pets\", \"method\": \"GET\", \"url\": \"https://x/pets\", \"auth\": {\"type\": \"api_key\", \"api_key\": {\"name\": \"X-API-Key\", \"value\": \"{{secret:key}}\", \"in\": \"query\"}}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
+  },
+  {
+    "name": "api key type before version 5",
+    "document": "{\"format\": \"imposter\", \"version\": 4, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Pets\", \"method\": \"GET\", \"url\": \"https://x/pets\", \"auth\": {\"type\": \"api_key\"}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
+  },
+  {
+    "name": "api key without a name",
+    "document": "{\"format\": \"imposter\", \"version\": 5, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Pets\", \"method\": \"GET\", \"url\": \"https://x/pets\", \"auth\": {\"type\": \"api_key\", \"api_key\": {\"value\": \"k\"}}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
+  },
+  {
+    "name": "api key in a cookie",
+    "document": "{\"format\": \"imposter\", \"version\": 5, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Pets\", \"method\": \"GET\", \"url\": \"https://x/pets\", \"auth\": {\"type\": \"api_key\", \"api_key\": {\"name\": \"k\", \"value\": \"v\", \"in\": \"cookie\"}}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
   },
   {
     "name": "secret capture before version 4",
