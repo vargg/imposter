@@ -1776,8 +1776,58 @@ pub fn auth_form(ui: &mut Ui, auth: &mut AuthForm, vars: &mut VarUi) -> bool {
                     changed |= secret_edit(ui, &mut auth.key_value, "Value", width, vars);
                     ui.end_row();
                 }
+                Some(AuthKind::OAuth2) => changed |= oauth_rows(ui, &mut auth.oauth, width, vars),
             }
         });
+    changed
+}
+
+/// The OAuth 2.0 rows of the auth grid: the token endpoint, the client and what to ask for.
+fn oauth_rows(
+    ui: &mut Ui,
+    oauth: &mut imposter_app::core::model::OAuth2,
+    width: f32,
+    vars: &mut VarUi,
+) -> bool {
+    use imposter_app::core::model::ClientAuth;
+    let mut changed = false;
+    ui.label("Grant");
+    ui.label("Client credentials");
+    ui.end_row();
+    for (label, field, secret) in [
+        ("Token URL", &mut oauth.token_url, false),
+        ("Client ID", &mut oauth.client_id, false),
+        ("Secret", &mut oauth.client_secret, true),
+        ("Scope", &mut oauth.scope, false),
+        ("Audience", &mut oauth.audience, false),
+    ] {
+        ui.label(label);
+        changed |= if secret {
+            secret_edit(ui, field, "Client secret", width, vars)
+        } else {
+            var_edit(ui, field, label, width, false, vars).changed()
+        };
+        ui.end_row();
+    }
+    let caption = ui.label("Client auth");
+    let ways = [(ClientAuth::Basic, "Header"), (ClientAuth::Body, "Body")];
+    let shown = ways
+        .iter()
+        .find(|(way, _)| *way == oauth.client_auth)
+        .map_or("Header", |(_, label)| label);
+    egui::ComboBox::from_id_salt("oauth client auth")
+        .selected_text(shown)
+        .show_ui(ui, |ui| {
+            for (way, label) in ways {
+                changed |= ui
+                    .selectable_value(&mut oauth.client_auth, way, label)
+                    .changed();
+            }
+        })
+        .response
+        .on_hover_text("How the client ID and secret reach the token endpoint: a Basic header, or fields in the form")
+        .labelled_by(caption.id);
+    ui.end_row();
     changed
 }
 

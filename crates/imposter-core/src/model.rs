@@ -220,6 +220,8 @@ pub enum AuthKind {
     Digest,
     BearerToken,
     ApiKey,
+    #[serde(rename = "oauth2")]
+    OAuth2,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -254,6 +256,43 @@ pub struct ApiKey {
     pub location: ApiKeyIn,
 }
 
+/// How an OAuth 2.0 token is obtained. Only the client credentials grant so far; the
+/// authorization code grant follows (M3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OAuthGrant {
+    #[default]
+    ClientCredentials,
+}
+
+/// How the client proves itself to the token endpoint (RFC 6749 2.3.1): a Basic header,
+/// which servers must accept, or `client_id` and `client_secret` in the form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClientAuth {
+    #[default]
+    Basic,
+    Body,
+}
+
+/// OAuth 2.0: a token from `token_url`, sent as a Bearer token. Every field may hold
+/// `{{variables}}` and `{{secret:…}}` references.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct OAuth2 {
+    pub grant: OAuthGrant,
+    pub token_url: String,
+    pub client_id: String,
+    pub client_secret: String,
+    /// Space-separated, as the token endpoint takes it; empty asks for the default.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub scope: String,
+    /// The API the token is for, which some servers (Auth0) require.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub audience: String,
+    pub client_auth: ClientAuth,
+}
+
 /// The stored auth shape keeps every configured scheme, so switching the type in the editor
 /// does not lose the other credentials. [`RequestAuth::active`] gives the one in effect.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -267,6 +306,9 @@ pub struct RequestAuth {
     /// Left out when unset, so documents without one keep their bytes (and native version).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<ApiKey>,
+    /// Left out when unset, as `api_key` is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth2: Option<OAuth2>,
 }
 
 /// The authentication in effect for a request.
@@ -276,6 +318,8 @@ pub enum Auth<'a> {
     Digest(&'a Credentials),
     Bearer(&'a BearerToken),
     ApiKey(&'a ApiKey),
+    /// Sent once a token was obtained (`imposter_app::oauth`), as a Bearer token.
+    OAuth2(&'a OAuth2),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -327,6 +371,14 @@ impl RequestAuth {
         }
     }
 
+    pub fn oauth2(oauth: OAuth2) -> Self {
+        Self {
+            kind: Some(AuthKind::OAuth2),
+            oauth2: Some(oauth),
+            ..Self::default()
+        }
+    }
+
     pub fn active(&self) -> Result<Option<Auth<'_>>, MissingCredentials> {
         Ok(match self.kind {
             None => None,
@@ -344,6 +396,13 @@ impl RequestAuth {
                 self.api_key
                     .as_ref()
                     .filter(|key| !key.name.is_empty())
+                    .ok_or(MissingCredentials)?,
+            )),
+            // Without a token endpoint there is nowhere to get a token.
+            Some(AuthKind::OAuth2) => Some(Auth::OAuth2(
+                self.oauth2
+                    .as_ref()
+                    .filter(|oauth| !oauth.token_url.is_empty())
                     .ok_or(MissingCredentials)?,
             )),
         })

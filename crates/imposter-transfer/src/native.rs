@@ -159,7 +159,7 @@ impl NativeDocument {
         }
     }
 
-    /// Version 5 when a request uses API-key auth or sets the cookie jar, else 4 when a capture is stored as a
+    /// Version 5 when a request uses API-key or OAuth 2.0 auth or sets the cookie jar, else 4 when a capture is stored as a
     /// secret, else 3 when something has scripts, else 2: the lowest that holds the
     /// document, so older Imposter versions read what they can. For new Imposter documents
     /// only.
@@ -176,12 +176,14 @@ impl NativeDocument {
     }
 
     /// The first request using what version 5 added, named for errors, with what it uses:
-    /// API-key auth (chosen or kept) or its own cookie jar setting.
+    /// API-key or OAuth 2.0 auth (chosen or kept), or its own cookie jar setting.
     pub fn version_5(&self) -> Option<(String, &'static str)> {
         self.requests().into_iter().find_map(|r| {
             let owner = || format!("Request {:?}", r.name);
             if r.auth.kind == Some(AuthKind::ApiKey) || r.auth.api_key.is_some() {
                 Some((owner(), "API-key authentication"))
+            } else if r.auth.kind == Some(AuthKind::OAuth2) || r.auth.oauth2.is_some() {
+                Some((owner(), "OAuth 2.0 authentication"))
             } else if r.options.cookie_jar.is_some() {
                 Some((owner(), "the cookie jar setting"))
             } else {

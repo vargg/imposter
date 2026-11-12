@@ -3,3 +3,12 @@ position: 0
 name: Health
 method: GET
 url: "{{base}}/health"
+auth:
+  type: oauth2
+  oauth2:
+    grant: client_credentials
+    token_url: "{{base}}/token"
+    client_id: shop
+    client_secret: "{{secret:client_secret}}"
+    scope: health read
+    client_auth: body

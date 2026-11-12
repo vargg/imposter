@@ -85,14 +85,12 @@ pub async fn run(
         } else {
             let mut inputs = selected.inputs;
             inputs.snapshot = inputs.snapshot.with_layer(&carried, &Source::Run);
-            // The execution and its record are boxed: their state is large, and inline it
-            // made every caller's future cross clippy's `large_futures` limit.
-            match Box::pin(executor::run(&inputs, selected.request, cancel.clone())).await {
+            match executor::run(&inputs, selected.request, cancel.clone()).await {
                 Ok(ran) => {
                     for write in &ran.writes {
                         carried.insert(write.key(), write.value.clone());
                     }
-                    Box::pin(record(path, ran, options.record.as_ref())).await
+                    record(path, ran, options.record.as_ref()).await
                 }
                 Err(error) => Step::NotSent {
                     path,
@@ -133,6 +131,8 @@ async fn record(path: String, mut ran: Ran, store: Option<&(StoreHandle, Via)>) 
                 record: copy,
                 writes: Vec::new(),
                 secrets: ran.secrets.clone(),
+                // A run's tokens stay in the run, as its captures and cookies do.
+                token: None,
             },
         )
         .await;

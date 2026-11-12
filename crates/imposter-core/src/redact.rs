@@ -125,6 +125,8 @@ impl Redactor {
             Ok(Some(Auth::Bearer(token))) => self.secret(&token.token),
             // Its percent-encoded form covers a key sent in the query.
             Ok(Some(Auth::ApiKey(key))) => self.secret(&key.value),
+            // The token it got is sent as a Bearer token, which the request as sent holds.
+            Ok(Some(Auth::OAuth2(oauth))) => self.secret(&oauth.client_secret),
             Ok(None) | Err(_) => {}
         }
         if let Some(password) = &template.options.password {

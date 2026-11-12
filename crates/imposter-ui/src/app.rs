@@ -1057,9 +1057,10 @@ impl From<ExecuteError> for NotSent {
     fn from(error: ExecuteError) -> Self {
         let unresolved = match &error {
             ExecuteError::Unresolved(names) => names.clone(),
-            ExecuteError::Invalid(_) | ExecuteError::Script(_) | ExecuteError::Store(_) => {
-                Vec::new()
-            }
+            ExecuteError::Invalid(_)
+            | ExecuteError::Script(_)
+            | ExecuteError::Token(_)
+            | ExecuteError::Store(_) => Vec::new(),
         };
         Self {
             message: format!("Not sent: {error}"),

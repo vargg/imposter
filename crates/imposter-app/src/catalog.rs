@@ -172,6 +172,18 @@ pub enum AuthView {
         #[serde(rename = "in")]
         location: ApiKeyIn,
     },
+    /// The token endpoint and client; the secret only as placeholders.
+    #[serde(rename = "oauth2")]
+    OAuth2 {
+        grant: imposter_core::model::OAuthGrant,
+        token_url: String,
+        client_id: String,
+        client_secret: String,
+        #[serde(skip_serializing_if = "String::is_empty")]
+        scope: String,
+        #[serde(skip_serializing_if = "String::is_empty")]
+        audience: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -258,6 +270,14 @@ fn auth(template: &RequestTemplate) -> AuthView {
             name: key.name.clone(),
             value: shown(&key.value),
             location: key.location,
+        },
+        Ok(Some(Auth::OAuth2(oauth))) => AuthView::OAuth2 {
+            grant: oauth.grant,
+            token_url: oauth.token_url.clone(),
+            client_id: oauth.client_id.clone(),
+            client_secret: shown(&oauth.client_secret),
+            scope: oauth.scope.clone(),
+            audience: oauth.audience.clone(),
         },
         Ok(None) | Err(_) => AuthView::None,
     }

@@ -630,6 +630,37 @@ numbers, so both are excluded. Each logical change is its own commit.
   History without a secret key), the native decode cases, `postman_golden.rs`,
   `openapi.rs`, the project golden folder, `imposter-ui/tests/widgets.rs` and the layout
   lint.
+- **OAuth 2.0 client credentials: the executor gets the token, the transport never
+  sees OAuth** (`imposter_http::oauth` asks the token endpoint, `imposter_app::oauth`
+  decides which token to send). Hand-written, not the `oauth2` crate, which pins its own
+  reqwest: the token request goes through the request's own `Policy` (TLS, proxy,
+  timeout; no cookie jar) and is a form POST of a few fields (RFC 6749 4.4, 6).
+  - **Model** (`model::OAuth2`, native version 5, the folder format's `oauth2`): token
+    URL, client ID and secret, scope, audience, and how the client authenticates (a
+    Basic header, form-encoded first as RFC 6749 2.3.1 says, or the form). Every field
+    takes `{{variables}}` and `{{secret:…}}`, so a missing secret stops the send as
+    unresolved before any token request.
+  - **When:** after the before-sending scripts, on resolved values: the token replaces
+    the auth in the request as sent (`RequestAuth::bearer`), so History, the response
+    pane and the run result show a Bearer token, which they remove with the client
+    secret and refresh token (`Ran::secrets`). `prepare` refuses an OAuth request
+    without a token (`PrepareError::NoToken`); Copy as curl uses a cached good token
+    and never asks for one.
+  - **Cache** (migration V10, `store::oauth`): per collections folder and environment,
+    keyed by a SHA-256 of grant, token URL, client ID, scope and audience, never the
+    secret. A token is used while it has more than 30 seconds left (`oauth::MARGIN`;
+    one without a lifetime until cleared), then refreshed with its refresh token; a
+    refresh that fails asks for a new token, which client credentials can always do.
+    Send keeps what it fetched; the app's Run screen starts from a copy and the command
+    line from nothing, and neither keeps one (the roadmap's isolated headless runs).
+  - **Failures** are not sent and not recorded (`ExecuteError::Token`): "Token request
+    failed: invalid_client: Unknown client", the OAuth error and description, or the
+    status when the answer names none. A token type other than Bearer is refused.
+  Pinned by the module's unit tests (the form and Basic header, answers),
+  `imposter-app/tests/oauth.rs` (fetch, reuse, refresh, a failed refresh, refusal, a
+  missing secret, History, the command line, Copy as curl), `imposter-store/tests/oauth.rs`,
+  the native decode cases, the project golden folder, `imposter-ui/tests/widgets.rs` and
+  the layout lint.
 - **Digest is answered once per hop** (MD5, SHA, SHA-256, SHA-512, `-sess`, qop `auth`; not
   `auth-int`), rebuilding the body for the retry. Verified against the RFC 2617/7616 vectors.
 - **Uploads stream with chunked transfer encoding** (no `Content-Length`) and are reopened for
@@ -691,8 +722,8 @@ numbers, so both are excluded. Each logical change is its own commit.
     not verified behavior (the roadmap's "What a run means").
   - **Redaction** (`core::redact::Redactor`) runs over every string of the result, keys
     included: the run's secret inputs and the credentials it sent (Basic and Digest
-    passwords, the Basic `user:password` pair, Bearer tokens, API keys, the client key
-    password),
+    passwords, the Basic `user:password` pair, Bearer tokens, API keys, OAuth client
+    secrets, access and refresh tokens, the client key password),
     each also percent-encoded and base64 in both alphabets; `user:password@` in any URL;
     and the whole value of `Authorization`, `Proxy-Authorization`, `Cookie` and
     `Set-Cookie`. Bodies are redacted before the excerpt is cut, so a secret across the
@@ -1165,7 +1196,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   (`generated`, `undefined`), names only. `envs` gives environments with their colour,
   globals and collections, by variable name. Values never appear (user's choice:
   placeholders, not values), and a stored credential (Basic and Digest passwords, Bearer
-  tokens, API key values, the key password, `Authorization`, `Proxy-Authorization` and `Cookie` headers,
+  tokens, API key values, OAuth client secrets, the key password, `Authorization`, `Proxy-Authorization` and `Cookie` headers,
   cookies) shows only when it is nothing but placeholders, optionally after a scheme word
   (`redact::shown`), else `«redacted»`; a secret pasted into a body cannot be told from
   data, and the README says so. Inspecting with a production environment is allowed
@@ -1303,9 +1334,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   that a plain imported request lacks.
   Version 4 adds captures stored as secrets (`Capture::secret`); `fit_version` picks it
   only for a document with one, and an older version holding one is refused, naming the
-  request, as scripts are below 3. Version 5 adds API-key auth (`RequestAuth::api_key`)
-  and a request's own cookie jar setting (`Options::cookie_jar`), both left out of the JSON
-  when unset, so other documents keep their bytes, by the same rule.
+  request, as scripts are below 3. Version 5 adds API-key and OAuth 2.0 auth
+  (`RequestAuth::api_key`, `oauth2`) and a request's own cookie jar setting
+  (`Options::cookie_jar`), all left out of the JSON when unset, so other documents keep their bytes, by the same rule.
 - **The collections folder format** (`store::files::format`, format `imposter-project`,
   version 1): one YAML file per request, per folder (`folder.yaml` in its directory),
   per collection (`imposter.yaml` in its directory) and per environment

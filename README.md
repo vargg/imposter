@@ -22,8 +22,12 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Any method, custom methods included; query parameters kept in sync with the URL.
 - Headers, cookies, and bodies as JSON, plain text, URL-encoded form, multipart (text fields
   and file uploads) or a binary file. Uploads are streamed from disk.
-- Authentication: Basic, Bearer, Digest (MD5, SHA-256, SHA-512, `-sess`) and an API key in
-  a header or the query.
+- Authentication: Basic, Bearer, Digest (MD5, SHA-256, SHA-512, `-sess`), an API key in
+  a header or the query, and OAuth 2.0 client credentials: the token is fetched when you
+  send, kept per environment, reused until 30 seconds before it expires and refreshed
+  when the server gave a refresh token. A token request that fails says why ("Token
+  request failed: invalid_client") and nothing is sent. Runs keep their tokens to
+  themselves, and the command line fetches its own.
 - A cookie jar per environment: cookies a server sets (a login's session cookie) are sent
   back on later requests where their domain, path and `Secure` flag allow, redirects
   included. Your own cookie rows win over the jar's. Turn it off in Settings (**Keep
@@ -413,7 +417,8 @@ not there. A response with no checks is not a pass: nothing was verified.
 A run from your profile uses the named environment's stored secrets (`{{secret:name}}`)
 and records each request in History without their values. Secrets given with `--secret`
 or stored in the profile, secrets a request captures, and the credentials the request
-sends (Basic and Digest passwords, Bearer tokens, API keys, the client key password), are replaced
+sends (Basic and Digest passwords, Bearer tokens, API keys, OAuth client secrets and
+tokens, the client key password), are replaced
 by `«redacted»` everywhere
 in the result and on stderr, as are `user:password@` in URLs and the values of
 `Authorization`, `Cookie` and `Set-Cookie` headers. This removes known values only: a server

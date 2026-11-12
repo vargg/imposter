@@ -365,6 +365,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         imposter_app::core::model::AuthKind::Basic,
         imposter_app::core::model::AuthKind::BearerToken,
         imposter_app::core::model::AuthKind::ApiKey,
+        imposter_app::core::model::AuthKind::OAuth2,
     ] {
         let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
         pane.editor.auth.kind = Some(kind);

@@ -709,6 +709,32 @@ fn export_auth(auth: &RequestAuth) -> Result<Value, PostmanError> {
         }
         Some(AuthKind::Basic) => credentials("basic", auth.basic.as_ref())?,
         Some(AuthKind::Digest) => credentials("digest", auth.digest.as_ref())?,
+        Some(AuthKind::OAuth2) => {
+            use imposter_core::model::{ClientAuth, OAuthGrant};
+            let oauth = auth.oauth2.as_ref().ok_or(PostmanError::Credentials)?;
+            let grant = match oauth.grant {
+                OAuthGrant::ClientCredentials => "client_credentials",
+            };
+            let client_auth = match oauth.client_auth {
+                ClientAuth::Basic => "header",
+                ClientAuth::Body => "body",
+            };
+            let mut pairs = vec![
+                json!({"key": "grant_type", "value": grant, "type": "string"}),
+                json!({"key": "accessTokenUrl", "value": oauth.token_url, "type": "string"}),
+                json!({"key": "clientId", "value": oauth.client_id, "type": "string"}),
+                json!({"key": "clientSecret", "value": oauth.client_secret, "type": "string"}),
+                json!({"key": "client_authentication", "value": client_auth, "type": "string"}),
+                json!({"key": "addTokenTo", "value": "header", "type": "string"}),
+            ];
+            if !oauth.scope.is_empty() {
+                pairs.push(json!({"key": "scope", "value": oauth.scope, "type": "string"}));
+            }
+            if !oauth.audience.is_empty() {
+                pairs.push(json!({"key": "audience", "value": oauth.audience, "type": "string"}));
+            }
+            json!({"type": "oauth2", "oauth2": pairs})
+        }
     })
 }
 

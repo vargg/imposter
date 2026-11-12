@@ -36,6 +36,10 @@ pub struct Inputs {
     /// a copy of the stored one for Send, which keeps what it receives afterwards
     /// ([`execute`]); one jar shared by a run's requests, never stored; `None` for none.
     pub jar: Option<imposter_http::cookies::SharedJar>,
+    /// The OAuth 2.0 tokens it may use and add to: the stored ones for Send, which keeps a
+    /// new one afterwards ([`execute`]); one cache shared by a run's requests, never
+    /// stored. `None` starts empty.
+    pub tokens: Option<crate::oauth::SharedTokens>,
 }
 
 /// Where an execution's captures and script variables go.
@@ -114,6 +118,7 @@ pub fn read_inputs(
             };
             let snapshot = Snapshot::build(&context, scope);
             let jar = crate::cookies::read(db, context.environment_id())?;
+            let tokens = imposter_store::oauth::read(db, context.environment_id())?;
             let scripts = match &collection {
                 Some(collection) => script_levels(db, collection, folder_id)?,
                 None => crate::scripts::ScriptChain::default(),
@@ -126,6 +131,7 @@ pub fn read_inputs(
                 writes: Writes::Scopes,
                 base_dir: Some(db.folder()),
                 jar: Some(imposter_http::cookies::SharedJar::new(jar)),
+                tokens: Some(crate::oauth::SharedTokens::new(tokens)),
             })
         }
     }
@@ -177,6 +183,10 @@ pub enum ExecuteError {
     /// Nothing was sent.
     #[error("{0}")]
     Script(String),
+    /// No OAuth 2.0 token could be had, in words ("Token request failed: `invalid_client`").
+    /// The request was not sent.
+    #[error("{0}")]
+    Token(String),
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -425,6 +435,7 @@ pub async fn curl_with_identity_notice(
     if let Some(base) = &inputs.base_dir {
         root_template(&mut before.template, base);
     }
+    use_cached_token(&inputs, &mut before.template);
     add_jar_cookies(&inputs, &settings, &mut before.template);
     let prepared = prepare(&before.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
@@ -491,6 +502,8 @@ pub struct Ran {
     pub writes: Vec<Write>,
     /// The secret values it used, captured or set: History keeps none of them.
     pub secrets: Vec<String>,
+    /// The OAuth 2.0 token fetched for it, for Send to keep.
+    pub token: Option<imposter_store::oauth::StoredToken>,
 }
 
 /// Send `request` and record it. `cancel` stops the network exchange; a cancelled execution
@@ -500,15 +513,30 @@ pub async fn execute(
     request: Request,
     cancel: CancellationToken,
 ) -> Result<Executed, ExecuteError> {
+    // Boxed for the same reason as [`run`].
+    Box::pin(execute_boxed(store, request, cancel)).await
+}
+
+async fn execute_boxed(
+    store: &StoreHandle,
+    request: Request,
+    cancel: CancellationToken,
+) -> Result<Executed, ExecuteError> {
     let inputs = inputs(store, &request).await?;
     let ran = run(&inputs, request, cancel).await?;
     let cookies = ran.record.response.set_cookies.clone();
+    let token = ran.token.clone();
     let environment = inputs.context.environment_id();
-    let kept = if cookies.is_empty() {
+    let kept = if cookies.is_empty() && token.is_none() {
         Ok(())
     } else {
         store
-            .call(move |db| crate::cookies::keep(db, environment, &cookies))
+            .call(move |db| {
+                if let Some(token) = &token {
+                    imposter_store::oauth::put(db, environment, token)?;
+                }
+                crate::cookies::keep(db, environment, &cookies)
+            })
             .await
     };
     let mut executed = record(store, ran).await;
@@ -521,15 +549,22 @@ pub async fn execute(
     Ok(executed)
 }
 
-pub const COOKIES_ERROR: &str = "Response received, but the cookies it set could not be kept";
+pub const COOKIES_ERROR: &str =
+    "Response received, but the cookies it set or its new token could not be kept";
 
 /// Record `ran` in History under the retention limits its settings carry. A failed write
 /// keeps the response and says so (`history_error`).
 pub async fn record(store: &StoreHandle, ran: Ran) -> Executed {
+    // Boxed for the same reason as [`run`]: a record holds the request twice.
+    Box::pin(record_boxed(store, ran)).await
+}
+
+async fn record_boxed(store: &StoreHandle, ran: Ran) -> Executed {
     let Ran {
         mut record,
         writes,
         secrets,
+        token: _,
     } = ran;
     // What is shown now keeps its values; what is stored keeps no secret.
     let mut response = record.response.clone();
@@ -584,6 +619,16 @@ pub async fn run(
     request: Request,
     cancel: CancellationToken,
 ) -> Result<Ran, ExecuteError> {
+    // Boxed: scripts, the token request and the exchange keep a large state, and inline it
+    // pushed every caller's future past clippy's `large_futures` limit.
+    Box::pin(run_boxed(inputs, request, cancel)).await
+}
+
+async fn run_boxed(
+    inputs: &Inputs,
+    request: Request,
+    cancel: CancellationToken,
+) -> Result<Ran, ExecuteError> {
     let chain = inputs.scripts.with_request(&request).compile()?;
     let (mut resolved, settings, mut values) =
         resolve_with(&request, inputs, &mut SystemEntropy::default())?;
@@ -595,19 +640,28 @@ pub async fn run(
     if let Some(base) = &inputs.base_dir {
         root_template(&mut resolved.template, base);
     }
-    add_jar_cookies(inputs, &settings, &mut resolved.template);
-    let prepared = prepare(&resolved.template, settings.attach_cookies)
-        .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
-
-    let started = Instant::now();
     let mut policy = Policy::from_settings(&settings);
-    policy.jar = inputs.jar.clone().filter(|_| settings.cookie_jar);
     policy.identity_routing = Some(Box::new(imposter_http::transport::IdentityRouting {
         settings: inputs.settings.clone(),
         options: request.template.options.clone(),
         variables: values.clone(),
         base_dir: inputs.base_dir.clone(),
     }));
+    let mut secrets: Vec<String> = Vec::new();
+    let token = oauth_token(
+        inputs,
+        &policy,
+        &cancel,
+        &mut resolved.template,
+        &mut secrets,
+    )
+    .await?;
+    add_jar_cookies(inputs, &settings, &mut resolved.template);
+    let prepared = prepare(&resolved.template, settings.attach_cookies)
+        .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
+
+    let started = Instant::now();
+    policy.jar = inputs.jar.clone().filter(|_| settings.cookie_jar);
     let mut response = match imposter_http::send(&prepared, &policy, &cancel).await {
         Ok(response) => response,
         Err(SendError::Cancelled) => {
@@ -665,7 +719,7 @@ pub async fn run(
         value,
         secret: true,
     }));
-    let mut secrets: Vec<String> = inputs.snapshot.secret_values().map(str::to_owned).collect();
+    secrets.extend(inputs.snapshot.secret_values().map(str::to_owned));
     secrets.extend(writes.iter().filter(|w| w.secret).map(|w| w.value.clone()));
 
     let mut template = request.clone();
@@ -687,5 +741,61 @@ pub async fn run(
         record,
         writes,
         secrets,
+        token,
     })
+}
+
+/// With OAuth 2.0 in effect, send the cached token while it is good, as Copy as curl does:
+/// copying never asks the token endpoint for one. Without one, `prepare` says to get it.
+fn use_cached_token(inputs: &Inputs, template: &mut RequestTemplate) {
+    let Ok(Some(imposter_core::model::Auth::OAuth2(oauth))) = template.auth.active() else {
+        return;
+    };
+    let key = crate::oauth::key(oauth);
+    if let Some(token) = inputs
+        .tokens
+        .as_ref()
+        .and_then(|tokens| tokens.get(&key))
+        .filter(|token| crate::oauth::good(token, now().0))
+    {
+        template.auth = imposter_core::model::RequestAuth::bearer(&token.access);
+    }
+}
+
+/// With OAuth 2.0 in effect, get its token (`oauth::token`) and put it in `template` as the
+/// Bearer token it is sent as, so the request as sent shows a Bearer token, which History
+/// removes like the client secret and refresh token (added to `secrets`). The token
+/// fetched now, if any, is returned for Send to keep.
+async fn oauth_token(
+    inputs: &Inputs,
+    policy: &Policy,
+    cancel: &CancellationToken,
+    template: &mut RequestTemplate,
+    secrets: &mut Vec<String>,
+) -> Result<Option<imposter_store::oauth::StoredToken>, ExecuteError> {
+    let Ok(Some(imposter_core::model::Auth::OAuth2(oauth))) = template.auth.active() else {
+        return Ok(None);
+    };
+    let oauth = oauth.clone();
+    secrets.push(oauth.client_secret.clone());
+    let tokens = inputs.tokens.clone().unwrap_or_default();
+    let obtained = crate::oauth::token(&oauth, &tokens, policy, cancel, now().0)
+        .await
+        .map_err(|error| match error {
+            imposter_http::oauth::OAuthError::Cancelled => {
+                ExecuteError::Token("Token request cancelled".to_owned())
+            }
+            error => ExecuteError::Token(format!("Token request failed: {error}")),
+        })?;
+    let token = obtained.token;
+    secrets.push(token.access.clone());
+    secrets.extend(token.refresh.clone());
+    if !token.token_type.eq_ignore_ascii_case("bearer") {
+        return Err(ExecuteError::Token(format!(
+            "The token endpoint gave a {} token; only Bearer tokens can be sent",
+            token.token_type
+        )));
+    }
+    template.auth = imposter_core::model::RequestAuth::bearer(&token.access);
+    Ok(obtained.fetched.then_some(token))
 }

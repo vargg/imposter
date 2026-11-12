@@ -13,6 +13,7 @@ workspace = true
 imposter-core.workspace = true
 reqwest.workspace = true
 cookie_store.workspace = true
+base64.workspace = true
 serde_json.workspace = true
 rustls.workspace = true
 rustls-pki-types.workspace = true
@@ -37,7 +38,6 @@ http-body-util.workspace = true
 
 [dev-dependencies]
 imposter-testkit.workspace = true
-base64.workspace = true
 tracing-subscriber.workspace = true
 tempfile.workspace = true
 tokio-rustls.workspace = true

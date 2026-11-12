@@ -48,6 +48,9 @@ pub enum PrepareError {
     ApiKeyConflict(&'static str),
     #[error("Use either Cookies or a Cookie header")]
     CookieConflict,
+    /// OAuth 2.0 is sent as the token it gets, which the executor puts in place first.
+    #[error("OAuth 2.0 needs a token: send the request, or get one in the Auth tab")]
+    NoToken,
     #[error(transparent)]
     Credentials(#[from] MissingCredentials),
     #[error(transparent)]
@@ -202,6 +205,7 @@ pub fn prepare(template: &RequestTemplate, attach_cookies: bool) -> Result<Prepa
             }
             PreparedAuth::None
         }
+        Some(Auth::OAuth2(_)) => return Err(PrepareError::NoToken),
     };
     if !is_method_token(&template.method) {
         return Err(PrepareError::InvalidMethod);

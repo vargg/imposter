@@ -126,6 +126,48 @@ fn api_keys_are_chosen_placed_and_saved() {
 }
 
 #[test]
+fn oauth2_client_credentials_are_entered_and_saved() {
+    use egui::accesskit::Role;
+    let mut app = opened();
+    tab(&mut app, EditorTab::Auth);
+    app.harness
+        .get_by_role_and_label(Role::ComboBox, "Type")
+        .click();
+    app.harness.run_steps(3);
+    app.harness.get_by_label("OAuth 2.0").click();
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Client credentials");
+    type_into(&mut app.harness, "Token URL", "{{base}}/token");
+    type_into(&mut app.harness, "Client ID", "app");
+    type_into(&mut app.harness, "Client secret", "{{secret:client}}");
+    app.harness.get_by_label("Show client secret");
+    type_into(&mut app.harness, "Scope", "read write");
+    app.harness
+        .get_by_role_and_label(Role::ComboBox, "Client auth")
+        .click();
+    app.harness.run_steps(3);
+    // "Body" is also a tab: the option is the menu's, drawn last.
+    app.harness
+        .get_all_by_label("Body")
+        .next_back()
+        .unwrap()
+        .click();
+    app.harness.run_steps(2);
+
+    assert_eq!(
+        saved(&mut app).template.auth,
+        RequestAuth::oauth2(imposter_app::core::model::OAuth2 {
+            token_url: "{{base}}/token".into(),
+            client_id: "app".into(),
+            client_secret: "{{secret:client}}".into(),
+            scope: "read write".into(),
+            client_auth: imposter_app::core::model::ClientAuth::Body,
+            ..Default::default()
+        })
+    );
+}
+
+#[test]
 fn secrets_are_masked_until_shown_and_fields_share_a_column() {
     use egui::accesskit::Role;
     let mut app = opened();

@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use imposter_core::capture::Capture;
 use imposter_core::check::{Check, Op};
 use imposter_core::model::{
-    ApiKeyIn, BodyType, EnvColor, FormItem, Options, ParamItem, RequestAuth, RequestTemplate,
-    SavedValues, Scripts, Variables,
+    ApiKeyIn, BodyType, ClientAuth, EnvColor, FormItem, OAuth2, Options, ParamItem, RequestAuth,
+    RequestTemplate, SavedValues, Scripts, Variables,
 };
 use imposter_core::select::Selector;
 use imposter_store::files::format::{
@@ -118,6 +118,14 @@ fn sample() -> Project {
         name: "Health".into(),
         url: "{{base}}/health".into(),
         body_type: BodyType::None,
+        auth: RequestAuth::oauth2(OAuth2 {
+            token_url: "{{base}}/token".into(),
+            client_id: "shop".into(),
+            client_secret: "{{secret:client_secret}}".into(),
+            scope: "health read".into(),
+            client_auth: ClientAuth::Body,
+            ..OAuth2::default()
+        }),
         ..RequestTemplate::default()
     };
     Project {

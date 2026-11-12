@@ -304,3 +304,33 @@ fn an_api_key_shows_its_place_and_only_placeholders() {
         }
     );
 }
+
+#[test]
+fn oauth2_shows_its_endpoint_and_client_and_only_a_placeholder_secret() {
+    let shown = |secret: &str| {
+        let document = native::decode_value(json!({
+            "format": "imposter",
+            "version": 5,
+            "collection": {"name": "Shop API", "description": "", "variables": {}, "folders": [],
+                "requests": [{"name": "Pets", "method": "GET", "url": "https://x/pets",
+                    "auth": {"type": "oauth2", "oauth2": {"token_url": "https://x/token",
+                        "client_id": "app", "client_secret": secret, "scope": "read"}}}]},
+            "environments": [],
+            "globals": {},
+        }))
+        .unwrap();
+        show_file(&document, &path("Pets"), None, 1024)
+            .unwrap()
+            .auth
+    };
+    let view = |secret: &str| AuthView::OAuth2 {
+        grant: imposter_core::model::OAuthGrant::ClientCredentials,
+        token_url: "https://x/token".into(),
+        client_id: "app".into(),
+        client_secret: secret.into(),
+        scope: "read".into(),
+        audience: String::new(),
+    };
+    assert_eq!(shown("{{secret:client}}"), view("{{secret:client}}"));
+    assert_eq!(shown("literal-client-secret"), view("«redacted»"));
+}

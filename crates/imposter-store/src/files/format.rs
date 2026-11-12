@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use imposter_core::capture::Capture;
 use imposter_core::check::Check;
 use imposter_core::model::{
-    ApiKey, AuthKind, BearerToken, BodyType, Credentials, EnvColor, FormItem, FormKind, Options,
-    ParamItem, RequestAuth, RequestTemplate, SavedValues, Scripts, Variables,
+    ApiKey, AuthKind, BearerToken, BodyType, Credentials, EnvColor, FormItem, FormKind, OAuth2,
+    Options, ParamItem, RequestAuth, RequestTemplate, SavedValues, Scripts, Variables,
 };
 use serde::{Deserialize, Serialize};
 
@@ -307,6 +307,8 @@ struct Auth {
     bearer_token: Option<BearerToken>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     api_key: Option<ApiKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    oauth2: Option<OAuth2>,
 }
 
 impl Auth {
@@ -316,6 +318,7 @@ impl Auth {
             && self.digest.is_none()
             && self.bearer_token.is_none()
             && self.api_key.is_none()
+            && self.oauth2.is_none()
     }
 }
 
@@ -553,6 +556,7 @@ impl RequestFile {
                 digest: t.auth.digest.clone(),
                 bearer_token: t.auth.bearer_token.clone(),
                 api_key: t.auth.api_key.clone(),
+                oauth2: t.auth.oauth2.clone(),
             },
             queries: t.queries.iter().map(Param::from).collect(),
             headers: t.headers.iter().map(Param::from).collect(),
@@ -580,6 +584,7 @@ impl RequestFile {
                 digest: self.auth.digest,
                 bearer_token: self.auth.bearer_token,
                 api_key: self.auth.api_key,
+                oauth2: self.auth.oauth2,
             },
             queries: self.queries.into_iter().map(ParamItem::from).collect(),
             headers: self.headers.into_iter().map(ParamItem::from).collect(),

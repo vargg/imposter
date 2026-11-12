@@ -321,6 +321,7 @@ fn selected(
             base_dir: None,
             // A file run keeps no cookies of anyone's; `select_all` shares one jar.
             jar: Some(imposter_http::cookies::SharedJar::default()),
+            tokens: Some(crate::oauth::SharedTokens::default()),
         },
     }
 }
@@ -385,6 +386,7 @@ pub fn select_all(
         None => ordered(&mut folders, within, requests, &mut found),
     }
     let jar = imposter_http::cookies::SharedJar::default();
+    let tokens = crate::oauth::SharedTokens::default();
     Ok(found
         .iter()
         .map(|found| {
@@ -393,6 +395,7 @@ pub fn select_all(
             let path = RequestPath::new(&place, &found.template.name);
             let mut selected = selected(document, &path, found, &context, values);
             selected.inputs.jar = Some(jar.clone());
+            selected.inputs.tokens = Some(tokens.clone());
             selected
         })
         .collect())

@@ -110,6 +110,17 @@ pub(crate) fn visit_texts(
         visit(&mut key.name);
         visit(&mut key.value);
     }
+    if let Some(oauth) = &mut template.auth.oauth2 {
+        for field in [
+            &mut oauth.token_url,
+            &mut oauth.client_id,
+            &mut oauth.client_secret,
+            &mut oauth.scope,
+            &mut oauth.audience,
+        ] {
+            visit(field);
+        }
+    }
     visit_options(&mut template.options, visit);
     visit_body(template, visit)
 }

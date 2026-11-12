@@ -5,7 +5,8 @@
 
 use imposter_app::core::ids::RequestId;
 use imposter_app::core::model::{
-    ApiKeyIn, AuthKind, BodyType, FormItem, Options, ParamItem, Request, RequestAuth, Variables,
+    ApiKeyIn, AuthKind, BodyType, FormItem, OAuth2, Options, ParamItem, Request, RequestAuth,
+    Variables,
 };
 use imposter_app::core::settings::AppSettings;
 use imposter_app::core::url;
@@ -21,12 +22,13 @@ pub const BODY_CHOICES: [(BodyType, &str); 6] = [
     (BodyType::Binary, "Binary file"),
 ];
 
-pub const AUTH_CHOICES: [(Option<AuthKind>, &str); 5] = [
+pub const AUTH_CHOICES: [(Option<AuthKind>, &str); 6] = [
     (None, "None"),
     (Some(AuthKind::Basic), "Basic"),
     (Some(AuthKind::BearerToken), "Bearer"),
     (Some(AuthKind::Digest), "Digest"),
     (Some(AuthKind::ApiKey), "API Key"),
+    (Some(AuthKind::OAuth2), "OAuth 2.0"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -38,6 +40,7 @@ pub struct AuthForm {
     pub key_name: String,
     pub key_value: String,
     pub key_in: ApiKeyIn,
+    pub oauth: OAuth2,
 }
 
 impl AuthForm {
@@ -60,6 +63,7 @@ impl AuthForm {
             key_name: key.map(|k| k.name.clone()).unwrap_or_default(),
             key_value: key.map(|k| k.value.clone()).unwrap_or_default(),
             key_in: key.map(|k| k.location).unwrap_or_default(),
+            oauth: auth.oauth2.clone().unwrap_or_default(),
         }
     }
 
@@ -72,6 +76,7 @@ impl AuthForm {
             Some(AuthKind::ApiKey) => {
                 RequestAuth::api_key(&self.key_name, &self.key_value, self.key_in)
             }
+            Some(AuthKind::OAuth2) => RequestAuth::oauth2(self.oauth.clone()),
         }
     }
 }

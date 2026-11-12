@@ -7,6 +7,7 @@ mod error;
 pub mod executions;
 pub mod files;
 pub mod kv;
+pub mod oauth;
 pub mod profile;
 pub mod schema;
 pub mod scopes;

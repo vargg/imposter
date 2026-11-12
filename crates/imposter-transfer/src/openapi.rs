@@ -294,7 +294,7 @@ impl Media {
 /// How a scheme is used by requests: through the auth slot or as a row.
 #[derive(Debug, Clone, PartialEq)]
 enum Credential {
-    Auth(RequestAuth),
+    Auth(Box<RequestAuth>),
     Header(String, String),
     Query(String, String),
     Cookie(String, String),
@@ -641,7 +641,7 @@ impl<'a> Walk<'a> {
                             "{location}: only one authentication scheme is used ({first}, not {name})"
                         ));
                     } else {
-                        request.auth = auth;
+                        request.auth = *auth;
                         slot = Some(name.clone());
                     }
                 }
@@ -716,11 +716,11 @@ impl<'a> Walk<'a> {
                     "basic" | "digest" => {
                         self.define("username", "");
                         self.define("password", "");
-                        Some(Credential::Auth(if method == "basic" {
+                        Some(Credential::Auth(Box::new(if method == "basic" {
                             RequestAuth::basic("{{username}}", "{{password}}")
                         } else {
                             RequestAuth::digest("{{username}}", "{{password}}")
-                        }))
+                        })))
                     }
                     "bearer" => Some(self.bearer()),
                     other => {
@@ -770,7 +770,7 @@ impl<'a> Walk<'a> {
 
     fn bearer(&mut self) -> Credential {
         self.define("token", "");
-        Credential::Auth(RequestAuth::bearer("{{token}}"))
+        Credential::Auth(Box::new(RequestAuth::bearer("{{token}}")))
     }
 
     fn body(&mut self, body: Option<&'a Value>, request: &mut RequestTemplate) {

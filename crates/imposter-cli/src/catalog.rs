@@ -295,6 +295,24 @@ fn show_text(view: &RequestView) -> String {
             };
             let _ = writeln!(text, "Auth: API key in {place}, {name} = {value}");
         }
+        AuthView::OAuth2 {
+            token_url,
+            client_id,
+            client_secret,
+            scope,
+            ..
+        } => {
+            let _ = writeln!(
+                text,
+                "Auth: OAuth 2.0 client credentials from {token_url}, client {client_id} / \
+                 {client_secret}{}",
+                if scope.is_empty() {
+                    String::new()
+                } else {
+                    format!(", scope {scope}")
+                }
+            );
+        }
     }
     if view.body.bytes > 0 {
         let kind = serde_json::to_value(view.body.kind)
