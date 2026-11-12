@@ -6,13 +6,14 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures_util::StreamExt as _;
-use imposter_core::execution::Response;
+use imposter_core::execution::{Response, SetCookie};
 use imposter_core::prepare::{Prepared, PreparedAuth, PreparedBody};
 use imposter_core::settings::AppSettings;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, LOCATION, WWW_AUTHENTICATE};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, LOCATION, SET_COOKIE, WWW_AUTHENTICATE};
 use reqwest::{Method, StatusCode, Url};
 use tokio_util::sync::CancellationToken;
 
+use crate::cookies::{self, SharedJar};
 use crate::digest::{self, Challenge};
 use crate::tls::{self, TlsSettings};
 use crate::upload::{self, UploadError};
@@ -32,6 +33,11 @@ pub struct Policy {
     pub identity_routing: Option<Box<IdentityRouting>>,
     /// Bytes of body to keep; `None` keeps everything.
     pub capture_limit: Option<u64>,
+    /// The cookie jar: what every hop's response sets goes in, and with `send_jar` its
+    /// cookies for each hop's URL go out. `None` keeps no cookies (load runs, the jar off).
+    pub jar: Option<SharedJar>,
+    /// Whether the jar's cookies are sent ("Attach cookies"); received ones are kept either way.
+    pub send_jar: bool,
 }
 
 /// Captured before execution so redirects use the same settings and variable snapshot.
@@ -98,6 +104,8 @@ impl Policy {
                 password: settings.password.clone(),
             },
             capture_limit: settings.download_limit_bytes(),
+            jar: None,
+            send_jar: settings.attach_cookies,
         }
     }
 }
@@ -495,7 +503,7 @@ impl Session {
     /// future drops the connection.
     pub async fn measure(&self, prepared: &Prepared, keep: u64) -> Result<Measured, SendError> {
         let started = std::time::Instant::now();
-        let response = exchange(prepared, self).await?;
+        let (response, _) = exchange(prepared, self).await?;
         let first_byte = started.elapsed();
         let (mut response, bytes) = read_body(response, Some(keep), true).await?;
         let total = started.elapsed();
@@ -519,15 +527,71 @@ impl Session {
             biased;
             () = cancel.cancelled() => Err(SendError::Cancelled),
             result = async {
-                let response = exchange(prepared, self).await?;
-                capture(response, self.policy.capture_limit).await
+                let (response, set_cookies) = exchange(prepared, self).await?;
+                let mut response = capture(response, self.policy.capture_limit).await?;
+                response.set_cookies = set_cookies;
+                Ok(response)
             } => result,
         }
     }
 }
 
-/// Send through redirects and Digest challenges; the final response, body unread.
-async fn exchange(prepared: &Prepared, session: &Session) -> Result<reqwest::Response, SendError> {
+/// Add the jar's cookies for `url` to the `Cookie` header, except those the header already
+/// names: the request's own cookies win, and on the first hop the executor has put the
+/// jar's in already, so they appear in History as sent.
+fn add_jar_cookies(headers: &mut Vec<(String, String)>, jar: &SharedJar, url: &Url) {
+    let existing = headers
+        .iter()
+        .position(|(name, _)| name.eq_ignore_ascii_case("cookie"));
+    let present: Vec<String> = existing
+        .map(|i| {
+            cookies::names_in(&headers[i].1)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let added: Vec<String> = jar
+        .with(|jar| jar.cookies_for(url.as_str()))
+        .into_iter()
+        .filter(|(name, _)| !present.contains(name))
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect();
+    if added.is_empty() {
+        return;
+    }
+    let added = added.join("; ");
+    match existing {
+        Some(i) if !headers[i].1.trim().is_empty() => {
+            headers[i].1 = format!("{}; {added}", headers[i].1);
+        }
+        Some(i) => headers[i].1 = added,
+        None => headers.push(("Cookie".to_owned(), added)),
+    }
+}
+
+/// Keep what `response` sets in the jar, and list it for the caller to store.
+fn keep_set_cookies(
+    response: &reqwest::Response,
+    url: &Url,
+    jar: &SharedJar,
+    set: &mut Vec<SetCookie>,
+) {
+    for value in response.headers().get_all(SET_COOKIE) {
+        let header = String::from_utf8_lossy(value.as_bytes()).into_owned();
+        jar.with(|jar| jar.receive(url.as_str(), &header));
+        set.push(SetCookie {
+            url: url.to_string(),
+            header,
+        });
+    }
+}
+
+/// Send through redirects and Digest challenges; the final response, body unread, and the
+/// cookies every hop set when the policy keeps a jar.
+async fn exchange(
+    prepared: &Prepared,
+    session: &Session,
+) -> Result<(reqwest::Response, Vec<SetCookie>), SendError> {
     let policy = &session.policy;
     match &prepared.body {
         PreparedBody::Multipart(fields) => {
@@ -566,8 +630,15 @@ async fn exchange(prepared: &Prepared, session: &Session) -> Result<reqwest::Res
     };
 
     let mut redirects = 0;
+    let mut set_cookies = Vec::new();
     loop {
+        if let Some(jar) = policy.jar.as_ref().filter(|_| policy.send_jar) {
+            add_jar_cookies(&mut attempt.headers, jar, &attempt.url);
+        }
         let response = attempt.send_authenticated(&prepared.auth).await?;
+        if let Some(jar) = &policy.jar {
+            keep_set_cookies(&response, &attempt.url, jar, &mut set_cookies);
+        }
         let location = response
             .headers()
             .get(LOCATION)
@@ -577,7 +648,7 @@ async fn exchange(prepared: &Prepared, session: &Session) -> Result<reqwest::Res
             response.status().is_redirection(),
             location,
         ) else {
-            return Ok(response);
+            return Ok((response, set_cookies));
         };
         redirects += 1;
         if redirects > MAX_REDIRECTS {
@@ -602,7 +673,8 @@ async fn exchange(prepared: &Prepared, session: &Session) -> Result<reqwest::Res
         if !same_origin(&attempt.url, &next) && !is_https_upgrade(&attempt.url, &next) {
             remove_header(&mut attempt.headers, "authorization");
         }
-        // Explicit cookies were meant for the first location, not the next.
+        // Explicit cookies were meant for the first location, not the next; the jar's for
+        // the next are added before it is sent.
         remove_header(&mut attempt.headers, "cookie");
         attempt.client = session.client_for(&next).await?;
         attempt.method = method;

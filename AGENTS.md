@@ -563,6 +563,24 @@ numbers, so both are excluded. Each logical change is its own commit.
   of the same host); explicit `Cookie` headers are never carried to the next location. Why:
   reqwest cannot replay streamed uploads, and credentials must not follow a redirect to
   another origin.
+- **The cookie jar keeps what servers set and sends it back** (`imposter_http::cookies`,
+  over `cookie_store`: RFC 6265 domain, path, `Secure` and expiry rules, pure Rust, without
+  the public suffix list). Why: a session cookie from a login had to be copied into the next
+  request by hand (M3). Parsing and matching are the crate's, not ours to get wrong.
+  - **Each hop** sends the jar's cookies for its URL in its `Cookie` header, except names
+    the header already has, so the request's own cookies win; what the hop's response sets
+    is kept, and listed with the hop's URL on `Response::set_cookies` (never stored) for
+    the caller to keep. A request's explicit cookies still stay with the first location.
+  - **Kept:** session cookies until cleared (a login's session cookie usually has no
+    expiry, and is the one worth keeping); expired ones are dropped, and an expired
+    `Set-Cookie` removes the cookie it names. Cookies of one path length go out by name,
+    as the jar keeps no creation time. Localhost and loopback addresses count as secure,
+    as browsers treat them.
+  - **Logs:** `Set-Cookie` values go through `CookieStore::parse`; its
+    `store_response_cookies` logs each value at debug, which `imposter-http/tests/logging.rs`
+    catches.
+  Pinned by `imposter-http/tests/cookies.rs` (the bytes each hop receives) and the
+  module's unit tests.
 - **API-key auth sends one header or one query parameter** (`model::ApiKey`: name, value,
   `in: header | query`). `prepare` adds it after the request's own headers, or after its
   query, which keeps its order and encoding. A sent header (compared without case) or

@@ -27,6 +27,8 @@ fn policy() -> Policy {
             ..TlsSettings::default()
         },
         capture_limit: None,
+        jar: None,
+        send_jar: true,
         identity_routing: None,
     }
 }

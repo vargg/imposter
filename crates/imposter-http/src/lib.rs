@@ -1,5 +1,6 @@
 //! HTTP transport for Imposter.
 
+pub mod cookies;
 pub mod digest;
 pub mod tls;
 pub mod transport;

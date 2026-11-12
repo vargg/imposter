@@ -76,6 +76,10 @@ async fn nothing_secret_reaches_the_logs() {
             ..TlsSettings::default()
         },
         capture_limit: None,
+        // The jar keeps the Set-Cookie above and sends it on: neither is logged, though
+        // `cookie_store` logs cookies it is given through its other entry point.
+        jar: Some(imposter_http::cookies::SharedJar::default()),
+        send_jar: true,
         identity_routing: None,
     };
     let requests = [

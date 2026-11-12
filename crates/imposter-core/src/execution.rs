@@ -57,6 +57,18 @@ pub struct Response {
     /// printed values often hold tokens.
     #[serde(skip)]
     pub console: Vec<String>,
+    /// Cookies the exchange's hops set, for the cookie jar to keep: the URL of each hop and
+    /// its `Set-Cookie` value. Never stored, as History keeps no jar.
+    #[serde(skip)]
+    pub set_cookies: Vec<SetCookie>,
+}
+
+/// One `Set-Cookie` header and the URL whose response carried it, which decides the
+/// cookie's default domain and path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SetCookie {
+    pub url: String,
+    pub header: String,
 }
 
 /// What an after-response script reported.

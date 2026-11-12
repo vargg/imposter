@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.9.4"
+version = "0.9.5"
 edition = "2024"
 rust-version = "1.99"
 publish = false
@@ -41,6 +41,8 @@ rhai = { version = "1.27", default-features = false, features = ["std", "sync", 
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "pem", "ring"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "gzip", "deflate", "brotli"] }
 rfd = "0.17.2"
+# The cookie jar (AGENTS.md "The cookie jar"): RFC 6265 matching, no public suffix list.
+cookie_store = { version = "0.22.1", default-features = false, features = ["serde"] }
 rusqlite = { version = "0.41.0", features = ["bundled", "backup"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
