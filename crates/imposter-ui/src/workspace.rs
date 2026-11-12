@@ -5,7 +5,7 @@ use egui::{Align, Layout, Rect, RichText, Sense, Ui, UiBuilder, vec2};
 use imposter_app::core::ids::FolderId;
 use imposter_app::core::model::BodyType;
 
-use crate::app::{Action, EditorTab, ImposterApp, ResponseTab, Screen, State};
+use crate::app::{Action, EditorTab, ImposterApp, ResponseTab, Screen, State, TokenAction};
 use crate::dialogs::{Dialog, NamePurpose};
 use crate::editor::BODY_CHOICES;
 use crate::icons::{self, Icon};
@@ -1796,6 +1796,69 @@ fn outer_scripts(state: &State) -> Vec<crate::scripts_tab::Outer> {
     levels
 }
 
+/// Where the OAuth 2.0 token stands ("Token valid for 54 min"), with Get new token and,
+/// when there is one, Clear token. Clearing asks nothing: the next send gets a new token.
+fn token_line(ui: &mut Ui, view: &crate::app::TokenView, actions: &mut Vec<Action>) {
+    use imposter_app::oauth::TokenState;
+    ui.add_space(12.0);
+    let now = imposter_app::executor::now().0;
+    let (text, tone) = match &view.state {
+        None => ("Checking the token…".to_owned(), Tone::Muted),
+        Some(Err(error)) => (error.clone(), Tone::Error),
+        Some(Ok(TokenState::Missing)) => ("No token yet: Send gets one.".to_owned(), Tone::Muted),
+        Some(Ok(TokenState::Good { expires_at: None })) => {
+            ("Token valid until cleared".to_owned(), Tone::Ok)
+        }
+        Some(Ok(TokenState::Good {
+            expires_at: Some(at),
+        })) => (
+            format!("Token valid for {}", remaining(at.saturating_sub(now))),
+            Tone::Ok,
+        ),
+        Some(Ok(TokenState::Expired { refreshable: true })) => (
+            "Token expired: the next send refreshes it".to_owned(),
+            Tone::Muted,
+        ),
+        Some(Ok(TokenState::Expired { refreshable: false })) => (
+            "Token expired: the next send gets a new one".to_owned(),
+            Tone::Muted,
+        ),
+    };
+    ui.add(egui::Label::new(tone_text(text, tone)).wrap());
+    let has_token = matches!(
+        view.state,
+        Some(Ok(TokenState::Good { .. } | TokenState::Expired { .. }))
+    );
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(!view.busy, egui::Button::new("Get new token"))
+            .on_hover_text("Ask the token endpoint for a token now and keep it")
+            .clicked()
+        {
+            actions.push(Action::Token(TokenAction::Get));
+        }
+        if has_token
+            && ui
+                .add_enabled(!view.busy, egui::Button::new("Clear token"))
+                .on_hover_text("Forget this token; the next send gets a new one")
+                .clicked()
+        {
+            actions.push(Action::Token(TokenAction::Clear));
+        }
+    });
+}
+
+/// Milliseconds left, in words: "45 s", "54 min", "2 h 5 min".
+pub fn remaining(milliseconds: i64) -> String {
+    let seconds = milliseconds.max(0) / 1000;
+    match seconds {
+        0..60 => format!("{seconds} s"),
+        60..3600 => format!("{} min", seconds / 60),
+        _ if seconds % 3600 < 60 => format!("{} h", seconds / 3600),
+        _ => format!("{} h {} min", seconds / 3600, seconds % 3600 / 60),
+    }
+}
+
 fn request_pane(state: &mut State, ui: &mut Ui) {
     // Where captures of names nobody defines go: the active environment, else Global.
     let capture_fallback = active_environment(state).map(|e| e.name.clone());
@@ -1806,6 +1869,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         inspect,
         settings,
         actions,
+        active_environment,
         ..
     } = state;
     let Some(pane) = editor else {
@@ -1869,7 +1933,16 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                     &mut vars,
                 );
             }
-            EditorTab::Auth => edited = widgets::auth_form(ui, &mut pane.editor.auth, &mut vars),
+            EditorTab::Auth => {
+                edited = widgets::auth_form(ui, &mut pane.editor.auth, &mut vars);
+                if pane.editor.auth.kind == Some(imposter_app::core::model::AuthKind::OAuth2) {
+                    token_line(ui, &pane.token, actions);
+                    let wanted = (pane.editor.auth.oauth.clone(), *active_environment);
+                    if !pane.token.busy && pane.token.checked.as_ref() != Some(&wanted) {
+                        actions.push(Action::Token(TokenAction::Check));
+                    }
+                }
+            }
             EditorTab::Tests => {
                 edited = crate::checks::checks_table(ui, &mut pane.editor.checks, &mut vars);
             }
@@ -2752,7 +2825,16 @@ mod branding_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::{Drop, drop_zone};
+    use super::{Drop, drop_zone, remaining};
+
+    #[test]
+    fn time_left_reads_in_the_largest_units_that_matter() {
+        assert_eq!(remaining(-5), "0 s");
+        assert_eq!(remaining(45_000), "45 s");
+        assert_eq!(remaining(54 * 60_000 + 59_000), "54 min");
+        assert_eq!(remaining(2 * 3_600_000 + 30_000), "2 h");
+        assert_eq!(remaining(2 * 3_600_000 + 5 * 60_000), "2 h 5 min");
+    }
 
     #[test]
     fn drop_zones_split_rows_by_height() {

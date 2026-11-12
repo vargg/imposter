@@ -338,3 +338,55 @@ async fn copy_as_curl_uses_the_cached_token_and_never_fetches_one() {
     assert!(curl.contains("Bearer a-default"), "{curl}");
     assert_eq!(received(&api).len(), 2, "copying sent nothing");
 }
+
+#[tokio::test]
+async fn the_auth_tab_can_see_get_and_clear_the_token() {
+    use imposter_app::oauth::{TokenState, clear, fetch, state};
+    let api = api(SECRET).await;
+    let handle = api.store.handle();
+    let now = 1_000_000;
+    assert_eq!(
+        state(&handle, &api.request, now).await.unwrap(),
+        TokenState::Missing
+    );
+
+    answer(
+        &api,
+        token_answer("access-now", r#", "expires_in": 60, "refresh_token": "r""#),
+    );
+    let got = fetch(&handle, &api.request, &CancellationToken::new(), now)
+        .await
+        .unwrap();
+    assert_eq!(
+        got,
+        TokenState::Good {
+            expires_at: Some(now + 60_000)
+        }
+    );
+    assert_eq!(state(&handle, &api.request, now).await.unwrap(), got);
+    assert_eq!(
+        state(&handle, &api.request, now + 31_000).await.unwrap(),
+        TokenState::Expired { refreshable: true },
+        "within 30 seconds of expiring it is not sent"
+    );
+    assert_eq!(received(&api).len(), 1, "only the token request went out");
+
+    clear(&handle, &api.request).await.unwrap();
+    assert_eq!(
+        state(&handle, &api.request, now).await.unwrap(),
+        TokenState::Missing
+    );
+
+    answer(
+        &api,
+        response(
+            "400 Bad Request",
+            &[("Content-Type", "application/json")],
+            br#"{"error": "invalid_scope"}"#,
+        ),
+    );
+    let error = fetch(&handle, &api.request, &CancellationToken::new(), now)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "Token request failed: invalid_scope");
+}

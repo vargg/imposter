@@ -218,3 +218,97 @@ mod tests {
         assert_ne!(tokens, SharedTokens::default());
     }
 }
+
+/// Where the open request's token stands, for the Auth tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenState {
+    /// None cached for what the request asks for.
+    Missing,
+    /// Good to send; until when (milliseconds since the epoch), if the server said.
+    Good { expires_at: Option<i64> },
+    /// Too old to send; the next send refreshes it when it can, else gets a new one.
+    Expired { refreshable: bool },
+}
+
+/// The OAuth 2.0 settings `request` would use now, resolved as Send resolves them (before
+/// any script), with the inputs they came from. `None` when OAuth 2.0 is not in effect.
+async fn resolved(
+    store: &imposter_store::StoreHandle,
+    request: &imposter_core::model::Request,
+) -> Result<Option<(OAuth2, crate::executor::Inputs, Policy)>, crate::executor::ExecuteError> {
+    let inputs = crate::executor::inputs(store, request).await?;
+    let (resolved, settings, _) = crate::executor::resolve_with(
+        request,
+        &inputs,
+        &mut crate::executor::SystemEntropy::default(),
+    )?;
+    let Ok(Some(imposter_core::model::Auth::OAuth2(oauth))) = resolved.template.auth.active()
+    else {
+        return Ok(None);
+    };
+    Ok(Some((
+        oauth.clone(),
+        inputs,
+        Policy::from_settings(&settings),
+    )))
+}
+
+/// Where `request`'s token stands at `now` (milliseconds since the epoch).
+pub async fn state(
+    store: &imposter_store::StoreHandle,
+    request: &imposter_core::model::Request,
+    now: i64,
+) -> Result<TokenState, crate::executor::ExecuteError> {
+    let Some((oauth, inputs, _)) = resolved(store, request).await? else {
+        return Ok(TokenState::Missing);
+    };
+    let cached = inputs.tokens.and_then(|tokens| tokens.get(&key(&oauth)));
+    Ok(match cached {
+        None => TokenState::Missing,
+        Some(token) if good(&token, now) => TokenState::Good {
+            expires_at: token.expires_at,
+        },
+        Some(token) => TokenState::Expired {
+            refreshable: token.refresh.is_some(),
+        },
+    })
+}
+
+/// Ask for a new token for `request` now and keep it, as Send would; the cached one, if
+/// any, is replaced. Scripts do not run: the token is for the settings as they stand.
+pub async fn fetch(
+    store: &imposter_store::StoreHandle,
+    request: &imposter_core::model::Request,
+    cancel: &CancellationToken,
+    now: i64,
+) -> Result<TokenState, crate::executor::ExecuteError> {
+    use crate::executor::ExecuteError;
+    let Some((oauth, inputs, policy)) = resolved(store, request).await? else {
+        return Ok(TokenState::Missing);
+    };
+    let token = oauth::request(&oauth, Grant::ClientCredentials, &policy, cancel)
+        .await
+        .map_err(|error| ExecuteError::Token(format!("Token request failed: {error}")))?;
+    let token = stored(key(&oauth), token, now);
+    let expires_at = token.expires_at;
+    let environment = inputs.context.environment_id();
+    store
+        .call(move |db| imposter_store::oauth::put(db, environment, &token))
+        .await?;
+    Ok(TokenState::Good { expires_at })
+}
+
+/// Forget `request`'s cached token; the next send gets a new one.
+pub async fn clear(
+    store: &imposter_store::StoreHandle,
+    request: &imposter_core::model::Request,
+) -> Result<(), crate::executor::ExecuteError> {
+    let Some((oauth, inputs, _)) = resolved(store, request).await? else {
+        return Ok(());
+    };
+    let (key, environment) = (key(&oauth), inputs.context.environment_id());
+    store
+        .call(move |db| imposter_store::oauth::remove(db, environment, &key))
+        .await?;
+    Ok(())
+}

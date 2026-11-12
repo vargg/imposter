@@ -656,6 +656,12 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Failures** are not sent and not recorded (`ExecuteError::Token`): "Token request
     failed: invalid_client: Unknown client", the OAuth error and description, or the
     status when the answer names none. A token type other than Bearer is refused.
+  - **The Auth tab** says where the token stands under the form (`oauth::state`: "No
+    token yet: Send gets one.", "Token valid for 54 min", "Token expired: the next send
+    refreshes it"), read again when the OAuth settings or the active environment change
+    and after a send. "Get new token" asks for one now and keeps it (`oauth::fetch`,
+    without scripts: it is for the settings as they stand); "Clear token" forgets it
+    without asking, since the next send gets a new one (a cache, not the user's data).
   Pinned by the module's unit tests (the form and Basic header, answers),
   `imposter-app/tests/oauth.rs` (fetch, reuse, refresh, a failed refresh, refusal, a
   missing secret, History, the command line, Copy as curl), `imposter-store/tests/oauth.rs`,

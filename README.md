@@ -26,8 +26,9 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   a header or the query, and OAuth 2.0 client credentials: the token is fetched when you
   send, kept per environment, reused until 30 seconds before it expires and refreshed
   when the server gave a refresh token. A token request that fails says why ("Token
-  request failed: invalid_client") and nothing is sent. Runs keep their tokens to
-  themselves, and the command line fetches its own.
+  request failed: invalid_client") and nothing is sent. The Auth tab says how long the
+  token is valid for, with **Get new token** and **Clear token**. Runs keep their tokens
+  to themselves, and the command line fetches its own.
 - A cookie jar per environment: cookies a server sets (a login's session cookie) are sent
   back on later requests where their domain, path and `Secure` flag allow, redirects
   included. Your own cookie rows win over the jar's. Turn it off in Settings (**Keep

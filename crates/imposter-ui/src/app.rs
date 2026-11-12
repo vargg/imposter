@@ -13,13 +13,14 @@ use std::time::Duration;
 use egui::ViewportCommand;
 use imposter_app::core::execution::{ExecutionRecord, Outcome as ExchangeOutcome, Response};
 use imposter_app::core::ids::{CollectionId, EnvironmentId, ExecutionId, FolderId, RequestId};
-use imposter_app::core::model::{EnvColor, FormItem, Request, SavedValues, Variables};
+use imposter_app::core::model::{EnvColor, FormItem, OAuth2, Request, SavedValues, Variables};
 use imposter_app::core::run_result::RunResult;
 use imposter_app::core::settings::AppSettings;
 use imposter_app::core::variables::{SecretScope, Snapshot};
 use imposter_app::executor::{self, ExecuteError, Executed};
 use imposter_app::formats::native::NativeDocument;
 use imposter_app::http::cookies::StoredCookie;
+use imposter_app::oauth::TokenState;
 use imposter_app::runtime::{Bridge, TaskId};
 use imposter_app::saver::{Saver, State as SaveState};
 use imposter_app::store::collections::{self, Collection, IndexedRequest, Tree};
@@ -346,6 +347,13 @@ pub enum Message {
     PostmanExportPicked(Option<PathBuf>),
     Exported(Result<PathBuf, Failure>),
     Curl(Result<(String, bool), Failure>),
+    /// Where the open request's token stands, after checking, getting or clearing it.
+    Token {
+        generation: u64,
+        result: Result<TokenState, Failure>,
+        /// A new token was got on request, for the status line to say.
+        got: bool,
+    },
     RequestIndex(Result<Vec<IndexedRequest>, Failure>),
     SettingsLoaded(Result<AppSettings, Failure>),
     SettingsSaved {
@@ -469,6 +477,8 @@ pub enum Action {
     RunFolder(Option<FolderId>),
     /// Copy the open request as a curl command with resolved values.
     CopyCurl,
+    /// The open request's OAuth 2.0 token, from the Auth tab.
+    Token(TokenAction),
     /// The editor changed: `url` when the URL itself was edited, `params` for the query rows.
     Edited {
         url: bool,
@@ -775,6 +785,28 @@ pub struct EditorPane {
     pub custom_method: Option<String>,
     /// "Clear all" confirmations per table: queries, headers, cookies, form, multipart.
     pub confirm_clear: [bool; 5],
+    pub token: TokenView,
+}
+
+/// What the Auth tab knows of the open request's OAuth 2.0 token.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TokenView {
+    /// The settings and environment it was read for; when either changes it is read again.
+    pub checked: Option<(OAuth2, Option<EnvironmentId>)>,
+    pub state: Option<Result<TokenState, Failure>>,
+    /// A check, a request for a token or a clear is under way.
+    pub busy: bool,
+}
+
+/// What the Auth tab asks of the open request's token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenAction {
+    /// Read where it stands.
+    Check,
+    /// Ask for a new one now.
+    Get,
+    /// Forget the cached one.
+    Clear,
 }
 
 impl EditorPane {
@@ -785,6 +817,7 @@ impl EditorPane {
             invalid: Vec::new(),
             custom_method: None,
             confirm_clear: [false; 5],
+            token: TokenView::default(),
         }
     }
 }
@@ -1871,6 +1904,22 @@ impl ImposterApp {
                 }
             }
             Message::Curl(Err(error)) => self.error("Copy as curl failed", error),
+            Message::Token {
+                generation,
+                result,
+                got,
+            } => {
+                if generation != self.state.generation {
+                    return;
+                }
+                if got && result.is_ok() {
+                    self.request_status("Got a new token", Tone::Ok);
+                }
+                if let Some(pane) = &mut self.state.editor {
+                    pane.token.busy = false;
+                    pane.token.state = Some(result);
+                }
+            }
             Message::RequestIndex(Ok(index)) => {
                 // Requests deleted since they were opened leave the recent list.
                 let before = self.state.recent.len();
@@ -2983,6 +3032,10 @@ impl ImposterApp {
             Ok(executed) => self.write_captures(std::mem::take(&mut executed.writes)),
             Err(_) => None,
         };
+        // A send may have got or refreshed the token the Auth tab shows.
+        if let Some(pane) = &mut self.state.editor {
+            pane.token.checked = None;
+        }
         // A response that set cookies changed a jar the Variables screen may list.
         if result
             .as_ref()
@@ -3453,6 +3506,7 @@ impl ImposterApp {
                 });
             }
             Action::CopyCurl => self.copy_curl(),
+            Action::Token(action) => self.token(action),
             Action::Send => self.send(),
             Action::PickFile(target) => self.pick(
                 FileDialog::Open {
@@ -3658,6 +3712,41 @@ impl ImposterApp {
     }
 
     // ---- import and export ----------------------------------------------------------------------
+
+    /// Check, get or clear the open request's OAuth 2.0 token, for the Auth tab.
+    fn token(&mut self, action: TokenAction) {
+        let generation = self.state.generation;
+        let environment = self.state.active_environment;
+        let Some(pane) = &mut self.state.editor else {
+            return;
+        };
+        let Ok(request) = pane.editor.to_request() else {
+            pane.token.state = Some(Err("Fix the highlighted request settings first.".into()));
+            return;
+        };
+        pane.token.busy = true;
+        pane.token.checked = Some((pane.editor.auth.oauth.clone(), environment));
+        if action == TokenAction::Get {
+            pane.token.state = None;
+        }
+        let db = self.db.clone();
+        self.bridge.spawn(move |cancel| async move {
+            let now = executor::now().0;
+            let result = match action {
+                TokenAction::Check => imposter_app::oauth::state(&db, &request, now).await,
+                TokenAction::Get => imposter_app::oauth::fetch(&db, &request, &cancel, now).await,
+                TokenAction::Clear => match imposter_app::oauth::clear(&db, &request).await {
+                    Ok(()) => imposter_app::oauth::state(&db, &request, now).await,
+                    Err(error) => Err(error),
+                },
+            };
+            Message::Token {
+                generation,
+                result: result.map_err(failure),
+                got: action == TokenAction::Get,
+            }
+        });
+    }
 
     /// The open request as curl, resolved the way Send would resolve it now.
     fn copy_curl(&mut self) {
