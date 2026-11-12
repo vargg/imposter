@@ -32,6 +32,10 @@ pub enum ConfirmPurpose {
     ClearVariables(Scope),
     /// Put the Variables screen's scope back as stored, losing its unsaved edits.
     RevertVariables(Scope),
+    /// Remove the cookie the Variables screen chose from `scope`'s jar; written at once.
+    RemoveCookie(Scope),
+    /// Remove every cookie of `scope`'s jar; written at once.
+    ClearCookies(Scope),
     DiscardOnClose,
     /// Write a Postman export despite the listed limitations.
     PostmanExport,
@@ -916,6 +920,39 @@ impl Dialog {
         )
     }
 
+    /// `requests` names whose jar it is ("requests sent with Dev").
+    pub fn remove_cookie(
+        scope: Scope,
+        cookie: &imposter_app::http::cookies::StoredCookie,
+        requests: &str,
+    ) -> Self {
+        Self::confirm(
+            "Remove cookie",
+            format!(
+                "Remove the cookie \"{}\" set by {}? {} stop sending it until the server \
+                 sets it again.",
+                cookie.name,
+                cookie.domain,
+                capitalized(requests)
+            ),
+            "Remove cookie",
+            ConfirmPurpose::RemoveCookie(scope),
+        )
+    }
+
+    pub fn clear_cookies(scope: Scope, cookies: usize, requests: &str) -> Self {
+        Self::confirm(
+            "Clear cookies",
+            format!(
+                "Remove {} kept for {requests}? Servers set them again when you sign in \
+                 again.",
+                counted(cookies, "cookie")
+            ),
+            "Clear cookies",
+            ConfirmPurpose::ClearCookies(scope),
+        )
+    }
+
     pub fn revert_variables(scope: Scope, name: &str) -> Self {
         Self::confirm(
             "Revert variables",
@@ -960,6 +997,14 @@ fn scripted_line(document: &imposter_app::formats::native::NativeDocument) -> Op
 }
 
 /// "1 request", "7 requests".
+/// `text` with its first letter in capitals, to start a sentence.
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
+
 fn counted(count: usize, noun: &str) -> String {
     if count == 1 {
         format!("1 {noun}")

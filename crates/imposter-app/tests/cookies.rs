@@ -98,7 +98,8 @@ async fn activate(api: &Api, environment: Option<EnvironmentId>) {
 }
 
 async fn kept(api: &Api, environment: Option<EnvironmentId>) -> Vec<String> {
-    imposter_app::cookies::list(&api.store.handle(), environment)
+    api.store
+        .call(move |db| imposter_app::cookies::list(db, environment))
         .await
         .unwrap()
         .into_iter()
@@ -245,4 +246,43 @@ async fn runs_share_a_jar_of_their_own_and_write_nothing_back() {
         .unwrap();
     assert_eq!(last_cookie(&api), None);
     assert_eq!(kept(&api, Some(api.dev)).await, ["session=dev"]);
+}
+
+#[tokio::test]
+async fn one_cookie_can_go_or_all_of_them() {
+    let api = api().await;
+    send(&api, &api.login).await;
+    let dev = Some(api.dev);
+    api.store
+        .call(move |db| {
+            imposter_app::cookies::keep(
+                db,
+                dev,
+                &[imposter_core::execution::SetCookie {
+                    url: "http://127.0.0.1/".into(),
+                    header: "theme=dark".into(),
+                }],
+            )
+        })
+        .await
+        .unwrap();
+    assert_eq!(kept(&api, dev).await, ["session=dev", "theme=dark"]);
+    let session = api
+        .store
+        .call(move |db| imposter_app::cookies::list(db, dev))
+        .await
+        .unwrap()
+        .remove(0);
+    let left = api
+        .store
+        .call(move |db| imposter_app::cookies::remove(db, dev, &session))
+        .await
+        .unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(kept(&api, dev).await, ["theme=dark"]);
+    api.store
+        .call(move |db| imposter_app::cookies::clear(db, dev))
+        .await
+        .unwrap();
+    assert_eq!(kept(&api, dev).await, [] as [String; 0]);
 }

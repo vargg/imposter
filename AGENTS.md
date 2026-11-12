@@ -599,9 +599,18 @@ numbers, so both are excluded. Each logical change is its own commit.
     of the stored jar, the command line (`send`, `run`, `--file`, `--project`) an empty
     one (an agent must not borrow the user's sessions); neither writes back, as captures
     stay in the run. Load runs keep no cookies (frozen by the roadmap).
+  - **The app:** the Variables screen lists a jar under Global (requests sent without an
+    environment) and each environment, after the Secrets: name, value masked with an eye
+    for the session, and where and until when it is sent ("api.test · / · HTTPS only ·
+    until cleared"). It is not part of the page's edits, since a send changes it while
+    the page is open: removing one cookie or clearing them all is written at once, each
+    after a dialog naming what goes. Values are not edited: a server sets them, and a
+    request's cookie rows send one by hand. The list reloads after a send that set
+    cookies. Settings → "Keep cookies".
   Pinned by `imposter-http/tests/cookies.rs` (the bytes each hop receives), the module's
-  unit tests, `imposter-store/tests/cookies.rs` and `imposter-app/tests/cookies.rs`
-  (environments apart, the settings, runs and the command line writing nothing).
+  unit tests, `imposter-store/tests/cookies.rs`, `imposter-app/tests/cookies.rs`
+  (environments apart, the settings, runs and the command line writing nothing),
+  `imposter-ui/tests/cookies.rs` and the layout lint's Variables state.
 - **API-key auth sends one header or one query parameter** (`model::ApiKey`: name, value,
   `in: header | query`). `prepare` adds it after the request's own headers, or after its
   query, which keeps its order and encoding. A sent header (compared without case) or

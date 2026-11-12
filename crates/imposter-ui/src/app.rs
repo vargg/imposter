@@ -19,6 +19,7 @@ use imposter_app::core::settings::AppSettings;
 use imposter_app::core::variables::{SecretScope, Snapshot};
 use imposter_app::executor::{self, ExecuteError, Executed};
 use imposter_app::formats::native::NativeDocument;
+use imposter_app::http::cookies::StoredCookie;
 use imposter_app::runtime::{Bridge, TaskId};
 use imposter_app::saver::{Saver, State as SaveState};
 use imposter_app::store::collections::{self, Collection, IndexedRequest, Tree};
@@ -262,6 +263,11 @@ pub enum Message {
     Environments {
         select: Option<Scope>,
         result: Result<(Vec<Environment>, Option<EnvironmentId>), Failure>,
+    },
+    /// The cookies kept for the Variables screen's `scope`.
+    CookiesLoaded {
+        scope: Scope,
+        result: Result<Vec<StoredCookie>, Failure>,
     },
     VariablesLoaded {
         scope: Scope,
@@ -604,6 +610,10 @@ pub enum VariablesAction {
     Revert,
     /// Remove every row, after asking; an unsaved edit.
     ClearAll,
+    /// Remove the cookie at this place in the list, after asking; written at once.
+    RemoveCookie(usize),
+    /// Remove every cookie of the scope, after asking; written at once.
+    ClearCookies,
     Edited,
     NewEnvironment,
     RenameEnvironment(EnvironmentId),
@@ -645,6 +655,11 @@ pub struct VariablesScreen {
     pub highlight: Option<String>,
     /// A name to add as a new row once the scope has loaded ("Define" from a blocked send).
     define: Option<String>,
+    /// The cookies kept for the scope's requests (Global: those sent without an
+    /// environment); none for a collection. Changed at once, never by Save.
+    pub cookies: Vec<StoredCookie>,
+    /// The cookie whose removal is being confirmed.
+    removing_cookie: Option<StoredCookie>,
     pending: Option<VarTransition>,
     saving: bool,
 }
@@ -1653,6 +1668,17 @@ impl ImposterApp {
                 Err(error) => self.error("Environment operation failed", error),
             },
             Message::VariablesLoaded { scope, result } => self.variables_loaded(scope, result),
+            Message::CookiesLoaded { scope, result } => {
+                let screen = &mut self.state.variables;
+                match result {
+                    Ok(cookies) if scope == screen.scope => screen.cookies = cookies,
+                    Ok(_) => {}
+                    Err(error) => self.request_status(
+                        &format!("Cookies could not be loaded: {error}"),
+                        Tone::Error,
+                    ),
+                }
+            }
             Message::VariablesSaved { scope, result } => self.variables_saved(scope, result),
             Message::ValueChosen {
                 scope,
@@ -2956,6 +2982,13 @@ impl ImposterApp {
             Ok(executed) => self.write_captures(std::mem::take(&mut executed.writes)),
             Err(_) => None,
         };
+        // A response that set cookies changed a jar the Variables screen may list.
+        if result
+            .as_ref()
+            .is_ok_and(|executed| !executed.response.set_cookies.is_empty())
+        {
+            self.load_cookies(self.state.variables.scope);
+        }
         if self.smoke.as_ref().is_some_and(|s| s.sent) {
             let outcome = match &result {
                 Ok(executed) if executed.response.outcome == ExchangeOutcome::Response => {
@@ -3199,6 +3232,32 @@ impl ImposterApp {
                     screen.rows.clear();
                     screen.secrets.clear();
                     screen.status = None;
+                }
+            }
+            ConfirmPurpose::RemoveCookie(scope) => {
+                let cookie = self.state.variables.removing_cookie.take();
+                if let (Some(cookie), Ok(environment)) = (cookie, Self::jar_of(scope)) {
+                    self.task(
+                        move |db| imposter_app::cookies::remove(db, environment, &cookie),
+                        move |result| Message::CookiesLoaded {
+                            scope,
+                            result: result.map_err(failure),
+                        },
+                    );
+                }
+            }
+            ConfirmPurpose::ClearCookies(scope) => {
+                if let Ok(environment) = Self::jar_of(scope) {
+                    self.task(
+                        move |db| {
+                            imposter_app::cookies::clear(db, environment)?;
+                            imposter_app::cookies::list(db, environment)
+                        },
+                        move |result| Message::CookiesLoaded {
+                            scope,
+                            result: result.map_err(failure),
+                        },
+                    );
                 }
             }
             ConfirmPurpose::RevertVariables(scope) => {
@@ -3810,6 +3869,41 @@ impl ImposterApp {
                 result: result.map_err(failure),
             },
         );
+        self.state.variables.cookies.clear();
+        self.load_cookies(scope);
+    }
+
+    /// The jar whose cookies the Variables screen lists for `scope`, by its environment:
+    /// Global's are those of requests sent without one; a collection has no jar (`Err`).
+    fn jar_of(scope: Scope) -> Result<Option<EnvironmentId>, ()> {
+        match SecretScope::of_scope(scope) {
+            Some(SecretScope::Global) => Ok(None),
+            Some(SecretScope::Environment(id)) => Ok(Some(id)),
+            None => Err(()),
+        }
+    }
+
+    fn load_cookies(&self, scope: Scope) {
+        let Ok(environment) = Self::jar_of(scope) else {
+            return;
+        };
+        self.task(
+            move |db| imposter_app::cookies::list(db, environment),
+            move |result| Message::CookiesLoaded {
+                scope,
+                result: result.map_err(failure),
+            },
+        );
+    }
+
+    /// The requests whose cookies `scope`'s jar keeps, in words for dialogs.
+    fn jar_phrase(&self, scope: Scope) -> String {
+        match scope {
+            Scope::Environment(id) => {
+                format!("requests sent with {}", self.environment_name(id))
+            }
+            _ => "requests sent without an environment".to_owned(),
+        }
     }
 
     fn variables_loaded(
@@ -4185,6 +4279,25 @@ impl ImposterApp {
             }
             VariablesAction::DeleteEnvironment(id) => {
                 self.variables_navigate(VarTransition::DeleteEnvironment(id));
+            }
+            VariablesAction::RemoveCookie(index) => {
+                let scope = self.state.variables.scope;
+                if let Some(cookie) = self.state.variables.cookies.get(index).cloned() {
+                    self.state.dialog = Some(Dialog::remove_cookie(
+                        scope,
+                        &cookie,
+                        &self.jar_phrase(scope),
+                    ));
+                    self.state.variables.removing_cookie = Some(cookie);
+                }
+            }
+            VariablesAction::ClearCookies => {
+                let scope = self.state.variables.scope;
+                let count = self.state.variables.cookies.len();
+                if count > 0 {
+                    self.state.dialog =
+                        Some(Dialog::clear_cookies(scope, count, &self.jar_phrase(scope)));
+                }
             }
             VariablesAction::ShareGlobals(share) => {
                 if share != self.state.globals_shared {

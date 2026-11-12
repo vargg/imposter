@@ -527,7 +527,20 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         imposter_ui::vars::Row::new("api_key", "k-123456"),
         imposter_ui::vars::Row::new("a_rather_long_secret_name_for_the_column", "v-123456"),
     ];
+    // Cookies under the secrets: a long name, a domain with subdomains, an expiry.
+    app.harness.state_mut().state.variables.cookies =
+        vec![imposter_app::http::cookies::StoredCookie {
+            domain: "api.a-rather-long-domain-name.example.com".into(),
+            host_only: false,
+            path: "/v1/accounts/sessions".into(),
+            name: "a_rather_long_session_cookie_name".into(),
+            value: "abcdef-123456".into(),
+            expires: Some(4_102_444_800),
+            secure: true,
+            http_only: true,
+        }];
     check(app, "variables with secrets");
+    app.harness.state_mut().state.variables.cookies.clear();
     app.harness.state_mut().state.variables_changed_on_disk = true;
     check(app, "variables changed on disk banner");
     app.harness.state_mut().state.variables_changed_on_disk = false;

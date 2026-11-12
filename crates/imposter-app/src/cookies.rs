@@ -7,7 +7,7 @@ use imposter_core::execution::SetCookie;
 use imposter_core::ids::EnvironmentId;
 use imposter_core::model::{ParamItem, RequestTemplate};
 use imposter_http::cookies::{Jar, StoredCookie};
-use imposter_store::{StoreError, StoreHandle, Tx};
+use imposter_store::{StoreError, Tx};
 
 /// The jar for `environment` (none: requests sent without one) in the open folder. A jar
 /// that does not read is taken as empty, and the next cookie kept replaces it: it held
@@ -39,40 +39,28 @@ pub fn keep(
 }
 
 /// The cookies kept for `environment`, by domain, path and name.
-pub async fn list(
-    store: &StoreHandle,
+pub fn list(
+    db: &Tx<'_>,
     environment: Option<EnvironmentId>,
 ) -> Result<Vec<StoredCookie>, StoreError> {
-    store
-        .call(move |db| Ok(read(db, environment)?.cookies()))
-        .await
+    Ok(read(db, environment)?.cookies())
 }
 
-/// Remove the cookies named by domain, path and name; the rest stay.
-pub async fn remove(
-    store: &StoreHandle,
+/// Remove one cookie, named by domain, path and name; the rest stay. The jar left after.
+pub fn remove(
+    db: &Tx<'_>,
     environment: Option<EnvironmentId>,
-    cookies: Vec<StoredCookie>,
-) -> Result<(), StoreError> {
-    store
-        .call(move |db| {
-            let mut jar = read(db, environment)?;
-            for cookie in &cookies {
-                jar.remove(&cookie.domain, &cookie.path, &cookie.name);
-            }
-            imposter_store::cookies::write(db, environment, &jar.to_json())
-        })
-        .await
+    cookie: &StoredCookie,
+) -> Result<Vec<StoredCookie>, StoreError> {
+    let mut jar = read(db, environment)?;
+    jar.remove(&cookie.domain, &cookie.path, &cookie.name);
+    imposter_store::cookies::write(db, environment, &jar.to_json())?;
+    Ok(jar.cookies())
 }
 
 /// Remove every cookie kept for `environment`.
-pub async fn clear(
-    store: &StoreHandle,
-    environment: Option<EnvironmentId>,
-) -> Result<(), StoreError> {
-    store
-        .call(move |db| imposter_store::cookies::write(db, environment, ""))
-        .await
+pub fn clear(db: &Tx<'_>, environment: Option<EnvironmentId>) -> Result<(), StoreError> {
+    imposter_store::cookies::write(db, environment, "")
 }
 
 /// Put the jar's `cookies` into `template` as sent, so History, the request as sent and

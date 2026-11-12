@@ -58,6 +58,10 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   capture's lock stores a login's token as a secret instead of a variable, and scripts
   have `secrets.get` and `secrets.set`. Secrets are kept unencrypted in your profile
   database (and its upgrade backups), like the rest of your data.
+- Cookies: the Variables screen's **Cookies** section lists what servers set for the
+  scope's requests (Global: those sent without an environment), masked like secrets, with
+  where and until when each is sent. Remove one, or **Clear cookies…**; both ask first.
+  Cookies are kept only on this computer.
 - Saved values: keep several values of one variable (user IDs, names) in its scope, then swap
   the current one from the placeholder's inspector in one click. Each environment keeps its
   own list. Native exports carry saved values with their variables; Postman exports carry the

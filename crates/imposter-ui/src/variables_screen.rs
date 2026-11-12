@@ -286,6 +286,22 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                             widths,
                             highlight.as_deref(),
                         );
+                        let requests = match current {
+                            Scope::Environment(id) => {
+                                state.environments.iter().find(|e| e.id == id).map_or_else(
+                                    || "requests sent with this environment".to_owned(),
+                                    |e| format!("requests sent with {}", e.name),
+                                )
+                            }
+                            _ => "requests sent without an environment".to_owned(),
+                        };
+                        cookies_section(
+                            ui,
+                            &state.variables.cookies,
+                            widths,
+                            &requests,
+                            &mut actions,
+                        );
                     }
                 });
         });
@@ -375,6 +391,104 @@ fn secrets_section(
         rows.push(vars::Row::new("", ""));
     }
     edited
+}
+
+/// The cookies servers set for the scope's requests: name and value (masked, with an eye),
+/// where and until when each is sent, and a × that asks before removing it. Not part of
+/// the page's edits: a send changes them, and removing one is written at once.
+fn cookies_section(
+    ui: &mut Ui,
+    cookies: &[imposter_app::http::cookies::StoredCookie],
+    (name_width, value_width, height): (f32, f32, f32),
+    requests: &str,
+    actions: &mut Vec<Action>,
+) {
+    ui.add_space(16.0);
+    ui.label(egui::RichText::new("Cookies").font(crate::theme::semibold(13.0)));
+    ui.add(
+        egui::Label::new(tone_text(
+            format!(
+                "Set by servers for {requests}, and sent back to them. Kept only on this computer."
+            ),
+            Tone::Muted,
+        ))
+        .wrap(),
+    );
+    ui.add_space(4.0);
+    if cookies.is_empty() {
+        ui.label(tone_text("No cookies yet.", Tone::Muted));
+        return;
+    }
+    let eye = icons::size() + ui.spacing().item_spacing.x;
+    let value_width = (value_width - eye).max(120.0);
+    for (index, cookie) in cookies.iter().enumerate() {
+        ui.horizontal(|ui| {
+            // Its text names it to screen readers; the fields after it say "cookie".
+            ui.add_sized(
+                [name_width, height],
+                egui::Label::new(cookie.name.as_str()).truncate(),
+            );
+            let shown_id = ui.make_persistent_id(("cookie shown", index, &cookie.name));
+            let mut shown: bool = ui.data(|d| d.get_temp(shown_id)).unwrap_or(false);
+            let mut value = cookie.value.as_str();
+            let field = ui.add_sized(
+                [value_width, height],
+                egui::TextEdit::singleline(&mut value)
+                    .id_salt(("cookie", index, "value"))
+                    .password(!shown),
+            );
+            name(&field, &format!("Cookie {} value", cookie.name));
+            let (icon, action) = if shown {
+                (Icon::EyeOff, format!("Hide cookie {}", cookie.name))
+            } else {
+                (Icon::Eye, format!("Show cookie {}", cookie.name))
+            };
+            if icons::button(ui, icon, &action, false).clicked() {
+                shown = !shown;
+            }
+            ui.data_mut(|d| d.insert_temp(shown_id, shown));
+            let remove = ui
+                .scope(|ui| {
+                    ui.spacing_mut().button_padding.x = 4.0;
+                    ui.add_sized([24.0, height], egui::Button::new("×"))
+                })
+                .inner
+                .on_hover_text("Remove this cookie…");
+            name(&remove, &format!("Remove cookie {}", cookie.name));
+            if remove.clicked() {
+                actions.push(Action::Variables(VariablesAction::RemoveCookie(index)));
+            }
+        });
+        ui.add(egui::Label::new(tone_text(cookie_place(cookie), Tone::Muted)).truncate());
+        ui.add_space(4.0);
+    }
+    if ui.button("Clear cookies…").clicked() {
+        actions.push(Action::Variables(VariablesAction::ClearCookies));
+    }
+}
+
+/// Where and until when a cookie is sent: "api.test and its subdomains · /admin · HTTPS
+/// only · until 12 Dec 2026, 10:00".
+pub fn cookie_place(cookie: &imposter_app::http::cookies::StoredCookie) -> String {
+    let mut parts = vec![if cookie.host_only {
+        cookie.domain.clone()
+    } else {
+        format!("{} and its subdomains", cookie.domain)
+    }];
+    parts.push(cookie.path.clone());
+    if cookie.secure {
+        parts.push("HTTPS only".to_owned());
+    }
+    parts.push(match cookie.expires {
+        None => "until cleared".to_owned(),
+        Some(seconds) => format!(
+            "until {}",
+            crate::viewer::local_time(imposter_app::core::execution::Timestamp(
+                seconds.saturating_mul(1000)
+            ))
+        ),
+    });
+    parts.join(" · ")
 }
 
 /// Wide enough for a value, "current" and the remove button.

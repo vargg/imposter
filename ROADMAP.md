@@ -386,7 +386,10 @@ proceed with a supplied token. That pull does not drag SSE with it.
 - API-key auth, in a header or the query. Done (11 November 2026).
 - A cookie jar scoped by project and environment, so two projects do not share one.
   Visible, editable and clearable, with an explicit on/off choice, and used by Send,
-  the runner and the CLI.
+  the runner and the CLI. Done (12 November 2026): listed and removed one at a time or
+  all on the Variables screen; values are not edited there, since a server sets them and
+  a request's cookie rows send one by hand. Runs share a jar of their own; the command
+  line starts each with an empty one, as no session input exists yet.
 - Headless runs use isolated session state unless an explicit session input is
   supplied. They do not borrow the personal profile's cookies or tokens.
 - SSE, with the streaming decision above.
