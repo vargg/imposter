@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::StoreError;
 
 /// Every migration in order; the database's `user_version` counts how many have run.
-pub const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8];
+pub const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9];
 
 const V1: &str = r"
 CREATE TABLE collections (
@@ -152,6 +152,18 @@ INSERT INTO secrets_v8 (id, environment_id, name, value)
 DROP TABLE secrets;
 ALTER TABLE secrets_v8 RENAME TO secrets;
 CREATE UNIQUE INDEX secrets_by_name ON secrets (coalesce(environment_id, 0), name);
+";
+
+/// Cookie jars (`cookies`): one per collections folder and environment (`environment_id`
+/// NULL for requests sent without one), each the jar's JSON. Personal data, like secrets:
+/// never in the folder's files.
+const V9: &str = r"
+CREATE TABLE cookie_jars (
+    folder TEXT NOT NULL,
+    environment_id INTEGER,
+    jar TEXT NOT NULL
+);
+CREATE UNIQUE INDEX cookie_jars_by_scope ON cookie_jars (folder, coalesce(environment_id, 0));
 ";
 
 /// How long a write waits for another process (the app, or the command line beside it)

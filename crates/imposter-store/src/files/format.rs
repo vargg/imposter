@@ -330,6 +330,8 @@ struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     attach_cookies: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    cookie_jar: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     proxy_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     timeout: Option<f64>,
@@ -355,6 +357,7 @@ impl Settings {
             follow_redirects: self.follow_redirects,
             verify_ssl: self.verify_ssl,
             attach_cookies: self.attach_cookies,
+            cookie_jar: self.cookie_jar,
             proxy_url: self.proxy_url.clone(),
             timeout: self.timeout,
             ca_bundle: self.ca_bundle.clone(),
@@ -370,6 +373,7 @@ impl Settings {
             follow_redirects: options.follow_redirects,
             verify_ssl: options.verify_ssl,
             attach_cookies: options.attach_cookies,
+            cookie_jar: options.cookie_jar,
             proxy_url: options.proxy_url.clone(),
             timeout: options.timeout,
             ca_bundle: options.ca_bundle.clone(),

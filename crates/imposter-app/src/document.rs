@@ -319,6 +319,8 @@ fn selected(
             writes: Writes::Run,
             // The caller knows where the document came from (`--file`, `--project`).
             base_dir: None,
+            // A file run keeps no cookies of anyone's; `select_all` shares one jar.
+            jar: Some(imposter_http::cookies::SharedJar::default()),
         },
     }
 }
@@ -382,13 +384,16 @@ pub fn select_all(
         }),
         None => ordered(&mut folders, within, requests, &mut found),
     }
+    let jar = imposter_http::cookies::SharedJar::default();
     Ok(found
         .iter()
         .map(|found| {
             let mut place = vec![collection_name];
             place.extend(found.folders.iter().map(|f| f.name.as_str()));
             let path = RequestPath::new(&place, &found.template.name);
-            selected(document, &path, found, &context, values)
+            let mut selected = selected(document, &path, found, &context, values);
+            selected.inputs.jar = Some(jar.clone());
+            selected
         })
         .collect())
 }

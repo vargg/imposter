@@ -358,6 +358,10 @@ pub struct Options {
     pub follow_redirects: Option<bool>,
     pub verify_ssl: Option<bool>,
     pub attach_cookies: Option<bool>,
+    /// Keep and send the cookie jar's cookies. Left out when inheriting, so documents
+    /// without it keep their bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cookie_jar: Option<bool>,
     pub proxy_url: Option<String>,
     #[serde(deserialize_with = "positive_timeout")]
     pub timeout: Option<f64>,

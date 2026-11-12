@@ -184,8 +184,8 @@ pub fn set_environment_variables(
     scopes::write(db, Scope::Environment(id), variables, &saved)
 }
 
-/// Deleting the active environment makes globals-only the active scope. Its secrets and
-/// local values go with it.
+/// Deleting the active environment makes globals-only the active scope. Its secrets, local
+/// values and cookie jar go with it.
 pub fn delete_environment(db: &Tx<'_>, id: EnvironmentId) -> Result<(), StoreError> {
     let uid = db.write(|state, _| {
         let uid = environment_uid(state, id).ok_or(StoreError::NotFound("environment"))?;
@@ -194,6 +194,7 @@ pub fn delete_environment(db: &Tx<'_>, id: EnvironmentId) -> Result<(), StoreErr
     })?;
     scopes::forget_local(db, &uid)?;
     crate::secrets::write(db, SecretScope::Environment(id), &Variables::new())?;
+    crate::cookies::forget(db, id)?;
     if active_environment(db)? == Some(id) {
         set_active_environment(db, None)?;
     }

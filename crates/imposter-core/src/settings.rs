@@ -56,6 +56,9 @@ pub struct AppSettings {
     pub follow_redirects: bool,
     pub verify_ssl: bool,
     pub attach_cookies: bool,
+    /// Keep the cookies servers set and send them back (`imposter_http::cookies`). On by
+    /// default, including for settings saved before it existed.
+    pub cookie_jar: bool,
     pub proxy_url: String,
     pub ca_bundle: String,
     pub certificate_path: String,
@@ -80,6 +83,7 @@ impl Default for AppSettings {
             follow_redirects: true,
             verify_ssl: true,
             attach_cookies: true,
+            cookie_jar: true,
             proxy_url: String::new(),
             ca_bundle: String::new(),
             certificate_path: String::new(),
@@ -177,6 +181,9 @@ impl AppSettings {
         if let Some(value) = options.attach_cookies {
             out.attach_cookies = value;
         }
+        if let Some(value) = options.cookie_jar {
+            out.cookie_jar = value;
+        }
         if let Some(value) = options.timeout {
             out.timeout = value;
         }
@@ -198,6 +205,7 @@ impl AppSettings {
             follow_redirects: Some(self.follow_redirects),
             verify_ssl: Some(self.verify_ssl),
             attach_cookies: Some(self.attach_cookies),
+            cookie_jar: Some(self.cookie_jar),
             proxy_url: Some(self.proxy_url.clone()),
             timeout: Some(self.timeout),
             ca_bundle: Some(self.ca_bundle.clone()),

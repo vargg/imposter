@@ -9,6 +9,7 @@ use imposter_store::{StoreError, StoreHandle, collections, environments, kv};
 
 use crate::document::{DocumentError, RequestPath, Selected};
 use crate::executor::{EnvironmentChoice, Writes, read_inputs};
+use imposter_http::cookies::SharedJar;
 
 /// Why a request is chosen: running one may refuse production, inspecting one never does,
 /// since it reveals only names.
@@ -114,6 +115,9 @@ fn select_in(
     let mut inputs = read_inputs(db, &request, EnvironmentChoice::Chosen(chosen))?;
     inputs.writes = Writes::Run;
     inputs.snapshot = inputs.snapshot.with_inputs(values);
+    // The command line starts without cookies: an agent's run must not borrow the user's
+    // sessions, and keeps none.
+    inputs.jar = Some(SharedJar::default());
     Ok(Selected {
         path: path.clone(),
         request,
@@ -304,17 +308,25 @@ fn select_all_in(
         ordered(&tree, folder, &mut ids);
     }
     let chosen = chosen_environment(db, environment, Purpose::Run)?;
-    Ok(selected_requests(db, &tree, ids, chosen, values)?)
+    Ok(selected_requests(
+        db,
+        &tree,
+        ids,
+        chosen,
+        values,
+        &SharedJar::default(),
+    )?)
 }
 
 /// `ids` of `tree`'s collection, each ready to run with `environment` and `values` on top;
-/// captures stay in the run.
+/// captures stay in the run, and every request sends from and fills the one `jar`.
 fn selected_requests(
     db: &imposter_store::Tx<'_>,
     tree: &collections::Tree,
     ids: Vec<imposter_core::ids::RequestId>,
     environment: Option<imposter_core::ids::EnvironmentId>,
     values: &Variables,
+    jar: &SharedJar,
 ) -> Result<Vec<Selected>, StoreError> {
     let mut selected = Vec::with_capacity(ids.len());
     for id in ids {
@@ -328,6 +340,7 @@ fn selected_requests(
         let mut inputs = read_inputs(db, &request, EnvironmentChoice::Chosen(environment))?;
         inputs.writes = Writes::Run;
         inputs.snapshot = inputs.snapshot.with_inputs(values);
+        inputs.jar = Some(jar.clone());
         selected.push(Selected {
             path,
             request,
@@ -357,7 +370,10 @@ pub async fn select_under(
             }
             let mut ids = Vec::new();
             ordered(&tree, folder, &mut ids);
-            selected_requests(db, &tree, ids, environment, &Variables::new())
+            // The app's run starts from a copy of the stored jar, so it runs as Send would,
+            // and writes nothing back, as its captures do.
+            let jar = SharedJar::new(crate::cookies::read(db, environment)?);
+            selected_requests(db, &tree, ids, environment, &Variables::new(), &jar)
         })
         .await
 }

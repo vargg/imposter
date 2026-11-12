@@ -2,6 +2,7 @@
 //! re-exports only (see the architecture test).
 
 pub mod catalog;
+pub mod cookies;
 pub mod document;
 pub mod executor;
 pub mod filter;

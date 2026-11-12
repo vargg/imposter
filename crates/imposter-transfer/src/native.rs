@@ -159,12 +159,12 @@ impl NativeDocument {
         }
     }
 
-    /// Version 5 when a request uses API-key auth, else 4 when a capture is stored as a
+    /// Version 5 when a request uses API-key auth or sets the cookie jar, else 4 when a capture is stored as a
     /// secret, else 3 when something has scripts, else 2: the lowest that holds the
     /// document, so older Imposter versions read what they can. For new Imposter documents
     /// only.
     pub fn fit_version(&mut self) {
-        self.version = if self.api_key().is_some() {
+        self.version = if self.version_5().is_some() {
             Version::V5
         } else if self.secret_capture().is_some() {
             Version::V4
@@ -175,12 +175,19 @@ impl NativeDocument {
         };
     }
 
-    /// The first request with API-key auth, chosen or kept, named for errors.
-    pub fn api_key(&self) -> Option<String> {
-        self.requests()
-            .into_iter()
-            .find(|r| r.auth.kind == Some(AuthKind::ApiKey) || r.auth.api_key.is_some())
-            .map(|r| format!("Request {:?}", r.name))
+    /// The first request using what version 5 added, named for errors, with what it uses:
+    /// API-key auth (chosen or kept) or its own cookie jar setting.
+    pub fn version_5(&self) -> Option<(String, &'static str)> {
+        self.requests().into_iter().find_map(|r| {
+            let owner = || format!("Request {:?}", r.name);
+            if r.auth.kind == Some(AuthKind::ApiKey) || r.auth.api_key.is_some() {
+                Some((owner(), "API-key authentication"))
+            } else if r.options.cookie_jar.is_some() {
+                Some((owner(), "the cookie jar setting"))
+            } else {
+                None
+            }
+        })
     }
 
     /// The first request with a capture stored as a secret, named for errors.
@@ -267,8 +274,8 @@ pub enum NativeError {
     ScriptsNeedVersion3 { owner: String },
     #[error("{owner}: a capture stored as a secret needs format version 4")]
     SecretCaptureNeedsVersion4 { owner: String },
-    #[error("{owner}: API-key authentication needs format version 5")]
-    ApiKeyNeedsVersion5 { owner: String },
+    #[error("{owner}: {what} needs format version 5")]
+    NeedsVersion5 { owner: String, what: &'static str },
     #[error("Request {request:?}: {source}")]
     Body {
         request: String,
@@ -312,9 +319,9 @@ fn checked(document: NativeDocument) -> Result<NativeDocument, NativeError> {
         return Err(NativeError::SecretCaptureNeedsVersion4 { owner });
     }
     if document.version < Version::V5
-        && let Some(owner) = document.api_key()
+        && let Some((owner, what)) = document.version_5()
     {
-        return Err(NativeError::ApiKeyNeedsVersion5 { owner });
+        return Err(NativeError::NeedsVersion5 { owner, what });
     }
     validate_templates(&document)?;
     Ok(document)

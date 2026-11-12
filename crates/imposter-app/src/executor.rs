@@ -32,6 +32,10 @@ pub struct Inputs {
     /// Where relative file paths in the request are found: the collections folder, or the
     /// file a request was read from. `None` leaves them to the working directory.
     pub base_dir: Option<std::path::PathBuf>,
+    /// The cookie jar the execution sends from and fills, when the settings keep cookies:
+    /// a copy of the stored one for Send, which keeps what it receives afterwards
+    /// ([`execute`]); one jar shared by a run's requests, never stored; `None` for none.
+    pub jar: Option<imposter_http::cookies::SharedJar>,
 }
 
 /// Where an execution's captures and script variables go.
@@ -109,6 +113,7 @@ pub fn read_inputs(
                 None => None,
             };
             let snapshot = Snapshot::build(&context, scope);
+            let jar = crate::cookies::read(db, context.environment_id())?;
             let scripts = match &collection {
                 Some(collection) => script_levels(db, collection, folder_id)?,
                 None => crate::scripts::ScriptChain::default(),
@@ -120,6 +125,7 @@ pub fn read_inputs(
                 scripts,
                 writes: Writes::Scopes,
                 base_dir: Some(db.folder()),
+                jar: Some(imposter_http::cookies::SharedJar::new(jar)),
             })
         }
     }
@@ -419,6 +425,7 @@ pub async fn curl_with_identity_notice(
     if let Some(base) = &inputs.base_dir {
         root_template(&mut before.template, base);
     }
+    add_jar_cookies(&inputs, &settings, &mut before.template);
     let prepared = prepare(&before.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
     Ok((
@@ -452,6 +459,21 @@ pub fn script_host(cancel: CancellationToken, time: std::time::Duration) -> impo
     }
 }
 
+/// The jar's cookies for the first location, put into `template` as sent, so History, the
+/// response pane and Copy as curl show them; the transport adds those of later hops. Only
+/// while the settings keep cookies and attach them.
+fn add_jar_cookies(inputs: &Inputs, settings: &AppSettings, template: &mut RequestTemplate) {
+    if let Some(jar) = inputs
+        .jar
+        .as_ref()
+        .filter(|_| settings.cookie_jar && settings.attach_cookies)
+        && let Ok(url) = imposter_core::prepare::request_url(template)
+    {
+        let cookies = jar.with(|jar| jar.cookies_for(&url));
+        crate::cookies::add_to(template, cookies);
+    }
+}
+
 /// A recorded execution as the curl command of what it sent.
 pub fn recorded_curl(record: &ExecutionRecord) -> Result<String, ExecuteError> {
     let prepared = prepare(&record.resolved.template, record.settings.attach_cookies)
@@ -480,8 +502,26 @@ pub async fn execute(
 ) -> Result<Executed, ExecuteError> {
     let inputs = inputs(store, &request).await?;
     let ran = run(&inputs, request, cancel).await?;
-    Ok(record(store, ran).await)
+    let cookies = ran.record.response.set_cookies.clone();
+    let environment = inputs.context.environment_id();
+    let kept = if cookies.is_empty() {
+        Ok(())
+    } else {
+        store
+            .call(move |db| crate::cookies::keep(db, environment, &cookies))
+            .await
+    };
+    let mut executed = record(store, ran).await;
+    if let Err(error) = kept {
+        tracing::warn!(%error, "keeping a response's cookies failed");
+        if executed.response.history_error.is_empty() {
+            COOKIES_ERROR.clone_into(&mut executed.response.history_error);
+        }
+    }
+    Ok(executed)
 }
+
+pub const COOKIES_ERROR: &str = "Response received, but the cookies it set could not be kept";
 
 /// Record `ran` in History under the retention limits its settings carry. A failed write
 /// keeps the response and says so (`history_error`).
@@ -555,11 +595,13 @@ pub async fn run(
     if let Some(base) = &inputs.base_dir {
         root_template(&mut resolved.template, base);
     }
+    add_jar_cookies(inputs, &settings, &mut resolved.template);
     let prepared = prepare(&resolved.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
 
     let started = Instant::now();
     let mut policy = Policy::from_settings(&settings);
+    policy.jar = inputs.jar.clone().filter(|_| settings.cookie_jar);
     policy.identity_routing = Some(Box::new(imposter_http::transport::IdentityRouting {
         settings: inputs.settings.clone(),
         options: request.template.options.clone(),

@@ -24,9 +24,14 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   and file uploads) or a binary file. Uploads are streamed from disk.
 - Authentication: Basic, Bearer, Digest (MD5, SHA-256, SHA-512, `-sess`) and an API key in
   a header or the query.
+- A cookie jar per environment: cookies a server sets (a login's session cookie) are sent
+  back on later requests where their domain, path and `Secure` flag allow, redirects
+  included. Your own cookie rows win over the jar's. Turn it off in Settings (**Keep
+  cookies**) or per request. Runs keep their cookies to themselves, and the command line
+  starts each run with an empty jar.
 - Per-request settings that override the application defaults: timeout, redirects,
-  certificate verification, cookies, proxy, CA bundle, client certificate and key, and
-  response size limit.
+  certificate verification, cookies, the cookie jar, proxy, CA bundle, client certificate
+  and key, and response size limit.
 - Autosave, or explicit save. Unsaved changes are never lost silently: switching requests,
   restoring from history and closing all ask first.
 
@@ -229,10 +234,8 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 ## Not supported
 
 Postman JavaScript (`pm.*`) compatibility; WebSocket, gRPC and GraphQL-specific tools;
-HTTP/2 (requests use HTTP/1.1); cloud sync; a persistent cookie jar (cookies are sent as you
-list them). Before-sending and after-response scripts are supported in Rhai. Collections
-can be shared through native exports; repository project folders and a runner for whole
-folders are planned, not shipped.
+HTTP/2 (requests use HTTP/1.1); cloud sync. Before-sending and after-response scripts are
+supported in Rhai.
 
 ## Installation
 

@@ -1933,6 +1933,9 @@ pub fn options_form(
                     OptionField::AttachCookies => {
                         override_bool(ui, field, &mut options.attach_cookies, &default)
                     }
+                    OptionField::CookieJar => {
+                        override_bool(ui, field, &mut options.cookie_jar, &default)
+                    }
                     OptionField::VerifySsl => {
                         override_bool(ui, field, &mut options.verify_ssl, &default)
                     }

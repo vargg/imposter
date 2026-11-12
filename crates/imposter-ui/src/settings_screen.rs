@@ -18,6 +18,7 @@ pub struct SettingsForm {
     pub autosave: bool,
     pub verify_ssl: bool,
     pub follow_redirects: bool,
+    pub cookie_jar: bool,
     pub proxy_url: String,
     /// KiB, 0 for unlimited.
     pub download_limit: u64,
@@ -40,6 +41,7 @@ impl SettingsForm {
             autosave: settings.autosave,
             verify_ssl: settings.verify_ssl,
             follow_redirects: settings.follow_redirects,
+            cookie_jar: settings.cookie_jar,
             proxy_url: settings.proxy_url.clone(),
             download_limit: settings.download_limit.min(100 * 1024),
             ca_bundle: settings.ca_bundle.clone(),
@@ -60,6 +62,7 @@ impl SettingsForm {
             autosave: self.autosave,
             verify_ssl: self.verify_ssl,
             follow_redirects: self.follow_redirects,
+            cookie_jar: self.cookie_jar,
             proxy_url: self.proxy_url.clone(),
             download_limit: self.download_limit,
             ca_bundle: self.ca_bundle.clone(),
@@ -386,6 +389,12 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                         },
                     );
                     edited |= check(ui, &mut form.follow_redirects, "Follow redirects", None);
+                    edited |= check(
+                        ui,
+                        &mut form.cookie_jar,
+                        "Keep cookies",
+                        Some("Cookies servers set are sent back on later requests, per environment. They are listed on the Variables screen."),
+                    );
                 });
                 section(ui, "TLS", |ui| {
                     edited |= check(

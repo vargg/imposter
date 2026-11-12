@@ -1,6 +1,7 @@
 //! SQLite persistence for Imposter.
 
 pub mod collections;
+pub mod cookies;
 pub mod environments;
 mod error;
 pub mod executions;

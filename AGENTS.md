@@ -579,8 +579,29 @@ numbers, so both are excluded. Each logical change is its own commit.
   - **Logs:** `Set-Cookie` values go through `CookieStore::parse`; its
     `store_response_cookies` logs each value at debug, which `imposter-http/tests/logging.rs`
     catches.
-  Pinned by `imposter-http/tests/cookies.rs` (the bytes each hop receives) and the
-  module's unit tests.
+  - **Settings:** `AppSettings::cookie_jar` ("Keep cookies", on by default, also for
+    settings saved before it: user's choice) and the request's `Options::cookie_jar`,
+    left out of documents when inheriting, so they keep their bytes (native version 5,
+    the folder format's `settings`). The jar sends only while "Attach cookies" is on too,
+    which then means every cookie, the request's rows and the jar's; it keeps what
+    arrives either way.
+  - **As sent:** the jar's cookies for the first location are put into the request as
+    sent (`cookies::add_to`: after an enabled `Cookie` header, else as rows), so History,
+    the response pane and Copy as curl show them; the transport adds later hops'.
+  - **Stored** (migration V9, `store::cookies`): one jar per collections folder and
+    environment (none for requests sent without one), as JSON, in the profile: cookies
+    are personal, like secrets, and never in the folder's files. An environment's jar
+    goes with it. A jar that does not read is taken as empty.
+  - **Who uses which:** Send reads the stored jar with its inputs and keeps what the
+    response set afterwards, merged into the jar as it is then (`executor::execute`), so
+    two sends at once both keep theirs; a failure says so on the response. A run's
+    requests share one jar chosen when they are selected: the app's Run screen a copy
+    of the stored jar, the command line (`send`, `run`, `--file`, `--project`) an empty
+    one (an agent must not borrow the user's sessions); neither writes back, as captures
+    stay in the run. Load runs keep no cookies (frozen by the roadmap).
+  Pinned by `imposter-http/tests/cookies.rs` (the bytes each hop receives), the module's
+  unit tests, `imposter-store/tests/cookies.rs` and `imposter-app/tests/cookies.rs`
+  (environments apart, the settings, runs and the command line writing nothing).
 - **API-key auth sends one header or one query parameter** (`model::ApiKey`: name, value,
   `in: header | query`). `prepare` adds it after the request's own headers, or after its
   query, which keeps its order and encoding. A sent header (compared without case) or
@@ -1273,8 +1294,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   that a plain imported request lacks.
   Version 4 adds captures stored as secrets (`Capture::secret`); `fit_version` picks it
   only for a document with one, and an older version holding one is refused, naming the
-  request, as scripts are below 3. Version 5 adds API-key auth (`RequestAuth::api_key`,
-  left out of the JSON when unset, so other documents keep their bytes), by the same rule.
+  request, as scripts are below 3. Version 5 adds API-key auth (`RequestAuth::api_key`)
+  and a request's own cookie jar setting (`Options::cookie_jar`), both left out of the JSON
+  when unset, so other documents keep their bytes, by the same rule.
 - **The collections folder format** (`store::files::format`, format `imposter-project`,
   version 1): one YAML file per request, per folder (`folder.yaml` in its directory),
   per collection (`imposter.yaml` in its directory) and per environment

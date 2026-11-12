@@ -251,7 +251,8 @@ fn collection_and_folder_scripts_need_version_3_and_round_trip() {
     }
 }
 
-/// An export takes version 5 only when a request has API-key auth.
+/// An export takes version 5 only when a request has API-key auth or its own cookie jar
+/// setting.
 #[test]
 fn api_key_auth_needs_version_5_and_only_then() {
     use imposter_core::model::{ApiKeyIn, RequestAuth, RequestTemplate};
@@ -267,4 +268,11 @@ fn api_key_auth_needs_version_5_and_only_then() {
     document.collection.requests[0].auth = RequestAuth::bearer("t");
     document.fit_version();
     assert_eq!(document.version, Version::V2, "readable by older Imposter");
+    document.collection.requests[0].options.cookie_jar = Some(false);
+    document.fit_version();
+    assert_eq!(
+        document.version,
+        Version::V5,
+        "the request's own cookie jar setting"
+    );
 }

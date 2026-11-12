@@ -116,6 +116,7 @@ pub enum OptionField {
     Timeout,
     FollowRedirects,
     AttachCookies,
+    CookieJar,
     DownloadLimit,
     ProxyUrl,
     VerifySsl,
@@ -131,6 +132,7 @@ impl OptionField {
             Self::Timeout => "Timeout (seconds)",
             Self::FollowRedirects => "Follow redirects",
             Self::AttachCookies => "Attach cookies",
+            Self::CookieJar => "Cookie jar",
             Self::DownloadLimit => "Response limit (KiB; 0 unlimited)",
             Self::ProxyUrl => "Proxy URL",
             Self::VerifySsl => "Verify TLS",
@@ -150,7 +152,11 @@ pub const OPTION_GROUPS: [(&str, &[OptionField]); 4] = [
     ),
     (
         "Cookies and response capture",
-        &[OptionField::AttachCookies, OptionField::DownloadLimit],
+        &[
+            OptionField::AttachCookies,
+            OptionField::CookieJar,
+            OptionField::DownloadLimit,
+        ],
     ),
     ("Proxy", &[OptionField::ProxyUrl]),
     (
@@ -170,6 +176,7 @@ pub struct OptionsForm {
     pub follow_redirects: Override<bool>,
     pub verify_ssl: Override<bool>,
     pub attach_cookies: Override<bool>,
+    pub cookie_jar: Override<bool>,
     /// Text fields keep what the user typed; numbers are validated when read.
     pub timeout: Override<String>,
     pub download_limit: Override<String>,
@@ -191,6 +198,7 @@ impl OptionsForm {
             follow_redirects: Override::load(options.follow_redirects.as_ref(), true),
             verify_ssl: Override::load(options.verify_ssl.as_ref(), true),
             attach_cookies: Override::load(options.attach_cookies.as_ref(), true),
+            cookie_jar: Override::load(options.cookie_jar.as_ref(), true),
             timeout: Override::load(options.timeout.map(format_number).as_ref(), String::new()),
             download_limit: Override::load(
                 options.download_limit.map(|d| d.to_string()).as_ref(),
@@ -235,6 +243,7 @@ impl OptionsForm {
             follow_redirects: self.follow_redirects.read(),
             verify_ssl: self.verify_ssl.read(),
             attach_cookies: self.attach_cookies.read(),
+            cookie_jar: self.cookie_jar.read(),
             proxy_url: self.proxy_url.read(),
             timeout,
             ca_bundle: self.ca_bundle.read(),
@@ -250,6 +259,7 @@ impl OptionsForm {
             OptionField::Timeout => self.timeout.inherit,
             OptionField::FollowRedirects => self.follow_redirects.inherit,
             OptionField::AttachCookies => self.attach_cookies.inherit,
+            OptionField::CookieJar => self.cookie_jar.inherit,
             OptionField::DownloadLimit => self.download_limit.inherit,
             OptionField::ProxyUrl => self.proxy_url.inherit,
             OptionField::VerifySsl => self.verify_ssl.inherit,
@@ -282,6 +292,7 @@ pub fn default_value(field: OptionField, defaults: &AppSettings) -> String {
         OptionField::Timeout => format!("{} seconds", format_number(defaults.timeout)),
         OptionField::FollowRedirects => on_off(defaults.follow_redirects),
         OptionField::AttachCookies => on_off(defaults.attach_cookies),
+        OptionField::CookieJar => on_off(defaults.cookie_jar),
         OptionField::VerifySsl => on_off(defaults.verify_ssl),
         OptionField::DownloadLimit if defaults.download_limit == 0 => "Unlimited".to_owned(),
         OptionField::DownloadLimit => format!("{} KiB", defaults.download_limit),
