@@ -224,3 +224,66 @@ fn api_keys_travel_both_ways() {
     assert_eq!(document.collection.requests[0].auth, RequestAuth::default());
     assert!(decoder.requires_removal, "{:?}", decoder.warnings);
 }
+
+#[test]
+fn oauth2_client_credentials_travel_both_ways_and_other_grants_need_consent() {
+    use imposter_core::model::{ClientAuth, OAuth2, RequestAuth};
+    let collection = |auth: Value| {
+        serde_json::json!({
+            "info": {"name": "C", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+            "item": [{"name": "R", "request": {"method": "GET", "url": "http://h/", "auth": auth}}]
+        })
+    };
+    let mut decoder = Decoder::default();
+    let document = decoder
+        .decode(&collection(
+            serde_json::json!({"type": "oauth2", "oauth2": [
+                {"key": "grant_type", "value": "client_credentials", "type": "string"},
+                {"key": "accessTokenUrl", "value": "{{auth}}/token", "type": "string"},
+                {"key": "clientId", "value": "app", "type": "string"},
+                {"key": "clientSecret", "value": "{{secret}}", "type": "string"},
+                {"key": "scope", "value": "read", "type": "string"},
+                {"key": "client_authentication", "value": "body", "type": "string"},
+                {"key": "addTokenTo", "value": "header", "type": "string"},
+                {"key": "tokenName", "value": "Token 1", "type": "string"},
+                {"key": "accessToken", "value": "an-old-token", "type": "string"},
+            ]}),
+        ))
+        .unwrap();
+    let expected = RequestAuth::oauth2(OAuth2 {
+        token_url: "{{auth}}/token".into(),
+        client_id: "app".into(),
+        client_secret: "{{secret}}".into(),
+        scope: "read".into(),
+        client_auth: ClientAuth::Body,
+        ..OAuth2::default()
+    });
+    assert_eq!(document.collection.requests[0].auth, expected);
+    assert!(
+        !decoder.requires_removal,
+        "Postman's cached token and labels change nothing"
+    );
+
+    let (postman, warnings) = encode(&document).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut decoder = Decoder::default();
+    let back = decoder
+        .decode(&collection(postman["item"][0]["request"]["auth"].clone()))
+        .unwrap();
+    assert_eq!(back.collection.requests[0].auth, expected);
+
+    let mut decoder = Decoder::default();
+    let code = decoder
+        .decode(&collection(
+            serde_json::json!({"type": "oauth2", "oauth2": [
+                {"key": "grant_type", "value": "authorization_code"},
+                {"key": "authUrl", "value": "https://auth/authorize"},
+            ]}),
+        ))
+        .unwrap();
+    assert_eq!(code.collection.requests[0].auth, RequestAuth::default());
+    assert!(
+        decoder.requires_removal,
+        "an unsupported grant needs consent"
+    );
+}

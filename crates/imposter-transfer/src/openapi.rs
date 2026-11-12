@@ -6,8 +6,8 @@ use std::collections::HashSet;
 
 use imposter_core::check::{Check, Op};
 use imposter_core::model::{
-    ApiKeyIn, BodyType, FormItem, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
-    is_method_token,
+    ApiKeyIn, BodyType, FormItem, OAuth2, ParamItem, RequestAuth, RequestTemplate, SavedValues,
+    Variables, is_method_token,
 };
 use imposter_core::select::Selector;
 use imposter_core::url;
@@ -181,6 +181,18 @@ fn text(value: Option<&Value>) -> String {
         Some(Value::Bool(flag)) => flag.to_string(),
         _ => String::new(),
     }
+}
+
+/// The token URL of an OAuth 2.0 scheme's client credentials flow, the one flow requests
+/// can follow on their own.
+fn client_credentials(scheme: &Map<String, Value>) -> Option<String> {
+    let url = text(
+        scheme
+            .get("flows")
+            .and_then(|flows| flows.get("clientCredentials"))
+            .and_then(|flow| flow.get("tokenUrl")),
+    );
+    (!url.is_empty()).then_some(url)
 }
 
 fn truthy(value: &Value) -> bool {
@@ -620,20 +632,34 @@ impl<'a> Walk<'a> {
         let Some(alternatives) = requirement.and_then(Value::as_array) else {
             return;
         };
-        let alternatives: Vec<Vec<String>> = alternatives
+        // Each alternative's schemes, with the scopes it asks of each (OAuth's).
+        let alternatives: Vec<Vec<(String, String)>> = alternatives
             .iter()
             .filter_map(Value::as_object)
-            .map(|names| names.keys().cloned().collect())
+            .map(|names| {
+                names
+                    .iter()
+                    .map(|(name, scopes)| {
+                        let scopes: Vec<&str> = scopes
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                            .collect();
+                        (name.clone(), scopes.join(" "))
+                    })
+                    .collect()
+            })
             .collect();
         // Prefer the first alternative this app can send as is; `{}` means none is required.
         let chosen = alternatives
             .iter()
-            .find(|names| names.iter().all(|name| self.native_scheme(name)))
+            .find(|names| names.iter().all(|(name, _)| self.native_scheme(name)))
             .or_else(|| alternatives.first());
         let mut slot: Option<String> = None;
         let mut keys: Vec<(String, String, ApiKeyIn)> = Vec::new();
-        for name in chosen.into_iter().flatten() {
-            match self.credential(name) {
+        for (name, scopes) in chosen.into_iter().flatten() {
+            match self.credential(name, scopes) {
                 Some(Credential::Auth(auth)) => {
                     if let Some(first) = &slot {
                         let location = self.location.clone();
@@ -701,12 +727,14 @@ impl<'a> Walk<'a> {
                 text(scheme.get("in")).as_str(),
                 "header" | "query" | "cookie"
             ),
+            "oauth2" => client_credentials(scheme).is_some(),
             _ => false,
         }
     }
 
-    /// What a security scheme adds to a request, with collection variables for its secrets.
-    fn credential(&mut self, name: &str) -> Option<Credential> {
+    /// What a security scheme adds to a request, with collection variables for its secrets;
+    /// `scopes` are those the operation asks of it.
+    fn credential(&mut self, name: &str, scopes: &str) -> Option<Credential> {
         let scheme = self.scheme(name)?;
         let kind = text(scheme.get("type"));
         match kind.as_str() {
@@ -747,9 +775,21 @@ impl<'a> Walk<'a> {
                     }
                 }
             }
+            "oauth2" if client_credentials(scheme).is_some() => {
+                let token_url = client_credentials(scheme).unwrap_or_default();
+                self.define("client_id", "");
+                self.define("client_secret", "");
+                Some(Credential::Auth(Box::new(RequestAuth::oauth2(OAuth2 {
+                    token_url,
+                    client_id: "{{client_id}}".into(),
+                    client_secret: "{{client_secret}}".into(),
+                    scope: scopes.to_owned(),
+                    ..OAuth2::default()
+                }))))
+            }
             "oauth2" | "openIdConnect" => {
                 self.warn(format!(
-                    "Security scheme {name:?}: {kind} flows are not supported; requests send the token collection variable as a bearer token"
+                    "Security scheme {name:?}: {kind} flows other than client credentials are not supported; requests send the token collection variable as a bearer token"
                 ));
                 Some(self.bearer())
             }

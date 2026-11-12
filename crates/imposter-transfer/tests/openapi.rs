@@ -417,7 +417,7 @@ fn the_first_alternative_this_app_supports_is_chosen() {
     assert_eq!(
         warnings,
         [
-            "Security scheme \"oauth\": oauth2 flows are not supported; requests send the token collection variable as a bearer token",
+            "Security scheme \"oauth\": oauth2 flows other than client credentials are not supported; requests send the token collection variable as a bearer token",
             "GET /: only one authentication scheme is used (oauth, not digest)",
             "Security scheme \"hoba\": HTTP hoba authentication is not supported",
             "Security scheme \"mtls\": set the client certificate in Settings",
@@ -760,4 +760,37 @@ fn operations_check_for_their_lowest_documented_success() {
     );
     let (template, _, _) = single(json!({"/x": {"get": {}}}), json!({}));
     assert_eq!(template.checks, []);
+}
+
+#[test]
+fn a_client_credentials_flow_becomes_oauth2_with_the_scopes_asked() {
+    use imposter_core::model::OAuth2;
+    let (request, warnings, variables) = single(
+        json!({"/": {"get": {"security": [{"machine": ["read:pets", "write:pets"]}]}}}),
+        json!({"securitySchemes": {"machine": {"type": "oauth2", "flows": {
+            "clientCredentials": {"tokenUrl": "https://auth.test/token", "scopes": {
+                "read:pets": "", "write:pets": "", "admin": ""}},
+            "authorizationCode": {"authorizationUrl": "https://auth.test/authorize",
+                "tokenUrl": "https://auth.test/token", "scopes": {}},
+        }}}}),
+    );
+    assert_eq!(
+        request.auth,
+        RequestAuth::oauth2(OAuth2 {
+            token_url: "https://auth.test/token".into(),
+            client_id: "{{client_id}}".into(),
+            client_secret: "{{client_secret}}".into(),
+            scope: "read:pets write:pets".into(),
+            ..OAuth2::default()
+        })
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(
+        variables,
+        vars(&[
+            ("baseUrl", "https://api.test"),
+            ("client_id", ""),
+            ("client_secret", "")
+        ])
+    );
 }

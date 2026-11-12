@@ -6,8 +6,8 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use imposter_core::model::{
-    ApiKeyIn, BodyType, Credentials, FormItem, FormKind, ParamItem, RequestAuth, RequestTemplate,
-    SavedValues, Variables,
+    ApiKeyIn, BodyType, ClientAuth, Credentials, FormItem, FormKind, OAuth2, ParamItem,
+    RequestAuth, RequestTemplate, SavedValues, Variables,
 };
 use imposter_core::url;
 use serde_json::{Map, Value, json};
@@ -277,7 +277,10 @@ impl Decoder {
             None | Some(Value::Null) => "None".to_owned(),
             Some(other) => spaced_json(other),
         };
-        if !matches!(kind_text.as_str(), "basic" | "digest" | "bearer" | "apikey") {
+        if !matches!(
+            kind_text.as_str(),
+            "basic" | "digest" | "bearer" | "apikey" | "oauth2"
+        ) {
             self.loss(location, &format!("{kind_text} authentication"), true);
             return RequestAuth::default();
         }
@@ -291,17 +294,6 @@ impl Decoder {
                 }
             }
         }
-        let supported: &[&str] = match kind_text.as_str() {
-            "bearer" => &["token"],
-            "apikey" => &["key", "value", "in"],
-            _ => &["username", "password"],
-        };
-        if attributes
-            .iter()
-            .any(|(key, value)| !supported.contains(&key.as_str()) && !value.is_empty())
-        {
-            self.loss(location, "additional authentication parameters", true);
-        }
         let get = |key: &str| {
             attributes
                 .iter()
@@ -309,7 +301,57 @@ impl Decoder {
                 .map(|(_, v)| v.clone())
                 .unwrap_or_default()
         };
+        if kind_text == "oauth2" && get("grant_type") != "client_credentials" {
+            let grant = match get("grant_type") {
+                grant if grant.is_empty() => "authorization_code".to_owned(),
+                grant => grant,
+            };
+            self.loss(location, &format!("OAuth 2.0 {grant} grants"), true);
+            return RequestAuth::default();
+        }
+        let supported: &[&str] = match kind_text.as_str() {
+            "bearer" => &["token"],
+            "apikey" => &["key", "value", "in"],
+            // Postman keeps the last token it got and how it labels it; a new one is fetched.
+            "oauth2" => &[
+                "grant_type",
+                "accessTokenUrl",
+                "clientId",
+                "clientSecret",
+                "scope",
+                "audience",
+                "client_authentication",
+                "accessToken",
+                "tokenType",
+                "tokenName",
+            ],
+            _ => &["username", "password"],
+        };
+        let sent_as_bearer = |key: &str, value: &str| {
+            (key == "addTokenTo" && value == "header")
+                || (key == "headerPrefix" && value.eq_ignore_ascii_case("bearer"))
+        };
+        if attributes.iter().any(|(key, value)| {
+            !supported.contains(&key.as_str()) && !value.is_empty() && !sent_as_bearer(key, value)
+        }) {
+            self.loss(location, "additional authentication parameters", true);
+        }
         match kind_text.as_str() {
+            "oauth2" => {
+                let client_auth = match get("client_authentication").as_str() {
+                    "body" => ClientAuth::Body,
+                    _ => ClientAuth::Basic,
+                };
+                RequestAuth::oauth2(OAuth2 {
+                    token_url: get("accessTokenUrl"),
+                    client_id: get("clientId"),
+                    client_secret: get("clientSecret"),
+                    scope: get("scope"),
+                    audience: get("audience"),
+                    client_auth,
+                    ..OAuth2::default()
+                })
+            }
             "bearer" => RequestAuth::bearer(get("token")),
             // Postman sends a key without `in` as a header.
             "apikey" => {
@@ -710,7 +752,7 @@ fn export_auth(auth: &RequestAuth) -> Result<Value, PostmanError> {
         Some(AuthKind::Basic) => credentials("basic", auth.basic.as_ref())?,
         Some(AuthKind::Digest) => credentials("digest", auth.digest.as_ref())?,
         Some(AuthKind::OAuth2) => {
-            use imposter_core::model::{ClientAuth, OAuthGrant};
+            use imposter_core::model::OAuthGrant;
             let oauth = auth.oauth2.as_ref().ok_or(PostmanError::Credentials)?;
             let grant = match oauth.grant {
                 OAuthGrant::ClientCredentials => "client_credentials",

@@ -482,10 +482,10 @@
               "method": "GET",
               "url": "http://h/",
               "auth": {
-                "type": "oauth2",
-                "oauth2": [
+                "type": "hawk",
+                "hawk": [
                   {
-                    "key": "accessToken",
+                    "key": "authId",
                     "value": "t"
                   }
                 ]
@@ -542,7 +542,7 @@
           "globals": {}
         },
         "warnings": [
-          "C/R: oauth2 authentication will be removed"
+          "C/R: hawk authentication will be removed"
         ],
         "requires_removal": true
       }

@@ -382,7 +382,9 @@ proceed with a supplied token. That pull does not drag SSE with it.
 
 - OAuth 2.0: client credentials, and authorization code with PKCE through the system
   browser and a loopback redirect. Tokens are cached per project and environment,
-  refreshed before expiry, and stored as secrets.
+  refreshed before expiry, and stored as secrets. Client credentials done (12 November
+  2026): tokens are kept in the profile beside secrets, never in files or History, and
+  headless runs fetch their own; the authorization code grant is next.
 - API-key auth, in a header or the query. Done (11 November 2026).
 - A cookie jar scoped by project and environment, so two projects do not share one.
   Visible, editable and clearable, with an explicit on/off choice, and used by Send,

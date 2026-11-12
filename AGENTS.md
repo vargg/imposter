@@ -662,11 +662,16 @@ numbers, so both are excluded. Each logical change is its own commit.
     and after a send. "Get new token" asks for one now and keeps it (`oauth::fetch`,
     without scripts: it is for the settings as they stand); "Clear token" forgets it
     without asking, since the next send gets a new one (a cache, not the user's data).
+  - **Import and export:** Postman's `oauth2` with the client credentials grant maps
+    both ways (`client_authentication` header or body; its cached `accessToken` and
+    token labels are dropped without asking, a new token being fetched); other grants
+    are removed with consent until the authorization code grant arrives. OpenAPI's
+    `clientCredentials` flow becomes OAuth 2.0 auth (above).
   Pinned by the module's unit tests (the form and Basic header, answers),
   `imposter-app/tests/oauth.rs` (fetch, reuse, refresh, a failed refresh, refusal, a
   missing secret, History, the command line, Copy as curl), `imposter-store/tests/oauth.rs`,
-  the native decode cases, the project golden folder, `imposter-ui/tests/widgets.rs` and
-  the layout lint.
+  the native decode cases, the project golden folder, `postman_golden.rs`, `openapi.rs`,
+  `imposter-ui/tests/widgets.rs`, `imposter-ui/tests/oauth.rs` and the layout lint.
 - **Digest is answered once per hop** (MD5, SHA, SHA-256, SHA-512, `-sess`, qop `auth`; not
   `auth-int`), rebuilding the body for the retry. Verified against the RFC 2617/7616 vectors.
 - **Uploads stream with chunked transfer encoding** (no `Content-Length`) and are reopened for
@@ -1528,8 +1533,10 @@ numbers, so both are excluded. Each logical change is its own commit.
   variable (other servers are listed in a warning). Path parameters become variables, defined
   only when the document gives a value: an empty one would send `DELETE /pets/` instead of
   stopping on the unresolved variable. Optional parameters are imported disabled. Secrets are
-  empty collection variables (`token`, `username`/`password`, the API key scheme's name);
-  OAuth sends `{{token}}` as a bearer token. Only `$ref`s inside the document are followed;
+  empty collection variables (`token`, `username`/`password`, the API key scheme's name,
+  `client_id`/`client_secret`); an OAuth scheme with a client credentials flow becomes
+  OAuth 2.0 auth with the scopes the operation asks for, and other flows send `{{token}}`
+  as a bearer token. Only `$ref`s inside the document are followed;
   example bodies come from the document's examples, else from the schema with recursion
   included once and size capped. Swagger 2.0 is refused rather than half-supported. Files are
   recognised by content, not extension (`transfer::detect`), so only Postman files are asked
