@@ -955,6 +955,72 @@
     }
   },
   {
+    "name": "oauth2 authorization code in version 5",
+    "document": "{\"format\": \"imposter\", \"version\": 5, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Data\", \"method\": \"GET\", \"url\": \"https://x/data\", \"auth\": {\"type\": \"oauth2\", \"oauth2\": {\"token_url\": \"https://x/token\", \"client_id\": \"app\", \"client_secret\": \"{{secret:client_secret}}\", \"scope\": \"read\", \"grant\": \"authorization_code\", \"auth_url\": \"https://x/authorize\", \"redirect_port\": 53682}}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "imposter",
+      "version": 5,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "Data",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "https://x/data",
+            "path": "",
+            "auth": {
+              "type": "oauth2",
+              "basic": null,
+              "digest": null,
+              "bearer_token": null,
+              "oauth2": {
+                "grant": "authorization_code",
+                "token_url": "https://x/token",
+                "client_id": "app",
+                "client_secret": "{{secret:client_secret}}",
+                "scope": "read",
+                "client_auth": "basic",
+                "auth_url": "https://x/authorize",
+                "redirect_port": 53682
+              }
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "oauth2 redirect port out of range",
+    "document": "{\"format\": \"imposter\", \"version\": 5, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Data\", \"method\": \"GET\", \"url\": \"https://x/data\", \"auth\": {\"type\": \"oauth2\", \"oauth2\": {\"token_url\": \"https://x/token\", \"client_id\": \"app\", \"client_secret\": \"{{secret:client_secret}}\", \"scope\": \"read\", \"grant\": \"authorization_code\", \"auth_url\": \"https://x/authorize\", \"redirect_port\": 70000}}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": false
+  },
+  {
     "name": "oauth2 before version 5",
     "document": "{\"format\": \"imposter\", \"version\": 4, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Data\", \"method\": \"GET\", \"url\": \"https://x/data\", \"auth\": {\"type\": \"oauth2\", \"oauth2\": {\"token_url\": \"https://x/token\", \"client_id\": \"app\", \"client_secret\": \"{{secret:client_secret}}\", \"scope\": \"read\"}}}]}, \"environments\": [], \"globals\": {}}",
     "accepted": false

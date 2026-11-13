@@ -226,7 +226,7 @@ fn api_keys_travel_both_ways() {
 }
 
 #[test]
-fn oauth2_client_credentials_travel_both_ways_and_other_grants_need_consent() {
+fn oauth2_client_credentials_travel_both_ways_and_unsupported_grants_need_consent() {
     use imposter_core::model::{ClientAuth, OAuth2, RequestAuth};
     let collection = |auth: Value| {
         serde_json::json!({
@@ -276,7 +276,7 @@ fn oauth2_client_credentials_travel_both_ways_and_other_grants_need_consent() {
     let code = decoder
         .decode(&collection(
             serde_json::json!({"type": "oauth2", "oauth2": [
-                {"key": "grant_type", "value": "authorization_code"},
+                {"key": "grant_type", "value": "implicit"},
                 {"key": "authUrl", "value": "https://auth/authorize"},
             ]}),
         ))
@@ -285,5 +285,72 @@ fn oauth2_client_credentials_travel_both_ways_and_other_grants_need_consent() {
     assert!(
         decoder.requires_removal,
         "an unsupported grant needs consent"
+    );
+}
+
+#[test]
+fn oauth2_authorization_code_keeps_a_loopback_port_and_warns_about_another_redirect() {
+    use imposter_core::model::{OAuth2, OAuthGrant, RequestAuth};
+    let collection = |auth: Value| {
+        serde_json::json!({
+            "info": {"name": "C", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+            "item": [{"name": "R", "request": {"method": "GET", "url": "http://h/", "auth": auth}}]
+        })
+    };
+    let code = |redirect: &str| {
+        serde_json::json!({"type": "oauth2", "oauth2": [
+            {"key": "grant_type", "value": "authorization_code_with_pkce"},
+            {"key": "authUrl", "value": "https://auth/authorize"},
+            {"key": "accessTokenUrl", "value": "https://auth/token"},
+            {"key": "clientId", "value": "desktop"},
+            {"key": "redirect_uri", "value": redirect},
+            {"key": "challengeAlgorithm", "value": "S256"},
+            {"key": "useBrowser", "value": true},
+        ]})
+    };
+    let mut decoder = Decoder::default();
+    let document = decoder
+        .decode(&collection(code("http://127.0.0.1:53682/callback")))
+        .unwrap();
+    let expected = RequestAuth::oauth2(OAuth2 {
+        grant: OAuthGrant::AuthorizationCode,
+        auth_url: "https://auth/authorize".into(),
+        token_url: "https://auth/token".into(),
+        client_id: "desktop".into(),
+        redirect_port: Some(53682),
+        ..OAuth2::default()
+    });
+    assert_eq!(document.collection.requests[0].auth, expected);
+    assert!(!decoder.requires_removal);
+    assert_eq!(decoder.warnings, [] as [String; 0]);
+
+    let (postman, warnings) = encode(&document).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let back = Decoder::default()
+        .decode(&collection(postman["item"][0]["request"]["auth"].clone()))
+        .unwrap();
+    assert_eq!(back.collection.requests[0].auth, expected);
+
+    let mut decoder = Decoder::default();
+    let elsewhere = decoder
+        .decode(&collection(code("https://oauth.pstmn.io/v1/callback")))
+        .unwrap();
+    assert_eq!(
+        elsewhere.collection.requests[0]
+            .auth
+            .oauth2
+            .as_ref()
+            .unwrap()
+            .redirect_port,
+        None
+    );
+    assert!(
+        !decoder.requires_removal,
+        "sending is unchanged; signing in may need the server set up"
+    );
+    assert!(
+        decoder.warnings[0].contains("the redirect URI https://oauth.pstmn.io/v1/callback"),
+        "{:?}",
+        decoder.warnings
     );
 }

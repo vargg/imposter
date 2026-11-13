@@ -417,7 +417,7 @@ fn the_first_alternative_this_app_supports_is_chosen() {
     assert_eq!(
         warnings,
         [
-            "Security scheme \"oauth\": oauth2 flows other than client credentials are not supported; requests send the token collection variable as a bearer token",
+            "Security scheme \"oauth\": oauth2 flows other than client credentials and authorization code are not supported; requests send the token collection variable as a bearer token",
             "GET /: only one authentication scheme is used (oauth, not digest)",
             "Security scheme \"hoba\": HTTP hoba authentication is not supported",
             "Security scheme \"mtls\": set the client certificate in Settings",
@@ -793,4 +793,29 @@ fn a_client_credentials_flow_becomes_oauth2_with_the_scopes_asked() {
             ("client_secret", "")
         ])
     );
+}
+
+#[test]
+fn an_authorization_code_flow_becomes_a_sign_in() {
+    use imposter_core::model::{OAuth2, OAuthGrant};
+    let (request, warnings, _) = single(
+        json!({"/": {"get": {"security": [{"people": ["profile"]}]}}}),
+        json!({"securitySchemes": {"people": {"type": "oauth2", "flows": {
+            "authorizationCode": {"authorizationUrl": "https://auth.test/authorize",
+                "tokenUrl": "https://auth.test/token", "scopes": {"profile": ""}},
+        }}}}),
+    );
+    assert_eq!(
+        request.auth,
+        RequestAuth::oauth2(OAuth2 {
+            grant: OAuthGrant::AuthorizationCode,
+            auth_url: "https://auth.test/authorize".into(),
+            token_url: "https://auth.test/token".into(),
+            client_id: "{{client_id}}".into(),
+            client_secret: "{{client_secret}}".into(),
+            scope: "profile".into(),
+            ..OAuth2::default()
+        })
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
 }

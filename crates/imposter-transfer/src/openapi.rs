@@ -6,8 +6,8 @@ use std::collections::HashSet;
 
 use imposter_core::check::{Check, Op};
 use imposter_core::model::{
-    ApiKeyIn, BodyType, FormItem, OAuth2, ParamItem, RequestAuth, RequestTemplate, SavedValues,
-    Variables, is_method_token,
+    ApiKeyIn, BodyType, FormItem, OAuth2, OAuthGrant, ParamItem, RequestAuth, RequestTemplate,
+    SavedValues, Variables, is_method_token,
 };
 use imposter_core::select::Selector;
 use imposter_core::url;
@@ -193,6 +193,19 @@ fn client_credentials(scheme: &Map<String, Value>) -> Option<String> {
             .and_then(|flow| flow.get("tokenUrl")),
     );
     (!url.is_empty()).then_some(url)
+}
+
+/// The authorization and token URLs of an OAuth 2.0 scheme's authorization code flow,
+/// which a person signs in to.
+fn authorization_code(scheme: &Map<String, Value>) -> Option<(String, String)> {
+    let flow = scheme
+        .get("flows")
+        .and_then(|flows| flows.get("authorizationCode"))?;
+    let (auth, token) = (
+        text(flow.get("authorizationUrl")),
+        text(flow.get("tokenUrl")),
+    );
+    (!auth.is_empty() && !token.is_empty()).then_some((auth, token))
 }
 
 fn truthy(value: &Value) -> bool {
@@ -727,7 +740,9 @@ impl<'a> Walk<'a> {
                 text(scheme.get("in")).as_str(),
                 "header" | "query" | "cookie"
             ),
-            "oauth2" => client_credentials(scheme).is_some(),
+            "oauth2" => {
+                client_credentials(scheme).is_some() || authorization_code(scheme).is_some()
+            }
             _ => false,
         }
     }
@@ -787,9 +802,24 @@ impl<'a> Walk<'a> {
                     ..OAuth2::default()
                 }))))
             }
+            // A person signs in; an empty secret makes it a public client.
+            "oauth2" if authorization_code(scheme).is_some() => {
+                let (auth_url, token_url) = authorization_code(scheme).unwrap_or_default();
+                self.define("client_id", "");
+                self.define("client_secret", "");
+                Some(Credential::Auth(Box::new(RequestAuth::oauth2(OAuth2 {
+                    grant: OAuthGrant::AuthorizationCode,
+                    auth_url,
+                    token_url,
+                    client_id: "{{client_id}}".into(),
+                    client_secret: "{{client_secret}}".into(),
+                    scope: scopes.to_owned(),
+                    ..OAuth2::default()
+                }))))
+            }
             "oauth2" | "openIdConnect" => {
                 self.warn(format!(
-                    "Security scheme {name:?}: {kind} flows other than client credentials are not supported; requests send the token collection variable as a bearer token"
+                    "Security scheme {name:?}: {kind} flows other than client credentials and authorization code are not supported; requests send the token collection variable as a bearer token"
                 ));
                 Some(self.bearer())
             }

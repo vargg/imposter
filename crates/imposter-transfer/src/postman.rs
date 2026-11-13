@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use imposter_core::model::{
-    ApiKeyIn, BodyType, ClientAuth, Credentials, FormItem, FormKind, OAuth2, ParamItem,
+    ApiKeyIn, BodyType, ClientAuth, Credentials, FormItem, FormKind, OAuth2, OAuthGrant, ParamItem,
     RequestAuth, RequestTemplate, SavedValues, Variables,
 };
 use imposter_core::url;
@@ -301,11 +301,16 @@ impl Decoder {
                 .map(|(_, v)| v.clone())
                 .unwrap_or_default()
         };
-        if kind_text == "oauth2" && get("grant_type") != "client_credentials" {
-            let grant = match get("grant_type") {
-                grant if grant.is_empty() => "authorization_code".to_owned(),
-                grant => grant,
-            };
+        // Postman's own default is the authorization code grant; Imposter always adds PKCE.
+        let grant = match get("grant_type").as_str() {
+            "client_credentials" => Some(OAuthGrant::ClientCredentials),
+            "authorization_code" | "authorization_code_with_pkce" | "" => {
+                Some(OAuthGrant::AuthorizationCode)
+            }
+            _ => None,
+        };
+        if kind_text == "oauth2" && grant.is_none() {
+            let grant = get("grant_type");
             self.loss(location, &format!("OAuth 2.0 {grant} grants"), true);
             return RequestAuth::default();
         }
@@ -324,6 +329,13 @@ impl Decoder {
                 "accessToken",
                 "tokenType",
                 "tokenName",
+                "authUrl",
+                "redirect_uri",
+                // Imposter makes its own PKCE pair and state for each sign-in.
+                "challengeAlgorithm",
+                "code_verifier",
+                "state",
+                "useBrowser",
             ],
             _ => &["username", "password"],
         };
@@ -342,14 +354,31 @@ impl Decoder {
                     "body" => ClientAuth::Body,
                     _ => ClientAuth::Basic,
                 };
+                let redirect = get("redirect_uri");
+                let redirect_port = loopback_port(&redirect);
+                if grant == Some(OAuthGrant::AuthorizationCode)
+                    && !redirect.is_empty()
+                    && redirect_port.is_none()
+                {
+                    self.loss(
+                        location,
+                        &format!(
+                            "the redirect URI {redirect} (sign-in comes back to \
+                             http://127.0.0.1:<port>/callback, which the server must accept)"
+                        ),
+                        false,
+                    );
+                }
                 RequestAuth::oauth2(OAuth2 {
+                    grant: grant.unwrap_or_default(),
                     token_url: get("accessTokenUrl"),
                     client_id: get("clientId"),
                     client_secret: get("clientSecret"),
                     scope: get("scope"),
                     audience: get("audience"),
                     client_auth,
-                    ..OAuth2::default()
+                    auth_url: get("authUrl"),
+                    redirect_port,
                 })
             }
             "bearer" => RequestAuth::bearer(get("token")),
@@ -718,6 +747,18 @@ fn export_pairs(items: &[ParamItem]) -> Value {
     )
 }
 
+/// The port of a loopback redirect URI (`http://127.0.0.1:5000/…`, `http://localhost:5000/…`),
+/// the only kind a desktop sign-in can receive.
+fn loopback_port(uri: &str) -> Option<u16> {
+    let rest = uri.strip_prefix("http://")?;
+    let authority = rest.split('/').next()?;
+    let (host, port) = authority.rsplit_once(':')?;
+    matches!(host, "127.0.0.1" | "localhost" | "[::1]")
+        .then(|| port.parse().ok())
+        .flatten()
+        .filter(|port| *port != 0)
+}
+
 fn credentials(label: &str, credentials: Option<&Credentials>) -> Result<Value, PostmanError> {
     let credentials = credentials.ok_or(PostmanError::Credentials)?;
     Ok(json!({"type": label, label: [
@@ -752,7 +793,6 @@ fn export_auth(auth: &RequestAuth) -> Result<Value, PostmanError> {
         Some(AuthKind::Basic) => credentials("basic", auth.basic.as_ref())?,
         Some(AuthKind::Digest) => credentials("digest", auth.digest.as_ref())?,
         Some(AuthKind::OAuth2) => {
-            use imposter_core::model::OAuthGrant;
             let oauth = auth.oauth2.as_ref().ok_or(PostmanError::Credentials)?;
             let grant = match oauth.grant {
                 OAuthGrant::ClientCredentials => "client_credentials",

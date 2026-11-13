@@ -676,11 +676,15 @@ numbers, so both are excluded. Each logical change is its own commit.
     opens a browser and has no tokens of its own, so such a request is not sent there and
     says to send it from the app. Tests play the browser (`ImposterApp::script_browser`,
     the same seam idea as file dialogs).
-  - **Import and export:** Postman's `oauth2` with the client credentials grant maps
-    both ways (`client_authentication` header or body; its cached `accessToken` and
-    token labels are dropped without asking, a new token being fetched); other grants
-    are removed with consent until the authorization code grant arrives. OpenAPI's
-    `clientCredentials` flow becomes OAuth 2.0 auth (above).
+  - **Import and export:** Postman's `oauth2` maps both ways for client credentials
+    and the authorization code grant (`authorization_code`, `_with_pkce` or none, which
+    is Postman's default; exported as `_with_pkce`): `client_authentication` header or
+    body, a loopback `redirect_uri` as the redirect port. Its cached `accessToken`, token
+    labels, PKCE settings and `state` are dropped without asking, since Imposter makes its
+    own; another redirect URI is a warning, as sending is unchanged and only the server's
+    registered redirect may need adding. Other grants (implicit, password) are removed
+    with consent. OpenAPI's `clientCredentials` flow becomes client credentials, else
+    an `authorizationCode` flow a sign-in, with the scopes the operation asks for.
   Pinned by the module's unit tests (the form and Basic header, answers),
   `imposter-app/tests/oauth.rs` (fetch, reuse, refresh, a failed refresh, refusal, a
   missing secret, History, the command line, Copy as curl), `imposter-http/tests/sign_in.rs`

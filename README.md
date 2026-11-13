@@ -201,13 +201,13 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   environment and globals files. Anything Postman features Imposter cannot represent is listed
   before import; changes to how a request runs need explicit consent. Postman JavaScript
   scripts are removed only with consent; Postman exports report Rhai scripts they cannot
-  preserve. OAuth 2.0 client credentials travel both ways; other OAuth grants are removed
-  with consent.
+  preserve. OAuth 2.0 client credentials and authorization code travel both ways; other
+  OAuth grants are removed with consent.
 - OpenAPI 3.0, 3.1 and 3.2 import (JSON or YAML): one request per operation, grouped by tag,
   with the server URL in a `baseUrl` collection variable, path parameters as variables,
   example bodies from the document's examples or schemas, and its security schemes as auth
-  with empty secret variables to fill in (a client credentials flow becomes OAuth 2.0 with
-  the scopes the operation asks for). Each import creates a new collection.
+  with empty secret variables to fill in (a client credentials or authorization code flow
+  becomes OAuth 2.0 with the scopes the operation asks for). Each import creates a new collection.
 - Imports never overwrite: names that already exist get a suffix, existing globals win.
 - curl: paste a command (including the "Copy as cURL" output of Chrome and Firefox, for bash
   or cmd) to open it as a draft, or paste it over the whole URL field (Cmd/Ctrl+L, then
