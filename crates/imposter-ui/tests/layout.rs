@@ -229,6 +229,34 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, SEND);
     settle(&mut app.harness);
     check(app, "binary response");
+    // An event stream on its Events tab, one event chosen.
+    {
+        use imposter_app::core::sse::{Event, Stream, StreamEnd};
+        let event = |n: u64| Event {
+            at_ms: n * 1250,
+            event: "a-rather-long-event-name".into(),
+            id: n.to_string(),
+            data: format!(
+                "{{\"price\": {n}, \"note\": \"a long line of data that runs past the pane\"}}"
+            ),
+        };
+        let events: Vec<Event> = (1..40).map(event).collect();
+
+        let response = &mut app.harness.state_mut().state.response;
+        response.show(imposter_app::core::execution::Response {
+            status: 200,
+            reason: "OK".into(),
+            headers: vec![("content-type".into(), "text/event-stream".into())],
+            stream: Some(Stream {
+                end: StreamEnd::Cut,
+                events,
+                more_events: 3,
+            }),
+            ..Default::default()
+        });
+        response.event_selected = Some(1);
+    }
+    check(app, "event stream");
     click(&mut app.harness, "GET Broken");
     settle(&mut app.harness);
     // The Tests tab: checks with and without a path, one without an expected value, and a

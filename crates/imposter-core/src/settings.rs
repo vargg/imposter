@@ -213,6 +213,9 @@ impl AppSettings {
             key_file: Some(self.key_file.clone()),
             password: Some(self.password.clone()),
             download_limit: Some(self.download_limit),
+            // Only a request sets these; the caller keeps the request's own.
+            stream_seconds: None,
+            stream_events: None,
         }
     }
 

@@ -440,6 +440,16 @@ pub struct Options {
     pub password: Option<String>,
     /// KiB; `0` captures the whole body.
     pub download_limit: Option<u64>,
+    /// Stop listening to an event stream after this many seconds, a normal end. Only the
+    /// request sets it; left out when unset.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "positive_timeout"
+    )]
+    pub stream_seconds: Option<f64>,
+    /// Stop listening to an event stream after this many events, a normal end.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_events: Option<u64>,
 }
 
 impl Options {

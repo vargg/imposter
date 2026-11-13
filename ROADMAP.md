@@ -396,7 +396,9 @@ proceed with a supplied token. That pull does not drag SSE with it.
   line starts each with an empty one, as no session input exists yet.
 - Headless runs use isolated session state unless an explicit session input is
   supplied. They do not borrow the personal profile's cookies or tokens.
-- SSE, with the streaming decision above.
+- SSE, with the streaming decision above. Done (13 November 2026): events appear live on
+  an Events tab, a request may set a listening limit (seconds or events) that ends the
+  stream normally, and results carry the stream (version 2).
 
 Exit: the task that needed a second client for tokens, cookies or a stream no longer
 does. Tests cover refresh failure, a missing secret, jar isolation between

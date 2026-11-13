@@ -10,8 +10,11 @@ use crate::check::{CheckResult, Verdict};
 use crate::execution::{ExecutionRecord, Outcome, Response, ScriptReport};
 use crate::prepare::{PreparedBody, prepare};
 use crate::redact::Redactor;
+use crate::sse::{Event, Stream, StreamEnd};
 
 pub const VERSION: u32 = 1;
+/// The version of a result with an event stream (`RunResult::stream`).
+pub const STREAM_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Format {
@@ -86,11 +89,22 @@ impl RunOutcome {
     /// What a response says about the run. When several apply, the one that says the least
     /// was verified wins: a cancel, then a transport error, a script failure, a failed
     /// check, an undecided one, no checks at all.
+    /// An event stream that did not end normally never passes, whatever its checks say:
+    /// cut at the size limit it is not checked, timed out or broken a transport error,
+    /// stopped a cancel.
     pub fn of(response: &Response) -> Self {
         match response.outcome {
             Outcome::Cancelled => return Self::Cancelled,
             Outcome::TransportError => return Self::TransportError,
             Outcome::Response => {}
+        }
+        if let Some(stream) = &response.stream {
+            match stream.end {
+                StreamEnd::Closed | StreamEnd::Limit => {}
+                StreamEnd::Cut => return Self::NotChecked,
+                StreamEnd::Cancelled => return Self::Cancelled,
+                StreamEnd::TimedOut | StreamEnd::Failed => return Self::TransportError,
+            }
         }
         let tests = response
             .script
@@ -248,10 +262,44 @@ pub struct RunResult {
     pub request: Option<SentRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<ResponseHead>,
+    /// An event stream's end and events; a result with one is version 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream: Option<StreamResult>,
     pub limits: Limits,
     /// What else the reader should know, such as a History write that failed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+}
+
+/// How an event stream ended and the events it brought, as many as the excerpt limit
+/// holds in their data.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamResult {
+    pub end: StreamEnd,
+    /// Every event received; more than `events` holds when the excerpt limit cut it.
+    pub received: u64,
+    pub events: Vec<Event>,
+}
+
+impl StreamResult {
+    fn of(stream: &Stream, limit: usize) -> Self {
+        let mut used = 0;
+        let events = stream
+            .events
+            .iter()
+            .take_while(|event| {
+                used += event.data.len();
+                used <= limit
+            })
+            .cloned()
+            .collect();
+        Self {
+            end: stream.end,
+            received: stream.received(),
+            events,
+        }
+    }
 }
 
 /// What the caller knows about a run besides its record.
@@ -267,7 +315,7 @@ pub struct Meta {
 pub enum ReadError {
     #[error("Not an Imposter result: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("Result version {0} is not supported; this app reads version 1")]
+    #[error("Result version {0} is not supported; this app reads versions 1 and 2")]
     Version(u32),
 }
 
@@ -318,8 +366,26 @@ fn summary(outcome: RunOutcome, response: Option<&Response>, error: &str) -> Str
         } else {
             format!("{} {}", r.status, r.reason)
         };
-        format!("{status} · {} ms", milliseconds(r.elapsed).round())
+        let stream = r.stream.as_ref().map_or_else(String::new, |stream| {
+            format!(" · {} events, {}", stream.received(), stream.end.describe())
+        });
+        format!("{status} · {} ms{stream}", milliseconds(r.elapsed).round())
     };
+    // A stream that did not end normally says how it ended, whatever its checks.
+    if let Some(stream) = response
+        .and_then(|r| r.stream.as_ref())
+        .filter(|s| !s.end.is_normal())
+    {
+        let response = response.map(head).unwrap_or_default();
+        return match outcome {
+            RunOutcome::Cancelled => format!("Cancelled: {response}"),
+            RunOutcome::TransportError => format!("Transport error: {response}"),
+            _ => format!(
+                "Not checked: the stream was {} · {response}",
+                stream.end.describe()
+            ),
+        };
+    }
     let first_line = error.lines().next().unwrap_or_default();
     let Some(response) = response else {
         return match outcome {
@@ -411,9 +477,18 @@ impl RunResult {
             truncated: response.truncated,
             body: excerpt(&response.body, limit, redactor),
         });
+        let stream = response
+            .stream
+            .as_ref()
+            .map(|stream| StreamResult::of(stream, limit));
         Self {
             format: Format::ImposterResult,
-            version: VERSION,
+            // Readers of version 1 know no streams; other results stay readable by them.
+            version: if stream.is_some() {
+                STREAM_VERSION
+            } else {
+                VERSION
+            },
             summary: summary(outcome, Some(response), &error),
             outcome,
             run: meta.run,
@@ -426,6 +501,7 @@ impl RunResult {
             captures: response.captures.clone(),
             request,
             response: head,
+            stream,
             limits: meta.limits,
             notes: Vec::new(),
         }
@@ -450,6 +526,7 @@ impl RunResult {
             captures: Vec::new(),
             request: None,
             response: None,
+            stream: None,
             limits: meta.limits,
             notes: Vec::new(),
         }
@@ -480,7 +557,7 @@ impl RunResult {
 
     pub fn read(data: &[u8]) -> Result<Self, ReadError> {
         let result: Self = serde_json::from_slice(data)?;
-        if result.version != VERSION {
+        if result.version != VERSION && result.version != STREAM_VERSION {
             return Err(ReadError::Version(result.version));
         }
         Ok(result)
@@ -505,6 +582,11 @@ impl RunResult {
             checks: self.checks.clone(),
             captures: self.captures.clone(),
             script: self.script.clone(),
+            stream: self.stream.as_ref().map(|stream| Stream {
+                end: stream.end,
+                more_events: stream.received - stream.events.len() as u64,
+                events: stream.events.clone(),
+            }),
             ..Response::default()
         })
     }
@@ -542,6 +624,62 @@ mod tests {
                 error: script_error.into(),
             }),
             ..Response::default()
+        }
+    }
+
+    #[test]
+    fn a_stream_that_did_not_end_normally_never_passes() {
+        use RunOutcome as O;
+        let streamed = |end| {
+            let mut response = with(vec![Verdict::Passed], &[], "");
+            response.stream = Some(Stream {
+                end,
+                events: vec![Event {
+                    at_ms: 5,
+                    event: "message".into(),
+                    id: String::new(),
+                    data: "x".into(),
+                }],
+                more_events: 2,
+            });
+            response
+        };
+        let cases = [
+            (
+                StreamEnd::Closed,
+                O::Passed,
+                "Passed: 1 of 1 checks · 200 OK · 0 ms · 3 events, closed by the server",
+            ),
+            (
+                StreamEnd::Limit,
+                O::Passed,
+                "Passed: 1 of 1 checks · 200 OK · 0 ms · 3 events, stopped at its listening limit",
+            ),
+            (
+                StreamEnd::Cut,
+                O::NotChecked,
+                "Not checked: the stream was cut at the size limit · 200 OK · 0 ms · 3 events, cut at the size limit",
+            ),
+            (
+                StreamEnd::Cancelled,
+                O::Cancelled,
+                "Cancelled: 200 OK · 0 ms · 3 events, stopped",
+            ),
+            (
+                StreamEnd::TimedOut,
+                O::TransportError,
+                "Transport error: 200 OK · 0 ms · 3 events, timed out waiting for data",
+            ),
+            (
+                StreamEnd::Failed,
+                O::TransportError,
+                "Transport error: 200 OK · 0 ms · 3 events, broken off",
+            ),
+        ];
+        for (end, outcome, line) in cases {
+            let response = streamed(end);
+            assert_eq!(O::of(&response), outcome, "{end:?}");
+            assert_eq!(summary(outcome, Some(&response), ""), line, "{end:?}");
         }
     }
 

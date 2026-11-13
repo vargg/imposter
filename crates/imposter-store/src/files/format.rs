@@ -348,6 +348,10 @@ struct Settings {
     password: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     download_limit: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stream_seconds: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stream_events: Option<u64>,
 }
 
 impl Settings {
@@ -368,6 +372,8 @@ impl Settings {
             key_file: self.key_file.clone(),
             password: self.password.clone(),
             download_limit: self.download_limit,
+            stream_seconds: self.stream_seconds,
+            stream_events: self.stream_events,
         }
     }
 
@@ -384,6 +390,8 @@ impl Settings {
             key_file: options.key_file.clone(),
             password: options.password.clone(),
             download_limit: options.download_limit,
+            stream_seconds: options.stream_seconds,
+            stream_events: options.stream_events,
         }
     }
 }

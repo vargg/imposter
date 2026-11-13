@@ -400,6 +400,35 @@ numbers, so both are excluded. Each logical change is its own commit.
     an over-time chart are out of scope, as are distributed load, other protocols and
     JMeter's test-plan trees. Why: capacity testing belongs in specialist tools; this
     app keeps a one-request probe and fixes to its current behavior.
+- **Server-sent events are read as they arrive and judged by how they end**
+  (`core::sse`, the WHATWG rules for lines, fields and dispatch, fed chunks split
+  anywhere; `imposter_http::Listening`). Why: a body that appeared only at the end hid a
+  stream (M3), and a stream that never closes would never end a send.
+  - **Reading:** a `text/event-stream` answer is read chunk by chunk; its text is kept
+    as the body up to the capture limit, its events (at most `sse::MAX_EVENTS`, the rest
+    counted) on `Response::stream` with the milliseconds since the head, and they go to
+    the sink as they come (`execute_streaming`, the bridge's notifier, `Message::
+    StreamEvents`). Load runs read a stream as a body, frozen by the roadmap.
+  - **Ends** (`StreamEnd`): `Closed` by the server and `Limit`, the request's own
+    listening limit (`Options::stream_seconds`, `stream_events`; Settings tab, "Event
+    streams"; native version 5), are normal (user's choice: a limit the request sets is
+    not a failure). `Cut` at the capture limit, `TimedOut` (the read timeout between
+    chunks), `Failed` and `Cancelled` never pass (`RunOutcome::of`: not checked,
+    transport error, cancelled), keeping what arrived; then checks are undecided ("the
+    stream was cut at the size limit") and no capture or after-response script runs.
+  - **Results:** a stream adds `stream` (end, received, the events whose data fits the
+    excerpt limit) and makes the result version 2, which this app reads with 1; other
+    results stay version 1 for older readers. History keeps the stream with the body.
+  - **The app:** while events arrive the response pane lists them live in place of
+    "Sending…" and Send reads Stop; the response opens on its Events tab (virtualized
+    rows: time since the head, event, the data's first line; a chosen event shown whole
+    under the list); the status says how it ended ("Stream closed by the server · 42
+    events").
+  Pinned by the parser's unit tests (every split point of a stream),
+  `imposter-http/tests/sse.rs` (a hand-written server that waits for the test between
+  writes: live events, both limits, the cap, cancel, the timeout), `imposter-app/tests/
+  sse.rs`, `imposter-cli/tests/stream.rs` (each end's exit status),
+  `imposter-ui/tests/sse.rs` and the layout lint.
 - **Header order: values of one name keep their order; names go out in first-occurrence order,
   lowercased.** So `A, B, A` is sent as `a, a, b`. Why: hyper stores headers in a `HeaderMap`
   and its order-preserving extensions are private; writing our own HTTP/1.1 client is not
@@ -738,7 +767,7 @@ numbers, so both are excluded. Each logical change is its own commit.
   one file through both paths and compares the bytes received and the verdicts, and
   `imposter-app/tests/profile.rs`.
 - **A headless run reports one result schema** (`core::run_result::RunResult`, format
-  `imposter-result`, version 1), for the command line's JSON, result files and the
+  `imposter-result`, version 1, or 2 with an event stream), for the command line's JSON, result files and the
   desktop's view. It leads with a summary line and an outcome, then what ran (file SHA-256,
   request path, environment, input names, never values), checks, script tests, captures,
   the request as sent, the response head and body excerpts, and the limits it was made
@@ -1366,8 +1395,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   Version 4 adds captures stored as secrets (`Capture::secret`); `fit_version` picks it
   only for a document with one, and an older version holding one is refused, naming the
   request, as scripts are below 3. Version 5 adds API-key and OAuth 2.0 auth
-  (`RequestAuth::api_key`, `oauth2`) and a request's own cookie jar setting
-  (`Options::cookie_jar`), all left out of the JSON when unset, so other documents keep their bytes, by the same rule.
+  (`RequestAuth::api_key`, `oauth2`), a request's own cookie jar setting
+  (`Options::cookie_jar`) and event stream limits (`stream_seconds`, `stream_events`),
+  all left out of the JSON when unset, so other documents keep their bytes, by the same rule.
 - **The collections folder format** (`store::files::format`, format `imposter-project`,
   version 1): one YAML file per request, per folder (`folder.yaml` in its directory),
   per collection (`imposter.yaml` in its directory) and per environment

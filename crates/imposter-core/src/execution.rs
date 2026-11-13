@@ -53,6 +53,10 @@ pub struct Response {
     /// The after-response script's tests and error; `None` without a script.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub script: Option<ScriptReport>,
+    /// The events of a `text/event-stream` response and how it ended; the body holds the
+    /// stream's text as well, up to the capture limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<crate::sse::Stream>,
     /// What the scripts printed. Shown for the live response only: never stored, since
     /// printed values often hold tokens.
     #[serde(skip)]

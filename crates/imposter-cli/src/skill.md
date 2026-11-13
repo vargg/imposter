@@ -106,6 +106,15 @@ The exit status says the same as `outcome`:
 `not_checked` means a check could not be decided (for example a body cut at the capture
 limit); look at the reason before concluding anything.
 
+An event stream (`text/event-stream`) adds `stream`: `end` and its `events` (the result is
+then version 2). Only `closed` (the server ended it) and `limit` (the request's own
+listening limit, in its settings) are normal ends. `cut` at the capture limit is
+`not_checked`, `timed_out` and `failed` are `transport_error`, and `cancelled` is
+`cancelled`: none of them passes, whatever the checks say.
+
+A request that signs in through a browser (OAuth 2.0 authorization code) is not sent from
+the command line; ask the user to send it from the app.
+
 ## Proposing a check
 
 A check is part of the saved request. Propose it to the user, who adds it in the app

@@ -800,6 +800,25 @@ pub fn outcome_summary(response: &Response) -> (String, Tone) {
     match response.outcome {
         Outcome::Response => {
             let status = status(response);
+            if let Some(stream) = &response.stream {
+                use imposter_app::core::sse::StreamEnd;
+                let line = format!(
+                    "Stream {} · {} events",
+                    stream.end.describe(),
+                    stream.received()
+                );
+                let tone = match stream.end {
+                    StreamEnd::Closed | StreamEnd::Limit => status.tone,
+                    StreamEnd::Cut | StreamEnd::Cancelled => Tone::Warning,
+                    StreamEnd::TimedOut | StreamEnd::Failed => Tone::Error,
+                };
+                let failed = crate::checks::Tally::of_response(response).failed;
+                if failed > 0 {
+                    let checks = if failed == 1 { "check" } else { "checks" };
+                    return (format!("{line} · {failed} {checks} failed"), Tone::Error);
+                }
+                return (line, tone);
+            }
             let line = format!("{} · {time}", status.text);
             // Script tests and errors count as checks: one list, one number.
             let failed = crate::checks::Tally::of_response(response).failed;

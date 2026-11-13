@@ -186,6 +186,8 @@ impl NativeDocument {
                 Some((owner(), "OAuth 2.0 authentication"))
             } else if r.options.cookie_jar.is_some() {
                 Some((owner(), "the cookie jar setting"))
+            } else if r.options.stream_seconds.is_some() || r.options.stream_events.is_some() {
+                Some((owner(), "an event stream limit"))
             } else {
                 None
             }

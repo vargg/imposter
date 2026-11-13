@@ -129,6 +129,8 @@ pub enum OptionField {
     CertificatePath,
     KeyFile,
     Password,
+    StreamSeconds,
+    StreamEvents,
 }
 
 impl OptionField {
@@ -145,12 +147,14 @@ impl OptionField {
             Self::CertificatePath => "Client certificate",
             Self::KeyFile => "Private key",
             Self::Password => "Key password",
+            Self::StreamSeconds => "Listen for (seconds)",
+            Self::StreamEvents => "Stop after (events)",
         }
     }
 }
 
 /// Groups as the settings tab shows them.
-pub const OPTION_GROUPS: [(&str, &[OptionField]); 4] = [
+pub const OPTION_GROUPS: [(&str, &[OptionField]); 5] = [
     (
         "Network and redirects",
         &[OptionField::Timeout, OptionField::FollowRedirects],
@@ -174,6 +178,10 @@ pub const OPTION_GROUPS: [(&str, &[OptionField]); 4] = [
             OptionField::Password,
         ],
     ),
+    (
+        "Event streams",
+        &[OptionField::StreamSeconds, OptionField::StreamEvents],
+    ),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -185,6 +193,8 @@ pub struct OptionsForm {
     /// Text fields keep what the user typed; numbers are validated when read.
     pub timeout: Override<String>,
     pub download_limit: Override<String>,
+    pub stream_seconds: Override<String>,
+    pub stream_events: Override<String>,
     pub proxy_url: Override<String>,
     pub ca_bundle: Override<String>,
     pub certificate_path: Override<String>,
@@ -207,6 +217,14 @@ impl OptionsForm {
             timeout: Override::load(options.timeout.map(format_number).as_ref(), String::new()),
             download_limit: Override::load(
                 options.download_limit.map(|d| d.to_string()).as_ref(),
+                String::new(),
+            ),
+            stream_seconds: Override::load(
+                options.stream_seconds.map(format_number).as_ref(),
+                String::new(),
+            ),
+            stream_events: Override::load(
+                options.stream_events.map(|n| n.to_string()).as_ref(),
                 String::new(),
             ),
             proxy_url: text(&options.proxy_url),
@@ -241,6 +259,32 @@ impl OptionsForm {
                 Some,
             )
         });
+        let stream_seconds =
+            self.stream_seconds
+                .read()
+                .and_then(|text| match text.trim().parse::<f64>() {
+                    Ok(seconds) if seconds > 0.0 && seconds.is_finite() => Some(seconds),
+                    _ => {
+                        errors.push((
+                            OptionField::StreamSeconds,
+                            "Enter a positive number of seconds.",
+                        ));
+                        None
+                    }
+                });
+        let stream_events =
+            self.stream_events
+                .read()
+                .and_then(|text| match text.trim().parse::<u64>() {
+                    Ok(events) if events > 0 => Some(events),
+                    _ => {
+                        errors.push((
+                            OptionField::StreamEvents,
+                            "Enter a whole number above zero.",
+                        ));
+                        None
+                    }
+                });
         if !errors.is_empty() {
             return Err(InvalidOptions(errors));
         }
@@ -256,6 +300,8 @@ impl OptionsForm {
             key_file: self.key_file.read(),
             password: self.password.read(),
             download_limit,
+            stream_seconds,
+            stream_events,
         })
     }
 
@@ -272,6 +318,8 @@ impl OptionsForm {
             OptionField::CertificatePath => self.certificate_path.inherit,
             OptionField::KeyFile => self.key_file.inherit,
             OptionField::Password => self.password.inherit,
+            OptionField::StreamSeconds => self.stream_seconds.inherit,
+            OptionField::StreamEvents => self.stream_events.inherit,
         }
     }
 }
@@ -307,6 +355,9 @@ pub fn default_value(field: OptionField, defaults: &AppSettings) -> String {
         OptionField::KeyFile => text(&defaults.key_file),
         OptionField::Password if defaults.password.is_empty() => "Not configured".to_owned(),
         OptionField::Password => "••••••••".to_owned(),
+        // Only a request sets these.
+        OptionField::StreamSeconds => "until it closes".to_owned(),
+        OptionField::StreamEvents => "any number".to_owned(),
     }
 }
 

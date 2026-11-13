@@ -1380,6 +1380,7 @@ fn layout_switch(layout: &mut WorkspaceLayout, ui: &mut Ui) {
 }
 
 fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
+    let streaming = executing && !state.response.live_events.is_empty();
     let environment = active_environment(state).map(|e| e.name.clone());
     // A colored environment is named on Send itself ("Send to Prod"): the words on the
     // button clicked say where the request goes.
@@ -1419,6 +1420,8 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                     widgets::method_picker(ui, &mut pane.editor.method, &mut pane.custom_method);
                 divider(ui, height - 2.0);
                 let (label, fill) = match (&target, executing) {
+                    // A stream is listened to until stopped; nothing is called off.
+                    (_, true) if streaming => ("Stop".to_owned(), palette().warning),
                     (_, true) => ("Cancel".to_owned(), palette().warning),
                     (Some(name), false) => (format!("Send to {name}"), palette().accent),
                     (None, false) => ("Send".to_owned(), palette().accent),
@@ -2085,6 +2088,25 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
     }
     let now = ui.input(|i| i.time);
     if let Some(seconds) = state.sending_for(now) {
+        // A stream shows its events as they come, in place of the waiting card.
+        if !state.response.live_events.is_empty() {
+            let response = &mut state.response;
+            ui.label(tone_text(
+                format!(
+                    "Receiving events… {} so far · {seconds:.1} s · Stop ends the stream",
+                    response.live_events.len()
+                ),
+                Tone::Muted,
+            ));
+            crate::events::list(
+                ui,
+                "live",
+                &response.live_events,
+                &mut response.event_selected,
+                true,
+            );
+            return;
+        }
         let sending = format!("Sending… {seconds:.1} s");
         if state.response.preview.is_none() {
             ui.add_space(24.0);
@@ -2526,6 +2548,7 @@ pub fn response_body(
         tab,
         sent,
         sent_view,
+        event_selected,
         ..
     } = response_state;
     let Some((preview, headers)) = preview.as_ref() else {
@@ -2621,7 +2644,7 @@ pub fn response_body(
                 }
             });
         }
-        ResponseTab::Tests => {}
+        ResponseTab::Tests | ResponseTab::Events => {}
         ResponseTab::Request => {
             if let Some(text) = sent.as_ref() {
                 widgets::viewer_tools(ui, sent_view, text, "Copy request");
@@ -2637,11 +2660,20 @@ pub fn response_body(
         .map(crate::checks::Tally::of_response)
         .unwrap_or_default();
     let headers_count = response.as_ref().map_or(0, |r| r.headers.len());
-    let mut tabs = vec![
+    let stream = response.as_ref().and_then(|r| r.stream.as_ref());
+    let mut tabs = Vec::new();
+    if let Some(stream) = stream {
+        let received = usize::try_from(stream.received()).unwrap_or(usize::MAX);
+        tabs.push(
+            widgets::TabSpec::new(ResponseTab::Events, "Events")
+                .badge(count_badge(received, Tone::Muted)),
+        );
+    }
+    tabs.extend([
         widgets::TabSpec::new(ResponseTab::Body, "Body"),
         widgets::TabSpec::new(ResponseTab::Headers, "Headers")
             .badge(count_badge(headers_count, Tone::Muted)),
-    ];
+    ]);
     if !results.is_empty() || !captured.is_empty() || script.is_some() || !console.is_empty() {
         // Failures, when there are any: a red total read as that many failures.
         let failed = tally.failed;
@@ -2764,6 +2796,29 @@ pub fn response_body(
                 None,
             )
         }),
+        ResponseTab::Events => {
+            if let Some(stream) = response.as_ref().and_then(|r| r.stream.as_ref()) {
+                let more = if stream.more_events > 0 {
+                    format!(" · {} more not kept", stream.more_events)
+                } else {
+                    String::new()
+                };
+                ui.label(tone_text(
+                    format!(
+                        "{} events · stream {}{more}",
+                        stream.events.len(),
+                        stream.end.describe()
+                    ),
+                    if stream.end.is_normal() {
+                        Tone::Muted
+                    } else {
+                        Tone::Warning
+                    },
+                ));
+                crate::events::list(ui, id, &stream.events, event_selected, false);
+            }
+            None
+        }
     };
     if close_filter {
         filter.close();

@@ -9,6 +9,7 @@ use futures_util::StreamExt as _;
 use imposter_core::execution::{Response, SetCookie};
 use imposter_core::prepare::{Prepared, PreparedAuth, PreparedBody};
 use imposter_core::settings::AppSettings;
+use imposter_core::sse::{self, StreamEnd};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, LOCATION, SET_COOKIE, WWW_AUTHENTICATE};
 use reqwest::{Method, StatusCode, Url};
 use tokio_util::sync::CancellationToken;
@@ -523,17 +524,157 @@ impl Session {
         prepared: &Prepared,
         cancel: &CancellationToken,
     ) -> Result<Response, SendError> {
-        tokio::select! {
-            biased;
-            () = cancel.cancelled() => Err(SendError::Cancelled),
-            result = async {
-                let (response, set_cookies) = exchange(prepared, self).await?;
-                let mut response = capture(response, self.policy.capture_limit).await?;
-                response.set_cookies = set_cookies;
-                Ok(response)
-            } => result,
-        }
+        self.send_streaming(prepared, cancel, &Listening::default())
+            .await
     }
+
+    /// [`Session::send`], reading a `text/event-stream` answer as a stream: events go to
+    /// `listening`'s sink as they arrive, and how the stream ended is kept on the response,
+    /// which keeps what arrived even when cancelled or cut.
+    pub async fn send_streaming(
+        &self,
+        prepared: &Prepared,
+        cancel: &CancellationToken,
+        listening: &Listening,
+    ) -> Result<Response, SendError> {
+        let (response, set_cookies) = tokio::select! {
+            biased;
+            () = cancel.cancelled() => return Err(SendError::Cancelled),
+            result = exchange(prepared, self) => result?,
+        };
+        let streams = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(sse::is_event_stream);
+        let mut response = if streams {
+            read_stream(response, &self.policy, cancel, listening).await
+        } else {
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => return Err(SendError::Cancelled),
+                result = capture(response, self.policy.capture_limit) => result?,
+            }
+        };
+        response.set_cookies = set_cookies;
+        Ok(response)
+    }
+}
+
+/// Events as they arrive, for a live view.
+pub type EventSink = std::sync::Arc<dyn Fn(Vec<sse::Event>) + Send + Sync>;
+
+/// How long to listen to an event stream, and who sees its events as they come. A limit
+/// reached is a normal end; without one the stream is read until it closes, is cut at the
+/// capture limit, times out or is cancelled.
+#[derive(Clone, Default)]
+pub struct Listening {
+    pub duration: Option<Duration>,
+    pub events: Option<u64>,
+    pub sink: Option<EventSink>,
+}
+
+/// The status and headers of `response`, its body not yet read.
+fn head(response: &reqwest::Response) -> Response {
+    let status = response.status();
+    Response {
+        status: status.as_u16(),
+        reason: status.canonical_reason().unwrap_or_default().to_owned(),
+        headers: response
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_owned(),
+                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                )
+            })
+            .collect(),
+        ..Response::default()
+    }
+}
+
+/// Read an event stream until it ends, keeping its text as the body (up to the capture
+/// limit, where it is cut) and its events, which go to the sink as they arrive.
+async fn read_stream(
+    mut response: reqwest::Response,
+    policy: &Policy,
+    cancel: &CancellationToken,
+    listening: &Listening,
+) -> Response {
+    let started = std::time::Instant::now();
+    let mut answer = head(&response);
+    let limit = policy
+        .capture_limit
+        .map(|limit| usize::try_from(limit).unwrap_or(usize::MAX));
+    let deadline = listening
+        .duration
+        .map(|duration| tokio::time::Instant::now() + duration);
+    let until_deadline = async {
+        match deadline {
+            Some(at) => tokio::time::sleep_until(at).await,
+            None => std::future::pending().await,
+        }
+    };
+    tokio::pin!(until_deadline);
+    let mut parser = sse::Parser::default();
+    let (mut events, mut more_events, mut received) = (Vec::new(), 0_u64, 0_u64);
+    let end = loop {
+        let next = tokio::select! {
+            biased;
+            () = cancel.cancelled() => break StreamEnd::Cancelled,
+            () = &mut until_deadline => break StreamEnd::Limit,
+            next = response.chunk() => next,
+        };
+        let chunk = match next {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break StreamEnd::Closed,
+            Err(error) => {
+                break match SendError::from(error) {
+                    SendError::Failed {
+                        kind: ErrorKind::Timeout,
+                        ..
+                    } => StreamEnd::TimedOut,
+                    _ => StreamEnd::Failed,
+                };
+            }
+        };
+        let room = limit.map_or(usize::MAX, |limit| limit - answer.body.len());
+        let kept = &chunk[..chunk.len().min(room)];
+        answer.body.extend_from_slice(kept);
+        let at = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let mut delivered = Vec::new();
+        let mut reached = false;
+        for event in parser.feed(kept, at) {
+            received += 1;
+            if events.len() < sse::MAX_EVENTS {
+                events.push(event.clone());
+                delivered.push(event);
+            } else {
+                more_events += 1;
+            }
+            if listening.events.is_some_and(|max| received >= max) {
+                reached = true;
+                break;
+            }
+        }
+        if let Some(sink) = listening.sink.as_ref().filter(|_| !delivered.is_empty()) {
+            sink(delivered);
+        }
+        if reached {
+            break StreamEnd::Limit;
+        }
+        if kept.len() < chunk.len() {
+            answer.truncated = true;
+            break StreamEnd::Cut;
+        }
+    };
+    answer.stream = Some(sse::Stream {
+        end,
+        events,
+        more_events,
+    });
+    answer
 }
 
 /// Add the jar's cookies for `url` to the `Cookie` header, except those the header already
@@ -690,6 +831,18 @@ pub async fn send(
     cancel: &CancellationToken,
 ) -> Result<Response, SendError> {
     Session::new(policy.clone(), 0).send(prepared, cancel).await
+}
+
+/// [`send`] with an event stream read as [`Listening`] says.
+pub async fn send_streaming(
+    prepared: &Prepared,
+    policy: &Policy,
+    cancel: &CancellationToken,
+    listening: &Listening,
+) -> Result<Response, SendError> {
+    Session::new(policy.clone(), 0)
+        .send_streaming(prepared, cancel, listening)
+        .await
 }
 
 /// Collect a body stream; for tests and previews of what an upload sends.

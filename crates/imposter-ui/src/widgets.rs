@@ -2045,6 +2045,8 @@ pub fn options_form(
                     OptionField::CertificatePath => text(ui, &mut options.certificate_path, vars),
                     OptionField::KeyFile => text(ui, &mut options.key_file, vars),
                     OptionField::Password => text(ui, &mut options.password, vars),
+                    OptionField::StreamSeconds => text(ui, &mut options.stream_seconds, vars),
+                    OptionField::StreamEvents => text(ui, &mut options.stream_events, vars),
                 };
             });
             if let Some((_, message)) = errors.iter().find(|(f, _)| *f == field) {

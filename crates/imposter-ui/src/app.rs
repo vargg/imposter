@@ -244,6 +244,11 @@ pub enum Message {
         generation: u64,
         result: Result<Box<Executed>, NotSent>,
     },
+    /// Events of the stream a send is reading, as they arrive.
+    StreamEvents {
+        generation: u64,
+        events: Vec<imposter_app::core::sse::Event>,
+    },
     Runs {
         generation: u64,
         result: Result<Vec<ExecutionSummary>, Failure>,
@@ -847,6 +852,8 @@ pub enum ResponseTab {
     Tests,
     /// The request as sent, generated values included; offered once one was sent.
     Request,
+    /// An event stream's events; offered for a `text/event-stream` response.
+    Events,
 }
 
 pub struct ResponsePane {
@@ -872,6 +879,10 @@ pub struct ResponsePane {
     pub sent_view: ViewerState,
     /// Identifies the shown response, so a late filter result for another one is dropped.
     shown: u64,
+    /// An event stream's events as they arrive, while its send runs.
+    pub live_events: Vec<imposter_app::core::sse::Event>,
+    /// The event whose whole text is shown under the list.
+    pub event_selected: Option<usize>,
 }
 
 /// The JSONPath filter of a response viewer. One run is in flight at a time; when it ends,
@@ -951,6 +962,8 @@ impl Default for ResponsePane {
             sent: None,
             sent_view: ViewerState::new(),
             shown: 0,
+            live_events: Vec::new(),
+            event_selected: None,
         }
     }
 }
@@ -968,6 +981,14 @@ impl ResponsePane {
         {
             self.tab = ResponseTab::Body;
         }
+        // A stream opens on its events, as it was shown while it ran.
+        if response.stream.is_some() {
+            self.tab = ResponseTab::Events;
+        } else if self.tab == ResponseTab::Events {
+            self.tab = ResponseTab::Body;
+        }
+        self.live_events.clear();
+        self.event_selected = None;
         self.response = Some(response);
         self.blocked = None;
         self.sent = None;
@@ -1670,6 +1691,13 @@ impl ImposterApp {
             Message::Saved { id, result } => self.saved(id, result),
             Message::DraftSaved { generation, result } => self.draft_saved(generation, result),
             Message::Executed { generation, result } => self.executed(generation, result),
+            Message::StreamEvents { generation, events } => {
+                if generation == self.state.generation && self.state.execution.is_some() {
+                    let live = &mut self.state.response.live_events;
+                    let room = imposter_app::core::sse::MAX_EVENTS.saturating_sub(live.len());
+                    live.extend(events.into_iter().take(room));
+                }
+            }
             Message::Runs { generation, result } => {
                 if generation == self.state.generation {
                     match result {
@@ -3041,8 +3069,13 @@ impl ImposterApp {
         };
         let generation = self.state.generation;
         let db = self.db.clone();
+        let notify = self.bridge.notifier();
+        let sink: imposter_app::http::EventSink = Arc::new(move |events| {
+            notify(Message::StreamEvents { generation, events });
+        });
+        self.state.response.live_events.clear();
         let task = self.bridge.spawn(move |cancel| async move {
-            let result = executor::execute(&db, request, cancel).await;
+            let result = executor::execute_streaming(&db, request, cancel, Some(sink)).await;
             Message::Executed {
                 generation,
                 result: result.map(Box::new).map_err(NotSent::from),

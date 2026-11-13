@@ -156,10 +156,10 @@ fn a_result_reads_back_and_shows_as_a_response() {
     assert!(!String::from_utf8_lossy(&response.body).contains(SECRET));
 
     let mut newer = serde_json::to_value(&result).unwrap();
-    newer["version"] = 2.into();
+    newer["version"] = 3.into();
     assert!(matches!(
         RunResult::read(newer.to_string().as_bytes()),
-        Err(ReadError::Version(2))
+        Err(ReadError::Version(3))
     ));
     assert!(matches!(
         RunResult::read(br#"{"format": "imposter"}"#),
@@ -195,4 +195,43 @@ fn unsent_and_failed_runs_say_why() {
     assert_eq!(result.error, "Connection refused (os error 61)");
     assert_eq!(result.response, None);
     assert!(result.request.is_some(), "the request it tried is kept");
+}
+
+/// A stream makes the result version 2, keeps the events its excerpt holds, and shows
+/// again as a response with its stream; a result without one stays version 1.
+#[test]
+fn a_stream_makes_version_2_and_reads_back() {
+    use imposter_core::sse::{Event, Stream, StreamEnd};
+    let redactor = redactor();
+    assert_eq!(
+        RunResult::sent(&record(), meta(), &redactor).version,
+        1,
+        "older readers keep reading results without a stream"
+    );
+    let mut streamed = record();
+    let event = |n: u64| Event {
+        at_ms: n,
+        event: "message".into(),
+        id: String::new(),
+        data: "x".repeat(30),
+    };
+    streamed.response.stream = Some(Stream {
+        end: StreamEnd::Closed,
+        events: (0..5).map(event).collect(),
+        more_events: 1,
+    });
+    let result = RunResult::sent(&streamed, meta(), &redactor);
+    assert_eq!(result.version, 2);
+    let stream = result.stream.as_ref().unwrap();
+    assert_eq!(stream.received, 6);
+    assert_eq!(
+        stream.events.len(),
+        2,
+        "as many as 64 bytes of excerpt hold"
+    );
+
+    let read = RunResult::read(result.to_json().as_bytes()).unwrap();
+    let shown = read.response().unwrap().stream.unwrap();
+    assert_eq!(shown.end, StreamEnd::Closed);
+    assert_eq!((shown.events.len(), shown.received()), (2, 6));
 }

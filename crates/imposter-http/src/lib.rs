@@ -8,6 +8,8 @@ pub mod tls;
 pub mod transport;
 pub mod upload;
 
-pub use transport::{ErrorKind, Measured, Policy, SendError, Session, send};
+pub use transport::{
+    ErrorKind, EventSink, Listening, Measured, Policy, SendError, Session, send, send_streaming,
+};
 
 pub mod mock;

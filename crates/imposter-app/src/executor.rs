@@ -7,7 +7,7 @@ use imposter_core::capture::{Destination, Write};
 use imposter_core::execution::{ExecutionRecord, Outcome, Response, Timestamp};
 use imposter_core::generate::Entropy;
 use imposter_core::ids::ExecutionId;
-use imposter_core::model::{Request, RequestTemplate, SavedValues, Variables};
+use imposter_core::model::{Options, Request, RequestTemplate, SavedValues, Variables};
 use imposter_core::prepare::prepare;
 use imposter_core::settings::AppSettings;
 use imposter_core::variables::{
@@ -331,7 +331,11 @@ pub fn resolve_with(
         .settings
         .resolve_for_url(&url, &request.template.options);
     let mut template = request.template.clone();
-    template.options = settings.as_options();
+    template.options = Options {
+        stream_seconds: request.template.options.stream_seconds,
+        stream_events: request.template.options.stream_events,
+        ..settings.as_options()
+    };
     let template = resolve_template(&template, &values).map_err(|error| match error {
         imposter_core::variables::ResolveError::Unresolved(names) => {
             ExecuteError::Unresolved(names.into_iter().collect())
@@ -520,17 +524,28 @@ pub async fn execute(
     request: Request,
     cancel: CancellationToken,
 ) -> Result<Executed, ExecuteError> {
+    execute_streaming(store, request, cancel, None).await
+}
+
+/// [`execute`], an event stream's events going to `sink` as they arrive.
+pub async fn execute_streaming(
+    store: &StoreHandle,
+    request: Request,
+    cancel: CancellationToken,
+    sink: Option<imposter_http::EventSink>,
+) -> Result<Executed, ExecuteError> {
     // Boxed for the same reason as [`run`].
-    Box::pin(execute_boxed(store, request, cancel)).await
+    Box::pin(execute_boxed(store, request, cancel, sink)).await
 }
 
 async fn execute_boxed(
     store: &StoreHandle,
     request: Request,
     cancel: CancellationToken,
+    sink: Option<imposter_http::EventSink>,
 ) -> Result<Executed, ExecuteError> {
     let inputs = inputs(store, &request).await?;
-    let ran = match run(&inputs, request, cancel).await {
+    let ran = match run_streaming(&inputs, request, cancel, sink).await {
         Ok(ran) => ran,
         Err(ExecuteError::SignIn {
             reason,
@@ -647,15 +662,26 @@ pub async fn run(
     request: Request,
     cancel: CancellationToken,
 ) -> Result<Ran, ExecuteError> {
+    run_streaming(inputs, request, cancel, None).await
+}
+
+/// [`run`], an event stream's events going to `sink` as they arrive.
+pub async fn run_streaming(
+    inputs: &Inputs,
+    request: Request,
+    cancel: CancellationToken,
+    sink: Option<imposter_http::EventSink>,
+) -> Result<Ran, ExecuteError> {
     // Boxed: scripts, the token request and the exchange keep a large state, and inline it
     // pushed every caller's future past clippy's `large_futures` limit.
-    Box::pin(run_boxed(inputs, request, cancel)).await
+    Box::pin(run_boxed(inputs, request, cancel, sink)).await
 }
 
 async fn run_boxed(
     inputs: &Inputs,
     request: Request,
     cancel: CancellationToken,
+    sink: Option<imposter_http::EventSink>,
 ) -> Result<Ran, ExecuteError> {
     let chain = inputs.scripts.with_request(&request).compile()?;
     let (mut resolved, settings, mut values) =
@@ -690,27 +716,56 @@ async fn run_boxed(
 
     let started = Instant::now();
     policy.jar = inputs.jar.clone().filter(|_| settings.cookie_jar);
-    let mut response = match imposter_http::send(&prepared, &policy, &cancel).await {
-        Ok(response) => response,
-        Err(SendError::Cancelled) => {
-            Response::failure(Outcome::Cancelled, "Cancelled", "Request cancelled")
-        }
-        Err(SendError::Failed { kind, message }) => {
-            Response::failure(Outcome::TransportError, kind.as_str(), message)
-        }
+    // The request's own listening limits; a stream without them is read until it ends.
+    let listening = imposter_http::Listening {
+        duration: request
+            .template
+            .options
+            .stream_seconds
+            .and_then(|seconds| std::time::Duration::try_from_secs_f64(seconds).ok()),
+        events: request.template.options.stream_events,
+        sink,
     };
+    let mut response =
+        match imposter_http::send_streaming(&prepared, &policy, &cancel, &listening).await {
+            Ok(response) => response,
+            Err(SendError::Cancelled) => {
+                Response::failure(Outcome::Cancelled, "Cancelled", "Request cancelled")
+            }
+            Err(SendError::Failed { kind, message }) => {
+                Response::failure(Outcome::TransportError, kind.as_str(), message)
+            }
+        };
     response.elapsed = started.elapsed().as_secs_f64();
     response.checks = imposter_core::check::evaluate(&request.template.checks, &response, &values);
+    // A stream that did not end as the request meant leaves its checks undecided, and
+    // nothing is taken from it: what came after is unknown.
+    let broken = response
+        .stream
+        .as_ref()
+        .map(|stream| stream.end)
+        .filter(|end| !end.is_normal());
+    if let Some(end) = broken {
+        for check in &mut response.checks {
+            check.verdict = imposter_core::check::Verdict::Unchecked(format!(
+                "the stream was {}",
+                end.describe()
+            ));
+        }
+    }
     let destination = inputs.destination();
-    let (captured, mut writes) =
-        imposter_core::capture::evaluate(&request.template.captures, &response, destination);
+    let (captured, mut writes) = if broken.is_some() {
+        (Vec::new(), Vec::new())
+    } else {
+        imposter_core::capture::evaluate(&request.template.captures, &response, destination)
+    };
     response.captures = captured;
     // The after-response script sees the before-sending script's sets, and runs only on a
     // response, as checks do.
     let mut sets = before.sets;
     let mut secret_sets = before.secret_sets;
     response.console = before.console;
-    if chain.has_after() && response.outcome == Outcome::Response {
+    if chain.has_after() && response.outcome == Outcome::Response && broken.is_none() {
         for (name, value) in &sets {
             values.insert(name.clone(), value.clone());
         }

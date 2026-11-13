@@ -15,6 +15,7 @@ pub mod run_report;
 pub mod run_result;
 pub mod select;
 pub mod settings;
+pub mod sse;
 pub mod url;
 pub mod variables;
 

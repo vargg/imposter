@@ -37,6 +37,11 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   included. Your own cookie rows win over the jar's. Turn it off in Settings (**Keep
   cookies**) or per request. Runs keep their cookies to themselves, and the command line
   starts each run with an empty jar.
+- Server-sent events: a `text/event-stream` response shows its events as they arrive on an
+  **Events** tab (time, event, data; choose one to read it whole), and Send becomes
+  **Stop**. A request can stop listening after some seconds or events (its Settings tab,
+  **Event streams**), which ends the stream normally; checks then decide on what arrived.
+  A stream cut at the response limit, timed out or stopped never passes.
 - Per-request settings that override the application defaults: timeout, redirects,
   certificate verification, cookies, the cookie jar, proxy, CA bundle, client certificate
   and key, and response size limit.
