@@ -630,8 +630,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   History without a secret key), the native decode cases, `postman_golden.rs`,
   `openapi.rs`, the project golden folder, `imposter-ui/tests/widgets.rs` and the layout
   lint.
-- **OAuth 2.0 client credentials: the executor gets the token, the transport never
-  sees OAuth** (`imposter_http::oauth` asks the token endpoint, `imposter_app::oauth`
+- **OAuth 2.0 (client credentials, authorization code with PKCE): the executor gets the
+  token, the transport never sees OAuth** (`imposter_http::oauth` asks the token endpoint, `imposter_app::oauth`
   decides which token to send). Hand-written, not the `oauth2` crate, which pins its own
   reqwest: the token request goes through the request's own `Policy` (TLS, proxy,
   timeout; no cookie jar) and is a form POST of a few fields (RFC 6749 4.4, 6).
@@ -662,6 +662,20 @@ numbers, so both are excluded. Each logical change is its own commit.
     and after a send. "Get new token" asks for one now and keeps it (`oauth::fetch`,
     without scripts: it is for the settings as they stand); "Clear token" forgets it
     without asking, since the next send gets a new one (a cache, not the user's data).
+  - **Authorization code** (`imposter_http::sign_in`, RFC 8252's loopback redirect):
+    signing in is an explicit act, never part of a send. "Sign in" (the Auth tab, or the
+    "Not sent" card) listens on 127.0.0.1 (the redirect port, or any free one) before
+    opening the system browser (`open` crate, pure Rust; eframe's `open_url` does nothing
+    here) at the authorization URL with PKCE S256 and a random `state`, waits up to five
+    minutes or Cancel, refuses another sign-in's `state`, reports the server's `error`,
+    then exchanges the code with the verifier. The browser's page is plain text, so
+    nothing the server sent runs in it. A public client (no secret) only names itself in
+    the form. Send uses the cached token and refreshes it; with none, or one that cannot
+    be refreshed, it is not sent ("Sign in to get a token: …", `ExecuteError::SignIn`),
+    and the dead token is forgotten so the tab says to sign in. The command line never
+    opens a browser and has no tokens of its own, so such a request is not sent there and
+    says to send it from the app. Tests play the browser (`ImposterApp::script_browser`,
+    the same seam idea as file dialogs).
   - **Import and export:** Postman's `oauth2` with the client credentials grant maps
     both ways (`client_authentication` header or body; its cached `accessToken` and
     token labels are dropped without asking, a new token being fetched); other grants
@@ -669,7 +683,9 @@ numbers, so both are excluded. Each logical change is its own commit.
     `clientCredentials` flow becomes OAuth 2.0 auth (above).
   Pinned by the module's unit tests (the form and Basic header, answers),
   `imposter-app/tests/oauth.rs` (fetch, reuse, refresh, a failed refresh, refusal, a
-  missing secret, History, the command line, Copy as curl), `imposter-store/tests/oauth.rs`,
+  missing secret, History, the command line, Copy as curl), `imposter-http/tests/sign_in.rs`
+  and `imposter-app/tests/sign_in.rs` (PKCE against the RFC 7636 example, `state`,
+  timeout, cancel, a failed refresh, the command line), `imposter-store/tests/oauth.rs`,
   the native decode cases, the project golden folder, `postman_golden.rs`, `openapi.rs`,
   `imposter-ui/tests/widgets.rs`, `imposter-ui/tests/oauth.rs` and the layout lint.
 - **Digest is answered once per hop** (MD5, SHA, SHA-256, SHA-512, `-sess`, qop `auth`; not

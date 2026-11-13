@@ -1789,11 +1789,37 @@ fn oauth_rows(
     width: f32,
     vars: &mut VarUi,
 ) -> bool {
-    use imposter_app::core::model::ClientAuth;
+    use imposter_app::core::model::{ClientAuth, OAuthGrant};
     let mut changed = false;
-    ui.label("Grant");
-    ui.label("Client credentials");
+    let caption = ui.label("Grant");
+    let grants = [
+        (OAuthGrant::ClientCredentials, "Client credentials"),
+        (OAuthGrant::AuthorizationCode, "Authorization code"),
+    ];
+    let shown = grants
+        .iter()
+        .find(|(grant, _)| *grant == oauth.grant)
+        .map_or("Client credentials", |(_, label)| label);
+    // Cut to the field's width in a narrow pane; the hover text has it whole.
+    egui::ComboBox::from_id_salt("oauth grant")
+        .selected_text(shown)
+        .width(width.min(200.0))
+        .truncate()
+        .show_ui(ui, |ui| {
+            for (grant, label) in grants {
+                changed |= ui.selectable_value(&mut oauth.grant, grant, label).changed();
+            }
+        })
+        .response
+        .on_hover_text(format!("{shown}. Client credentials: a token for the client, fetched on Send. Authorization code: you sign in in the browser, with PKCE."))
+        .labelled_by(caption.id);
     ui.end_row();
+    let signs_in = oauth.grant == OAuthGrant::AuthorizationCode;
+    if signs_in {
+        ui.label("Auth URL");
+        changed |= var_edit(ui, &mut oauth.auth_url, "Auth URL", width, false, vars).changed();
+        ui.end_row();
+    }
     for (label, field, secret) in [
         ("Token URL", &mut oauth.token_url, false),
         ("Client ID", &mut oauth.client_id, false),
@@ -1828,6 +1854,29 @@ fn oauth_rows(
         .on_hover_text("How the client ID and secret reach the token endpoint: a Basic header, or fields in the form")
         .labelled_by(caption.id);
     ui.end_row();
+    if signs_in {
+        let caption = ui.label("Redirect port");
+        let mut port = oauth.redirect_port.unwrap_or(0);
+        let field = ui
+            .add(
+                egui::DragValue::new(&mut port)
+                    .range(0..=65535)
+                    .custom_formatter(|port, _| {
+                        if port == 0.0 {
+                            "any".to_owned()
+                        } else {
+                            format!("{port}")
+                        }
+                    }),
+            )
+            .on_hover_text("The browser comes back to http://127.0.0.1:<port>/callback. any: a free port; set one when the server only accepts a registered redirect URI.")
+            .labelled_by(caption.id);
+        if field.changed() {
+            oauth.redirect_port = (port != 0).then_some(port);
+            changed = true;
+        }
+        ui.end_row();
+    }
     changed
 }
 

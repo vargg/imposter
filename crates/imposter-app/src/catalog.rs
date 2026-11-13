@@ -183,6 +183,9 @@ pub enum AuthView {
         scope: String,
         #[serde(skip_serializing_if = "String::is_empty")]
         audience: String,
+        /// Where a person signs in (authorization code).
+        #[serde(skip_serializing_if = "String::is_empty")]
+        auth_url: String,
     },
 }
 
@@ -278,6 +281,7 @@ fn auth(template: &RequestTemplate) -> AuthView {
             client_secret: shown(&oauth.client_secret),
             scope: oauth.scope.clone(),
             audience: oauth.audience.clone(),
+            auth_url: oauth.auth_url.clone(),
         },
         Ok(None) | Err(_) => AuthView::None,
     }

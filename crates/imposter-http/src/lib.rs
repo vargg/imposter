@@ -3,6 +3,7 @@
 pub mod cookies;
 pub mod digest;
 pub mod oauth;
+pub mod sign_in;
 pub mod tls;
 pub mod transport;
 pub mod upload;

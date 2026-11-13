@@ -21,6 +21,7 @@ pub const MARGIN: std::time::Duration = std::time::Duration::from_secs(30);
 pub fn key(oauth: &OAuth2) -> String {
     let grant = match oauth.grant {
         OAuthGrant::ClientCredentials => "client_credentials",
+        OAuthGrant::AuthorizationCode => "authorization_code",
     };
     let mut hash = Sha256::new();
     for part in [
@@ -118,16 +119,31 @@ fn stored(key: String, token: Token, now: i64) -> StoredToken {
     }
 }
 
+/// Why no token could be had.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TokenFailure {
+    /// The token endpoint refused, or could not be reached.
+    Request(OAuthError),
+    /// A person must sign in (authorization code grant), never done during a send: there
+    /// is no token, or it expired and could not be refreshed. `forget` names the cached
+    /// token that no longer works.
+    SignIn {
+        reason: String,
+        forget: Option<String>,
+    },
+}
+
 /// The token to send for `oauth` (values resolved): the cached one while good, else a
 /// refreshed one, else a new one. A refresh that fails falls back to a new token, which the
-/// client credentials grant can always ask for. What is fetched joins `tokens`.
+/// client credentials grant can always ask for; with the authorization code grant a person
+/// must sign in again. What is fetched joins `tokens`.
 pub async fn token(
     oauth: &OAuth2,
     tokens: &SharedTokens,
     policy: &Policy,
     cancel: &CancellationToken,
     now: i64,
-) -> Result<Obtained, OAuthError> {
+) -> Result<Obtained, TokenFailure> {
     let key = key(oauth);
     let cached = tokens.get(&key);
     if let Some(token) = cached.as_ref().filter(|t| good(t, now)) {
@@ -136,11 +152,21 @@ pub async fn token(
             fetched: false,
         });
     }
+    let signs_in = oauth.grant == OAuthGrant::AuthorizationCode;
+    let had_token = cached.is_some();
     let refreshed = match cached.and_then(|t| t.refresh) {
         Some(refresh) => {
             match oauth::request(oauth, Grant::Refresh(&refresh), policy, cancel).await {
                 Ok(token) => Some(token),
-                Err(OAuthError::Cancelled) => return Err(OAuthError::Cancelled),
+                Err(OAuthError::Cancelled) => {
+                    return Err(TokenFailure::Request(OAuthError::Cancelled));
+                }
+                Err(error) if signs_in => {
+                    return Err(TokenFailure::SignIn {
+                        reason: format!("the token expired and could not be refreshed ({error})"),
+                        forget: Some(key),
+                    });
+                }
                 Err(error) => {
                     tracing::info!(%error, "refreshing an OAuth token failed; asking for a new one");
                     None
@@ -151,7 +177,19 @@ pub async fn token(
     };
     let token = match refreshed {
         Some(token) => token,
-        None => oauth::request(oauth, Grant::ClientCredentials, policy, cancel).await?,
+        None if signs_in => {
+            return Err(TokenFailure::SignIn {
+                reason: if had_token {
+                    "the token expired".to_owned()
+                } else {
+                    "there is no token yet".to_owned()
+                },
+                forget: had_token.then_some(key),
+            });
+        }
+        None => oauth::request(oauth, Grant::ClientCredentials, policy, cancel)
+            .await
+            .map_err(TokenFailure::Request)?,
     };
     let token = stored(key, token, now);
     tokens.put(token.clone());
@@ -274,22 +312,89 @@ pub async fn state(
     })
 }
 
-/// Ask for a new token for `request` now and keep it, as Send would; the cached one, if
-/// any, is replaced. Scripts do not run: the token is for the settings as they stand.
+/// Opens a URL in the system browser; tests answer the sign-in themselves.
+pub type OpenBrowser = Box<dyn FnOnce(&str) -> std::io::Result<()> + Send>;
+
+/// Get a new token for `request` now and keep it, replacing the cached one: from the
+/// token endpoint (client credentials), or by signing in in the browser `open_browser`
+/// opens (authorization code). Scripts do not run: the token is for the settings as they
+/// stand.
 pub async fn fetch(
     store: &imposter_store::StoreHandle,
     request: &imposter_core::model::Request,
     cancel: &CancellationToken,
+    open_browser: OpenBrowser,
     now: i64,
 ) -> Result<TokenState, crate::executor::ExecuteError> {
     use crate::executor::ExecuteError;
     let Some((oauth, inputs, policy)) = resolved(store, request).await? else {
         return Ok(TokenState::Missing);
     };
+    if oauth.grant == OAuthGrant::AuthorizationCode {
+        return sign_in_with(store, &oauth, &inputs, &policy, cancel, open_browser, now).await;
+    }
     let token = oauth::request(&oauth, Grant::ClientCredentials, &policy, cancel)
         .await
         .map_err(|error| ExecuteError::Token(format!("Token request failed: {error}")))?;
     let token = stored(key(&oauth), token, now);
+    let expires_at = token.expires_at;
+    let environment = inputs.context.environment_id();
+    store
+        .call(move |db| imposter_store::oauth::put(db, environment, &token))
+        .await?;
+    Ok(TokenState::Good { expires_at })
+}
+
+/// Sign in for `oauth` (resolved): listen on the loopback address, open the authorization
+/// URL in the browser, wait for the code (up to `sign_in::SIGN_IN_TIME`, or Cancel), then
+/// exchange it with the PKCE verifier and keep the token.
+async fn sign_in_with(
+    store: &imposter_store::StoreHandle,
+    oauth: &OAuth2,
+    inputs: &crate::executor::Inputs,
+    policy: &Policy,
+    cancel: &CancellationToken,
+    open_browser: OpenBrowser,
+    now: i64,
+) -> Result<TokenState, crate::executor::ExecuteError> {
+    use crate::executor::ExecuteError;
+    use imposter_http::sign_in;
+    let failed = |error: OAuthError| match error {
+        OAuthError::Cancelled => ExecuteError::Token("Sign-in cancelled".to_owned()),
+        error => ExecuteError::Token(format!("Sign-in failed: {error}")),
+    };
+    if oauth.auth_url.is_empty() {
+        return Err(ExecuteError::Token(
+            "Enter the authorization URL to sign in".to_owned(),
+        ));
+    }
+    let callback = sign_in::Callback::bind(oauth.redirect_port)
+        .await
+        .map_err(failed)?;
+    let redirect_uri = callback.redirect_uri();
+    let pkce = sign_in::pkce().map_err(failed)?;
+    let state = sign_in::state().map_err(failed)?;
+    let url = sign_in::authorization_url(oauth, &redirect_uri, &state, &pkce);
+    open_browser(&url).map_err(|error| {
+        ExecuteError::Token(format!("The browser could not be opened: {error}"))
+    })?;
+    let code = callback
+        .code(&state, cancel, sign_in::SIGN_IN_TIME)
+        .await
+        .map_err(failed)?;
+    let grant = Grant::AuthorizationCode {
+        code: &code,
+        redirect_uri: &redirect_uri,
+        verifier: &pkce.verifier,
+    };
+    let token =
+        oauth::request(oauth, grant, policy, cancel)
+            .await
+            .map_err(|error| match error {
+                OAuthError::Cancelled => ExecuteError::Token("Sign-in cancelled".to_owned()),
+                error => ExecuteError::Token(format!("Token request failed: {error}")),
+            })?;
+    let token = stored(key(oauth), token, now);
     let expires_at = token.expires_at;
     let environment = inputs.context.environment_id();
     store

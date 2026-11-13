@@ -1798,13 +1798,26 @@ fn outer_scripts(state: &State) -> Vec<crate::scripts_tab::Outer> {
 
 /// Where the OAuth 2.0 token stands ("Token valid for 54 min"), with Get new token and,
 /// when there is one, Clear token. Clearing asks nothing: the next send gets a new token.
-fn token_line(ui: &mut Ui, view: &crate::app::TokenView, actions: &mut Vec<Action>) {
+fn token_line(
+    ui: &mut Ui,
+    view: &crate::app::TokenView,
+    signs_in: bool,
+    actions: &mut Vec<Action>,
+) {
     use imposter_app::oauth::TokenState;
     ui.add_space(12.0);
     let now = imposter_app::executor::now().0;
     let (text, tone) = match &view.state {
+        _ if view.signing_in.is_some() => (
+            "Waiting for you to sign in in the browser…".to_owned(),
+            Tone::Muted,
+        ),
         None => ("Checking the token…".to_owned(), Tone::Muted),
         Some(Err(error)) => (error.clone(), Tone::Error),
+        Some(Ok(TokenState::Missing)) if signs_in => (
+            "Not signed in: Sign in to get a token.".to_owned(),
+            Tone::Muted,
+        ),
         Some(Ok(TokenState::Missing)) => ("No token yet: Send gets one.".to_owned(), Tone::Muted),
         Some(Ok(TokenState::Good { expires_at: None })) => {
             ("Token valid until cleared".to_owned(), Tone::Ok)
@@ -1819,6 +1832,9 @@ fn token_line(ui: &mut Ui, view: &crate::app::TokenView, actions: &mut Vec<Actio
             "Token expired: the next send refreshes it".to_owned(),
             Tone::Muted,
         ),
+        Some(Ok(TokenState::Expired { refreshable: false })) if signs_in => {
+            ("Token expired: sign in again".to_owned(), Tone::Muted)
+        }
         Some(Ok(TokenState::Expired { refreshable: false })) => (
             "Token expired: the next send gets a new one".to_owned(),
             Tone::Muted,
@@ -1830,9 +1846,26 @@ fn token_line(ui: &mut Ui, view: &crate::app::TokenView, actions: &mut Vec<Actio
         Some(Ok(TokenState::Good { .. } | TokenState::Expired { .. }))
     );
     ui.horizontal(|ui| {
+        if view.signing_in.is_some() {
+            if ui.button("Cancel sign-in").clicked() {
+                actions.push(Action::Token(TokenAction::Cancel));
+            }
+            return;
+        }
+        let (label, hover) = if signs_in {
+            (
+                "Sign in",
+                "Sign in in the browser and keep the token it gives",
+            )
+        } else {
+            (
+                "Get new token",
+                "Ask the token endpoint for a token now and keep it",
+            )
+        };
         if ui
-            .add_enabled(!view.busy, egui::Button::new("Get new token"))
-            .on_hover_text("Ask the token endpoint for a token now and keep it")
+            .add_enabled(!view.busy, egui::Button::new(label))
+            .on_hover_text(hover)
             .clicked()
         {
             actions.push(Action::Token(TokenAction::Get));
@@ -1840,7 +1873,11 @@ fn token_line(ui: &mut Ui, view: &crate::app::TokenView, actions: &mut Vec<Actio
         if has_token
             && ui
                 .add_enabled(!view.busy, egui::Button::new("Clear token"))
-                .on_hover_text("Forget this token; the next send gets a new one")
+                .on_hover_text(if signs_in {
+                    "Forget this token; sending then needs a new sign-in"
+                } else {
+                    "Forget this token; the next send gets a new one"
+                })
                 .clicked()
         {
             actions.push(Action::Token(TokenAction::Clear));
@@ -1936,7 +1973,9 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
             EditorTab::Auth => {
                 edited = widgets::auth_form(ui, &mut pane.editor.auth, &mut vars);
                 if pane.editor.auth.kind == Some(imposter_app::core::model::AuthKind::OAuth2) {
-                    token_line(ui, &pane.token, actions);
+                    let signs_in = pane.editor.auth.oauth.grant
+                        == imposter_app::core::model::OAuthGrant::AuthorizationCode;
+                    token_line(ui, &pane.token, signs_in, actions);
                     let wanted = (pane.editor.auth.oauth.clone(), *active_environment);
                     if !pane.token.busy && pane.token.checked.as_ref() != Some(&wanted) {
                         actions.push(Action::Token(TokenAction::Check));
@@ -2078,6 +2117,7 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
             state.actions.push(match action {
                 BlockedAction::Define(name) => Action::DefineVariable(target.0, name),
                 BlockedAction::OpenVariables => Action::Screen(Screen::Variables),
+                BlockedAction::SignIn => Action::Token(TokenAction::Get),
             });
         });
         return;
@@ -2140,6 +2180,7 @@ pub enum PaneAction {
 enum BlockedAction {
     Define(String),
     OpenVariables,
+    SignIn,
 }
 
 /// `{{a}}`, `{{a}} and {{b}}`, `{{a}}, {{b}} and {{c}}`.
@@ -2172,6 +2213,22 @@ fn blocked_card(
             ),
         };
         ui.add(egui::Label::new(tone_text(headline, Tone::Error).strong()).wrap());
+        if blocked.sign_in {
+            ui.add(
+                egui::Label::new(tone_text(
+                    "Nothing was sent. Sign in in the browser, then send again.",
+                    Tone::Muted,
+                ))
+                .wrap(),
+            );
+            if ui
+                .button("Sign in")
+                .on_hover_text("Sign in in the browser and keep the token it gives")
+                .clicked()
+            {
+                act(BlockedAction::SignIn);
+            }
+        }
         if let Some(first) = blocked.unresolved.first() {
             ui.add(
                 egui::Label::new(tone_text(

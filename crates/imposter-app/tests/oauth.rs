@@ -354,9 +354,15 @@ async fn the_auth_tab_can_see_get_and_clear_the_token() {
         &api,
         token_answer("access-now", r#", "expires_in": 60, "refresh_token": "r""#),
     );
-    let got = fetch(&handle, &api.request, &CancellationToken::new(), now)
-        .await
-        .unwrap();
+    let got = fetch(
+        &handle,
+        &api.request,
+        &CancellationToken::new(),
+        Box::new(|_| Ok(())),
+        now,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         got,
         TokenState::Good {
@@ -385,8 +391,14 @@ async fn the_auth_tab_can_see_get_and_clear_the_token() {
             br#"{"error": "invalid_scope"}"#,
         ),
     );
-    let error = fetch(&handle, &api.request, &CancellationToken::new(), now)
-        .await
-        .unwrap_err();
+    let error = fetch(
+        &handle,
+        &api.request,
+        &CancellationToken::new(),
+        Box::new(|_| Ok(())),
+        now,
+    )
+    .await
+    .unwrap_err();
     assert_eq!(error.to_string(), "Token request failed: invalid_scope");
 }

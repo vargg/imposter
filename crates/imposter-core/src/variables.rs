@@ -117,6 +117,7 @@ pub(crate) fn visit_texts(
             &mut oauth.client_secret,
             &mut oauth.scope,
             &mut oauth.audience,
+            &mut oauth.auth_url,
         ] {
             visit(field);
         }

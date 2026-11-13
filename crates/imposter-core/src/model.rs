@@ -256,13 +256,16 @@ pub struct ApiKey {
     pub location: ApiKeyIn,
 }
 
-/// How an OAuth 2.0 token is obtained. Only the client credentials grant so far; the
-/// authorization code grant follows (M3).
+/// How an OAuth 2.0 token is obtained.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OAuthGrant {
+    /// A token for the client itself, fetched when a request is sent (RFC 6749 4.4).
     #[default]
     ClientCredentials,
+    /// A token for a person, who signs in in the system browser; always with PKCE
+    /// (RFC 6749 4.1, RFC 7636).
+    AuthorizationCode,
 }
 
 /// How the client proves itself to the token endpoint (RFC 6749 2.3.1): a Basic header,
@@ -291,6 +294,13 @@ pub struct OAuth2 {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub audience: String,
     pub client_auth: ClientAuth,
+    /// Where a person signs in, for the authorization code grant.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub auth_url: String,
+    /// The loopback port the browser is sent back to (`http://127.0.0.1:<port>/callback`),
+    /// for servers that register an exact redirect URI; `None` takes any free port.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_port: Option<u16>,
 }
 
 /// The stored auth shape keeps every configured scheme, so switching the type in the editor

@@ -136,7 +136,8 @@ fn oauth2_client_credentials_are_entered_and_saved() {
     app.harness.run_steps(3);
     app.harness.get_by_label("OAuth 2.0").click();
     app.harness.run_steps(2);
-    app.harness.get_by_label("Client credentials");
+    // Client credentials is the grant until another is picked.
+    app.harness.get_by_role_and_label(Role::ComboBox, "Grant");
     type_into(&mut app.harness, "Token URL", "{{base}}/token");
     type_into(&mut app.harness, "Client ID", "app");
     type_into(&mut app.harness, "Client secret", "{{secret:client}}");
@@ -165,6 +166,39 @@ fn oauth2_client_credentials_are_entered_and_saved() {
             ..Default::default()
         })
     );
+}
+
+#[test]
+fn the_authorization_code_grant_asks_where_to_sign_in() {
+    use egui::accesskit::Role;
+    let mut app = opened();
+    tab(&mut app, EditorTab::Auth);
+    app.harness
+        .get_by_role_and_label(Role::ComboBox, "Type")
+        .click();
+    app.harness.run_steps(3);
+    app.harness.get_by_label("OAuth 2.0").click();
+    app.harness.run_steps(2);
+    assert!(app.harness.query_by_label("Auth URL").is_none());
+    app.harness
+        .get_by_role_and_label(Role::ComboBox, "Grant")
+        .click();
+    app.harness.run_steps(3);
+    app.harness.get_by_label("Authorization code").click();
+    app.harness.run_steps(2);
+    type_into(&mut app.harness, "Auth URL", "https://auth.test/authorize");
+    type_into(&mut app.harness, "Token URL", "https://auth.test/token");
+    app.harness
+        .get_by_role_and_label(Role::SpinButton, "Redirect port");
+
+    let auth = saved(&mut app).template.auth;
+    let oauth = auth.oauth2.unwrap();
+    assert_eq!(
+        oauth.grant,
+        imposter_app::core::model::OAuthGrant::AuthorizationCode
+    );
+    assert_eq!(oauth.auth_url, "https://auth.test/authorize");
+    assert_eq!(oauth.redirect_port, None, "any free port until one is set");
 }
 
 #[test]

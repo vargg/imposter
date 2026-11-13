@@ -49,7 +49,7 @@ fn status_check(expected: &str) -> Value {
 fn write_document(dir: &Path, base: &str, refused: &str) -> PathBuf {
     let document = json!({
         "format": "imposter",
-        "version": 3,
+        "version": 5,
         "collection": {
             "name": "API",
             "variables": {"base": base},
@@ -66,6 +66,11 @@ fn write_document(dir: &Path, base: &str, refused: &str) -> PathBuf {
                 request("After", "{{base}}/after", json!({"scripts": {"after": "throw \"broken\";"}})),
                 request("Before", "{{base}}/before", json!({"scripts": {"before": "throw \"no key\";"}})),
                 request("Unresolved", "{{base}}/{{missing}}", json!({})),
+                request("SignIn", "{{base}}/me", json!({
+                    "auth": {"type": "oauth2", "oauth2": {"grant": "authorization_code",
+                        "auth_url": "{{base}}/authorize", "token_url": "{{base}}/token",
+                        "client_id": "desktop"}}
+                })),
                 request("Refused", refused, json!({"checks": status_check("200")})),
                 request("Echo", "{{base}}/echo?key={{token}}", json!({
                     "auth": {"type": "bearer_token", "bearer_token": {"token": "{{token}}"}},
@@ -234,6 +239,11 @@ fn unsent_runs_say_why_in_words() {
         (
             vec!["send", "--file", file, "Unresolved"],
             "Not sent: Unresolved variables: missing",
+        ),
+        (
+            vec!["send", "--file", file, "SignIn"],
+            "Not sent: This request needs a person to sign in (OAuth 2.0 authorization code): \
+             send it from the app.",
         ),
     ];
     for (args, start) in cases {

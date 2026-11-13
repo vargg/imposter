@@ -296,15 +296,25 @@ fn show_text(view: &RequestView) -> String {
             let _ = writeln!(text, "Auth: API key in {place}, {name} = {value}");
         }
         AuthView::OAuth2 {
+            grant,
             token_url,
             client_id,
             client_secret,
             scope,
+            auth_url,
             ..
         } => {
+            let how = match grant {
+                imposter_app::core::model::OAuthGrant::ClientCredentials => {
+                    "client credentials".to_owned()
+                }
+                imposter_app::core::model::OAuthGrant::AuthorizationCode => {
+                    format!("sign-in at {auth_url} (send from the app)")
+                }
+            };
             let _ = writeln!(
                 text,
-                "Auth: OAuth 2.0 client credentials from {token_url}, client {client_id} / \
+                "Auth: OAuth 2.0 {how}, token from {token_url}, client {client_id} / \
                  {client_secret}{}",
                 if scope.is_empty() {
                     String::new()

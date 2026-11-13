@@ -370,6 +370,9 @@ pub struct PostmanExport {
     warnings: Vec<String>,
 }
 
+/// What a test opens sign-in URLs with ([`ImposterApp::script_browser`]).
+type ScriptedBrowser = dyn Fn(&str) -> std::io::Result<()> + Send + Sync;
+
 /// A native file dialog. Tests script the answers instead (see
 /// [`ImposterApp::script_file_dialogs`]).
 #[derive(Debug, Clone)]
@@ -796,6 +799,8 @@ pub struct TokenView {
     pub state: Option<Result<TokenState, Failure>>,
     /// A check, a request for a token or a clear is under way.
     pub busy: bool,
+    /// The sign-in waiting for the browser, which Cancel stops.
+    pub signing_in: Option<TaskId>,
 }
 
 /// What the Auth tab asks of the open request's token.
@@ -807,6 +812,8 @@ pub enum TokenAction {
     Get,
     /// Forget the cached one.
     Clear,
+    /// Stop waiting for the browser.
+    Cancel,
 }
 
 impl EditorPane {
@@ -1084,6 +1091,8 @@ impl State {
 pub struct NotSent {
     pub message: String,
     pub unresolved: Vec<String>,
+    /// A person must sign in (OAuth 2.0), so the pane offers Sign in.
+    pub sign_in: bool,
 }
 
 impl From<ExecuteError> for NotSent {
@@ -1093,9 +1102,11 @@ impl From<ExecuteError> for NotSent {
             ExecuteError::Invalid(_)
             | ExecuteError::Script(_)
             | ExecuteError::Token(_)
+            | ExecuteError::SignIn { .. }
             | ExecuteError::Store(_) => Vec::new(),
         };
         Self {
+            sign_in: matches!(error, ExecuteError::SignIn { .. }),
             message: format!("Not sent: {error}"),
             unresolved,
         }
@@ -1183,6 +1194,8 @@ pub struct ImposterApp {
     first_frame: Option<std::time::Instant>,
     /// Scripted file dialog answers (tests); `None` opens native dialogs.
     file_answers: Option<VecDeque<Option<PathBuf>>>,
+    /// Opens sign-in URLs in place of the system browser, for tests.
+    browser: Option<Arc<ScriptedBrowser>>,
     smoke: Option<SmokeTest>,
     /// The appearance last installed in egui, to reinstall only on a change.
     applied: Option<Appearance>,
@@ -1265,6 +1278,7 @@ impl ImposterApp {
             window: None,
             first_frame: Some(std::time::Instant::now()),
             file_answers: None,
+            browser: None,
             smoke: None,
             applied: None,
             watching: None,
@@ -1365,6 +1379,26 @@ impl ImposterApp {
         self.file_answers
             .get_or_insert_with(VecDeque::new)
             .extend(answers);
+    }
+
+    /// Open sign-in URLs with `open` instead of the system browser, which tests cannot
+    /// drive; it plays the browser and the person signing in.
+    pub fn script_browser(
+        &mut self,
+        open: impl Fn(&str) -> std::io::Result<()> + Send + Sync + 'static,
+    ) {
+        self.browser = Some(Arc::new(open));
+    }
+
+    /// The system browser, or the one a test set.
+    fn browser(&self) -> imposter_app::oauth::OpenBrowser {
+        match &self.browser {
+            Some(open) => {
+                let open = open.clone();
+                Box::new(move |url: &str| open(url))
+            }
+            None => Box::new(|url: &str| open::that_detached(url)),
+        }
     }
 
     /// Show a file dialog in the background; `done` turns the chosen paths (none when
@@ -1917,6 +1951,7 @@ impl ImposterApp {
                 }
                 if let Some(pane) = &mut self.state.editor {
                     pane.token.busy = false;
+                    pane.token.signing_in = None;
                     pane.token.state = Some(result);
                 }
             }
@@ -3720,6 +3755,12 @@ impl ImposterApp {
         let Some(pane) = &mut self.state.editor else {
             return;
         };
+        if action == TokenAction::Cancel {
+            if let Some(task) = pane.token.signing_in {
+                self.bridge.cancel(task);
+            }
+            return;
+        }
         let Ok(request) = pane.editor.to_request() else {
             pane.token.state = Some(Err("Fix the highlighted request settings first.".into()));
             return;
@@ -3729,12 +3770,20 @@ impl ImposterApp {
         if action == TokenAction::Get {
             pane.token.state = None;
         }
+        let signs_in = pane.editor.auth.oauth.grant
+            == imposter_app::core::model::OAuthGrant::AuthorizationCode;
         let db = self.db.clone();
-        self.bridge.spawn(move |cancel| async move {
+        let browser = self.browser();
+        let task = self.bridge.spawn(move |cancel| async move {
             let now = executor::now().0;
             let result = match action {
-                TokenAction::Check => imposter_app::oauth::state(&db, &request, now).await,
-                TokenAction::Get => imposter_app::oauth::fetch(&db, &request, &cancel, now).await,
+                // Cancel stops a sign-in before getting here.
+                TokenAction::Check | TokenAction::Cancel => {
+                    imposter_app::oauth::state(&db, &request, now).await
+                }
+                TokenAction::Get => {
+                    imposter_app::oauth::fetch(&db, &request, &cancel, browser, now).await
+                }
                 TokenAction::Clear => match imposter_app::oauth::clear(&db, &request).await {
                     Ok(()) => imposter_app::oauth::state(&db, &request, now).await,
                     Err(error) => Err(error),
@@ -3746,6 +3795,12 @@ impl ImposterApp {
                 got: action == TokenAction::Get,
             }
         });
+        if let Some(pane) = &mut self.state.editor
+            && action == TokenAction::Get
+            && signs_in
+        {
+            pane.token.signing_in = Some(task);
+        }
     }
 
     /// The open request as curl, resolved the way Send would resolve it now.
@@ -4754,6 +4809,7 @@ impl ImposterApp {
                             result: Err(NotSent {
                                 message: "The request no longer exists".to_owned(),
                                 unresolved: Vec::new(),
+                                sign_in: false,
                             }),
                         };
                     }

@@ -33,6 +33,12 @@ pub enum Grant<'a> {
     ClientCredentials,
     /// A new token for the refresh token an earlier answer gave (RFC 6749 6).
     Refresh(&'a str),
+    /// The token for the code a sign-in gave (RFC 6749 4.1.3), with the PKCE verifier.
+    AuthorizationCode {
+        code: &'a str,
+        redirect_uri: &'a str,
+        verifier: &'a str,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -48,6 +54,11 @@ pub enum OAuthError {
     Transport(String),
     #[error("cancelled")]
     Cancelled,
+    /// The browser came back with another sign-in's `state`: not this one's answer.
+    #[error("the sign-in answer did not match this sign-in")]
+    Mismatch,
+    #[error("no sign-in within {} minutes", crate::sign_in::SIGN_IN_TIME.as_secs() / 60)]
+    TimedOut,
 }
 
 /// The token request for `grant`, `oauth`'s values already resolved: the client's
@@ -61,8 +72,19 @@ pub fn prepare(oauth: &OAuth2, grant: Grant<'_>) -> Prepared {
             form.push(("grant_type", "refresh_token"));
             form.push(("refresh_token", token));
         }
+        Grant::AuthorizationCode {
+            code,
+            redirect_uri,
+            verifier,
+        } => {
+            form.push(("grant_type", "authorization_code"));
+            form.push(("code", code));
+            form.push(("redirect_uri", redirect_uri));
+            form.push(("code_verifier", verifier));
+        }
     }
-    if !oauth.scope.is_empty() {
+    // A code was already issued for its scope.
+    if !oauth.scope.is_empty() && !matches!(grant, Grant::AuthorizationCode { .. }) {
         form.push(("scope", &oauth.scope));
     }
     if !oauth.audience.is_empty() && grant == Grant::ClientCredentials {
@@ -76,6 +98,8 @@ pub fn prepare(oauth: &OAuth2, grant: Grant<'_>) -> Prepared {
         ("Accept".to_owned(), "application/json".to_owned()),
     ];
     match oauth.client_auth {
+        // A public client (an app with PKCE and no secret) only names itself.
+        _ if oauth.client_secret.is_empty() => form.push(("client_id", &oauth.client_id)),
         ClientAuth::Basic => {
             let pair = format!(
                 "{}:{}",
@@ -205,6 +229,33 @@ mod tests {
             !in_body.headers.iter().any(|(n, _)| n == "Authorization"),
             "{:?}",
             in_body.headers
+        );
+    }
+
+    #[test]
+    fn a_code_is_exchanged_with_its_verifier_and_a_public_client_only_names_itself() {
+        let public = OAuth2 {
+            client_secret: String::new(),
+            ..oauth(ClientAuth::Basic)
+        };
+        let exchange = prepare(
+            &public,
+            Grant::AuthorizationCode {
+                code: "c-1",
+                redirect_uri: "http://127.0.0.1:5000/callback",
+                verifier: "v-1",
+            },
+        );
+        assert_eq!(
+            body(&exchange),
+            "grant_type=authorization_code&code=c-1\
+             &redirect_uri=http%3A%2F%2F127.0.0.1%3A5000%2Fcallback&code_verifier=v-1\
+             &client_id=my+app"
+        );
+        assert!(
+            !exchange.headers.iter().any(|(n, _)| n == "Authorization"),
+            "{:?}",
+            exchange.headers
         );
     }
 

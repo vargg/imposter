@@ -187,6 +187,13 @@ pub enum ExecuteError {
     /// The request was not sent.
     #[error("{0}")]
     Token(String),
+    /// A person must sign in first (OAuth 2.0 authorization code), which a send never does.
+    /// `forget` names the cached token that no longer works, for Send to drop.
+    #[error("Sign in to get a token: {reason}")]
+    SignIn {
+        reason: String,
+        forget: Option<String>,
+    },
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -523,7 +530,28 @@ async fn execute_boxed(
     cancel: CancellationToken,
 ) -> Result<Executed, ExecuteError> {
     let inputs = inputs(store, &request).await?;
-    let ran = run(&inputs, request, cancel).await?;
+    let ran = match run(&inputs, request, cancel).await {
+        Ok(ran) => ran,
+        Err(ExecuteError::SignIn {
+            reason,
+            forget: Some(key),
+        }) => {
+            // The Auth tab then says there is no token, rather than an expired one.
+            let environment = inputs.context.environment_id();
+            let forget = key.clone();
+            if let Err(error) = store
+                .call(move |db| imposter_store::oauth::remove(db, environment, &forget))
+                .await
+            {
+                tracing::warn!(%error, "forgetting an expired token failed");
+            }
+            return Err(ExecuteError::SignIn {
+                reason,
+                forget: Some(key),
+            });
+        }
+        Err(error) => return Err(error),
+    };
     let cookies = ran.record.response.set_cookies.clone();
     let token = ran.token.clone();
     let environment = inputs.context.environment_id();
@@ -781,11 +809,16 @@ async fn oauth_token(
     let tokens = inputs.tokens.clone().unwrap_or_default();
     let obtained = crate::oauth::token(&oauth, &tokens, policy, cancel, now().0)
         .await
-        .map_err(|error| match error {
-            imposter_http::oauth::OAuthError::Cancelled => {
+        .map_err(|failure| match failure {
+            crate::oauth::TokenFailure::Request(imposter_http::oauth::OAuthError::Cancelled) => {
                 ExecuteError::Token("Token request cancelled".to_owned())
             }
-            error => ExecuteError::Token(format!("Token request failed: {error}")),
+            crate::oauth::TokenFailure::Request(error) => {
+                ExecuteError::Token(format!("Token request failed: {error}"))
+            }
+            crate::oauth::TokenFailure::SignIn { reason, forget } => {
+                ExecuteError::SignIn { reason, forget }
+            }
         })?;
     let token = obtained.token;
     secrets.push(token.access.clone());

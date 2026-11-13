@@ -756,6 +756,8 @@ fn export_auth(auth: &RequestAuth) -> Result<Value, PostmanError> {
             let oauth = auth.oauth2.as_ref().ok_or(PostmanError::Credentials)?;
             let grant = match oauth.grant {
                 OAuthGrant::ClientCredentials => "client_credentials",
+                // Imposter always uses PKCE, which Postman names as its own grant.
+                OAuthGrant::AuthorizationCode => "authorization_code_with_pkce",
             };
             let client_auth = match oauth.client_auth {
                 ClientAuth::Basic => "header",
@@ -774,6 +776,14 @@ fn export_auth(auth: &RequestAuth) -> Result<Value, PostmanError> {
             }
             if !oauth.audience.is_empty() {
                 pairs.push(json!({"key": "audience", "value": oauth.audience, "type": "string"}));
+            }
+            if oauth.grant == OAuthGrant::AuthorizationCode {
+                pairs.push(json!({"key": "authUrl", "value": oauth.auth_url, "type": "string"}));
+                pairs.push(json!({"key": "challengeAlgorithm", "value": "S256", "type": "string"}));
+                if let Some(port) = oauth.redirect_port {
+                    let uri = format!("http://127.0.0.1:{port}/callback");
+                    pairs.push(json!({"key": "redirect_uri", "value": uri, "type": "string"}));
+                }
             }
             json!({"type": "oauth2", "oauth2": pairs})
         }

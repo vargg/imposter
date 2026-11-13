@@ -330,6 +330,7 @@ fn oauth2_shows_its_endpoint_and_client_and_only_a_placeholder_secret() {
         client_secret: secret.into(),
         scope: "read".into(),
         audience: String::new(),
+        auth_url: String::new(),
     };
     assert_eq!(shown("{{secret:client}}"), view("{{secret:client}}"));
     assert_eq!(shown("literal-client-secret"), view("«redacted»"));

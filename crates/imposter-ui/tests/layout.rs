@@ -375,6 +375,15 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         check(app, &format!("auth {kind:?}"));
     }
     {
+        // The authorization code grant's extra rows and its sign-in buttons.
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.editor.auth.oauth.grant = imposter_app::core::model::OAuthGrant::AuthorizationCode;
+        pane.editor.auth.oauth.redirect_port = Some(53682);
+        check(app, "auth OAuth2 authorization code");
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.editor.auth.oauth = imposter_app::core::model::OAuth2::default();
+    }
+    {
         // The screens after this send the request: a key without a name could not go.
         let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
         pane.editor.auth.kind = None;
