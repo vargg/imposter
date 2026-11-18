@@ -99,3 +99,37 @@ fn each_way_a_stream_ends_has_its_outcome_and_exit_status() {
         assert!(stream.received >= 2, "{name}");
     }
 }
+
+/// `imposter run` words a request that needs signing in as `send` does.
+#[test]
+fn a_run_says_to_send_a_sign_in_request_from_the_app() {
+    let document = json!({
+        "format": "imposter",
+        "version": 5,
+        "collection": {"name": "API", "variables": {}, "requests": [
+            {"name": "Me", "method": "GET", "url": "http://127.0.0.1:1/me", "body": "",
+             "body_type": "json", "auth": {"type": "oauth2", "oauth2": {
+                "grant": "authorization_code", "auth_url": "http://127.0.0.1:1/authorize",
+                "token_url": "http://127.0.0.1:1/token", "client_id": "app"}}},
+        ]},
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("api.imposter.json");
+    std::fs::write(&file, serde_json::to_vec(&document).unwrap()).unwrap();
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    let args = ["run", "--file", file.to_str().unwrap(), "API"];
+    let status = main(
+        args.iter().map(OsString::from).collect(),
+        &mut Io {
+            stdout: &mut stdout,
+            stderr: &mut stderr,
+            var: &|_| None,
+        },
+    );
+    assert_eq!(status, RunOutcome::NotSent.exit_status());
+    let stderr = String::from_utf8(stderr).unwrap();
+    assert!(
+        stderr.contains(imposter_app::executor::HEADLESS_SIGN_IN),
+        "{stderr}"
+    );
+}

@@ -21,6 +21,9 @@ pub struct Options {
     pub keep_going: bool,
     /// Record each request in this profile's History, marked as started from here.
     pub record: Option<(StoreHandle, Via)>,
+    /// Run without a person at hand (the command line): a request that needs signing in
+    /// says to send it from the app, rather than to sign in.
+    pub headless: bool,
 }
 
 /// How one request of the run ended.
@@ -101,7 +104,12 @@ pub async fn run(
                     } else {
                         RunOutcome::NotSent
                     },
-                    error: error.to_string(),
+                    error: match error {
+                        ExecuteError::SignIn { .. } if options.headless => {
+                            executor::HEADLESS_SIGN_IN.to_owned()
+                        }
+                        error => error.to_string(),
+                    },
                 },
             }
         };

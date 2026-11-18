@@ -168,6 +168,7 @@ async fn a_failure_stops_the_run_unless_it_keeps_going() {
         Options {
             keep_going: true,
             record: None,
+            headless: false,
         },
         CancellationToken::new(),
         |_| {},
@@ -258,6 +259,7 @@ async fn the_profile_runs_the_same_steps_and_records_them_frozen_at_the_start() 
         Options {
             keep_going: false,
             record: Some((store.handle(), Via::CommandLine)),
+            headless: false,
         },
         CancellationToken::new(),
         |_| {},
@@ -340,6 +342,7 @@ async fn the_app_selects_by_id_and_records_its_runs_as_its_own() {
         Options {
             keep_going: false,
             record: Some((store.handle(), Via::App)),
+            headless: false,
         },
         CancellationToken::new(),
         |_| {},

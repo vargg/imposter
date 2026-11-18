@@ -197,6 +197,7 @@ pub async fn run(
         record: store
             .as_ref()
             .map(|store| (store.handle(), imposter_core::execution::Via::CommandLine)),
+        headless: true,
     };
     runner::run(requests, options, cancel, |ended| {
         let step = match ended {

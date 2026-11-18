@@ -312,10 +312,15 @@ fn show_text(view: &RequestView) -> String {
                     format!("sign-in at {auth_url} (send from the app)")
                 }
             };
+            // A public client has no secret to show.
+            let secret = if client_secret.is_empty() {
+                String::new()
+            } else {
+                format!(" / {client_secret}")
+            };
             let _ = writeln!(
                 text,
-                "Auth: OAuth 2.0 {how}, token from {token_url}, client {client_id} / \
-                 {client_secret}{}",
+                "Auth: OAuth 2.0 {how}, token from {token_url}, client {client_id}{secret}{}",
                 if scope.is_empty() {
                     String::new()
                 } else {

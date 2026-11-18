@@ -251,15 +251,12 @@ pub(crate) fn without_secrets(
 /// What a run produced: its record, the capture limit it ran under, and notes.
 type Ran = (ExecutionRecord, u64, Vec<String>);
 
-/// Why the command line does not send a request that signs in through a browser.
-pub(crate) const SIGN_IN: &str = "This request needs a person to sign in (OAuth 2.0 \
-    authorization code): send it from the app. The command line opens no browser and uses \
-    none of the app's tokens.";
-
 fn unsent(error: ExecuteError) -> Unsent {
     match error {
         ExecuteError::Script(message) => Unsent(RunOutcome::ScriptFailed, message),
-        ExecuteError::SignIn { .. } => Unsent(RunOutcome::NotSent, SIGN_IN.to_owned()),
+        ExecuteError::SignIn { .. } => {
+            Unsent(RunOutcome::NotSent, executor::HEADLESS_SIGN_IN.to_owned())
+        }
         other => Unsent(RunOutcome::NotSent, other.to_string()),
     }
 }

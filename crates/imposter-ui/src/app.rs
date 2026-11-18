@@ -4975,6 +4975,7 @@ impl ImposterApp {
             let options = imposter_app::runner::Options {
                 keep_going,
                 record: Some((db, imposter_app::core::execution::Via::App)),
+                headless: false,
             };
             imposter_app::runner::run(requests, options, cancel, |step| {
                 if let Ok(mut steps) = pushed.lock() {

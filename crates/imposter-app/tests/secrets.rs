@@ -227,6 +227,7 @@ async fn a_secret_capture_is_stored_as_a_secret_and_carried_through_a_run() {
         Options {
             keep_going: false,
             record: Some((f.store.handle(), Via::App)),
+            headless: false,
         },
         CancellationToken::new(),
         |_| {},

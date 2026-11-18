@@ -592,6 +592,12 @@ async fn execute_boxed(
     Ok(executed)
 }
 
+/// Why a run without a person at hand (the command line) does not send a request that
+/// signs in through a browser.
+pub const HEADLESS_SIGN_IN: &str = "This request needs a person to sign in (OAuth 2.0 \
+    authorization code): send it from the app. The command line opens no browser and uses \
+    none of the app's tokens.";
+
 pub const COOKIES_ERROR: &str =
     "Response received, but the cookies it set or its new token could not be kept";
 
