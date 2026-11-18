@@ -62,8 +62,10 @@ Protect these. The milestones run on them.
 
 - Requests: any method, headers, cookies, and bodies as JSON, text (including XML and a
   GraphQL document sent as an ordinary POST), form, multipart or a file. Uploads stream.
-- Basic, Bearer, Digest and API-key auth. Per-request settings. TLS, proxies, and client
-  certificates matched to an exact host.
+- Basic, Bearer, Digest, API-key and OAuth 2.0 auth (client credentials, and
+  authorization code with PKCE through the system browser). A cookie jar and OAuth
+  tokens kept per project and environment, the jar visible and clearable. Per-request
+  settings. TLS, proxies, and client certificates matched to an exact host.
 - Variables in global, collection and environment scopes, with saved values, generated
   values and environment colours. Secrets as references, `{{secret:name}}`, kept per
   environment and globally apart from variables, never exported or kept in History, and
@@ -71,6 +73,8 @@ Protect these. The milestones run on them.
 - History, search, restore, and the request as it was sent.
 - Response viewer: virtualized rows, highlighting, JSONPath filter and fold, a bounded
   preview, and saving the full body.
+- Server-sent events: read as they arrive on an Events tab, with per-request listening
+  limits and the stream carried in results.
 - Declarative checks, captures, and sandboxed Rhai at collection, folder and request
   level, including mock routes. Scripts have no file, network or process-environment
   access.
@@ -93,12 +97,8 @@ Protect these. The milestones run on them.
 
 ## Core, still to build
 
-In milestone order. MCP is not in this table; it is an experiment below.
-
-| Work | Why it is core | When |
-|---|---|---|
-| OAuth 2.0, a cookie jar | A pasted bearer token goes stale, and a login's cookies are not kept. | M3 |
-| SSE responses | A body that appears only at the end hides a stream. | M3 |
+Nothing committed beyond the MCP experiment below. New work enters this file by the
+rules under "Keeping this file".
 
 ## Frozen: keep, and stop growing
 
@@ -311,9 +311,9 @@ file access are outside this list. CLI JSON and MCP results share one schema.
 
 ### Streaming
 
-SSE is core, in M3. Events appear as they arrive, with timestamps, inside a bounded view
-and a byte cap. The user can cancel. The milestone defines what "the stream ended"
-means. Checks run on the completed stream. A timeout, a cancellation, or a cut at the
+Landed with M3 (13 November 2026); the settled behavior is in `AGENTS.md`. Events appear
+as they arrive, with timestamps, inside a bounded view and a byte cap. The user can
+cancel. Checks run on the completed stream. A timeout, a cancellation, or a cut at the
 cap is not a passed run.
 
 ### Mocks and load, stated as limits
@@ -375,34 +375,16 @@ app and the CLI. A live server that changes during a run is not promised to matc
 
 This is the first release of the shared workflow for the app, the terminal and CI.
 
-### M3 — Auth, cookies, SSE
+### M3 — Complete: auth, cookies, SSE
 
-Pull the smallest auth and cookie slice ahead of M2 as soon as a real user cannot
-proceed with a supplied token. That pull does not drag SSE with it.
-
-- OAuth 2.0: client credentials, and authorization code with PKCE through the system
-  browser and a loopback redirect. Tokens are cached per project and environment,
-  refreshed before expiry, and stored as secrets. Client credentials done (12 November
-  2026): tokens are kept in the profile beside secrets, never in files or History, and
-  headless runs fetch their own. Authorization code with PKCE done (13 November 2026):
-  signing in is an explicit act in the app, never part of a send, and the command line
-  does not send such requests.
-- API-key auth, in a header or the query. Done (11 November 2026).
-- A cookie jar scoped by project and environment, so two projects do not share one.
-  Visible, editable and clearable, with an explicit on/off choice, and used by Send,
-  the runner and the CLI. Done (12 November 2026): listed and removed one at a time or
-  all on the Variables screen; values are not edited there, since a server sets them and
-  a request's cookie rows send one by hand. Runs share a jar of their own; the command
-  line starts each with an empty one, as no session input exists yet.
-- Headless runs use isolated session state unless an explicit session input is
-  supplied. They do not borrow the personal profile's cookies or tokens.
-- SSE, with the streaming decision above. Done (13 November 2026): events appear live on
-  an Events tab, a request may set a listening limit (seconds or events) that ends the
-  stream normally, and results carry the stream (version 2).
-
-Exit: the task that needed a second client for tokens, cookies or a stream no longer
-does. Tests cover refresh failure, a missing secret, jar isolation between
-environments, cancellation, and a stream cut at the cap that must not pass.
+Completed 13 November 2026: API-key auth in a header or the query; a cookie jar scoped
+by project and environment, visible and clearable on the Variables screen, with runs and
+the command line on jars of their own; OAuth 2.0 client credentials and authorization
+code with PKCE, tokens cached per project and environment beside secrets, never in files
+or History, signing in an explicit act in the app that the command line never performs;
+and SSE read as events arrive, judged by how the stream ends, with per-request listening
+limits and streams in results (version 2). The settled behavior and its tests are in
+`AGENTS.md`.
 
 ### M4 — MCP experiment
 
