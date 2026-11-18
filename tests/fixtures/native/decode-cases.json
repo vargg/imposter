@@ -831,7 +831,58 @@
   {
     "name": "api key without a name",
     "document": "{\"format\": \"imposter\", \"version\": 5, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Pets\", \"method\": \"GET\", \"url\": \"https://x/pets\", \"auth\": {\"type\": \"api_key\", \"api_key\": {\"value\": \"k\"}}}]}, \"environments\": [], \"globals\": {}}",
-    "accepted": false
+    "accepted": true,
+    "result": {
+      "format": "imposter",
+      "version": 5,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "Pets",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "https://x/pets",
+            "path": "",
+            "auth": {
+              "type": "api_key",
+              "basic": null,
+              "digest": null,
+              "bearer_token": null,
+              "api_key": {
+                "name": "",
+                "value": "k",
+                "in": "header"
+              }
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
   },
   {
     "name": "api key in a cookie",
@@ -927,6 +978,64 @@
                 "client_id": "app",
                 "client_secret": "{{secret:client_secret}}",
                 "scope": "read",
+                "client_auth": "basic"
+              }
+            },
+            "queries": [],
+            "headers": [],
+            "cookies": [],
+            "body": "",
+            "body_type": "json",
+            "options": {
+              "follow_redirects": null,
+              "verify_ssl": null,
+              "attach_cookies": null,
+              "proxy_url": null,
+              "timeout": null,
+              "ca_bundle": null,
+              "certificate_path": null,
+              "key_file": null,
+              "password": null,
+              "download_limit": null
+            }
+          }
+        ]
+      },
+      "environments": [],
+      "globals": {}
+    }
+  },
+  {
+    "name": "oauth2 without a token url",
+    "document": "{\"format\": \"imposter\", \"version\": 5, \"collection\": {\"name\": \"C\", \"description\": \"\", \"variables\": {}, \"folders\": [], \"requests\": [{\"name\": \"Data\", \"method\": \"GET\", \"url\": \"https://x/data\", \"auth\": {\"type\": \"oauth2\", \"oauth2\": {\"grant\": \"client_credentials\", \"token_url\": \"\", \"client_id\": \"\", \"client_secret\": \"\", \"client_auth\": \"basic\"}}}]}, \"environments\": [], \"globals\": {}}",
+    "accepted": true,
+    "result": {
+      "format": "imposter",
+      "version": 5,
+      "collection": {
+        "name": "C",
+        "description": "",
+        "variables": {},
+        "folders": [],
+        "requests": [
+          {
+            "position": 0,
+            "name": "Data",
+            "description": "",
+            "method": "GET",
+            "protocol": "",
+            "url": "https://x/data",
+            "path": "",
+            "auth": {
+              "type": "oauth2",
+              "basic": null,
+              "digest": null,
+              "bearer_token": null,
+              "oauth2": {
+                "grant": "client_credentials",
+                "token_url": "",
+                "client_id": "",
+                "client_secret": "",
                 "client_auth": "basic"
               }
             },

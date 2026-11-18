@@ -338,7 +338,7 @@ pub fn validate_templates(document: &NativeDocument) -> Result<(), NativeError> 
         if !is_method_token(&request.method) {
             return Err(NativeError::Method { request: label() });
         }
-        if request.auth.active().is_err() {
+        if !request.auth.has_configuration() {
             return Err(NativeError::Auth { request: label() });
         }
         request

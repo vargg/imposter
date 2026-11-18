@@ -609,7 +609,7 @@ impl RequestFile {
             return Err(error(path, "timeout must be a positive number of seconds"));
         }
         set_body(&mut template, self.body, path)?;
-        if template.auth.active().is_err() {
+        if !template.auth.has_configuration() {
             return Err(error(path, "authentication is missing its configuration"));
         }
         Ok(Request {

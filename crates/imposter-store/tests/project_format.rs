@@ -388,6 +388,59 @@ fn append(files: &mut BTreeMap<String, Vec<u8>>, path: &str, text: &str) {
         .extend_from_slice(text.as_bytes());
 }
 
+#[test]
+fn a_half_configured_auth_reads_and_only_a_missing_block_is_refused() {
+    let good = render(&sample());
+    // A state the app itself writes: OAuth 2.0 chosen, its fields not filled yet (the
+    // Auth tab saved mid-edit, or an OpenAPI flow without a token URL imported).
+    let half_oauth = br#"id: req-health
+position: 0
+name: Health
+method: GET
+url: "{{base}}/health"
+auth:
+  type: oauth2
+  oauth2:
+    grant: client_credentials
+    token_url: ""
+    client_id: ""
+    client_secret: ""
+    client_auth: basic
+"#
+    .to_vec();
+    let mut files = good.clone();
+    files.insert("shop-api/health.yaml".into(), half_oauth.clone());
+    let project = read(&files).unwrap();
+    let health = &project.collections[0].requests[0].template;
+    assert!(health.auth.has_configuration());
+    assert!(
+        health.auth.active().is_err(),
+        "an empty token URL is missing credentials when sent"
+    );
+    // What was read renders back to the same bytes.
+    assert_eq!(render(&project)["shop-api/health.yaml"], half_oauth);
+    // An unnamed API key reads too; sending it is what is refused.
+    let mut files = good.clone();
+    let search = String::from_utf8(files["shop-api/users-avatars/search.yaml"].clone()).unwrap();
+    files.insert(
+        "shop-api/users-avatars/search.yaml".into(),
+        search
+            .replacen("name: api_key", "name: \"\"", 1)
+            .into_bytes(),
+    );
+    assert!(read(&files).is_ok());
+    // A kind without its configuration block is an inconsistent file.
+    let mut files = good;
+    let health = String::from_utf8(files["shop-api/health.yaml"].clone()).unwrap();
+    let (head, _) = health.split_once("  oauth2:\n").unwrap();
+    files.insert("shop-api/health.yaml".into(), head.as_bytes().to_vec());
+    let error = read(&files).unwrap_err();
+    assert!(
+        error.to_string().starts_with("shop-api/health.yaml"),
+        "{error}"
+    );
+}
+
 fn replace(files: &mut BTreeMap<String, Vec<u8>>, path: &str, from: &str, to: &str) {
     let text = String::from_utf8(files[path].clone()).unwrap();
     assert!(text.contains(from), "{path} has no {from:?}");

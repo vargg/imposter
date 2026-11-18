@@ -389,6 +389,20 @@ impl RequestAuth {
         }
     }
 
+    /// Whether the selected kind has its configuration block, however half-filled.
+    /// Reading a stored request accepts a half-filled block (sending it is refused as
+    /// missing credentials); only a kind without its block is an inconsistent file.
+    pub fn has_configuration(&self) -> bool {
+        match self.kind {
+            None => true,
+            Some(AuthKind::Basic) => self.basic.is_some(),
+            Some(AuthKind::Digest) => self.digest.is_some(),
+            Some(AuthKind::BearerToken) => self.bearer_token.is_some(),
+            Some(AuthKind::ApiKey) => self.api_key.is_some(),
+            Some(AuthKind::OAuth2) => self.oauth2.is_some(),
+        }
+    }
+
     pub fn active(&self) -> Result<Option<Auth<'_>>, MissingCredentials> {
         Ok(match self.kind {
             None => None,

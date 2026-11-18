@@ -1421,6 +1421,14 @@ numbers, so both are excluded. Each logical change is its own commit.
     refused, naming the file. Only directories with `imposter.yaml` and
     `environments/` are read, so the folder can live inside a repository beside other
     files. YAML is read with a node budget, as OpenAPI import does.
+  - **A half-filled auth reads; only its send is refused.** A request whose selected
+    auth kind has no configuration block at all is an inconsistent file and refused;
+    a block that is present but half-filled (an empty OAuth token URL, an unnamed API
+    key) reads and round-trips, because the writer saves that state mid-edit and from
+    an OpenAPI flow without a token URL (`RequestAuth::has_configuration` at reading,
+    `RequestAuth::active` at sending, where it is missing credentials). Why: judging
+    it by `active()` made one saved request leave the whole folder unreadable (the
+    report from the field).
   Pinned by `imposter-store/tests/project_format.rs` and the golden folder
   `tests/fixtures/project/`.
 - **Checks are data, not scripts** (`core::check`): a selector (status, a header, a JSONPath,
