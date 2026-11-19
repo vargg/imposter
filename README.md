@@ -366,6 +366,15 @@ on Settings → Command line → **Allow production environments** in the app. T
 in History, marked **CLI** (find them with `via:cli`); values its captures and scripts set
 stay in the run and change none of your variables. It works while the app is open.
 
+A run sends the request exactly as saved; there is no flag for a one-off body, header or
+query parameter. Values that change from run to run belong in `{{variables}}` in the
+request, filled per run with `--input` or `--secret`, which name a process variable rather
+than take a literal, so values stay off the command line:
+
+```sh
+ORDER_ID=7654 imposter send "Shop API / Orders / Get order" --input order_id=ORDER_ID
+```
+
 The result is one JSON document on stdout, led by a `summary` and an `outcome`, with the
 request as sent, the response head, check and script results, captures and body excerpts.
 A one-line summary goes to stderr.

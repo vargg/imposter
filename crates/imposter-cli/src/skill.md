@@ -16,7 +16,8 @@ in the app is what runs.
    reads `{{token}}`, or `«redacted»` when it was typed in literally.
 3. `imposter envs`: the environments (red means production), globals and collections,
    with the names of their variables. Use it to choose `--env`.
-4. `imposter send <REQUEST> --env NAME`: run it and read the result (below).
+4. `imposter send <REQUEST> --env NAME`: run it and read the result (below). A run sends
+   exactly what is saved; custom values go through variables (see "Changing what is sent").
 
 Read before you run: `show` tells you whether a request changes data (its method, URL and
 body) and which variables must exist, without sending anything. An `undefined` variable
@@ -50,6 +51,33 @@ the profile or writes History; a file's path may leave out the collection's name
 may a folder's when it holds one collection.
 
 {{options}}
+
+## Changing what is sent
+
+A run sends the request exactly as the user saved it. There is no flag for a different
+body, header or query parameter, and there is meant to be none: the command line runs
+saved requests, it does not build new ones (use curl for a one-off request the user never
+saved). The only values a run takes are the `{{variables}}` the request already uses,
+filled per run:
+
+```sh
+ORDER_ID=7654 imposter send "Shop API / Orders / Get order" --input order_id=ORDER_ID
+```
+
+`--input` (and `--secret`) name a *process variable*, never a literal value, so values
+stay off the command line and out of shell history; a missing or empty one stops the run
+before anything is sent. `show` lists every variable a request uses and where it is
+defined, so read it before concluding a value cannot be passed.
+
+If the value you need is written into the request itself — a literal id in the URL, a
+field in the body, a fixed header — do not edit the collections folder's files to change
+it for one run. Those files are the user's saved data: the app reads and watches them, and
+an edit changes what the app sends. Instead propose the parameter as a small diff the user
+can review, replacing only the literal that varies with a variable (`"price": 9.99` →
+`"price": {{price}}` — a placeholder outside a string stands for a whole value, so the
+JSON stays valid), and say which scope should define it. The user applies it in the app or
+commits the diff; the next run takes the value from `--input`. The same applies when a
+request has no variable for what must vary: propose one, never work around the request.
 
 ## Running several requests
 
