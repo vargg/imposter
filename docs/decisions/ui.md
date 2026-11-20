@@ -84,20 +84,40 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   - **Light accent:** the light theme's accent is a darker orange (#b83b0a), because
     #ff6c37 on white is below 3:1.
 
-- **Bundled fonts: Inter (Regular, SemiBold) for the interface, JetBrains Mono for data.**
-  - **Files:** in `crates/imposter-ui/assets/fonts`, with their SIL OFL licenses (shipped in
-    every package as resources) and pinned hashes; egui's own fonts stay as fallbacks.
+- **Bundled fonts: Inter (Regular, SemiBold) for the interface, JetBrains Mono for data,
+  Phosphor Regular for icons.**
+  - **Files:** in `crates/imposter-ui/assets/fonts`, with their SIL OFL licenses (Inter and
+    JetBrains Mono) and MIT license (Phosphor), shipped in every package as resources,
+    and pinned hashes. Phosphor is the only font in the dedicated `icons` family;
+    proportional text uses Inter followed by egui's fallbacks. Inter maps some of the
+    same Private Use Area codepoints (including Settings' U+E272), so putting Phosphor
+    after Inter rendered icons as letters. Inline icons use separate `RichText` or
+    layout sections in the icon family.
   - **Type scale:** 12 meta, 13 interface, 15 SemiBold titles (`theme::semibold`): dialog
     titles, Settings groups and headings and the request's name in the breadcrumb, whose place is
     muted.
     Single-line variable fields (URL, headers, paths, values) are monospace.
-  - **Size:** together the fonts add about 1.1 MiB to the release binary; Inter Medium was
-    left out for that reason.
+  - **Size:** Inter and JetBrains Mono add about 1.1 MiB to the release binary; Inter
+    Medium was left out for that reason. Phosphor's TTF is 488,636 bytes.
+    Replacing the painted toolbar icons added 495,360 bytes (483.75 KiB) on macOS arm64:
+    25,359,920 → 25,855,280 bytes, measured before and after with
+    `CARGO_TARGET_DIR=target cargo build --release -p imposter` (2026-11-20, LTO, stripped).
   - **Coverage:** `theme.rs` tests check that the fonts cover every non-ASCII character in
-    the UI, domain and service string literals.
+    the UI, domain and service string literals, that all icon glyphs resolve through the
+    dedicated family and that every `Icon` codepoint exists in Phosphor's cmap.
+    `tests/icons.rs` checks the laid-out family for every icon in both labels and buttons,
+    including the Settings codepoint that both Inter weights also map: glyph existence
+    alone cannot prove which font draws it.
+    CPU atlas tests compare the pixels, advances and offsets of every icon against a
+    Phosphor-only reference after warming both Inter weights' overlapping glyphs, and
+    check the real app's Settings, More, Save, Filter and Copy glyphs. An Inter-first
+    negative control reproduces the wrong letters (Copy has no Inter mapping), so the
+    comparison detects the original bug. These tests need no GPU; a family-name check
+    alone does not verify rasterized output.
 
   Why: stock egui fonts gave every text the same look and size, and lacked glyphs such as
-  "●".
+  "●". Phosphor is vendored from `@phosphor-icons/web` 2.1.2, with codepoints from its
+  regular CSS: `egui-phosphor` 0.14 requires egui ^0.36, incompatible with our egui 0.37.
 
 - **Density is a setting: Compact (default) or Comfortable** (Settings → Appearance, stored
   with the theme).
@@ -131,15 +151,18 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   dependency.
 
 - **Common actions in a toolbar or row are icons; menus are words.** Copy, Copy as curl,
-  Refresh, Newer and Older (chevrons), the find bar's Next and Previous, Close (a painted
-  ×), Browse (a folder) and Save are icon buttons (`icons.rs`, painted, no icon font),
+  Refresh, Newer and Older (chevrons), the find bar's Next and Previous, Close (×),
+  Browse (a folder) and Save are Phosphor Regular icon buttons (`icons.rs`),
   each named for screen readers and tests and with its words in the hover text. Menu items
   stay text, and so do actions that start a flow (Restore as draft, Retry, Add check,
   "+ Environment"), whose words say more than a glyph could. Why: the same action was an
   icon in one place and a word in another ("Copy as curl" in the request bar and in
   History, the inspector's "Copy value"; the user's note), and text buttons crowded the
-  toolbars. Checked by `support::assert_icon_button` in the History, find and inspector
-  tests.
+  toolbars. The hand-painted set did not scale; gaps forced text buttons. Phosphor provides
+  a consistent set of glyphs centred at 16 pt in the existing square targets, keeping the
+  muted, hover, selected/focused, ready and disabled colors. `glyph_text` also supports
+  icons beside labels. Checked by `support::assert_icon_button` in the History, find and
+  inspector tests, the icon interaction tests and the font coverage tests.
 
 
 ### Layout, Panes & Global Navigation

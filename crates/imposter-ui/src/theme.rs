@@ -350,13 +350,17 @@ pub fn visuals(palette: &Palette, theme: Theme) -> Visuals {
 /// The family of the semibold weight, for titles and the active tab.
 pub const SEMIBOLD: &str = "semibold";
 
+/// Isolated because Inter also maps private-use codepoints used by Phosphor.
+pub const ICONS: &str = "icons";
+
 /// A semibold font of `size`.
 pub fn semibold(size: f32) -> egui::FontId {
     egui::FontId::new(size, egui::FontFamily::Name(SEMIBOLD.into()))
 }
 
-/// `Inter` for the interface and `JetBrains Mono` for data (`assets/fonts`), with egui's own
-/// fonts kept as fallbacks for anything they lack.
+/// `Inter` for the interface, `JetBrains Mono` for data and Phosphor Regular for icons
+/// (`assets/fonts`). Text keeps egui's fallbacks; icons use only Phosphor to avoid
+/// collisions with Inter's private-use glyphs.
 pub fn fonts() -> egui::FontDefinitions {
     use egui::{FontData, FontFamily};
     use std::sync::Arc;
@@ -374,6 +378,10 @@ pub fn fonts() -> egui::FontDefinitions {
             "JetBrainsMono",
             &include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")[..],
         ),
+        (
+            "Phosphor",
+            &include_bytes!("../assets/fonts/Phosphor.ttf")[..],
+        ),
     ] {
         fonts
             .font_data
@@ -389,6 +397,9 @@ pub fn fonts() -> egui::FontDefinitions {
         .entry(FontFamily::Proportional)
         .or_default()
         .insert(0, "Inter".to_owned());
+    fonts
+        .families
+        .insert(FontFamily::Name(ICONS.into()), vec!["Phosphor".to_owned()]);
     fonts
         .families
         .entry(FontFamily::Monospace)
@@ -785,6 +796,60 @@ mod tests {
             ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::proportional(13.0), '●')),
             "Inter adds glyphs the old font lacked"
         );
+        for icon in crate::icons::Icon::ALL {
+            assert!(
+                ctx.fonts_mut(|f| f.has_glyph(
+                    &egui::FontId::new(16.0, egui::FontFamily::Name(ICONS.into())),
+                    icon.glyph()
+                )),
+                "{icon:?} must render through the dedicated icon family"
+            );
+        }
+    }
+
+    #[test]
+    fn phosphor_is_isolated_from_text_families() {
+        use egui::FontFamily;
+        let fonts = fonts();
+        let family = &fonts.families[&FontFamily::Proportional];
+        assert_eq!(family[0], "Inter");
+        assert_eq!(
+            &family[1..],
+            egui::FontDefinitions::default().families[&FontFamily::Proportional]
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Name(ICONS.into())],
+            ["Phosphor"]
+        );
+        for family in [
+            FontFamily::Proportional,
+            FontFamily::Monospace,
+            FontFamily::Name(SEMIBOLD.into()),
+        ] {
+            assert!(
+                !fonts.families[&family]
+                    .iter()
+                    .any(|name| name == "Phosphor")
+            );
+        }
+    }
+
+    #[test]
+    fn every_icon_is_in_the_embedded_phosphor_cmap() {
+        use skrifa::MetadataProvider;
+        let fonts = fonts();
+        let font =
+            skrifa::FontRef::new(fonts.font_data["Phosphor"].font.as_ref().as_ref()).unwrap();
+        let cmap = font.charmap();
+        for icon in crate::icons::Icon::ALL {
+            let glyph = cmap.map(icon.glyph()).unwrap_or_else(|| {
+                panic!(
+                    "{icon:?} U+{:04X} is missing from Phosphor",
+                    u32::from(icon.glyph())
+                )
+            });
+            assert_ne!(glyph.to_u32(), 0, "{icon:?} must not map to .notdef");
+        }
     }
 
     #[test]

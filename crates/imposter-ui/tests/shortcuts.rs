@@ -168,7 +168,7 @@ fn the_save_icon_saves_and_the_status_is_one_word() {
             .accesskit_node()
             .is_disabled()
     };
-    // The icon's strokes: in the text color only while there is something to save.
+    // The icon is in the text color only while there is something to save.
     let icon_colors = |app: &support::App| {
         let area = app.harness.get_by_label("Save request").rect();
         app.harness
@@ -183,6 +183,13 @@ fn the_save_icon_saves_and_the_status_is_one_word() {
                 }
                 egui::Shape::LineSegment { points, stroke } if area.contains(points[0]) => {
                     Some(stroke.color)
+                }
+                egui::Shape::Text(glyph)
+                    if area.contains_rect(glyph.visual_bounding_rect())
+                        && glyph.galley.job.text
+                            == imposter_ui::icons::Icon::Save.glyph().to_string() =>
+                {
+                    Some(glyph.fallback_color)
                 }
                 _ => None,
             })

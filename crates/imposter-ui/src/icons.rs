@@ -1,10 +1,13 @@
-//! Small vector icons, drawn at the current display scale without an icon font.
+//! Phosphor Regular glyphs keep toolbar icons consistent as the action set grows.
+//! A dedicated family avoids Inter's colliding private-use glyphs.
+//! Named native buttons preserve keyboard, screen-reader and tooltip behavior.
+//! The application mark remains drawn in code for window and packaging icons.
 
-use egui::{Color32, Pos2, Rect, Response, Stroke, Ui, vec2};
+use egui::{Color32, FontFamily, FontId, Response, RichText, Ui};
 
-use crate::theme::palette;
+use crate::theme::{ICONS, palette};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Icon {
     Sidebar,
     /// Two panes next to each other.
@@ -45,6 +48,126 @@ pub enum Icon {
     /// A clockwise arrow: load again.
     Refresh,
     Settings,
+    Trash,
+    Info,
+    Check,
+    Warning,
+    Failed,
+    Passed,
+    Play,
+    Stop,
+    FolderOpen,
+    Requests,
+    Variables,
+    History,
+    Mocks,
+    Load,
+    Run,
+    Key,
+    Cookie,
+    Globe,
+}
+
+impl Icon {
+    pub const ALL: [Self; 43] = [
+        Self::Sidebar,
+        Self::Columns,
+        Self::Rows,
+        Self::Revert,
+        Self::More,
+        Self::Plus,
+        Self::Copy,
+        Self::Search,
+        Self::Wrap,
+        Self::Save,
+        Self::Terminal,
+        Self::Collapse,
+        Self::Expand,
+        Self::Filter,
+        Self::Lock,
+        Self::Eye,
+        Self::EyeOff,
+        Self::ChevronUp,
+        Self::ChevronDown,
+        Self::ChevronLeft,
+        Self::ChevronRight,
+        Self::Close,
+        Self::Folder,
+        Self::Refresh,
+        Self::Settings,
+        Self::Trash,
+        Self::Info,
+        Self::Check,
+        Self::Warning,
+        Self::Failed,
+        Self::Passed,
+        Self::Play,
+        Self::Stop,
+        Self::FolderOpen,
+        Self::Requests,
+        Self::Variables,
+        Self::History,
+        Self::Mocks,
+        Self::Load,
+        Self::Run,
+        Self::Key,
+        Self::Cookie,
+        Self::Globe,
+    ];
+
+    /// Codepoints from `@phosphor-icons/web` 2.1.2, `src/regular/style.css`.
+    pub const fn glyph(self) -> char {
+        match self {
+            Self::Sidebar => '\u{ec24}',      // sidebar-simple
+            Self::Columns => '\u{e546}',      // columns
+            Self::Rows => '\u{e5a2}',         // rows
+            Self::Revert => '\u{e038}',       // arrow-counter-clockwise
+            Self::More => '\u{e1fe}',         // dots-three
+            Self::Plus => '\u{e3d4}',         // plus
+            Self::Copy => '\u{e1ca}',         // copy
+            Self::Search => '\u{e30c}',       // magnifying-glass
+            Self::Wrap => '\u{e484}',         // text-align-left
+            Self::Save => '\u{e248}',         // floppy-disk
+            Self::Terminal => '\u{eae8}',     // terminal-window
+            Self::Collapse => '\u{e532}',     // arrows-in-line-vertical
+            Self::Expand => '\u{e536}',       // arrows-out-line-vertical
+            Self::Filter => '\u{e266}',       // funnel
+            Self::Lock => '\u{e308}',         // lock-simple
+            Self::Eye => '\u{e220}',          // eye
+            Self::EyeOff => '\u{e224}',       // eye-slash
+            Self::ChevronUp => '\u{e13c}',    // caret-up
+            Self::ChevronDown => '\u{e136}',  // caret-down
+            Self::ChevronLeft => '\u{e138}',  // caret-left
+            Self::ChevronRight => '\u{e13a}', // caret-right
+            Self::Close => '\u{e4f6}',        // x
+            Self::Folder => '\u{e25a}',       // folder-simple
+            Self::Refresh => '\u{e036}',      // arrow-clockwise
+            Self::Settings => '\u{e272}',     // gear-six
+            Self::Trash => '\u{e4a6}',        // trash
+            Self::Info => '\u{e2ce}',         // info
+            Self::Check => '\u{e182}',        // check
+            Self::Warning => '\u{e4e0}',      // warning
+            Self::Failed => '\u{e4f8}',       // x-circle
+            Self::Passed => '\u{e184}',       // check-circle
+            Self::Play => '\u{e3d0}',         // play
+            Self::Stop => '\u{e46c}',         // stop
+            Self::FolderOpen => '\u{e256}',   // folder-open
+            Self::Requests => '\u{e398}',     // paper-plane-tilt
+            Self::Variables => '\u{e860}',    // brackets-curly
+            Self::History => '\u{e1a0}',      // clock-counter-clockwise
+            Self::Mocks => '\u{e1da}',        // cube
+            Self::Load => '\u{e628}',         // gauge
+            Self::Run => '\u{e3d2}',          // play-circle
+            Self::Key => '\u{e2d6}',          // key
+            Self::Cookie => '\u{e6ca}',       // cookie
+            Self::Globe => '\u{e288}',        // globe
+        }
+    }
+}
+
+/// An icon for a text label, in its own section to avoid Inter's private-use glyphs.
+pub fn glyph_text(icon: Icon, size: f32) -> RichText {
+    RichText::new(icon.glyph().to_string()).font(FontId::new(size, FontFamily::Name(ICONS.into())))
 }
 
 /// The side of an icon button: as tall as the other controls, so they line up in a row.
@@ -100,7 +223,16 @@ fn drawn(
         } else {
             resting
         };
-        paint(ui, icon, response.rect.center() - vec2(8.0, 8.0), color);
+        // The theme's text override must not replace the button's state color.
+        let galley = egui::WidgetText::from(glyph_text(icon, 16.0).color(Color32::PLACEHOLDER))
+            .into_galley(
+                ui,
+                Some(egui::TextWrapMode::Extend),
+                f32::INFINITY,
+                egui::TextStyle::Button,
+            );
+        ui.painter()
+            .galley(response.rect.center() - galley.size() / 2.0, galley, color);
     }
     if ui.is_enabled() {
         response.on_hover_text(hint)
@@ -117,255 +249,6 @@ pub fn menu<R>(
 ) -> Option<egui::InnerResponse<R>> {
     let response = button(ui, icon, label, false);
     egui::Popup::menu(&response).show(contents)
-}
-
-fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
-    let painter = ui.painter();
-    let stroke = Stroke::new(1.5, color);
-    let point = |x, y| origin + vec2(x, y);
-    let line = |a: (f32, f32), b: (f32, f32)| {
-        painter.line_segment([point(a.0, a.1), point(b.0, b.1)], stroke);
-    };
-    let rectangle = |min: (f32, f32), max: (f32, f32)| {
-        painter.rect_stroke(
-            Rect::from_min_max(point(min.0, min.1), point(max.0, max.1)),
-            2.0,
-            stroke,
-            egui::StrokeKind::Inside,
-        );
-    };
-    match icon {
-        Icon::Settings => {
-            // The teeth and central hole distinguish application settings from a status sun.
-            let points = (0..32_u8)
-                .map(|step| {
-                    let angle = std::f32::consts::TAU * f32::from(step) / 32.0;
-                    let radius = if matches!(step % 4, 1 | 2) { 7.0 } else { 5.2 };
-                    point(8.0 + radius * angle.cos(), 8.0 + radius * angle.sin())
-                })
-                .collect();
-            painter.add(egui::Shape::closed_line(points, stroke));
-            painter.circle_stroke(point(8.0, 8.0), 2.2, stroke);
-        }
-        Icon::Sidebar => {
-            // A window with a list down its left side, unlike the two layout icons.
-            rectangle((1.0, 2.0), (15.0, 14.0));
-            line((6.5, 2.0), (6.5, 14.0));
-            for y in [5.5, 8.0, 10.5] {
-                line((3.0, y), (4.5, y));
-            }
-        }
-        Icon::Columns => {
-            rectangle((1.0, 2.0), (15.0, 14.0));
-            line((8.0, 2.0), (8.0, 14.0));
-        }
-        Icon::Rows => {
-            rectangle((1.0, 2.0), (15.0, 14.0));
-            line((1.0, 8.0), (15.0, 8.0));
-        }
-        Icon::Revert => {
-            // A counter-clockwise arrow.
-            let center = point(8.0, 8.5);
-            let arc: Vec<Pos2> = (0..=12_u8)
-                .map(|step| {
-                    let angle = std::f32::consts::PI * (-0.15 + 1.25 * f32::from(step) / 12.0);
-                    center + vec2(angle.cos(), -angle.sin()) * 5.5
-                })
-                .collect();
-            let tip = arc[arc.len() - 1];
-            painter.add(egui::Shape::line(arc, stroke));
-            line(
-                (tip.x - origin.x, tip.y - origin.y),
-                (tip.x - origin.x - 0.5, tip.y - origin.y - 4.0),
-            );
-            line(
-                (tip.x - origin.x, tip.y - origin.y),
-                (tip.x - origin.x + 3.8, tip.y - origin.y - 1.5),
-            );
-        }
-        Icon::More => {
-            for x in [3.0, 8.0, 13.0] {
-                painter.circle_filled(point(x, 8.0), 1.5, color);
-            }
-        }
-        Icon::Plus => {
-            line((2.0, 8.0), (14.0, 8.0));
-            line((8.0, 2.0), (8.0, 14.0));
-        }
-        Icon::Copy => {
-            line((2.0, 11.0), (2.0, 2.0));
-            line((2.0, 2.0), (11.0, 2.0));
-            rectangle((5.0, 5.0), (14.0, 14.0));
-        }
-        Icon::Search => {
-            painter.circle_stroke(point(6.5, 6.5), 4.5, stroke);
-            line((10.0, 10.0), (14.0, 14.0));
-        }
-        Icon::Wrap => {
-            line((2.0, 3.0), (14.0, 3.0));
-            painter.add(egui::Shape::line(
-                vec![
-                    point(2.0, 7.0),
-                    point(12.0, 7.0),
-                    point(14.0, 9.0),
-                    point(14.0, 11.0),
-                    point(12.0, 13.0),
-                    point(7.0, 13.0),
-                ],
-                stroke,
-            ));
-            line((9.0, 10.0), (6.0, 13.0));
-            line((6.0, 13.0), (9.0, 16.0));
-            line((2.0, 11.0), (4.0, 11.0));
-        }
-        Icon::Save => {
-            // A floppy disk: body, shutter and label.
-            painter.add(egui::Shape::closed_line(
-                vec![
-                    point(2.0, 2.0),
-                    point(11.5, 2.0),
-                    point(14.0, 4.5),
-                    point(14.0, 14.0),
-                    point(2.0, 14.0),
-                ],
-                stroke,
-            ));
-            rectangle((5.0, 2.0), (10.5, 6.0));
-            rectangle((4.5, 9.0), (11.5, 14.0));
-        }
-        Icon::Terminal => {
-            rectangle((1.0, 2.0), (15.0, 14.0));
-            painter.add(egui::Shape::line(
-                vec![point(4.0, 5.5), point(6.5, 8.0), point(4.0, 10.5)],
-                stroke,
-            ));
-            line((8.0, 10.5), (12.0, 10.5));
-        }
-        Icon::Collapse | Icon::Expand => {
-            // Each chevron as (y of its ends, y of its tip).
-            let chevrons = if icon == Icon::Collapse {
-                [(2.0, 6.0), (14.0, 10.0)]
-            } else {
-                [(6.0, 2.0), (10.0, 14.0)]
-            };
-            for (ends, tip) in chevrons {
-                painter.add(egui::Shape::line(
-                    vec![point(4.0, ends), point(8.0, tip), point(12.0, ends)],
-                    stroke,
-                ));
-            }
-        }
-        Icon::Filter => {
-            painter.add(egui::Shape::closed_line(
-                vec![
-                    point(2.0, 3.0),
-                    point(14.0, 3.0),
-                    point(9.5, 8.5),
-                    point(9.5, 13.5),
-                    point(6.5, 12.0),
-                    point(6.5, 8.5),
-                ],
-                stroke,
-            ));
-        }
-        Icon::Eye | Icon::EyeOff => {
-            // A lens of two arcs with the pupil inside.
-            let angle = |step: u8| std::f32::consts::PI * f32::from(step) / 16.0;
-            let lens: Vec<Pos2> = (0..=16_u8)
-                .map(|step| point(8.0 - 7.0 * angle(step).cos(), 8.0 - 4.5 * angle(step).sin()))
-                .chain((1..16_u8).map(|step| {
-                    point(8.0 + 7.0 * angle(step).cos(), 8.0 + 4.5 * angle(step).sin())
-                }))
-                .collect();
-            painter.add(egui::Shape::closed_line(lens, stroke));
-            painter.circle_stroke(point(8.0, 8.0), 2.0, stroke);
-            if icon == Icon::EyeOff {
-                line((2.0, 14.0), (14.0, 2.0));
-            }
-        }
-        Icon::ChevronUp => {
-            painter.add(egui::Shape::line(
-                vec![point(3.0, 10.5), point(8.0, 5.5), point(13.0, 10.5)],
-                stroke,
-            ));
-        }
-        Icon::ChevronDown => {
-            painter.add(egui::Shape::line(
-                vec![point(3.0, 5.5), point(8.0, 10.5), point(13.0, 5.5)],
-                stroke,
-            ));
-        }
-        Icon::ChevronLeft => {
-            painter.add(egui::Shape::line(
-                vec![point(10.5, 3.0), point(5.5, 8.0), point(10.5, 13.0)],
-                stroke,
-            ));
-        }
-        Icon::ChevronRight => {
-            painter.add(egui::Shape::line(
-                vec![point(5.5, 3.0), point(10.5, 8.0), point(5.5, 13.0)],
-                stroke,
-            ));
-        }
-        Icon::Close => {
-            line((3.5, 3.5), (12.5, 12.5));
-            line((12.5, 3.5), (3.5, 12.5));
-        }
-        Icon::Folder => {
-            painter.add(egui::Shape::closed_line(
-                vec![
-                    point(1.5, 3.0),
-                    point(6.0, 3.0),
-                    point(7.5, 5.0),
-                    point(14.5, 5.0),
-                    point(14.5, 13.5),
-                    point(1.5, 13.5),
-                ],
-                stroke,
-            ));
-        }
-        Icon::Refresh => {
-            // A clockwise arrow, the mirror of Revert.
-            let center = point(8.0, 8.5);
-            let arc: Vec<Pos2> = (0..=12_u8)
-                .map(|step| {
-                    let angle = std::f32::consts::PI * (1.15 - 1.25 * f32::from(step) / 12.0);
-                    center + vec2(angle.cos(), -angle.sin()) * 5.5
-                })
-                .collect();
-            let tip = arc[arc.len() - 1];
-            painter.add(egui::Shape::line(arc, stroke));
-            line(
-                (tip.x - origin.x, tip.y - origin.y),
-                (tip.x - origin.x + 0.5, tip.y - origin.y - 4.0),
-            );
-            line(
-                (tip.x - origin.x, tip.y - origin.y),
-                (tip.x - origin.x - 3.8, tip.y - origin.y - 1.5),
-            );
-        }
-        Icon::Lock => {
-            // A body with a shackle over it.
-            painter.rect_stroke(
-                Rect::from_min_max(point(3.0, 7.5), point(13.0, 14.0)),
-                1.5,
-                stroke,
-                egui::StrokeKind::Middle,
-            );
-            painter.add(egui::Shape::line(
-                vec![
-                    point(5.5, 7.5),
-                    point(5.5, 5.0),
-                    point(6.5, 3.0),
-                    point(8.0, 2.5),
-                    point(9.5, 3.0),
-                    point(10.5, 5.0),
-                    point(10.5, 7.5),
-                ],
-                stroke,
-            ));
-        }
-    }
 }
 
 /// The packaging icons: file name and pixel size. macOS names 1024 pixels `512x512@2x`.

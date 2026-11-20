@@ -38,8 +38,11 @@ before-packaging-command = "cargo build --release --locked -p imposter"
 out-dir = "../../target/packages"
 binaries-dir = "../../target/release"
 binaries = [{ path = "imposter", main = true }]
-# The bundled fonts' Open Font License travels with every package.
-resources = [{ src = "../imposter-ui/assets/fonts/*-OFL.txt", target = "licenses/fonts" }]
+# The bundled fonts' OFL and MIT licenses travel with every package.
+resources = [
+    { src = "../imposter-ui/assets/fonts/*-OFL.txt", target = "licenses/fonts" },
+    { src = "../imposter-ui/assets/fonts/Phosphor-LICENSE.txt", target = "licenses/fonts" },
+]
 icons = [
     "icons/32x32.png",
     "icons/128x128.png",

@@ -286,6 +286,15 @@ fn hovering_an_icon_button_draws_no_orange() {
         .collect();
     assert!(!strokes.is_empty(), "the icon is drawn");
     assert!(!strokes.contains(&accent), "{strokes:?}");
+    let glyph = imposter_ui::icons::Icon::Rows.glyph().to_string();
+    assert!(
+        shapes_in(&app, area).into_iter().any(|shape| {
+            matches!(shape, egui::Shape::Text(text)
+            if text.galley.job.text == glyph
+                && text.fallback_color == imposter_ui::theme::palette().text)
+        }),
+        "the hovered glyph is drawn in the neutral text color"
+    );
 }
 
 /// Grips painted last frame: bars of the grip's length in the control-edge color.

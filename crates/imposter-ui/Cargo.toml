@@ -23,6 +23,7 @@ jiff.workspace = true
 open.workspace = true
 
 [dev-dependencies]
+skrifa.workspace = true
 image.workspace = true
 serde_json.workspace = true
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }

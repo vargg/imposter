@@ -65,6 +65,8 @@ jiff = "0.2.38"
 indexmap = { version = "2.14.2", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
+# Reuse epaint's pure Rust font parser for embedded icon cmap tests.
+skrifa = "0.44.0"
 # Watching the collections folder for outside changes: the OS's own notifications
 # (FSEvents, inotify, ReadDirectoryChangesW), no other system library.
 notify = "8"
