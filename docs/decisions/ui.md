@@ -1,8 +1,17 @@
 # UI Architecture Decisions
-
 Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/eframe, layouts, response viewer, theme/palette/fonts, forms, and dialogs.
+## Table of Contents
+- [Architecture & Thread Model](#architecture-thread-model)
+- [Design System, Typography & Themes](#design-system-typography-themes)
+- [Layout, Panes & Global Navigation](#layout-panes-global-navigation)
+- [Request Bar & Editors](#request-bar-editors)
+- [Response Viewer](#response-viewer)
+- [State, Saving & Dialogs](#state-saving-dialogs)
+- [Screens (Variables, Run, History, Settings)](#screens-variables-run-history-settings)
 
 ## Decisions
+
+### Architecture & Thread Model
 
 - **GUI: egui + eframe (glow backend); Iced not needed.** Why: the most mature tables, trees and
   panels, custom text layout for `{{var}}` highlighting, and a UI test harness (`egui_kittest`,
@@ -11,63 +20,48 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   `#ff6c37`), not a native look. Confirmed in stage 0: release binary 5.6 MiB (LTO, stripped,
   macOS arm64); first frame about 225 ms after process start (24 ms after app creation).
 
-- **Response viewer: virtualized rows, never one big text widget.** Only visible rows are laid
-  out (`ScrollArea::show_rows`, monospace, wrap by column count). Why: a 5 MiB read-only
-  `TextEdit` costs about 730 ms per frame; virtualized rows cost about 0.1 ms, highlighted or
-  not. Measured by `cargo run --release -p imposter-ui --example text_perf` (M-series Mac).
+- **UI architecture: widgets emit actions, background work returns messages.** Widgets edit the
+  editor's form state in place and push `Action`s; the app applies them after the frame and runs
+  database and network work through the bridge; results come back as `Message`s drained at the
+  start of the next frame. Every navigation bumps a generation and results carry the generation
+  they started under, so a late result never lands on another request. Why: immediate-mode
+  drawing stays free of IO, and the workflow (guard, saves, close) is testable as state.
 
-- **The preview stays at 256 KiB; the whole body is one click away.** When the preview is
-  shorter than the body, the pane says so precisely ("Preview shows 256 KB of 584 KB", or
-  "Body cut at … when captured") and offers Save body… (written atomically on the bridge,
-  `transfer::write_file`) and Copy full body, in Requests and History. Why: the limit keeps
-  the viewer fast; the old "truncated or preview limited" left no way to the rest. The
-  notice is one line, cut if need be, with the two actions as icons at its end: wrapped
-  words and buttons took three rows from the body at 720 points (Q14). A cut JSON body is
-  still re-indented as far as it goes (`viewer::pretty_json_start`, when the parser only
-  ran out of input), without folding, which needs the whole document: one minified line
-  wrapped mid-token (#26).
-  Every response body can be saved as received: Save body… ends the Body tab's tools
-  (beside the notice instead when the preview is cut), named for its content type
-  (`viewer::body_file_name`: `.png`, `.pdf`, `.bin` for unknown bytes). A binary body
-  (`viewer::is_binary`: an image, audio, video, font, PDF, archive or
-  `application/octet-stream` type, or a NUL byte in the first 8 KiB without a type that
-  says text) is described ("Binary body", its size and type) instead of shown as Latin-1
-  noise, with no Find, Wrap or Copy, since bytes copied as text are damaged. Text that is
-  not UTF-8 is still text. Why: small binary bodies could not be saved at all, and showed
-  as garbage (the user's note). Not done: showing images.
+- **The UI thread never blocks.** `imposter-ui/clippy.toml` disallows blocking database calls,
+  file IO, sleeps, `block_on` and synchronous file dialogs. Only test and example crates allow
+  them, at their top, and `window_state`, which runs before the window exists. Why: a frozen
+  window is the most visible failure a desktop app has.
 
-- **Response headers are a table by default** (`widgets::headers_table`): names muted,
-  values selectable and wrapping at words, a copy button on the row under the pointer.
-  Where values would get under 160 points, each goes under its name: narrow columns broke
-  "content-length" and "application/json" mid-word (Q9).
-  "Raw" switches to the text viewer with Find and Wrap. Why: a raw block broke values
-  mid-word in a narrow pane (the review's #13, #27). Raw is a framed toggle at the right
-  end of the tab row, and the tabs leave room for it: drawn after the tabs in their style
-  it read as a fourth tab, and without room the copy icon covered it (Q1, Q15).
+- **The layout lint gates every screen** (`imposter-ui/tests/layout.rs`).
+  - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
+    walks the screens, a sent response, a History run and the dialogs.
+  - **Widths:** no visible control, and no outlined frame (panes, groups, cards, read
+    from the painted shapes), may run past the window's sides; a control inside a pane
+    card may not run past the card's sides, which clip it unseen (the Auth tab's eye at
+    720 points, Phase 6 review Q27).
+  - **Overlap:** no two buttons may overlap, and no text label may run into a button
+    (a long "500 Internal Server Error" into the Runs menu). This is checked only without a dialog open,
+    since a dialog is a layer above.
+  - **Clipping:** egui does not tell AccessKit about clipping, so controls crossing the
+    header's bottom or the status bar's top count as scrolled out, as does anything below
+    the status bar's top other than its own controls.
+  - **Upkeep:** new screens and states are added to its walk.
 
-- **JSON navigation keeps the virtualized rows.** Folding hides row ranges computed from an
-  outline of the formatted text (`viewer::Outline`: path, depth and closing line for every
-  line), so nothing is laid out that is not visible. A row with a fold marker is exactly as
-  tall as a plain row, because the scroll area places rows by a fixed height. Paths are
-  RFC 9535 JSONPath, written one way everywhere (`select::member`: `.name` when the shorthand
-  allows it, `['name']` otherwise), so a copied path works in a filter, and later in checks
-  and extraction. JSONPath comes from `serde_json_path` (pure Rust); a hand-written subset
-  would differ from what users read in the RFC.
+  Why: horizontal overflow and crowded rows only show at some sizes; the lint found
+  History's toolbar overlapping at 720 points in Comfortable, and Settings groups 56
+  points past the window (`set_max_width` widens a narrower `Ui`).
 
-- **JSON rows offer their actions without a right-click.** The line under the pointer is
-  highlighted with a "⋯" at the viewer's right that opens the row menu (Add check, Set
-  variable, Copy path, Copy value), headed by the row's path, under the line so it stays
-  in view; both stay while the menu is open. Right-click opens the same menu. Wrapped
-  lines stop short of the "⋯", which sits on the row's fill where a line still reaches
-  it (Q10, #30). Why: the actions were found only by accident (the
-  review's #30).
+- **UI tests drive the real app through AccessKit** (`egui_kittest`): every widget a test or a
+  screen reader needs has an accessible name, set with `widgets::name` when no visible label
+  exists. Only characters present in egui's bundled fonts are used; kittest fails on a missing
+  glyph, which would otherwise render as a box. `cargo run -p imposter-ui --example screenshot --
+  <dir>` renders the app offscreen (wgpu) for looking at layouts; `--example tour` renders
+  every primary task step by step and the states a design review needs (first start,
+  loading, errors, dialogs) at the minimum and a wide size. Design reviews follow the
+  `design-ux` procedure: a reviewer that did not build the screens scores the tour.
 
-- **The response filter runs over the whole captured body in the background**, parsed once
-  per response and kept for later queries; one run is in flight at a time and the newest query
-  follows. A late result for a replaced response is dropped. Results are re-serialized, so
-  numbers keep their value but not their spelling (`1.50` becomes `1.5`); the formatted body,
-  "Copy value" and the preview keep tokens exactly as received. A truncated body is refused
-  rather than reported as invalid JSON.
+
+### Design System, Typography & Themes
 
 - **Two themes from one set of named roles** (`theme::Palette`: background, surface, input,
   field_border, selected_bar, text, tones, syntax…, as `DARK` and `LIGHT`).
@@ -132,6 +126,24 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   Why: an orange outline on every hover diluted the accent until it meant nothing (the
   review's #60). Checked in `theme.rs` tests.
 
+- **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
+  256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
+  dependency.
+
+- **Common actions in a toolbar or row are icons; menus are words.** Copy, Copy as curl,
+  Refresh, Newer and Older (chevrons), the find bar's Next and Previous, Close (a painted
+  ×), Browse (a folder) and Save are icon buttons (`icons.rs`, painted, no icon font),
+  each named for screen readers and tests and with its words in the hover text. Menu items
+  stay text, and so do actions that start a flow (Restore as draft, Retry, Add check,
+  "+ Environment"), whose words say more than a glyph could. Why: the same action was an
+  icon in one place and a word in another ("Copy as curl" in the request bar and in
+  History, the inspector's "Copy value"; the user's note), and text buttons crowded the
+  toolbars. Checked by `support::assert_icon_button` in the History, find and inspector
+  tests.
+
+
+### Layout, Panes & Global Navigation
+
 - **The header keeps Requests, Variables and History together.** Mocks, Load and Run live
   in a named Tools menu; application Settings is a gear at the far right, beside Tools and
   the environment picker. Why: variables belong to everyday request work, while the two
@@ -146,162 +158,6 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   environment names truncate with their full name on hover, so the picker cannot overlap
   navigation. Checked by `imposter-ui/tests/header.rs`, the load and mock UI tests, and
   the layout lint.
-
-- **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
-  256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large
-  dependency.
-
-- **The request bar is one control:** method, URL and Send share one edge
-  (`field_border`) on the input fill, with a divider after the method and Send filling the
-  right end; the fields inside draw no frame of their own (`workspace::frameless`), and the
-  focus ring goes around the whole bar. Single-line variable fields centre their text
-  vertically. A custom method being typed takes the method picker's place, so the URL
-  keeps its room at 720 points. Save's icon is in the text color while there is something
-  to save (`icons::ready_button`), muted at rest and faded when disabled. Why: the bar was
-  a frame in a frame in a card, its URL text sat 6 points above centre, and enabled and
-  disabled Save looked alike (the review's #22–#24). Checked by
-  `imposter-ui/tests/request_bar.rs` and the layout lint's custom-method state.
-
-- **The Auth tab is a two-column grid** (`widgets::auth_form`): one label column, fields to
-  the pane's edge (sized from the pane, since a grid cell sees only itself), and an eye
-  button after each secret (password, token, key value) that shows or hides it for the session; the
-  choice is never stored. Why: labels were indented differently, the field had a fixed width,
-  and a typed secret could not be checked (the review's #25).
-
-- **The request's Settings tab is one row per setting** (`widgets::options_form`), under a
-  muted heading per group: the label in a 150-point column, then the control. A text
-  setting shows the application default in its empty field ("Default: 30 seconds");
-  typing makes it the request's own, and a reset icon after it ("Use application default
-  for …") goes back. An on/off setting is a choice of "Default (On)", On and Off. In a
-  pane too narrow for the column each control goes under its label. Why: each setting took
-  three or four rows (label, a "Use application default" box, the field greyed out, a
-  hint), about 35 rows for ten settings, and the useful value sat in the small grey hint
-  (the user's note).
-
-- **The body editor fills its pane**, above a one-line footer ("Valid JSON" or the parse
-  error with its line, then Format), and is never shorter than about four lines. A
-  `{{placeholder}}` outside a string stands for a value, so `{"n": {{n}}}` is valid
-  (`viewer::check_json_template`). Format (the button, Cmd/Ctrl+Shift+F or the palette)
-  re-indents with two spaces, keeping every token and placeholder as typed
-  (`viewer::format_json_body`), and a JSON document pasted into an empty body is formatted
-  at once. Typing is never reformatted, since re-indenting under the cursor fights it, but
-  it is helped locally as code editors do (`json_typing`, JSON bodies up to 64 KiB):
-  `{`, `[` and `"` close themselves where there is room and outside strings (so `{{`
-  becomes `{{}}` and the name suggestions still open), wrap a selection, and a typed
-  closer steps over the one there; Backspace removes an empty pair; Enter keeps the
-  indent, one level more after an opener, with the closer on its own line; a closer on a
-  line of indent goes one level out. The help is computed from the text before the key
-  and applied only when egui made exactly the plain edit, so a paste, IME or an accepted
-  suggestion is left as egui made it, and undo never stops at a half pair. Why: a pasted
-  minified body stayed one line, and the footer called every templated body invalid; JSON
-  typed by hand needed every closer and indent typed too (the user's notes). Why: a fixed
-  ten rows left most of a large pane empty (the review's #20).
-
-- **Body editor: egui `TextEdit`; `{{var}}`/JSON highlighting only up to 64 KiB.** Why: per
-  interactive frame the editor costs about 4 ms at 64 KiB, 24 ms at 256 KiB and 130 ms at 1 MiB
-  (plain), and highlighting adds about 30%. Larger bodies stay editable but slow; a custom
-  virtualized editor would be needed to fix that and is out of scope.
-
-- **The saver is plain UI-side state** (`imposter_app::saver`): one write in flight at a time,
-  the newest snapshot per request, failures kept for retry or explicit discard. The UI runs
-  the writes through the bridge.
-
-- **UI architecture: widgets emit actions, background work returns messages.** Widgets edit the
-  editor's form state in place and push `Action`s; the app applies them after the frame and runs
-  database and network work through the bridge; results come back as `Message`s drained at the
-  start of the next frame. Every navigation bumps a generation and results carry the generation
-  they started under, so a late result never lands on another request. Why: immediate-mode
-  drawing stays free of IO, and the workflow (guard, saves, close) is testable as state.
-
-- **Every navigation that replaces the editor goes through one guard**: clean → proceed; saved
-  request with autosave on → save first (failure asks Retry/Discard/Cancel); otherwise ask
-  Save/Discard/Cancel. For an unsaved draft the guard asks "Keep this draft?" and names the collection
-  Save adds it to (Save as new request / Discard / Stay), because "Save changes to …" read as
-  overwriting the request the draft came from. Closing uses the same guard after background work drained, then writes
-  UI state (layout, last selection, window) and closes; any failure keeps the window open.
-
-- **The tree is refreshed after a save that changed a request's method or name**, so it never
-  shows a stale name.
-
-- **The tree is reordered by dragging, by Move up and Move down, or by Alt+↑/↓.**
-  - **Drop zones** (`workspace::drop_zone`): on a folder, the top and bottom quarters drop
-    before and after it and the middle into it (last); under an open folder's header the
-    drop goes first inside it. A request row has halves. A 2-point accent line between rows
-    shows before and after, and an outline shows into.
-  - **Store:** one command (`collections::place`) moves the node and numbers its new
-    siblings 0, 1, 2… in the order the tree shows, folders and requests mixed, so no two
-    share a position. Move… and a drop on the collection root put it last. The unused
-    `reorder`, which numbered folders before requests, is gone.
-  - **While filtering** only drops into folders work, and Move up and down are off:
-    hidden siblings make "before X" ambiguous, and a step past a hidden one looked like
-    nothing happened.
-  - **Keyboard:** Alt+↑/↓ move the selected node, except while a text field has focus,
-    where they move the cursor (a field is recognised by its stored edit state, since
-    egui reports any focused widget as wanting the keyboard).
-  - **Long trees** scroll while a node is held within a row of the tree's top or bottom.
-
-  Why: drags only went into folders, so the order inside one could not be changed, and
-  dragging cannot be done from a keyboard or screen reader. Checked by
-  `imposter-ui/tests/editing.rs` and the store's `placing_*` tests.
-
-- **The layout lint gates every screen** (`imposter-ui/tests/layout.rs`).
-  - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
-    walks the screens, a sent response, a History run and the dialogs.
-  - **Widths:** no visible control, and no outlined frame (panes, groups, cards, read
-    from the painted shapes), may run past the window's sides; a control inside a pane
-    card may not run past the card's sides, which clip it unseen (the Auth tab's eye at
-    720 points, Phase 6 review Q27).
-  - **Overlap:** no two buttons may overlap, and no text label may run into a button
-    (a long "500 Internal Server Error" into the Runs menu). This is checked only without a dialog open,
-    since a dialog is a layer above.
-  - **Clipping:** egui does not tell AccessKit about clipping, so controls crossing the
-    header's bottom or the status bar's top count as scrolled out, as does anything below
-    the status bar's top other than its own controls.
-  - **Upkeep:** new screens and states are added to its walk.
-
-  Why: horizontal overflow and crowded rows only show at some sizes; the lint found
-  History's toolbar overlapping at 720 points in Comfortable, and Settings groups 56
-  points past the window (`set_max_width` widens a narrower `Ui`).
-
-- **UI tests drive the real app through AccessKit** (`egui_kittest`): every widget a test or a
-  screen reader needs has an accessible name, set with `widgets::name` when no visible label
-  exists. Only characters present in egui's bundled fonts are used; kittest fails on a missing
-  glyph, which would otherwise render as a box. `cargo run -p imposter-ui --example screenshot --
-  <dir>` renders the app offscreen (wgpu) for looking at layouts; `--example tour` renders
-  every primary task step by step and the states a design review needs (first start,
-  loading, errors, dialogs) at the minimum and a wide size. Design reviews follow the
-  `design-ux` procedure: a reviewer that did not build the screens scores the tour.
-
-- **Variables in the editor:** fields mark `{{name}}` tokens with the highlight pattern
-  `\{\{([^{}\n]+)\}\}` (stricter than the resolution pattern, so half-typed text is not marked): defined names and
-  generated values in the accent color, unknown ones in the error color on a red tint
-  (the two colors are equally bright, so hue alone failed colour-blind users). Typing `{{` suggests names with their scope and
-  source, never values; the list opens only from typing in an unfinished token (clicking into
-  a token only inspects it) and can be chosen by keyboard or pointer. Values appear only in the inspector, opened explicitly (click on a token
-  or Alt+Enter); from a password field they stay masked until "Reveal". The inspector and
-  execution share `executor::inputs`, so it explains exactly what a send would use.
-  It opens under the token, with a pointer up to it (frame and pointer edged in the
-  control-edge color, ≥3:1, Q21), and says where each value comes from
-  in words ("Defined in the Dev environment (overrides Global)", then "Overridden in
-  Global"; `vars::describe`). It closes with × at its top right or Esc, and "Copy value"
-  copies what a send would use, masked or not, since copying is explicit. Why: opened at
-  the field's edge it pointed at nothing, and "Effective · Environment · Dev" read as
-  internal labels (the review's #36).
-
-- **The Variables screen edits one scope at a time** (Global, an environment, a collection),
-  independently of the active execution environment, with its own unsaved-changes guard for
-  scope changes, reloads, environment management, "Open definition" and closing. Closing
-  resolves the request guard first, then the variables guard, then writes UI state.
-  The scope picker is captioned "Editing"; its list marks the active environment
-  ("(active)"). Under it, one sentence says what the scope is for ("Used by every
-  request.", "Dev is the active environment: requests use these now.") and one line where
-  it stands in precedence (`variables_screen::explanation`); the name is not repeated,
-  since the picker shows it. The toolbar has a labelled "+ Environment"; editing the name
-  and color, deleting and "Clear all variables…" are in its "⋯" menu, and clearing asks
-  in a dialog with the count. In environment lists, names without a color keep the dot's room,
-  so all start in line. Why: the screen did not say which scope wins, nor whether the
-  environment shown is the one sends use, and "Clear All" sat beside "Add Variable" (the
-  review's #37, #39; Phase 5 review Q22, Q25).
 
 - **The layout is a switch, not a mode:** side by side or stacked, changed only by the status
   bar's two layout buttons (the current one selected: one button showing the other
@@ -385,80 +241,6 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   import review says what it creates ("Creates Pet Store: 8 requests in 2 folders",
   counted at every depth).
 
-- **Every problem in the response pane says what happened and what to do next.**
-  - **Transport failure:** a plain headline per error kind and a hint (`viewer::failure_title`,
-    `failure_hint`); the raw library text sits under a collapsed Details; Retry appears in the
-    open request's pane, not in History.
-  - **A send that never went out** (`app::NotSent`): the reason replaces any earlier response,
-    which would read as this send's. Undefined variables come as names
-    (`ExecuteError::Unresolved`), so the pane offers "Define in <active environment or
-    Global>" under the headline that names `{{x}}` (its accessible name is the whole
-    "Define {{x}} in …", since a long name cut the destination off). That opens Variables
-    with a new unsaved row; nothing is written until Save.
-
-  Why: the review found raw `os error 61` text clipped at the pane edge, and an empty-state
-  invitation shown right under "Request failed".
-
-- **Common actions in a toolbar or row are icons; menus are words.** Copy, Copy as curl,
-  Refresh, Newer and Older (chevrons), the find bar's Next and Previous, Close (a painted
-  ×), Browse (a folder) and Save are icon buttons (`icons.rs`, painted, no icon font),
-  each named for screen readers and tests and with its words in the hover text. Menu items
-  stay text, and so do actions that start a flow (Restore as draft, Retry, Add check,
-  "+ Environment"), whose words say more than a glyph could. Why: the same action was an
-  icon in one place and a word in another ("Copy as curl" in the request bar and in
-  History, the inspector's "Copy value"; the user's note), and text buttons crowded the
-  toolbars. Checked by `support::assert_icon_button` in the History, find and inspector
-  tests.
-
-- **Every screen saves the same way:** a disk icon at the top right, with its state in a word
-  when the icon cannot show it
-  (`widgets::save_controls`); Variables adds a revert icon. The header logo is the app icon
-  drawing, like the window and Dock icon.
-
-- **Save states are one word** (`widgets::SaveWord`: "Saving…", "Save failed", "Invalid
-  fields", "Loading…", "Not loaded") beside the Save icon, colored by tone, in the request
-  bar, Variables, Settings and Mocks. Saved, Unsaved and Draft are not written: the icon is
-  in the text color while there is something to save, and a draft has its banner. Every
-  state is the icon's accessible description, with the explanation in its hover text. A
-  longer reason (a duplicate name, a failed write) goes to the status bar, never into the
-  word. In the request bar Copy as curl sits between the icon and the word
-  (`widgets::save_controls_with`), so a word that comes and goes, as "Saving…" does on every
-  autosave, never moves it (the user's note). Save is an icon button named by its action. Section headings and explanatory
-  subtitles are left out where tabs and controls already say it. Why: user review found the
-  longer texts noisy, and later that "Unsaved" beside a highlighted Save said it twice.
-
-- **Every action that removes saved data asks first, in a dialog that names what goes**
-  (`Dialog::delete_collection`, `delete_node`, `delete_environment`, `clear_history`,
-  `clear_variables`, `revert_variables`): "Delete \"API\" with 8 requests in 2 folders",
-  "Delete 312 executions from history?", and the red button says what it does ("Delete
-  collection", "Discard changes"). Menu items that open one end with "…". Revert on
-  Variables asks too (Mocks' goes through its unsaved-changes guard). Edits inside a form
-  (a row's ×, a table's "Clear all") keep their two-click or inline question, since Save
-  has not written them yet. Why: a misclick must never lose data (user's rule); a
-  question that does not say how much goes is answered without reading. Checked by
-  `imposter-ui/tests/destructive.rs`.
-
-- **Removing a row takes two clicks** (`widgets::remove_button`): the first arms the × (red,
-  "Click again to remove …"), the second removes; it disarms after a few seconds or when the
-  pointer goes elsewhere. Why: one stray click must not lose a header or variable; this works
-  from the keyboard and screen readers, unlike a double-click.
-
-- **The UI thread never blocks.** `imposter-ui/clippy.toml` disallows blocking database calls,
-  file IO, sleeps, `block_on` and synchronous file dialogs. Only test and example crates allow
-  them, at their top, and `window_state`, which runs before the window exists. Why: a frozen
-  window is the most visible failure a desktop app has.
-
-- **Settings save only on Save Settings**, against a baseline: undoing an edit is not a change. Settings the screen does not
-  show are kept. Closing asks about unsaved settings after the request and variables guards.
-  Saving applies history retention at once, not at the next send, so the
-  limits the History screen shows are already true. The screen is one form: section headings
-  instead of framed groups, one label column shared by every section (`LABEL_COLUMN`), at most
-  720 points wide, with a line of help under fields that need it. Every path field has
-  Browse… (through `ImposterApp::pick`) and says "File not found" when the path names no file;
-  the check runs on the bridge (`transfer::is_file`) and is redone when the screen is opened.
-  "Verify TLS certificates", not SSL. Why: label columns differed per group, paths had to be
-  typed, and a wrong path showed only on the next send (the review's #50, #51).
-
 - **Shortcuts are one table, `shortcuts::ALL`, handled in one place before widgets draw**
   (`shortcuts::handle`) and doing nothing while a dialog is open. The same table drives the
   shortcut sheet (Cmd/Ctrl+Shift+/: grouped as Navigate, Send, Edit and View, keys drawn as
@@ -513,6 +295,104 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   field's right padding, so typing never changes the field's or the sidebar's width (the
   review's #52), and "5 of 9 requests" shows under it while filtering.
 
+- **The tree is refreshed after a save that changed a request's method or name**, so it never
+  shows a stale name.
+
+- **The tree is reordered by dragging, by Move up and Move down, or by Alt+↑/↓.**
+  - **Drop zones** (`workspace::drop_zone`): on a folder, the top and bottom quarters drop
+    before and after it and the middle into it (last); under an open folder's header the
+    drop goes first inside it. A request row has halves. A 2-point accent line between rows
+    shows before and after, and an outline shows into.
+  - **Store:** one command (`collections::place`) moves the node and numbers its new
+    siblings 0, 1, 2… in the order the tree shows, folders and requests mixed, so no two
+    share a position. Move… and a drop on the collection root put it last. The unused
+    `reorder`, which numbered folders before requests, is gone.
+  - **While filtering** only drops into folders work, and Move up and down are off:
+    hidden siblings make "before X" ambiguous, and a step past a hidden one looked like
+    nothing happened.
+  - **Keyboard:** Alt+↑/↓ move the selected node, except while a text field has focus,
+    where they move the cursor (a field is recognised by its stored edit state, since
+    egui reports any focused widget as wanting the keyboard).
+  - **Long trees** scroll while a node is held within a row of the tree's top or bottom.
+
+  Why: drags only went into folders, so the order inside one could not be changed, and
+  dragging cannot be done from a keyboard or screen reader. Checked by
+  `imposter-ui/tests/editing.rs` and the store's `placing_*` tests.
+
+- **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `imposter-ui/tests/editing.rs`. `{{variables}}` in a name are drawn in the accent, as in the editor, and the sidebar's edge has a grip like the splits', since it can be dragged wider (200–400 points, remembered) and nothing said so (the review's #59).
+
+
+### Request Bar & Editors
+
+- **The request bar is one control:** method, URL and Send share one edge
+  (`field_border`) on the input fill, with a divider after the method and Send filling the
+  right end; the fields inside draw no frame of their own (`workspace::frameless`), and the
+  focus ring goes around the whole bar. Single-line variable fields centre their text
+  vertically. A custom method being typed takes the method picker's place, so the URL
+  keeps its room at 720 points. Save's icon is in the text color while there is something
+  to save (`icons::ready_button`), muted at rest and faded when disabled. Why: the bar was
+  a frame in a frame in a card, its URL text sat 6 points above centre, and enabled and
+  disabled Save looked alike (the review's #22–#24). Checked by
+  `imposter-ui/tests/request_bar.rs` and the layout lint's custom-method state.
+
+- **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests, Captures, Scripts.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks and Captures the variables it sets from a response, each tab counting its own rows ("Set variable" from a JSON row opens Captures). Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document; checks and captures in one tab under two headings made captures hard to find (user's note). The response keeps one Tests tab for check results and capture writes, both results of the run. Enforced by `imposter-ui/tests/editing.rs`.
+
+- **The body editor fills its pane**, above a one-line footer ("Valid JSON" or the parse
+  error with its line, then Format), and is never shorter than about four lines. A
+  `{{placeholder}}` outside a string stands for a value, so `{"n": {{n}}}` is valid
+  (`viewer::check_json_template`). Format (the button, Cmd/Ctrl+Shift+F or the palette)
+  re-indents with two spaces, keeping every token and placeholder as typed
+  (`viewer::format_json_body`), and a JSON document pasted into an empty body is formatted
+  at once. Typing is never reformatted, since re-indenting under the cursor fights it, but
+  it is helped locally as code editors do (`json_typing`, JSON bodies up to 64 KiB):
+  `{`, `[` and `"` close themselves where there is room and outside strings (so `{{`
+  becomes `{{}}` and the name suggestions still open), wrap a selection, and a typed
+  closer steps over the one there; Backspace removes an empty pair; Enter keeps the
+  indent, one level more after an opener, with the closer on its own line; a closer on a
+  line of indent goes one level out. The help is computed from the text before the key
+  and applied only when egui made exactly the plain edit, so a paste, IME or an accepted
+  suggestion is left as egui made it, and undo never stops at a half pair. Why: a pasted
+  minified body stayed one line, and the footer called every templated body invalid; JSON
+  typed by hand needed every closer and indent typed too (the user's notes). Why: a fixed
+  ten rows left most of a large pane empty (the review's #20).
+
+- **Body editor: egui `TextEdit`; `{{var}}`/JSON highlighting only up to 64 KiB.** Why: per
+  interactive frame the editor costs about 4 ms at 64 KiB, 24 ms at 256 KiB and 130 ms at 1 MiB
+  (plain), and highlighting adds about 30%. Larger bodies stay editable but slow; a custom
+  virtualized editor would be needed to fix that and is out of scope.
+
+- **Variables in the editor:** fields mark `{{name}}` tokens with the highlight pattern
+  `\{\{([^{}\n]+)\}\}` (stricter than the resolution pattern, so half-typed text is not marked): defined names and
+  generated values in the accent color, unknown ones in the error color on a red tint
+  (the two colors are equally bright, so hue alone failed colour-blind users). Typing `{{` suggests names with their scope and
+  source, never values; the list opens only from typing in an unfinished token (clicking into
+  a token only inspects it) and can be chosen by keyboard or pointer. Values appear only in the inspector, opened explicitly (click on a token
+  or Alt+Enter); from a password field they stay masked until "Reveal". The inspector and
+  execution share `executor::inputs`, so it explains exactly what a send would use.
+  It opens under the token, with a pointer up to it (frame and pointer edged in the
+  control-edge color, ≥3:1, Q21), and says where each value comes from
+  in words ("Defined in the Dev environment (overrides Global)", then "Overridden in
+  Global"; `vars::describe`). It closes with × at its top right or Esc, and "Copy value"
+  copies what a send would use, masked or not, since copying is explicit. Why: opened at
+  the field's edge it pointed at nothing, and "Effective · Environment · Dev" read as
+  internal labels (the review's #36).
+
+- **The Auth tab is a two-column grid** (`widgets::auth_form`): one label column, fields to
+  the pane's edge (sized from the pane, since a grid cell sees only itself), and an eye
+  button after each secret (password, token, key value) that shows or hides it for the session; the
+  choice is never stored. Why: labels were indented differently, the field had a fixed width,
+  and a typed secret could not be checked (the review's #25).
+
+- **The request's Settings tab is one row per setting** (`widgets::options_form`), under a
+  muted heading per group: the label in a 150-point column, then the control. A text
+  setting shows the application default in its empty field ("Default: 30 seconds");
+  typing makes it the request's own, and a reset icon after it ("Use application default
+  for …") goes back. An on/off setting is a choice of "Default (On)", On and Off. In a
+  pane too narrow for the column each control goes under its label. Why: each setting took
+  three or four rows (label, a "Use application default" box, the field greyed out, a
+  hint), about 35 rows for ten settings, and the useful value sat in the small grey hint
+  (the user's note).
+
 - **A curl command pasted over the whole URL field replaces the open request** (after Yaak):
   method, URL, headers, cookies, auth, body and options come from the command; identity,
   name, description and place stay; the result is an ordinary unsaved edit (autosave or Save
@@ -521,6 +401,199 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   is taken (`widgets::take_whole_paste`, before the field draws); any other paste is text.
   Why: updating a request from a browser's "Copy as cURL" is one paste, while pasting into
   part of a URL can never replace a request by surprise. + → Paste curl… still opens a draft.
+
+- **The Tests and Captures tabs edit checks and captures in a fixed grid** (`checks.rs`):
+  every row has
+  the same cells, and a source without a path (status, body, duration, size) or an
+  operator without a value leaves its cell empty, so the columns stay put. By the pane's
+  width a row takes one line, two (what to read, then the comparison), or one line per
+  part, as at 720 points with the sidebar shown. The last field of a line takes what the
+  line has left when drawn, since a picker grows past its width for a long label ("does not
+  contain"), and the check box is as wide as a control in the density. Each capture shows
+  the scope it writes to ("→ Dev"), computed as the
+  executor does: the defining scope, else the active environment, else Global. Why:
+  operators jumped between rows, a narrow pane stacked five lines per check with fields cut
+  at its edge, and nothing said where a capture would write (the review's #31, #32).
+
+- **Duplicate creates a fresh saved sibling, including current editor content when open, through the navigation guard.** Name allocation and insertion are one transaction; history stays with the original. Why: copying must neither lose edits nor overwrite an existing request. Enforced by app operation tests and `imposter-ui/tests/editing.rs`.
+
+
+### Response Viewer
+
+- **Response viewer: virtualized rows, never one big text widget.** Only visible rows are laid
+  out (`ScrollArea::show_rows`, monospace, wrap by column count). Why: a 5 MiB read-only
+  `TextEdit` costs about 730 ms per frame; virtualized rows cost about 0.1 ms, highlighted or
+  not. Measured by `cargo run --release -p imposter-ui --example text_perf` (M-series Mac).
+
+- **The preview stays at 256 KiB; the whole body is one click away.** When the preview is
+  shorter than the body, the pane says so precisely ("Preview shows 256 KB of 584 KB", or
+  "Body cut at … when captured") and offers Save body… (written atomically on the bridge,
+  `transfer::write_file`) and Copy full body, in Requests and History. Why: the limit keeps
+  the viewer fast; the old "truncated or preview limited" left no way to the rest. The
+  notice is one line, cut if need be, with the two actions as icons at its end: wrapped
+  words and buttons took three rows from the body at 720 points (Q14). A cut JSON body is
+  still re-indented as far as it goes (`viewer::pretty_json_start`, when the parser only
+  ran out of input), without folding, which needs the whole document: one minified line
+  wrapped mid-token (#26).
+  Every response body can be saved as received: Save body… ends the Body tab's tools
+  (beside the notice instead when the preview is cut), named for its content type
+  (`viewer::body_file_name`: `.png`, `.pdf`, `.bin` for unknown bytes). A binary body
+  (`viewer::is_binary`: an image, audio, video, font, PDF, archive or
+  `application/octet-stream` type, or a NUL byte in the first 8 KiB without a type that
+  says text) is described ("Binary body", its size and type) instead of shown as Latin-1
+  noise, with no Find, Wrap or Copy, since bytes copied as text are damaged. Text that is
+  not UTF-8 is still text. Why: small binary bodies could not be saved at all, and showed
+  as garbage (the user's note). Not done: showing images.
+
+- **Response headers are a table by default** (`widgets::headers_table`): names muted,
+  values selectable and wrapping at words, a copy button on the row under the pointer.
+  Where values would get under 160 points, each goes under its name: narrow columns broke
+  "content-length" and "application/json" mid-word (Q9).
+  "Raw" switches to the text viewer with Find and Wrap. Why: a raw block broke values
+  mid-word in a narrow pane (the review's #13, #27). Raw is a framed toggle at the right
+  end of the tab row, and the tabs leave room for it: drawn after the tabs in their style
+  it read as a fourth tab, and without room the copy icon covered it (Q1, Q15).
+
+- **JSON navigation keeps the virtualized rows.** Folding hides row ranges computed from an
+  outline of the formatted text (`viewer::Outline`: path, depth and closing line for every
+  line), so nothing is laid out that is not visible. A row with a fold marker is exactly as
+  tall as a plain row, because the scroll area places rows by a fixed height. Paths are
+  RFC 9535 JSONPath, written one way everywhere (`select::member`: `.name` when the shorthand
+  allows it, `['name']` otherwise), so a copied path works in a filter, and later in checks
+  and extraction. JSONPath comes from `serde_json_path` (pure Rust); a hand-written subset
+  would differ from what users read in the RFC.
+
+- **JSON rows offer their actions without a right-click.** The line under the pointer is
+  highlighted with a "⋯" at the viewer's right that opens the row menu (Add check, Set
+  variable, Copy path, Copy value), headed by the row's path, under the line so it stays
+  in view; both stay while the menu is open. Right-click opens the same menu. Wrapped
+  lines stop short of the "⋯", which sits on the row's fill where a line still reaches
+  it (Q10, #30). Why: the actions were found only by accident (the
+  review's #30).
+
+- **The response filter runs over the whole captured body in the background**, parsed once
+  per response and kept for later queries; one run is in flight at a time and the newest query
+  follows. A late result for a replaced response is dropped. Results are re-serialized, so
+  numbers keep their value but not their spelling (`1.50` becomes `1.5`); the formatted body,
+  "Copy value" and the preview keep tokens exactly as received. A truncated body is refused
+  rather than reported as invalid JSON.
+
+- **Every problem in the response pane says what happened and what to do next.**
+  - **Transport failure:** a plain headline per error kind and a hint (`viewer::failure_title`,
+    `failure_hint`); the raw library text sits under a collapsed Details; Retry appears in the
+    open request's pane, not in History.
+  - **A send that never went out** (`app::NotSent`): the reason replaces any earlier response,
+    which would read as this send's. Undefined variables come as names
+    (`ExecuteError::Unresolved`), so the pane offers "Define in <active environment or
+    Global>" under the headline that names `{{x}}` (its accessible name is the whole
+    "Define {{x}} in …", since a long name cut the destination off). That opens Variables
+    with a new unsaved row; nothing is written until Save.
+
+  Why: the review found raw `os error 61` text clipped at the pane edge, and an empty-state
+  invitation shown right under "Request failed".
+
+
+### State, Saving & Dialogs
+
+- **The saver is plain UI-side state** (`imposter_app::saver`): one write in flight at a time,
+  the newest snapshot per request, failures kept for retry or explicit discard. The UI runs
+  the writes through the bridge.
+
+- **Every navigation that replaces the editor goes through one guard**: clean → proceed; saved
+  request with autosave on → save first (failure asks Retry/Discard/Cancel); otherwise ask
+  Save/Discard/Cancel. For an unsaved draft the guard asks "Keep this draft?" and names the collection
+  Save adds it to (Save as new request / Discard / Stay), because "Save changes to …" read as
+  overwriting the request the draft came from. Closing uses the same guard after background work drained, then writes
+  UI state (layout, last selection, window) and closes; any failure keeps the window open.
+
+- **Every screen saves the same way:** a disk icon at the top right, with its state in a word
+  when the icon cannot show it
+  (`widgets::save_controls`); Variables adds a revert icon. The header logo is the app icon
+  drawing, like the window and Dock icon.
+
+- **Save states are one word** (`widgets::SaveWord`: "Saving…", "Save failed", "Invalid
+  fields", "Loading…", "Not loaded") beside the Save icon, colored by tone, in the request
+  bar, Variables, Settings and Mocks. Saved, Unsaved and Draft are not written: the icon is
+  in the text color while there is something to save, and a draft has its banner. Every
+  state is the icon's accessible description, with the explanation in its hover text. A
+  longer reason (a duplicate name, a failed write) goes to the status bar, never into the
+  word. In the request bar Copy as curl sits between the icon and the word
+  (`widgets::save_controls_with`), so a word that comes and goes, as "Saving…" does on every
+  autosave, never moves it (the user's note). Save is an icon button named by its action. Section headings and explanatory
+  subtitles are left out where tabs and controls already say it. Why: user review found the
+  longer texts noisy, and later that "Unsaved" beside a highlighted Save said it twice.
+
+- **Every action that removes saved data asks first, in a dialog that names what goes**
+  (`Dialog::delete_collection`, `delete_node`, `delete_environment`, `clear_history`,
+  `clear_variables`, `revert_variables`): "Delete \"API\" with 8 requests in 2 folders",
+  "Delete 312 executions from history?", and the red button says what it does ("Delete
+  collection", "Discard changes"). Menu items that open one end with "…". Revert on
+  Variables asks too (Mocks' goes through its unsaved-changes guard). Edits inside a form
+  (a row's ×, a table's "Clear all") keep their two-click or inline question, since Save
+  has not written them yet. Why: a misclick must never lose data (user's rule); a
+  question that does not say how much goes is answered without reading. Checked by
+  `imposter-ui/tests/destructive.rs`.
+
+- **Removing a row takes two clicks** (`widgets::remove_button`): the first arms the × (red,
+  "Click again to remove …"), the second removes; it disarms after a few seconds or when the
+  pointer goes elsewhere. Why: one stray click must not lose a header or variable; this works
+  from the keyboard and screen readers, unlike a double-click.
+
+- **File dialogs go through one seam** (`ImposterApp::pick`); tests answer them with
+  `script_file_dialogs`, since native dialogs cannot be driven headless.
+
+- **Every dialog ends with the same button row** (`dialogs::buttons`), except a sheet with
+  nothing to choose (the shortcut sheet): it says "Esc to close" beside its title, since Esc
+  and a click outside close every modal, and a lone Close button only took a row. The
+  find and filter bars keep Close: Esc reaches them only while their field has focus.
+  - **Order:** the choices and Cancel come first; the main action comes last, filled with
+    the accent (or red when destructive) and labelled with a verb (Create, Rename, Save,
+    Delete, Import).
+  - **Fill:** only the main action is filled. A destructive choice before it (the guard's
+    Discard) is a neutral button with red text, because filled red beside filled orange
+    differ only in hue (1.02:1); a disabled button is neutral, so its label stays readable.
+  - **Keys:** Enter presses it unless the dialog edits multi-line text (curl); a name field
+    reads Enter before drawing, because a single-line field consumes it. Escape cancels.
+  - **Captions** have no trailing colons.
+  - **Height:** dialogs are capped at the window, and long ones scroll inside, with their
+    text wrapped clear of the scroll bar.
+  - **Layout:** the row is laid out left to right, because a right-to-left row in an
+    auto-sized modal put its buttons outside the modal, where clicks missed.
+
+  Checked by `imposter-ui/tests/dialogs.rs`.
+
+- **Each dialog kind has its own modal id.** Why: a dialog replacing another (the import review
+  followed by the unsaved-changes guard) inherited the old one's area, so a click on its buttons
+  counted as a click outside and cancelled it.
+
+
+### Screens (Variables, Run, History, Settings)
+
+- **The Variables screen edits one scope at a time** (Global, an environment, a collection),
+  independently of the active execution environment, with its own unsaved-changes guard for
+  scope changes, reloads, environment management, "Open definition" and closing. Closing
+  resolves the request guard first, then the variables guard, then writes UI state.
+  The scope picker is captioned "Editing"; its list marks the active environment
+  ("(active)"). Under it, one sentence says what the scope is for ("Used by every
+  request.", "Dev is the active environment: requests use these now.") and one line where
+  it stands in precedence (`variables_screen::explanation`); the name is not repeated,
+  since the picker shows it. The toolbar has a labelled "+ Environment"; editing the name
+  and color, deleting and "Clear all variables…" are in its "⋯" menu, and clearing asks
+  in a dialog with the count. In environment lists, names without a color keep the dot's room,
+  so all start in line. Why: the screen did not say which scope wins, nor whether the
+  environment shown is the one sends use, and "Clear All" sat beside "Add Variable" (the
+  review's #37, #39; Phase 5 review Q22, Q25).
+
+- **Settings save only on Save Settings**, against a baseline: undoing an edit is not a change. Settings the screen does not
+  show are kept. Closing asks about unsaved settings after the request and variables guards.
+  Saving applies history retention at once, not at the next send, so the
+  limits the History screen shows are already true. The screen is one form: section headings
+  instead of framed groups, one label column shared by every section (`LABEL_COLUMN`), at most
+  720 points wide, with a line of help under fields that need it. Every path field has
+  Browse… (through `ImposterApp::pick`) and says "File not found" when the path names no file;
+  the check runs on the bridge (`transfer::is_file`) and is redone when the screen is opened.
+  "Verify TLS certificates", not SSL. Why: label columns differed per group, paths had to be
+  typed, and a wrong path showed only on the next send (the review's #50, #51).
 
 - **The Run screen runs a collection or a folder in the app** (`run_screen.rs`, Tools →
   Run, "Run…" in the collection's ⋯ menu and a folder's context menu, and the palette's
@@ -555,50 +628,4 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   Restore and Copy as curl stay unavailable because the file holds redacted evidence.
   Why: someone can explain a failure without reconstructing a run or reading logs.
   The History result tests open files written by the real CLI.
-
-- **The Tests and Captures tabs edit checks and captures in a fixed grid** (`checks.rs`):
-  every row has
-  the same cells, and a source without a path (status, body, duration, size) or an
-  operator without a value leaves its cell empty, so the columns stay put. By the pane's
-  width a row takes one line, two (what to read, then the comparison), or one line per
-  part, as at 720 points with the sidebar shown. The last field of a line takes what the
-  line has left when drawn, since a picker grows past its width for a long label ("does not
-  contain"), and the check box is as wide as a control in the density. Each capture shows
-  the scope it writes to ("→ Dev"), computed as the
-  executor does: the defining scope, else the active environment, else Global. Why:
-  operators jumped between rows, a narrow pane stacked five lines per check with fields cut
-  at its edge, and nothing said where a capture would write (the review's #31, #32).
-
-- **File dialogs go through one seam** (`ImposterApp::pick`); tests answer them with
-  `script_file_dialogs`, since native dialogs cannot be driven headless.
-
-- **Every dialog ends with the same button row** (`dialogs::buttons`), except a sheet with
-  nothing to choose (the shortcut sheet): it says "Esc to close" beside its title, since Esc
-  and a click outside close every modal, and a lone Close button only took a row. The
-  find and filter bars keep Close: Esc reaches them only while their field has focus.
-  - **Order:** the choices and Cancel come first; the main action comes last, filled with
-    the accent (or red when destructive) and labelled with a verb (Create, Rename, Save,
-    Delete, Import).
-  - **Fill:** only the main action is filled. A destructive choice before it (the guard's
-    Discard) is a neutral button with red text, because filled red beside filled orange
-    differ only in hue (1.02:1); a disabled button is neutral, so its label stays readable.
-  - **Keys:** Enter presses it unless the dialog edits multi-line text (curl); a name field
-    reads Enter before drawing, because a single-line field consumes it. Escape cancels.
-  - **Captions** have no trailing colons.
-  - **Height:** dialogs are capped at the window, and long ones scroll inside, with their
-    text wrapped clear of the scroll bar.
-  - **Layout:** the row is laid out left to right, because a right-to-left row in an
-    auto-sized modal put its buttons outside the modal, where clicks missed.
-
-  Checked by `imposter-ui/tests/dialogs.rs`.
-
-- **Each dialog kind has its own modal id.** Why: a dialog replacing another (the import review
-  followed by the unsaved-changes guard) inherited the old one's area, so a click on its buttons
-  counted as a click outside and cancelled it.
-
-- **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests, Captures, Scripts.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks and Captures the variables it sets from a response, each tab counting its own rows ("Set variable" from a JSON row opens Captures). Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document; checks and captures in one tab under two headings made captures hard to find (user's note). The response keeps one Tests tab for check results and capture writes, both results of the run. Enforced by `imposter-ui/tests/editing.rs`.
-
-- **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `imposter-ui/tests/editing.rs`. `{{variables}}` in a name are drawn in the accent, as in the editor, and the sidebar's edge has a grip like the splits', since it can be dragged wider (200–400 points, remembered) and nothing said so (the review's #59).
-
-- **Duplicate creates a fresh saved sibling, including current editor content when open, through the navigation guard.** Name allocation and insertion are one transaction; history stays with the original. Why: copying must neither lose edits nor overwrite an existing request. Enforced by app operation tests and `imposter-ui/tests/editing.rs`.
 

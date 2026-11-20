@@ -255,4 +255,3 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing the CL
     a host should remain responsive and responses should fit the disclosure grant.
   Pinned by the stdio process test and the MCP integration tests using a project on
   disk and loopback servers. Host usefulness remains an experiment.
-

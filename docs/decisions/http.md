@@ -215,4 +215,3 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing TLS (r
   are never used, only the configured one.
 
 - **Host client identities match an exact normalized HTTPS host and port.** A match replaces global client credentials, then explicit request fields override individually. Each redirect selects again from the execution snapshot; CA and verification settings remain unchanged. Why: one host must never inherit another host’s selected certificate. Curl copies the initial identity and reports that it cannot switch identities across redirects. Enforced by core settings, executor, and loopback TLS tests.
-

@@ -14,6 +14,12 @@ line in the same binary.
 - **A rule that a tool can check is checked by a tool**, and the rule names that check. Prose is
   the fallback for what tools cannot express. Rules not yet checked are listed in
   [Enforcement gaps](#enforcement-gaps). Why: agents and people forget prose; CI does not.
+- **This file holds only repository-wide principles and rules; subsystem decisions live in
+  `docs/decisions/`.** Keep this file focused on universal invariants that every task needs.
+  Feature-specific decisions and rationale belong in `docs/decisions/<subsystem>.md`, not
+  appended here.
+  Why: agent harnesses inject this file into the system prompt on every turn; keeping it
+  lean prevents prompt context bloat and avoids silent truncation by the LLM runner.
 - **This file records engineering rules and core decisions.** Planned guarantees are not shipped
   behavior. Foundational decisions live under [Foundational decisions](#foundational-decisions)
   below, while subsystem-specific decisions are recorded in [docs/decisions/](docs/decisions/).
