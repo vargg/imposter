@@ -560,6 +560,28 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     settle(&mut app.harness);
     click(&mut app.harness, "Variables");
     settle(&mut app.harness);
+    let long_value = "a-saved-value-".repeat(8);
+    let rows = std::mem::replace(
+        &mut app.harness.state_mut().state.variables.rows,
+        vec![
+            imposter_ui::vars::Row::with_saved(
+                "user_id",
+                "42",
+                vec!["77".into(), long_value, "91".into()],
+            ),
+            imposter_ui::vars::Row::new("locale", "en"),
+        ],
+    );
+    check(app, "variable chips");
+    let chip = "Variable 1 saved value 1: 77";
+    app.harness.get_by_label(chip).hover();
+    check(app, "variable chip remove button");
+    app.harness.get_by_label(chip).click_secondary();
+    check(app, "variable chip menu");
+    app.harness.get_by_label("Remove from list");
+    app.harness.key_press(egui::Key::Escape);
+    app.harness.run_steps(2);
+    app.harness.state_mut().state.variables.rows = rows;
     // The Secrets section under the variables, a long name and a masked value.
     app.harness.state_mut().state.variables.secrets = vec![
         imposter_ui::vars::Row::new("api_key", "k-123456"),

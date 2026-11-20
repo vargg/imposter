@@ -459,7 +459,9 @@ fn main() {
         tour.click("Variables");
         tour.settle();
         tour.shot("3-03-variables");
-        tour.click("Variable 1 saved values");
+        tour.harness
+            .get_by_label_contains("saved value 2: 77")
+            .click_secondary();
         tour.settle();
         tour.shot("3-04-saved-values");
         tour.harness.key_press(egui::Key::Escape);

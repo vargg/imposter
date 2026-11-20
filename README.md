@@ -75,10 +75,11 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   scope's requests (Global: those sent without an environment), masked like secrets, with
   where and until when each is sent. Remove one, or **Clear cookies…**; both ask first.
   Cookies are kept only on this computer.
-- Saved values: keep several values of one variable (user IDs, names) in its scope, then swap
-  the current one from the placeholder's inspector in one click. Each environment keeps its
-  own list. Native exports carry saved values with their variables; Postman exports carry the
-  current value only.
+- Saved values appear as chips below the field in Variables. Press Enter or click + to pin
+  the current value. Click a chip to use it, or right-click to copy or remove it. A dashed
+  chip shows an unpinned current value. You can also switch values from the placeholder's
+  inspector. Each environment keeps its own list. Native exports carry saved values with
+  their variables. Postman exports carry the current value only.
 
 **Responses**
 - Status, time, size and content type at a glance.

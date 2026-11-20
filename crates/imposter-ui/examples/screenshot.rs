@@ -250,7 +250,9 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-variables.png")))
             .unwrap();
-        harness.get_by_label("Variable 1 saved values").click();
+        harness
+            .get_by_label_contains("saved value 2: 77")
+            .click_secondary();
         settle(&mut harness);
         harness
             .render()

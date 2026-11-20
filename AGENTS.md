@@ -961,16 +961,16 @@ numbers, so both are excluded. Each logical change is its own commit.
   out. Rejected: linked rows switched together (Paw's environment domains; the
   user swaps values independently), a send-time prompt (Insomnia; keeps nothing), and one
   environment per value (Postman; multiplies environments).
-  On the Variables screen a bookmark with the list's count opens them, in a neutral color
-  (the orange "⋯" read as selected). Each value fills its row, the current one filled and
-  marked "current"; × is at the row's far end, at least 12 points from the value, and
-  stays visible (and two-click) rather than appearing on hover, so keyboard and screen
-  reader users can reach it. "+ Save “42”" follows the list, naming the field's value it
-  keeps, and under it "Add another value" takes a new one (Enter or +) without changing
-  the current value: the only way to add one was to clear the field, type it, open the
-  list and save (the user's note). The bookmark is as wide as a two-digit count on every row, so the remove buttons
-  after it stay in one column. Why: × beside the value invited removing it by mistake (the
-  review's #38; Phase 5 review Q23, Q24).
+  On the Variables screen, saved values appear as wrapping chips below the value field.
+  Enter and the + button pin the field's text. Selecting a chip sets the field, with a
+  filled chip for the current value and a dashed chip when that value is unpinned. The
+  chip menu offers Copy value and Remove from list. Hover or keyboard focus reveals a
+  separate two-click ×, which stays visible while it has focus so keyboard and screen
+  reader users can reach it. Its reserved space keeps the target and surrounding chips
+  in place. A dropdown would hide the alternatives again. Chips inside the field would
+  require custom text editing, including selection, IME and accessibility. A remove
+  target inside the chip would compete with selection. The strip gives the current and
+  saved values one place on screen, with pinning available from the field.
 - **History search uses the sidebar's filter language** (`imposter_app::filter`, with `status:`,
   `env:` and `via:` added for History: `404`, `4xx`, `failed`, `cancelled`; `via:cli` or
   `via:app`). Words match the request

@@ -9,7 +9,8 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::model::{SavedValues, Variables};
 use imposter_app::store::{environments, scopes};
 use imposter_testkit::{Server, response};
-use imposter_ui::app::Screen;
+use imposter_ui::app::{Action, Appearance, Screen};
+use imposter_ui::theme::{Density, ThemeChoice};
 use imposter_ui::vars::Scope;
 use imposter_ui::widgets::Inspection;
 use support::{click, collection, request, settle, start_with};
@@ -75,6 +76,28 @@ fn disabled(app: &support::App, label: &str) -> bool {
         .is_disabled()
 }
 
+fn variables_app() -> support::App {
+    let mut app = with_saved_user("http://h".into());
+    click(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    app
+}
+
+fn enter_value(app: &mut support::App, text: &str) {
+    let label = "Variable 2 value";
+    support::text_input(&app.harness, label).click();
+    app.harness.run_steps(2);
+    app.harness
+        .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    app.harness.run_steps(1);
+    if text.is_empty() {
+        app.harness.key_press(egui::Key::Backspace);
+    } else {
+        support::text_input(&app.harness, label).type_text(text);
+    }
+    app.harness.run_steps(2);
+}
+
 #[test]
 fn choosing_a_saved_value_changes_what_the_request_sends() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -112,91 +135,75 @@ fn choosing_a_saved_value_changes_what_the_request_sends() {
 }
 
 #[test]
-fn the_variables_screen_saves_and_picks_values_under_its_guard() {
-    let mut app = with_saved_user("http://h".into());
-    click(&mut app.harness, "Variables");
-    settle(&mut app.harness);
-
-    click(&mut app.harness, "Variable 2 saved values");
-    click(&mut app.harness, "Use saved value 2: 77");
+fn chips_swap_the_current_value_under_the_guard() {
+    let mut app = variables_app();
+    click(&mut app.harness, "Variable 2 saved value 1: 42");
+    assert!(!app.harness.state().state.variables.dirty());
+    click(&mut app.harness, "Variable 2 saved value 2: 77");
     assert_eq!(app.harness.state().state.variables.rows[1].value, "77");
-    app.harness.state_mut().state.variables.rows[1].value = "91".into();
-    app.harness.run_steps(2);
-    click(&mut app.harness, "Save current value");
-    assert!(
-        disabled(&app, "Save current value"),
-        "a value is saved once"
-    );
-    click(&mut app.harness, "Remove saved value 1");
-    click(&mut app.harness, "Click again to remove saved value 1");
     assert!(app.harness.state().state.variables.dirty());
+    assert_eq!(stored(&app).0["user"], "42");
+
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
+    assert_eq!(stored(&app).0["user"], "77");
+    assert_eq!(stored(&app).1, saved("user", &["42", "77"]));
+    assert!(!app.harness.state().state.variables.dirty());
 
-    assert_eq!(
-        stored(&app),
-        (
-            vars(&[("base", "http://h"), ("user", "91")]),
-            saved("user", &["77", "91"])
-        )
-    );
-
-    app.harness.state_mut().state.variables.rows[1]
-        .saved
-        .clear();
-    app.harness.run_steps(2);
-    assert!(
-        app.harness.state().state.variables.dirty(),
-        "list edits are unsaved changes"
-    );
-    click(&mut app.harness, "Revert unsaved changes");
-    assert!(
-        app.harness.state().state.variables.dirty(),
-        "a stray click on Revert loses nothing: it asks first"
-    );
-    support::click_button(&mut app.harness, "Discard changes");
+    click(&mut app.harness, "Variable 2 saved value 1: 42");
+    enter_value(&mut app, "91");
+    click(&mut app.harness, "Pin variable 2 value");
     assert_eq!(
         app.harness.state().state.variables.rows[1].saved,
-        ["77", "91"]
+        ["42", "77", "91"]
     );
+    click(&mut app.harness, "Revert unsaved changes");
+    assert!(app.harness.state().state.variables.dirty());
+    support::click_button(&mut app.harness, "Discard changes");
+    let row = &app.harness.state().state.variables.rows[1];
+    assert_eq!(row.value, "77");
+    assert_eq!(row.saved, ["42", "77"]);
+    assert!(!app.harness.state().state.variables.dirty());
 }
 
 #[test]
-fn another_value_is_typed_into_the_list_and_the_current_one_stays() {
-    let mut app = with_saved_user("http://h".into());
-    click(&mut app.harness, "Variables");
-    settle(&mut app.harness);
-    click(&mut app.harness, "Variable 2 saved values");
-    assert!(disabled(&app, "Add saved value"), "nothing typed yet");
-
-    support::type_into(&mut app.harness, "New saved value", "1001");
-    click(&mut app.harness, "Add saved value");
-    let row = &app.harness.state().state.variables.rows[1];
-    assert_eq!(row.value, "42", "the current value stays");
-    assert_eq!(row.saved, ["42", "77", "1001"]);
-    assert_eq!(
-        support::text_input(&app.harness, "New saved value")
-            .accesskit_node()
-            .value()
-            .as_deref(),
-        Some(""),
-        "ready for the next one"
+fn enter_pins_the_typed_value_once_and_never_empty() {
+    let mut app = variables_app();
+    assert!(disabled(&app, "Pin variable 2 value"));
+    assert!(
+        !disabled(&app, "Pin variable 1 value"),
+        "plain rows can pin"
     );
 
-    // Enter adds too; a value already kept is not added twice.
-    support::type_into(&mut app.harness, "New saved value", "2002");
+    enter_value(&mut app, "1001");
     app.harness.key_press(egui::Key::Enter);
     app.harness.run_steps(2);
-    support::type_into(&mut app.harness, "New saved value", "77");
-    assert!(disabled(&app, "Add saved value"), "77 is kept already");
+    let chip = app.harness.get_by_label("Variable 2 saved value 3: 1001");
     assert_eq!(
-        app.harness.state().state.variables.rows[1].saved,
-        ["42", "77", "1001", "2002"]
+        chip.accesskit_node().description().as_deref(),
+        Some("The current value")
     );
+    assert!(!support::text_input(&app.harness, "Variable 2 value").is_focused());
 
+    enter_value(&mut app, "1001");
+    assert!(disabled(&app, "Pin variable 2 value"));
+    app.harness.key_press(egui::Key::Enter);
+    app.harness.run_steps(2);
+    enter_value(&mut app, "");
+    assert!(disabled(&app, "Pin variable 2 value"));
+    app.harness.key_press(egui::Key::Enter);
+    app.harness.run_steps(2);
+    let row = &app.harness.state().state.variables.rows[1];
+    assert_eq!(row.value, "");
+    assert_eq!(row.saved, ["42", "77", "1001"]);
+    app.harness
+        .get_by_label("Variable 2 value in use, not pinned: Empty value");
+
+    enter_value(&mut app, "1001");
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
-    assert_eq!(stored(&app).1, saved("user", &["42", "77", "1001", "2002"]));
+    assert_eq!(stored(&app).0["user"], "1001");
+    assert_eq!(stored(&app).1, saved("user", &["42", "77", "1001"]));
 }
 
 #[test]
@@ -263,82 +270,203 @@ fn a_value_removed_meanwhile_is_reported_and_not_recreated() {
 }
 
 #[test]
-fn the_saved_values_menu_marks_the_current_value_and_keeps_remove_at_the_far_end() {
-    let mut app = with_saved_user("http://h".into());
-    click(&mut app.harness, "Variables");
-    settle(&mut app.harness);
-    // The trigger counts the list, in a neutral color: orange is for selection.
-    let trigger = app.harness.get_by_label("Variable 2 saved values").rect();
-    let count = app
+fn the_current_chip_is_filled_and_an_unpinned_value_gets_a_ghost_chip() {
+    let mut app = variables_app();
+    let current = app
+        .harness
+        .get_by_label("Variable 2 saved value 1: 42")
+        .rect();
+    let palette = imposter_ui::theme::palette();
+    let selected = app
         .harness
         .output()
         .shapes
         .iter()
         .find_map(|clipped| match &clipped.shape {
-            egui::Shape::Text(text)
-                if trigger.contains(text.pos) && text.galley.job.text == "2" =>
+            egui::Shape::Rect(shape)
+                if shape.rect.intersects(current) && shape.fill == palette.selected =>
             {
-                Some(text.fallback_color)
+                Some(shape)
             }
             _ => None,
         })
-        .expect("a count beside the icon");
-    assert_ne!(count, imposter_ui::theme::palette().accent);
-    // Rows with and without saved values keep their remove buttons in one column.
-    let first = app.harness.get_by_label("Remove variable 1").rect();
-    let second = app.harness.get_by_label("Remove variable 2").rect();
+        .expect("a filled current chip");
+    assert_eq!(selected.stroke, egui::Stroke::NONE);
     assert!(
-        (first.left() - second.left()).abs() < 0.5,
-        "{first:?} {second:?}"
+        app.harness
+            .query_by_label_contains("value in use, not pinned")
+            .is_none()
     );
 
-    click(&mut app.harness, "Variable 2 saved values");
-    let painted: Vec<(String, egui::Rect)> = app
+    enter_value(&mut app, "91");
+    let ghost = app
         .harness
-        .output()
-        .shapes
-        .iter()
-        .filter_map(|clipped| match &clipped.shape {
-            egui::Shape::Text(text) => Some((
-                text.galley.job.text.clone(),
-                egui::Rect::from_min_size(text.pos, text.galley.size()),
-            )),
-            _ => None,
-        })
-        .collect();
-    let current: Vec<&String> = painted
-        .iter()
-        .map(|(text, _)| text)
-        .filter(|text| text.ends_with("current"))
-        .collect();
-    assert_eq!(current, ["42current"], "only the current value is marked");
+        .get_by_label("Variable 2 value in use, not pinned: 91");
+    let area = ghost.rect();
+    let shapes = &app.harness.output().shapes;
+    assert!(shapes.iter().any(|clipped| matches!(&clipped.shape,
+        egui::Shape::Text(text)
+            if area.contains(text.pos)
+                && text.galley.job.text == "91"
+                && text.galley.job.sections.iter().any(|section| section.format.color == palette.text_muted)
+    )));
+    assert!(shapes.iter().filter(|clipped| matches!(&clipped.shape,
+        egui::Shape::LineSegment { points, stroke }
+            if points.iter().all(|point| area.contains(*point)) && stroke.color == palette.field_border
+    )).count() > 4, "a dashed border");
+    ghost.click();
+    app.harness.run_steps(2);
+    assert!(support::text_input(&app.harness, "Variable 2 value").is_focused());
+}
+
+#[test]
+fn the_chip_menu_copies_the_full_value_and_removes_it() {
+    let prefix = "x".repeat(60);
+    let long = format!("{prefix}-long\nsecond line");
+    let stored_value = long.clone();
+    let mut app = start_with(move |store| {
+        store
+            .call_blocking(move |db| {
+                scopes::write(
+                    db,
+                    Scope::Global,
+                    &vars(&[("user", "42")]),
+                    &saved("user", &["42", &stored_value]),
+                )
+            })
+            .unwrap();
+    });
+    click(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    let chip = format!("Variable 1 saved value 2: {prefix}…");
+    app.harness.get_by_label(&chip).click_secondary();
+    app.harness.run_steps(2);
+    app.harness.get_by_label(&format!("{prefix}…"));
+    app.harness.get_by_label("Copy value").click();
+    app.harness.step();
     assert!(
-        painted
+        app.harness
+            .output()
+            .platform_output
+            .commands
             .iter()
-            .any(|(text, _)| text == "+ Save \u{201c}42\u{201d}"),
-        "the save row names the value it keeps"
+            .any(|command| {
+                matches!(command, egui::OutputCommand::CopyText(text) if text == &long)
+            })
     );
-    for (position, value) in [(1, "42"), (2, "77")] {
-        let text = painted
-            .iter()
-            .find(|(text, _)| text.starts_with(value))
-            .unwrap()
-            .1;
-        let remove = app
-            .harness
-            .get_by_label(&format!("Remove saved value {position}"))
-            .rect();
+
+    app.harness.get_by_label(&chip).click_secondary();
+    app.harness.run_steps(2);
+    click(&mut app.harness, "Remove from list");
+    assert!(app.harness.query_by_label(&chip).is_none());
+    assert_eq!(app.harness.state().state.variables.rows[0].saved, ["42"]);
+}
+
+#[test]
+fn a_hovered_remove_button_stays_in_place_and_asks_for_a_second_click() {
+    let mut app = variables_app();
+    let chip_name = "Variable 2 saved value 1: 42";
+    let remove_name = "Remove variable 2 saved value 1";
+    let chip = app.harness.get_by_label(chip_name);
+    let before = chip.rect();
+    assert!(app.harness.query_by_label(remove_name).is_none());
+    chip.hover();
+    app.harness.run_steps(2);
+    let remove = app.harness.get_by_label(remove_name);
+    assert!(remove.rect().left() > before.right());
+    remove.hover();
+    app.harness.run_steps(2);
+    assert_eq!(app.harness.get_by_label(chip_name).rect(), before);
+    click(&mut app.harness, remove_name);
+    assert_eq!(
+        app.harness.state().state.variables.rows[1].saved,
+        ["42", "77"]
+    );
+    click(
+        &mut app.harness,
+        "Click again to remove variable 2 saved value 1",
+    );
+    let row = &app.harness.state().state.variables.rows[1];
+    assert_eq!(row.value, "42");
+    assert_eq!(row.saved, ["77"]);
+    app.harness
+        .get_by_label("Variable 2 value in use, not pinned: 42");
+}
+
+#[test]
+fn tab_reaches_remove_and_two_keyboard_activations_remove_the_value() {
+    let mut app = variables_app();
+    let chip = "Variable 2 saved value 2: 77";
+    app.harness.get_by_label(chip).focus();
+    app.harness.run_steps(2);
+    assert!(app.harness.get_by_label(chip).is_focused());
+
+    app.harness.key_press(egui::Key::Tab);
+    app.harness.run_steps(2);
+    assert!(
+        app.harness
+            .get_by_label("Remove variable 2 saved value 2")
+            .is_focused()
+    );
+    app.harness.key_press(egui::Key::Enter);
+    app.harness.run_steps(2);
+    assert!(
+        app.harness
+            .get_by_label("Click again to remove variable 2 saved value 2")
+            .is_focused()
+    );
+    assert_eq!(
+        app.harness.state().state.variables.rows[1].saved,
+        ["42", "77"]
+    );
+    app.harness.key_press(egui::Key::Enter);
+    app.harness.run_steps(2);
+    assert_eq!(app.harness.state().state.variables.rows[1].saved, ["42"]);
+}
+
+#[test]
+fn long_chips_wrap_under_the_field_and_row_remove_buttons_stay_aligned() {
+    let mut app = variables_app();
+    app.harness
+        .set_size(egui::Vec2::from(imposter_ui::layout::MIN_WINDOW));
+    let prefix = "x".repeat(60);
+    let first = format!("{prefix}-one");
+    let second = format!("{prefix}-two");
+    app.harness.state_mut().state.variables.rows[1]
+        .saved
+        .extend([first, second.clone()]);
+    for density in [Density::Compact, Density::Comfortable] {
+        app.harness
+            .state_mut()
+            .state
+            .actions
+            .push(Action::SetAppearance(Appearance {
+                theme: ThemeChoice::Dark,
+                density,
+            }));
+        app.harness.run_steps(3);
+
+        let left = |label| app.harness.get_by_label(label).rect().left();
+        assert!((left("Remove variable 1") - left("Remove variable 2")).abs() < 0.5);
+        let field = support::text_input(&app.harness, "Variable 2 value").rect();
+        let long_names = [
+            format!("Variable 2 saved value 3: {prefix}…"),
+            format!("Variable 2 saved value 4: {prefix}…"),
+        ];
+        let [first, second] = long_names.map(|label| app.harness.get_by_label(&label).rect());
+        assert!((first.left() - field.left()).abs() < 0.5);
+        assert!((second.left() - field.left()).abs() < 0.5);
+        assert!(first.bottom() < second.top());
         assert!(
-            remove.left() - text.right() >= 12.0,
-            "{value}: {text:?} too close to {remove:?}"
-        );
-        let row = app
-            .harness
-            .get_by_label(&format!("Use saved value {position}: {value}"))
-            .rect();
-        assert!(
-            (row.right() - remove.left()).abs() < 12.0,
-            "the value fills the row up to remove"
+            (second.height() - density.spacing().control).abs() < 0.5,
+            "{density:?} chip height was {}",
+            second.height()
         );
     }
+
+    app.harness
+        .get_by_label(&format!("Variable 2 saved value 4: {prefix}…"))
+        .hover();
+    app.harness.run_steps(8);
+    app.harness.get_by_label(&second);
 }

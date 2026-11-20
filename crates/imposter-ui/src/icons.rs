@@ -27,8 +27,6 @@ pub enum Icon {
     Expand,
     /// A funnel.
     Filter,
-    /// Values kept for later.
-    Bookmark,
     /// Kept as a secret.
     Lock,
     /// Show a hidden value.
@@ -109,48 +107,6 @@ fn drawn(
     } else {
         response.on_disabled_hover_text(hint)
     }
-}
-
-/// An icon button with a count after the icon when `count` is above zero ("🔖 3"): how
-/// many of something it opens, readable without opening it. Always as wide as a two-digit
-/// count, so buttons in a column line up whatever they count.
-pub fn count_button(ui: &mut Ui, icon: Icon, label: &str, hint: &str, count: usize) -> Response {
-    let text = (count > 0).then(|| count.to_string());
-    let font = egui::TextStyle::Small.resolve(ui.style());
-    let text_width = ui
-        .fonts_mut(|f| f.layout_no_wrap("99".to_owned(), font.clone(), Color32::WHITE))
-        .size()
-        .x
-        + 4.0;
-    let response = ui.add_sized(
-        [size() + text_width, size()],
-        egui::Button::new("").frame_when_inactive(false),
-    );
-    crate::widgets::name(&response, label);
-    if ui.is_rect_visible(response.rect) {
-        let color = if response.hovered() || response.has_focus() {
-            palette().text
-        } else {
-            palette().text_muted
-        };
-        let left = response.rect.left() + (size() - 16.0) / 2.0;
-        paint(
-            ui,
-            icon,
-            egui::pos2(left, response.rect.center().y - 8.0),
-            color,
-        );
-        if let Some(text) = text {
-            ui.painter().text(
-                egui::pos2(left + 16.0 + 2.0, response.rect.center().y),
-                egui::Align2::LEFT_CENTER,
-                text,
-                font,
-                color,
-            );
-        }
-    }
-    response.on_hover_text(hint)
 }
 
 pub fn menu<R>(
@@ -387,18 +343,6 @@ fn paint(ui: &Ui, icon: Icon, origin: Pos2, color: Color32) {
                 (tip.x - origin.x, tip.y - origin.y),
                 (tip.x - origin.x - 3.8, tip.y - origin.y - 1.5),
             );
-        }
-        Icon::Bookmark => {
-            painter.add(egui::Shape::closed_line(
-                vec![
-                    point(4.0, 2.0),
-                    point(12.0, 2.0),
-                    point(12.0, 14.0),
-                    point(8.0, 10.5),
-                    point(4.0, 14.0),
-                ],
-                stroke,
-            ));
         }
         Icon::Lock => {
             // A body with a shackle over it.

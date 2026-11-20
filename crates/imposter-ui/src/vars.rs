@@ -223,10 +223,10 @@ impl Row {
         }
     }
 
-    /// Keep the current value for swapping back to later; a value is saved once.
-    pub fn save_current(&mut self) {
+    /// Keep the current value for later, returning whether it was added.
+    pub fn save_current(&mut self) -> bool {
         let value = self.value.clone();
-        self.add_saved(value);
+        self.add_saved(value)
     }
 
     /// Keep `value` for later without touching the current value. Returns whether it was

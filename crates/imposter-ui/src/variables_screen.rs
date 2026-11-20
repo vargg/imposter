@@ -1,14 +1,15 @@
 //! The Variables screen: globals, environments and collection variables, edited one scope at a
 //! time with its own unsaved-changes guard.
 
-use egui::{Align, Layout, Ui};
+use egui::{Align, Layout, Response, Ui, UiBuilder, vec2};
 
 use crate::app::{Action, State, VariablesAction};
 use crate::icons::{self, Icon};
 use crate::theme::{Tone, palette};
 use crate::vars::{self, Scope};
 use crate::widgets::{
-    SaveStatus, SaveWord, env_option_text, env_text, name, save_controls, tone_text,
+    REMOVE_WIDTH, SaveStatus, SaveWord, env_option_text, env_text, name, remove_button,
+    revealed_remove_button, save_controls, saved_label, tone_text,
 };
 use imposter_app::core::model::EnvColor;
 
@@ -231,43 +232,23 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     ui.add(egui::Label::new(tone_text(precedence, Tone::Muted)).wrap());
                     ui.add_space(8.0);
                     let height = ui.spacing().interact_size.y;
-                    // Room for the saved values and remove buttons after the fields.
-                    let available = ui.available_width() - 76.0;
+                    let gap = ui.spacing().item_spacing.x;
+                    let available = ui.available_width() - icons::size() - REMOVE_WIDTH - 3.0 * gap;
                     let name_width = (available * 0.35).clamp(140.0, 320.0);
                     let value_width = (available - name_width).max(160.0);
+                    let widths = (name_width, value_width, height);
                     ui.horizontal(|ui| {
                         crate::widgets::heading_cell(ui, name_width, "Variable name");
                         crate::widgets::heading_cell(ui, value_width, "Value");
                     });
                     let mut remove = None;
                     for (index, row) in state.variables.rows.iter_mut().enumerate() {
-                        ui.horizontal(|ui| {
-                            let field = ui.add_sized(
-                                [name_width, height],
-                                egui::TextEdit::singleline(&mut row.name)
-                                    .id_salt(("variable", row.key, "name"))
-                                    .hint_text("name"),
-                            );
-                            name(&field, &format!("Variable {} name", index + 1));
-                            if highlight.as_deref() == Some(row.name.as_str()) {
-                                field.scroll_to_me(Some(Align::Center));
-                                field.request_focus();
-                            }
-                            let value = ui.add_sized(
-                                [value_width, height],
-                                egui::TextEdit::singleline(&mut row.value)
-                                    .id_salt(("variable", row.key, "value"))
-                                    .hint_text("value"),
-                            );
-                            name(&value, &format!("Variable {} value", index + 1));
-                            edited |= field.changed() || value.changed();
-                            edited |= saved_values(ui, row, index, height);
-                            let what = format!("variable {}", index + 1);
-                            let id = egui::Id::unique(("remove variable", row.key));
-                            if crate::widgets::remove_button(ui, id, &what, height) {
-                                remove = Some(index);
-                            }
-                        });
+                        let (changed, removed) =
+                            variable_row(ui, row, index + 1, widths, highlight.as_deref());
+                        edited |= changed;
+                        if removed {
+                            remove = Some(index);
+                        }
                     }
                     if let Some(index) = remove {
                         state.variables.rows.remove(index);
@@ -279,7 +260,6 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                         }
                     });
                     if imposter_app::core::variables::SecretScope::of_scope(current).is_some() {
-                        let widths = (name_width, value_width, height);
                         edited |= secrets_section(
                             ui,
                             &mut state.variables.secrets,
@@ -310,6 +290,75 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     }
 
     state.actions.extend(actions);
+}
+
+fn variable_row(
+    ui: &mut Ui,
+    row: &mut vars::Row,
+    number: usize,
+    (name_width, value_width, height): (f32, f32, f32),
+    highlight: Option<&str>,
+) -> (bool, bool) {
+    ui.vertical(|ui| {
+        let (value, mut changed, removed) = ui
+            .horizontal(|ui| {
+                let field = ui.add_sized(
+                    [name_width, height],
+                    egui::TextEdit::singleline(&mut row.name)
+                        .id_salt(("variable", row.key, "name"))
+                        .hint_text("name"),
+                );
+                name(&field, &format!("Variable {number} name"));
+                if highlight == Some(row.name.as_str()) {
+                    field.scroll_to_me(Some(Align::Center));
+                    field.request_focus();
+                }
+                let value = ui.add_sized(
+                    [value_width, height],
+                    egui::TextEdit::singleline(&mut row.value)
+                        .id_salt(("variable", row.key, "value"))
+                        .hint_text("value"),
+                );
+                name(&value, &format!("Variable {number} value"));
+                let mut changed = field.changed() || value.changed();
+                changed |= pin_current(ui, row, number, &value);
+                let id = egui::Id::unique(("remove variable", row.key));
+                let removed = remove_button(ui, id, &format!("variable {number}"), height);
+                (value, changed, removed)
+            })
+            .inner;
+
+        if !row.saved.is_empty() {
+            ui.spacing_mut().indent = value.rect.left() - ui.max_rect().left();
+            ui.visuals_mut().indent_has_left_vline = false;
+            changed |= saved_strip(ui, row, number, &value);
+        }
+        (changed, removed)
+    })
+    .inner
+}
+
+fn pin_current(ui: &mut Ui, row: &mut vars::Row, number: usize, value: &Response) -> bool {
+    let (enabled, hint) = if row.value.is_empty() {
+        (false, "Nothing to pin")
+    } else if row.saved.contains(&row.value) {
+        (false, "Already pinned")
+    } else {
+        (true, "Keep this value in the saved list (Enter)")
+    };
+    let pin = ui
+        .add_enabled_ui(enabled, |ui| {
+            icons::button_with_hint(
+                ui,
+                Icon::Plus,
+                &format!("Pin variable {number} value"),
+                hint,
+                false,
+            )
+        })
+        .inner;
+    let entered = value.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+    (entered || pin.clicked()) && row.save_current()
 }
 
 /// The scope's secrets under its variables: values masked, each with an eye to show it for
@@ -378,7 +427,7 @@ fn secrets_section(
             edited |= field.changed() || value.changed();
             let what = format!("secret {}", index + 1);
             let id = egui::Id::unique(("remove secret", row.key));
-            if crate::widgets::remove_button(ui, id, &what, height) {
+            if remove_button(ui, id, &what, height) {
                 remove = Some(index);
             }
         });
@@ -491,139 +540,153 @@ pub fn cookie_place(cookie: &imposter_app::http::cookies::StoredCookie) -> Strin
     parts.join(" · ")
 }
 
-/// Wide enough for a value, "current" and the remove button.
-const SAVED_MENU_WIDTH: f32 = 280.0;
-
-/// The row's saved values: pick one as the current value, save the current one, or remove
-/// one. Returns whether the row changed. The menu stays open while it is used, since
-/// removing takes two clicks.
-fn saved_values(ui: &mut Ui, row: &mut vars::Row, index: usize, height: f32) -> bool {
-    let label = format!("Variable {} saved values", index + 1);
-    let hint = match row.saved.len() {
-        0 => "Saved values: none yet".to_owned(),
-        count => format!("Saved values: {count}"),
-    };
-    let button = icons::count_button(ui, Icon::Bookmark, &label, &hint, row.saved.len());
+fn saved_strip(ui: &mut Ui, row: &mut vars::Row, number: usize, field: &Response) -> bool {
     let mut changed = false;
-    egui::Popup::menu(&button)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|ui| {
-            ui.set_min_width(SAVED_MENU_WIDTH);
-            ui.set_max_width(SAVED_MENU_WIDTH);
-            if row.saved.is_empty() {
-                ui.label(tone_text("No saved values yet", Tone::Muted));
+    let mut remove = None;
+    ui.indent(("saved chips", row.key), |ui| {
+        let line_width = ui.available_width();
+        ui.horizontal_wrapped(|ui| {
+            if !row.saved.contains(&row.value) {
+                unpinned_chip(ui, number, &row.value, field);
             }
-            let mut remove = None;
-            for (position, value) in row.saved.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    let text = crate::widgets::saved_label(value, false);
-                    let current = *value == row.value;
-                    // The value on the left, "current" after it, and × at the far right, so a
-                    // click meant for the value never lands on remove.
-                    let mut job = egui::text::LayoutJob::default();
-                    job.append(
-                        &text,
-                        0.0,
-                        egui::TextFormat::simple(
-                            egui::TextStyle::Monospace.resolve(ui.style()),
-                            palette().text,
-                        ),
-                    );
-                    if current {
-                        job.append(
-                            "current",
-                            8.0,
-                            egui::TextFormat::simple(
-                                egui::TextStyle::Small.resolve(ui.style()),
-                                palette().text_muted,
-                            ),
-                        );
-                    }
-                    let width = ui.available_width() - height - ui.spacing().item_spacing.x;
-                    let choice = ui.add_sized(
-                        [width, height],
-                        egui::Button::selectable(current, (job, egui::Atom::grow()))
-                            .stroke(egui::Stroke::NONE)
-                            .truncate(),
-                    );
-                    if current {
-                        crate::widgets::selection_bar(ui, choice.rect);
-                    }
-                    name(
-                        &choice,
-                        &format!("Use saved value {}: {text}", position + 1),
-                    );
-                    let choice = choice.on_hover_text(if current {
-                        "The current value"
-                    } else {
-                        "Make this the current value"
-                    });
-                    if choice.clicked() && !current {
-                        row.value.clone_from(value);
+            for (position, saved) in row.saved.iter().enumerate() {
+                let id = egui::Id::unique(("saved chip", row.key, saved));
+                let title = format!("{number} saved value {}", position + 1);
+                match saved_chip(ui, id, &title, saved, *saved == row.value, line_width) {
+                    Some(ChipAction::Choose) => {
+                        row.value.clone_from(saved);
                         changed = true;
                     }
-                    let id = egui::Id::unique(("remove saved value", row.key, position));
-                    let what = format!("saved value {}", position + 1);
-                    if crate::widgets::remove_button(ui, id, &what, height) {
-                        remove = Some(position);
-                    }
-                });
-            }
-            if let Some(position) = remove {
-                row.saved.remove(position);
-                changed = true;
-            }
-            if !row.saved.is_empty() {
-                ui.separator();
-            }
-            let can_save = !row.saved.contains(&row.value);
-            // Says which value it keeps: the field's, which the menu does not list.
-            let current = crate::widgets::saved_label(&row.value, false);
-            let save = ui.add_enabled(
-                can_save,
-                egui::Button::selectable(false, format!("+ Save \u{201c}{current}\u{201d}"))
-                    .stroke(egui::Stroke::NONE)
-                    .truncate(),
-            );
-            name(&save, "Save current value");
-            let save = save.on_disabled_hover_text("The current value is already saved");
-            if save.clicked() {
-                row.save_current();
-                changed = true;
-            }
-            // Another value, typed here: the field it would otherwise be typed into keeps
-            // the current one.
-            let draft_id = egui::Id::unique(("new saved value", row.key));
-            let mut draft: String = ui.data_mut(|d| d.get_temp(draft_id)).unwrap_or_default();
-            ui.horizontal(|ui| {
-                let width = ui.available_width() - height - ui.spacing().item_spacing.x;
-                let field = ui.add(
-                    egui::TextEdit::singleline(&mut draft)
-                        .hint_text("Add another value")
-                        .font(egui::TextStyle::Monospace)
-                        .desired_width(width),
-                );
-                name(&field, "New saved value");
-                let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                let addable = !draft.is_empty() && !row.saved.contains(&draft);
-                let add = ui
-                    .add_enabled_ui(addable, |ui| {
-                        icons::button_with_hint(
-                            ui,
-                            Icon::Plus,
-                            "Add saved value",
-                            "Keep this value in the list (Enter)",
-                            false,
-                        )
-                    })
-                    .inner;
-                if (entered || add.clicked()) && row.add_saved(draft.clone()) {
-                    draft.clear();
-                    changed = true;
-                    field.request_focus();
+                    Some(ChipAction::Remove) => remove = Some(position),
+                    None => {}
                 }
-            });
-            ui.data_mut(|d| d.insert_temp(draft_id, draft));
+            }
         });
+    });
+    if let Some(position) = remove {
+        row.saved.remove(position);
+        changed = true;
+    }
     changed
+}
+
+fn unpinned_chip(ui: &mut Ui, number: usize, value: &str, field: &Response) {
+    let label = saved_label(value, false);
+    let chip = ui.add(
+        egui::Button::new(tone_text(&label, Tone::Muted).monospace())
+            .small()
+            .fill(egui::Color32::TRANSPARENT)
+            .stroke(egui::Stroke::NONE)
+            .min_size(vec2(REMOVE_WIDTH, icons::size()))
+            .truncate(),
+    );
+    name(
+        &chip,
+        &format!("Variable {number} value in use, not pinned: {label}"),
+    );
+    let rect = chip.rect.shrink(0.5);
+    ui.painter().extend(egui::Shape::dashed_line(
+        &[
+            rect.left_top(),
+            rect.right_top(),
+            rect.right_bottom(),
+            rect.left_bottom(),
+            rect.left_top(),
+        ],
+        egui::Stroke::new(1.0, palette().field_border),
+        3.0,
+        2.0,
+    ));
+    chip_focus(ui, &chip);
+    let chip = chip.on_hover_text("In use, not pinned — Enter or the + button pins it");
+    if chip.clicked() {
+        field.request_focus();
+    }
+}
+
+enum ChipAction {
+    Choose,
+    Remove,
+}
+
+fn saved_chip(
+    ui: &mut Ui,
+    id: egui::Id,
+    title: &str,
+    value: &str,
+    current: bool,
+    line_width: f32,
+) -> Option<ChipAction> {
+    let label = saved_label(value, false);
+    let height = icons::size();
+    let font = egui::TextStyle::Monospace.resolve(ui.style());
+    let text_width = ui.fonts_mut(|fonts| {
+        fonts
+            .layout_no_wrap(label.clone(), font, palette().text)
+            .size()
+            .x
+    });
+    let remove_space = REMOVE_WIDTH + ui.spacing().item_spacing.x;
+    let width = (text_width + 2.0 * ui.spacing().button_padding.x)
+        .ceil()
+        .clamp(REMOVE_WIDTH, (line_width - remove_space).max(REMOVE_WIDTH));
+    // Wrap the pair together so revealing the remove target never moves either control.
+    let (_, cell) = ui.allocate_space(vec2(width + remove_space, height));
+    let mut ui = ui.new_child(
+        UiBuilder::new()
+            .scope_id(id)
+            .max_rect(cell)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    let button = egui::Button::selectable(current, egui::RichText::new(&label).monospace())
+        .small()
+        .frame_when_inactive(true)
+        .min_size(vec2(width, height))
+        .truncate();
+    let button = if current {
+        button.stroke(egui::Stroke::NONE)
+    } else {
+        button
+    };
+    let chip = ui.add_sized([width, height], button);
+    name(&chip, &format!("Variable {title}: {label}"));
+    if current {
+        chip.ctx.accesskit_node_builder(chip.id, |node| {
+            node.set_description("The current value".to_owned());
+        });
+    }
+    chip_focus(&ui, &chip);
+
+    // egui releases the chip's focus before asking the next rendered widget to take it.
+    let reveal = ui.rect_contains_pointer(cell) || chip.has_focus() || chip.lost_focus();
+    let removed = revealed_remove_button(&mut ui, id, &format!("variable {title}"), height, reveal);
+    let mut action = (chip.clicked() && !current).then_some(ChipAction::Choose);
+    if removed {
+        action = Some(ChipAction::Remove);
+    }
+    chip.context_menu(|ui| {
+        ui.set_max_width(280.0);
+        ui.add(egui::Label::new(tone_text(&label, Tone::Muted).monospace()).truncate());
+        if ui.button("Copy value").clicked() {
+            ui.ctx().copy_text(value.to_owned());
+            ui.close();
+        }
+        if ui.button("Remove from list").clicked() {
+            action = Some(ChipAction::Remove);
+            ui.close();
+        }
+    });
+    chip.on_hover_text(value);
+    action
+}
+
+fn chip_focus(ui: &Ui, chip: &Response) {
+    if chip.has_focus() {
+        ui.painter().rect_stroke(
+            chip.rect,
+            4.0,
+            ui.visuals().selection.stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
 }
