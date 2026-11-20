@@ -93,10 +93,12 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     same Private Use Area codepoints (including Settings' U+E272), so putting Phosphor
     after Inter rendered icons as letters. Inline icons use separate `RichText` or
     layout sections in the icon family.
-  - **Type scale:** 12 meta, 13 interface, 15 SemiBold titles (`theme::semibold`): dialog
-    titles, Settings groups and headings and the request's name in the breadcrumb, whose place is
-    muted.
-    Single-line variable fields (URL, headers, paths, values) are monospace.
+  - **Type scale:** `theme::page_title` is 18 pt SemiBold, `theme::section` is 14 pt
+    SemiBold, `theme::body` is 13 pt and `theme::meta` is 12 pt. Dialog titles and Settings
+    section headings use these helpers; existing 15 pt screen titles and breadcrumbs migrate
+    when their screens are restyled. `theme::semibold` remains available for selected labels.
+    Single-line variable fields (URL, headers, paths, values) are monospace. Why: a small,
+    explicit scale gives headings hierarchy without competing sizes across screens.
   - **Size:** Inter and JetBrains Mono add about 1.1 MiB to the release binary; Inter
     Medium was left out for that reason. Phosphor's TTF is 488,636 bytes.
     Replacing the painted toolbar icons added 495,360 bytes (483.75 KiB) on macOS arm64:
@@ -121,8 +123,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
 - **Density is a setting: Compact (default) or Comfortable** (Settings → Appearance, stored
   with the theme).
-  - **Tokens:** `theme::Spacing` sets list rows (26 / 32), controls (24 / 28), gaps and
-    padding.
+  - **Tokens:** `theme::Spacing` keeps list rows at 26 / 32 pt and controls at 24 / 28 pt.
+    Named gaps share a 4/8 pt grid: xs=4, sm=8, md=12, lg=16, xl=24; stacked gaps are 4 / 8
+    and density padding is 8 / 12. Why: shared increments keep new controls aligned while
+    preserving the tested row and control heights.
   - **Users:** the tree, History, tabs, icon buttons and the request bar read
     `theme::spacing()` instead of fixed sizes.
   - **Target size:** pointer targets never go below 24×24 points (WCAG 2.5.8), which is
@@ -145,6 +149,47 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
   Why: an orange outline on every hover diluted the accent until it meant nothing (the
   review's #60). Checked in `theme.rs` tests.
+
+- **One controls kit defines action hierarchy** (`widgets::button`, `Variant`): Primary
+  uses accent fill and `on_accent` text; Secondary uses input fill and a `field_border`
+  edge; Ghost has no fill or edge at rest; Danger is neutral with red text. Filled red
+  remains reserved for a dialog's main destructive action. Disabled actions are neutral
+  and readable. Buttons use the density's control height, 6 pt radius, 10 pt horizontal
+  padding and an optional 16 pt Phosphor icon with a 6 pt gap. Labels are sentence case
+  and are also their accessible names. Hover outlines are muted. The focus ring uses
+  the accent on neutral fills and `on_accent` on accent fills.
+  Why: the owner's review found mixed button treatments unfinished. Screen migrations
+  adopt the kit incrementally rather than changing their hierarchy in the foundation step.
+
+- **Dropdowns, checkboxes and collapsing controls use drawn Phosphor marks.** Every
+  picker uses `widgets::combo`, with a muted 14 pt caret at the right. `widgets::checkbox`
+  draws a 14 pt square with 4 pt corners and a control-edge border; checked uses accent
+  fill and an `on_accent` check glyph. Its target remains at least 24 pt, with checkbox
+  role and toggled state. Sidebar folders and collapsing headers share
+  `widgets::collapsing_icon`, switching between right and down carets. The folder toggle
+  also reports whether the folder is expanded. Icons are always
+  laid out through the isolated icon family. Global stock controls have 6 pt corners,
+  input fill at rest and neutral hover/press colors. Why: stock triangles and checks made
+  the app look dated in the owner's review; common marks make controls feel related.
+
+- **Short choices have a shared segmented-control API** (`widgets::segmented`): one
+  rounded input track with a control-edge border, equal-width segments at control height,
+  selected fill with accent SemiBold text, muted regular text otherwise. Each segment
+  is a named button with selected state, operable by keyboard and screen readers. Existing
+  screen pickers migrate in later steps. Why: short alternatives should be visible together
+  and share geometry instead of looking like unrelated buttons.
+
+- **Contextual help uses a tooltip** (`widgets::help`, `label_with_help`): a frameless,
+  muted 13 pt info glyph in a 24 pt focusable target, named "Help", with the explanation
+  as its accessible description. The tooltip opens on hover or keyboard focus. A caption
+  can expose the same explanation on hover.
+  Existing persistent help migrates with its screen; errors and empty states stay visible.
+  Why: the owner's review found persistent explanations noisy; hover and accessible
+  descriptions retain guidance without another line in every form.
+
+  The controls kit's paint geometry, state, glyph families and help semantics are checked
+  by `tests/widgets.rs`, which also rejects stock picker and checkbox constructors at
+  screen call sites; `theme.rs` pins tokens and contrast in both palettes.
 
 - **Highlighting: small hand-written tokenizers, not syntect.** Why: JSON highlighting of
   256 KiB takes about 2 ms by hand and about 100 ms with syntect, which is also a large

@@ -185,14 +185,14 @@ fn titles_use_the_title_style() {
     app.harness.run_steps(1);
     assert_eq!(
         font_of(&app, "Appearance", "Appearance"),
-        title,
+        imposter_ui::theme::semibold(14.0),
         "Settings group headings"
     );
     // Every group heading comes from the same helper; the host certificates' heading is now
     // below the window, under the collections folder.
     assert_eq!(
         font_of(&app, "Collections", "Collections"),
-        title,
+        imposter_ui::theme::semibold(14.0),
         "and the heading of the collections folder"
     );
 }

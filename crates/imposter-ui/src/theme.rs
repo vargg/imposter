@@ -158,6 +158,11 @@ pub struct Spacing {
     pub gap: f32,
     /// Inside a control, left and right of its text.
     pub pad: f32,
+    pub xs: f32,
+    pub sm: f32,
+    pub md: f32,
+    pub lg: f32,
+    pub xl: f32,
 }
 
 impl Density {
@@ -167,18 +172,25 @@ impl Density {
     ];
 
     pub const fn spacing(self) -> Spacing {
+        let compact = Spacing {
+            row: 26.0,
+            control: 24.0,
+            gap: 4.0,
+            pad: 8.0,
+            xs: 4.0,
+            sm: 8.0,
+            md: 12.0,
+            lg: 16.0,
+            xl: 24.0,
+        };
         match self {
-            Self::Compact => Spacing {
-                row: 26.0,
-                control: 24.0,
-                gap: 4.0,
-                pad: 8.0,
-            },
+            Self::Compact => compact,
             Self::Comfortable => Spacing {
                 row: 32.0,
                 control: 28.0,
-                gap: 6.0,
-                pad: 10.0,
+                gap: compact.sm,
+                pad: compact.md,
+                ..compact
             },
         }
     }
@@ -330,16 +342,16 @@ pub fn visuals(palette: &Palette, theme: Theme) -> Visuals {
     }
     visuals.widgets.noninteractive.bg_fill = palette.background;
     visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, palette.border);
-    visuals.widgets.inactive.weak_bg_fill = palette.surface;
-    visuals.widgets.inactive.bg_fill = palette.surface;
+    visuals.widgets.inactive.weak_bg_fill = palette.input;
+    visuals.widgets.inactive.bg_fill = palette.input;
     // The edge of every control a user operates: fields and buttons (WCAG 1.4.11).
     visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, palette.field_border);
     visuals.widgets.hovered.weak_bg_fill = palette.hover;
     visuals.widgets.hovered.bg_fill = palette.hover;
     // Hover is neutral: orange is kept for what is primary, selected or focused.
     visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, palette.text_muted);
-    visuals.widgets.active.weak_bg_fill = palette.selected;
-    visuals.widgets.active.bg_fill = palette.selected;
+    visuals.widgets.active.weak_bg_fill = palette.hover;
+    visuals.widgets.active.bg_fill = palette.hover;
     visuals.widgets.active.bg_stroke = Stroke::new(1.0, palette.text_muted);
     visuals.widgets.open.weak_bg_fill = palette.hover;
     visuals.widgets.open.bg_fill = palette.hover;
@@ -356,6 +368,28 @@ pub const ICONS: &str = "icons";
 /// A semibold font of `size`.
 pub fn semibold(size: f32) -> egui::FontId {
     egui::FontId::new(size, egui::FontFamily::Name(SEMIBOLD.into()))
+}
+
+/// Shared type sizes in points; existing screen titles migrate with their screens.
+pub const PAGE_TITLE: f32 = 18.0;
+pub const SECTION: f32 = 14.0;
+pub const BODY: f32 = 13.0;
+pub const META: f32 = 12.0;
+
+pub fn page_title(text: impl Into<String>) -> egui::RichText {
+    egui::RichText::new(text).font(semibold(PAGE_TITLE))
+}
+
+pub fn section(text: impl Into<String>) -> egui::RichText {
+    egui::RichText::new(text).font(semibold(SECTION))
+}
+
+pub fn body(text: impl Into<String>) -> egui::RichText {
+    egui::RichText::new(text).size(BODY)
+}
+
+pub fn meta(text: impl Into<String>) -> egui::RichText {
+    egui::RichText::new(text).size(META)
 }
 
 /// `Inter` for the interface, `JetBrains Mono` for data and Phosphor Regular for icons
@@ -421,16 +455,16 @@ pub fn apply(ctx: &egui::Context, choice: ThemeChoice, density: Density) {
     for theme in [Theme::Dark, Theme::Light] {
         ctx.set_visuals_of(theme, visuals(of(theme), theme));
         ctx.style_mut_of(theme, |style| {
-            style.spacing.item_spacing = egui::vec2(8.0, sizes.gap);
+            style.spacing.item_spacing = egui::vec2(sizes.sm, sizes.gap);
             // 13-point text is about 16 points tall; the rest is padding.
             style.spacing.button_padding = egui::vec2(sizes.pad, (sizes.control - 16.0) / 2.0);
             style.spacing.interact_size.y = sizes.control;
             style.spacing.window_margin = egui::Margin::same(16);
-            // The type scale: 12 for meta, 13 for the interface, 15 semibold for titles.
+            // Legacy headings migrate to the explicit title and section helpers per screen.
             for (text_style, font) in [
-                (egui::TextStyle::Small, egui::FontId::proportional(12.0)),
-                (egui::TextStyle::Body, egui::FontId::proportional(13.0)),
-                (egui::TextStyle::Button, egui::FontId::proportional(13.0)),
+                (egui::TextStyle::Small, egui::FontId::proportional(META)),
+                (egui::TextStyle::Body, egui::FontId::proportional(BODY)),
+                (egui::TextStyle::Button, egui::FontId::proportional(BODY)),
                 (egui::TextStyle::Monospace, egui::FontId::monospace(12.5)),
                 (egui::TextStyle::Heading, semibold(15.0)),
             ] {
@@ -474,6 +508,47 @@ mod tests {
     const NON_TEXT: f64 = 3.0;
 
     const BOTH: [(&str, &Palette); 2] = [("dark", &DARK), ("light", &LIGHT)];
+
+    #[test]
+    fn controls_kit_pairings_are_readable_in_both_palettes() {
+        for (name, p) in BOTH {
+            assert!(
+                contrast(p.accent, p.selected) >= AA,
+                "{name} selected segment"
+            );
+            assert!(contrast(p.on_accent, p.accent) >= AA, "{name} check glyph");
+            assert!(contrast(p.error, p.input) >= AA, "{name} danger label");
+            assert!(contrast(p.text_muted, p.input) >= AA, "{name} caret");
+            let visuals = visuals(
+                p,
+                if name == "dark" {
+                    Theme::Dark
+                } else {
+                    Theme::Light
+                },
+            );
+            assert_eq!(visuals.widgets.inactive.bg_fill, p.input);
+            assert_eq!(visuals.widgets.active.bg_fill, p.hover);
+            assert_eq!(
+                visuals.widgets.inactive.corner_radius,
+                CornerRadius::same(6)
+            );
+        }
+    }
+
+    #[test]
+    fn spacing_uses_one_grid_and_keeps_density_heights() {
+        for (density, row, control) in [
+            (Density::Compact, 26.0, 24.0),
+            (Density::Comfortable, 32.0, 28.0),
+        ] {
+            let s = density.spacing();
+            assert_eq!((s.row, s.control), (row, control));
+            assert_eq!([s.xs, s.sm, s.md, s.lg, s.xl], [4.0, 8.0, 12.0, 16.0, 24.0]);
+            assert_eq!(s.gap % s.xs, 0.0);
+            assert_eq!(s.pad % s.xs, 0.0);
+        }
+    }
 
     #[test]
     fn contrast_formula_matches_known_values() {

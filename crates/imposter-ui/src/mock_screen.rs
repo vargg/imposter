@@ -338,7 +338,7 @@ fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bo
                 let selected = screen.selected == Some(index);
                 let broken = problems.iter().any(|p| p.route == index);
                 ui.horizontal(|ui| {
-                    let enabled = ui.add(egui::Checkbox::without_text(&mut route.enabled));
+                    let enabled = widgets::checkbox(ui, &mut route.enabled, "");
                     widgets::name(&enabled, &format!("Mock route {} enabled", index + 1));
                     edited |= enabled.changed();
                     let mono = egui::TextStyle::Monospace.resolve(ui.style());
@@ -543,7 +543,7 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
                 problem_lines(ui, problems, index, field);
             }
             ui.horizontal(|ui| {
-                edited |= ui.checkbox(&mut route.enabled, "Enabled").changed();
+                edited |= widgets::checkbox(ui, &mut route.enabled, "Enabled").changed();
                 ui.add_space(12.0);
                 ui.label("Status");
                 let response = ui.add(egui::DragValue::new(&mut route.status).range(200..=599));
@@ -558,7 +558,7 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
                 for (row, header) in route.headers.iter_mut().enumerate() {
                     ui.push_id(row, |ui| {
                         ui.horizontal(|ui| {
-                            let response = ui.checkbox(&mut header.is_enabled, "");
+                            let response = widgets::checkbox(ui, &mut header.is_enabled, "");
                             widgets::name(&response, &format!("Mock header {} enabled", row + 1));
                             edited |= response.changed();
                             edited |= text(

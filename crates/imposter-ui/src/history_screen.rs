@@ -188,7 +188,7 @@ fn toolbar(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut V
             actions.push(Action::History(HistoryAction::Filtered));
         }
         let mut only = history.only_current;
-        if ui.checkbox(&mut only, "Current request only").changed() {
+        if widgets::checkbox(ui, &mut only, "Current request only").changed() {
             actions.push(Action::History(HistoryAction::OnlyCurrent(only)));
         }
         if crate::icons::button(ui, crate::icons::Icon::Refresh, "Refresh", false).clicked() {
@@ -497,7 +497,7 @@ fn result_picker(
             ReportStep::Skipped { .. } => format!("{} · Skipped", step.path()),
         }
     }
-    let response = egui::ComboBox::from_id_salt("headless run steps")
+    let response = widgets::combo("headless run steps")
         .selected_text(report.steps.get(selected).map(label).unwrap_or_default())
         .truncate()
         .show_ui(ui, |ui| {

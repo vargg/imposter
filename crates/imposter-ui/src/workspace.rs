@@ -336,7 +336,7 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
             ui.available_width() - 2.0 * (icons::size() + ui.spacing().item_spacing.x);
         ui.add_enabled_ui(!state.collections.is_empty(), |ui| {
             ui.set_width(picker_width);
-            let picker = egui::ComboBox::from_id_salt("collection")
+            let picker = widgets::combo("collection")
                 .width(picker_width)
                 .truncate()
                 .selected_text(
@@ -935,24 +935,39 @@ fn nodes(
                     within_dragged: view.within_dragged || view.dragged == Some(id),
                     ..view
                 };
-                let (_, header, _) = collapsing
-                    .show_header(ui, |ui| {
-                        let button = egui::Button::selectable(
-                            selected == Some(id),
-                            RichText::new(&folder.name).strong(),
+                let header = ui.horizontal(|ui| {
+                    let gap = ui.spacing().item_spacing.x;
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    let toggle = collapsing.show_toggle_button(ui, widgets::collapsing_icon);
+                    toggle.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Button,
+                            ui.is_enabled(),
+                            format!("Toggle folder {}", folder.name),
                         )
-                        .stroke(egui::Stroke::NONE)
-                        .sense(Sense::click_and_drag());
-                        let response = ui.add(button);
-                        name(&response, &format!("Folder {}", folder.name));
-                        if !folder.scripts.is_empty() {
-                            ui.ctx().accesskit_node_builder(response.id, |node| {
-                                node.set_description("Has scripts");
-                            });
-                        }
-                        response
-                    })
-                    .body(|ui| nodes(ui, children, Some(folder.id), inner, actions));
+                    });
+                    ui.ctx().accesskit_node_builder(toggle.id, |node| {
+                        node.set_expanded(collapsing.is_open());
+                    });
+                    ui.spacing_mut().item_spacing.x = gap;
+                    let button = egui::Button::selectable(
+                        selected == Some(id),
+                        RichText::new(&folder.name).strong(),
+                    )
+                    .stroke(egui::Stroke::NONE)
+                    .sense(Sense::click_and_drag());
+                    let response = ui.add(button);
+                    name(&response, &format!("Folder {}", folder.name));
+                    if !folder.scripts.is_empty() {
+                        ui.ctx().accesskit_node_builder(response.id, |node| {
+                            node.set_description("Has scripts");
+                        });
+                    }
+                    response
+                });
+                collapsing.show_body_indented(&header.response, ui, |ui| {
+                    nodes(ui, children, Some(folder.id), inner, actions);
+                });
                 header.inner
             }
             Node::Request(request) => {
@@ -1295,7 +1310,7 @@ fn environment_picker(state: &mut State, ui: &mut Ui) {
                 }
                 looks.open.weak_bg_fill = tint;
             }
-            egui::ComboBox::from_id_salt("environment")
+            widgets::combo("environment")
                 .width(ENVIRONMENT_WIDTH)
                 .truncate()
                 .selected_text(selected)
@@ -2015,15 +2030,20 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                         .iter()
                         .find(|(t, _)| *t == pane.editor.body_type)
                         .map_or("JSON", |(_, l)| *l);
-                    let combo = egui::ComboBox::from_id_salt("body type")
-                        .selected_text(selected)
-                        .show_ui(ui, |ui| {
-                            for (body_type, label) in BODY_CHOICES {
-                                edited |= ui
-                                    .selectable_value(&mut pane.editor.body_type, body_type, label)
-                                    .changed();
-                            }
-                        });
+                    let combo =
+                        widgets::combo("body type")
+                            .selected_text(selected)
+                            .show_ui(ui, |ui| {
+                                for (body_type, label) in BODY_CHOICES {
+                                    edited |= ui
+                                        .selectable_value(
+                                            &mut pane.editor.body_type,
+                                            body_type,
+                                            label,
+                                        )
+                                        .changed();
+                                }
+                            });
                     combo.response.labelled_by(caption.id);
                 });
                 match pane.editor.body_type {
@@ -2328,6 +2348,7 @@ fn failure_card(
             ui.add(egui::Label::new(tone_text(hint, Tone::Muted)).wrap());
         }
         egui::CollapsingHeader::new("Details")
+            .icon(widgets::collapsing_icon)
             .id_salt((id, "failure details"))
             .show(ui, |ui| {
                 ui.add(

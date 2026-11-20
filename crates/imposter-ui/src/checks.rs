@@ -124,7 +124,7 @@ fn source_picker(
     width: f32,
 ) -> bool {
     let mut source = Source::of(selector);
-    let combo = egui::ComboBox::from_id_salt(salt)
+    let combo = widgets::combo(salt)
         .width(width)
         .selected_text(source.label())
         .show_ui(ui, |ui| {
@@ -263,7 +263,7 @@ pub fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> b
         let takes_value = check.op.takes_value();
         let mut comparison = |ui: &mut Ui, changed: &mut bool, op: bool, value: bool| {
             if op {
-                let combo = egui::ComboBox::from_id_salt(("check op", index))
+                let combo = widgets::combo(("check op", index))
                     .width(op_width)
                     .selected_text(check.op.label())
                     .show_ui(ui, |ui| {
@@ -301,10 +301,9 @@ pub fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> b
             }
         };
         line(ui, 0.0, |ui| {
-            let enabled = ui.add_sized(
-                [checkbox, height],
-                egui::Checkbox::without_text(&mut check.enabled),
-            );
+            let enabled = ui.add_sized([checkbox, height], |ui: &mut Ui| {
+                widgets::checkbox(ui, &mut check.enabled, "")
+            });
             name(&enabled, &format!("{row} enabled"));
             changed |= enabled.changed();
             changed |= source_picker(
@@ -497,10 +496,9 @@ pub fn captures_table(
             );
         };
         line(ui, 0.0, |ui| {
-            let enabled = ui.add_sized(
-                [checkbox, height],
-                egui::Checkbox::without_text(&mut capture.enabled),
-            );
+            let enabled = ui.add_sized([checkbox, height], |ui: &mut Ui| {
+                widgets::checkbox(ui, &mut capture.enabled, "")
+            });
             name(&enabled, &format!("{row} enabled"));
             changed |= enabled.changed();
             let field = ui.add_sized(

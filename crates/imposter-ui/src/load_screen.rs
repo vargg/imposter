@@ -400,7 +400,7 @@ fn plan_form(ui: &mut Ui, screen: &mut LoadScreen) {
                     ui.end_row();
                 }
                 ui.label("Keep-alive");
-                ui.checkbox(&mut form.keep_alive, "Reuse connections");
+                widgets::checkbox(ui, &mut form.keep_alive, "Reuse connections");
                 ui.end_row();
             });
     });
@@ -643,7 +643,7 @@ fn histogram(ui: &mut Ui, buckets: &[Bucket]) {
 }
 
 fn runs_menu(ui: &mut Ui, screen: &LoadScreen, actions: &mut Vec<Action>) {
-    let menu = egui::ComboBox::from_id_salt("load runs")
+    let menu = widgets::combo("load runs")
         .selected_text("Runs")
         .show_ui(ui, |ui| {
             for (index, run) in screen.runs.iter().enumerate() {

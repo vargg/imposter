@@ -19,6 +19,322 @@ use crate::vars;
 use crate::viewer::{self, Language};
 use imposter_app::core::variables::Snapshot;
 
+/// Shared action hierarchy. Labels use sentence case and remain the accessible name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Variant {
+    Primary,
+    Secondary,
+    Ghost,
+    Danger,
+}
+
+const BUTTON_PAD: f32 = 10.0;
+const ICON_GAP: f32 = 6.0;
+const CONTROL_RADIUS: u8 = 6;
+
+/// A fixed-height action with an optional leading icon, kept out of the text font.
+pub fn button(ui: &mut Ui, variant: Variant, icon: Option<Icon>, label: &str) -> egui::Response {
+    let icon_width = icon.map_or(0.0, |_| 16.0 + ICON_GAP);
+    let galley = control_text(
+        ui,
+        crate::theme::body(label),
+        ui.available_width() - icon_width - 2.0 * BUTTON_PAD,
+    );
+    let elided = galley.elided;
+    let size = egui::vec2(
+        (galley.size().x + icon_width + 2.0 * BUTTON_PAD).max(24.0),
+        crate::theme::spacing().control,
+    );
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
+    let p = palette();
+    let (fill, color, edge) = if ui.is_enabled() {
+        match variant {
+            Variant::Primary => (p.accent, p.on_accent, p.accent),
+            Variant::Secondary => (p.input, p.text, p.field_border),
+            Variant::Ghost => (Color32::TRANSPARENT, p.text_muted, Color32::TRANSPARENT),
+            Variant::Danger => (p.input, p.error, p.field_border),
+        }
+    } else {
+        // The disabled Ui already fades its painter, so keep the stronger neutral text.
+        (p.input, p.text, p.field_border)
+    };
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect(
+            rect,
+            CONTROL_RADIUS,
+            fill,
+            control_edge(&response, fill, edge),
+            egui::StrokeKind::Inside,
+        );
+        let mut left = rect.left() + BUTTON_PAD;
+        if let Some(icon) = icon {
+            paint_glyph(
+                ui,
+                icon,
+                16.0,
+                egui::pos2(left + 8.0, rect.center().y),
+                color,
+            );
+            left += icon_width;
+        }
+        ui.painter().galley(
+            egui::pos2(left, rect.center().y - galley.size().y / 2.0),
+            galley,
+            color,
+        );
+    }
+    if elided {
+        response.on_hover_text(label)
+    } else {
+        response
+    }
+}
+
+fn control_text(ui: &Ui, text: RichText, max_width: f32) -> std::sync::Arc<egui::Galley> {
+    egui::WidgetText::from(text.color(Color32::PLACEHOLDER)).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Truncate),
+        max_width.max(0.0),
+        egui::TextStyle::Button,
+    )
+}
+
+fn control_edge(response: &egui::Response, fill: Color32, resting: Color32) -> egui::Stroke {
+    let p = palette();
+    if response.enabled() && response.has_focus() {
+        let color = if fill == p.accent {
+            p.on_accent
+        } else {
+            p.accent
+        };
+        egui::Stroke::new(1.5, color)
+    } else if response.hovered() || response.is_pointer_button_down_on() {
+        egui::Stroke::new(1.0, p.text_muted)
+    } else {
+        egui::Stroke::new(1.0, resting)
+    }
+}
+
+fn paint_glyph(ui: &Ui, icon: Icon, size: f32, center: egui::Pos2, color: Color32) {
+    let galley = egui::WidgetText::from(icons::glyph_text(icon, size).color(Color32::PLACEHOLDER))
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::TextStyle::Button,
+        );
+    ui.painter()
+        .galley(center - galley.size() / 2.0, galley, color);
+}
+
+/// All dropdowns share the same muted Phosphor caret at the box's trailing edge.
+pub fn combo<'a>(id: impl egui::AsIdSalt) -> egui::ComboBox<'a> {
+    egui::ComboBox::from_id_salt(id).icon(|ui, rect, _, _| {
+        paint_glyph(
+            ui,
+            Icon::ChevronDown,
+            14.0,
+            rect.center(),
+            palette().text_muted,
+        );
+    })
+}
+
+/// Painter for both collapsing headers and the sidebar's collapsing state.
+pub fn collapsing_icon(ui: &mut Ui, openness: f32, response: &egui::Response) {
+    let icon = if openness >= 0.5 {
+        Icon::ChevronDown
+    } else {
+        Icon::ChevronRight
+    };
+    paint_glyph(ui, icon, 14.0, response.rect.center(), palette().text_muted);
+}
+
+/// A small drawn square within a full control-height target, with native checkbox semantics.
+pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> egui::Response {
+    let spacing = crate::theme::spacing();
+    let leading = if label.is_empty() {
+        24.0
+    } else {
+        24.0 + spacing.xs
+    };
+    let galley = egui::WidgetText::from(crate::theme::body(label).color(Color32::PLACEHOLDER))
+        .into_galley(
+            ui,
+            Some(ui.wrap_mode()),
+            (ui.available_width() - leading).max(0.0),
+            egui::TextStyle::Body,
+        );
+    let size = egui::vec2(
+        leading + galley.size().x,
+        spacing.control.max(galley.size().y),
+    );
+    let (rect, mut response) = ui.allocate_exact_size(size, egui::Sense::click());
+    if response.clicked() {
+        *checked = !*checked;
+        response.mark_changed();
+    }
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *checked, label)
+    });
+    if ui.is_rect_visible(rect) {
+        let square = egui::Rect::from_center_size(
+            egui::pos2(rect.left() + 12.0, rect.center().y),
+            egui::Vec2::splat(14.0),
+        );
+        let fill = if *checked && ui.is_enabled() {
+            palette().accent
+        } else {
+            palette().input
+        };
+        ui.painter().rect(
+            square,
+            4,
+            fill,
+            control_edge(&response, fill, palette().field_border),
+            egui::StrokeKind::Inside,
+        );
+        if *checked {
+            let color = if ui.is_enabled() {
+                palette().on_accent
+            } else {
+                palette().text_muted
+            };
+            paint_glyph(ui, Icon::Check, 12.0, square.center(), color);
+        }
+        ui.painter().galley(
+            egui::pos2(
+                rect.left() + leading,
+                rect.center().y - galley.size().y / 2.0,
+            ),
+            galley,
+            palette().text,
+        );
+    }
+    response
+}
+
+/// Short choices share a single track; the response changes when a different segment is chosen.
+pub fn segmented<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    id: impl egui::AsIdSalt,
+    value: &mut T,
+    options: &[(T, &str)],
+) -> egui::Response {
+    let id = ui.make_persistent_id(id);
+    let selected_font = crate::theme::semibold(crate::theme::BODY);
+    let width = options
+        .iter()
+        .map(|(_, label)| {
+            text_width(ui, crate::theme::body(*label).font(selected_font.clone()))
+                + 2.0 * BUTTON_PAD
+        })
+        .fold(24.0, f32::max);
+    let total: f32 = options.iter().map(|_| width).sum();
+    let available = ui.available_width().max(0.0);
+    let (rect, mut response) = ui.allocate_exact_size(
+        egui::vec2(total.min(available), crate::theme::spacing().control),
+        egui::Sense::hover(),
+    );
+    if options.is_empty() {
+        return response;
+    }
+    let p = palette();
+    ui.painter().rect(
+        rect,
+        CONTROL_RADIUS,
+        p.input,
+        egui::Stroke::new(1.0, p.field_border),
+        egui::StrokeKind::Inside,
+    );
+    let segment_width = width * (rect.width() / total);
+    let mut left = rect.left();
+    let mut items = Vec::with_capacity(options.len());
+    for (index, (option, _)) in options.iter().enumerate() {
+        let segment = egui::Rect::from_min_size(
+            egui::pos2(left, rect.top()),
+            egui::vec2(segment_width, rect.height()),
+        );
+        left = segment.right();
+        let item = ui.interact(segment, id.with(index), egui::Sense::click());
+        if item.clicked() && *value != *option {
+            *value = *option;
+            response.mark_changed();
+        }
+        items.push(item);
+    }
+    // Resolve the click before painting so the previous segment clears in the same frame.
+    for (item, (option, label)) in items.into_iter().zip(options) {
+        let selected = *value == *option;
+        item.widget_info(|| {
+            egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, *label)
+        });
+        let (fill, color) = if selected && ui.is_enabled() {
+            (p.selected, p.accent)
+        } else {
+            (Color32::TRANSPARENT, p.text_muted)
+        };
+        let segment = item.rect;
+        let inset = segment.shrink2(egui::vec2(1.0_f32.min(segment.width() / 2.0), 1.0));
+        ui.painter().rect(
+            inset,
+            CONTROL_RADIUS - 1,
+            fill,
+            control_edge(&item, fill, Color32::TRANSPARENT),
+            egui::StrokeKind::Inside,
+        );
+        let mut text = crate::theme::body(*label);
+        if selected {
+            text = text.font(selected_font.clone());
+        }
+        let galley = control_text(ui, text, segment.width() - 2.0 * BUTTON_PAD);
+        if galley.elided {
+            item.on_hover_text(*label);
+        }
+        // Clip to each segment as well as the parent, including under very narrow constraints.
+        ui.painter()
+            .with_clip_rect(ui.clip_rect().intersect(inset))
+            .galley(segment.center() - galley.size() / 2.0, galley, color);
+    }
+    response
+}
+
+/// Quiet help that is discoverable by pointer, keyboard and assistive technology.
+pub fn help(ui: &mut Ui, text: &str) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(
+        egui::Vec2::splat(24.0),
+        egui::Sense::focusable_noninteractive(),
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, ui.is_enabled(), "Help"));
+    response
+        .ctx
+        .accesskit_node_builder(response.id, |node| node.set_description(text));
+    paint_glyph(ui, Icon::Info, 13.0, rect.center(), palette().text_muted);
+    if response.has_focus() {
+        response.show_tooltip_ui(|ui| {
+            ui.set_max_width(ui.spacing().tooltip_width);
+            ui.label(text);
+        });
+        response
+    } else {
+        response.on_hover_text(text)
+    }
+}
+
+/// A visible caption and its optional explanation, without another line of prose.
+pub fn label_with_help(ui: &mut Ui, label: &str, explanation: &str) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = crate::theme::spacing().xs;
+        let response = ui
+            .label(crate::theme::body(label))
+            .on_hover_text(explanation);
+        help(ui, explanation);
+        response
+    })
+    .inner
+}
+
 /// Give a widget an accessible name when it has no visible label (screen readers, UI tests).
 pub fn name(response: &egui::Response, label: &str) {
     let label = label.to_owned();
@@ -1519,10 +1835,7 @@ pub fn rows_table(
     });
     for (index, row) in rows.iter_mut().enumerate() {
         ui.horizontal(|ui| {
-            let enabled = ui.add_sized(
-                [24.0, height],
-                egui::Checkbox::without_text(&mut row.is_enabled),
-            );
+            let enabled = checkbox(ui, &mut row.is_enabled, "");
             name(&enabled, &format!("{id} row {} enabled", index + 1));
             changed |= enabled.changed();
             changed |= var_edit(
@@ -1638,17 +1951,14 @@ pub fn multipart_table(
     for (index, row) in rows.iter_mut().enumerate() {
         let label = |part: &str| format!("Multipart row {} {part}", index + 1);
         ui.horizontal(|ui| {
-            let enabled = ui.add_sized(
-                [widths[0], height],
-                egui::Checkbox::without_text(&mut row.is_enabled),
-            );
+            let enabled = checkbox(ui, &mut row.is_enabled, "");
             name(&enabled, &label("enabled"));
             changed |= enabled.changed();
             changed |=
                 var_edit(ui, &mut row.name, &label("name"), widths[1], false, vars).changed();
             changed |=
                 var_edit(ui, &mut row.value, &label("value"), widths[2], false, vars).changed();
-            egui::ComboBox::from_id_salt(("multipart kind", index))
+            combo(("multipart kind", index))
                 .width(widths[3] - 8.0)
                 .selected_text(if row.kind == FormKind::File {
                     "file"
@@ -1720,7 +2030,7 @@ pub fn auth_form(ui: &mut Ui, auth: &mut AuthForm, vars: &mut VarUi) -> bool {
         .spacing([12.0, 10.0])
         .show(ui, |ui| {
             let caption = ui.label("Type");
-            let combo = egui::ComboBox::from_id_salt("auth type")
+            let combo = combo("auth type")
                 .selected_text(selected)
                 .show_ui(ui, |ui| {
                     for (kind, label) in AUTH_CHOICES {
@@ -1759,7 +2069,7 @@ pub fn auth_form(ui: &mut Ui, auth: &mut AuthForm, vars: &mut VarUi) -> bool {
                         .iter()
                         .find(|(place, _)| *place == auth.key_in)
                         .map_or("Header", |(_, label)| label);
-                    egui::ComboBox::from_id_salt("api key place")
+                    self::combo("api key place")
                         .selected_text(shown)
                         .show_ui(ui, |ui| {
                             for (place, label) in places {
@@ -1804,7 +2114,7 @@ fn oauth_rows(
         .find(|(grant, _)| *grant == oauth.grant)
         .map_or("Client credentials", |(_, label)| label);
     // Cut to the field's width in a narrow pane; the hover text has it whole.
-    egui::ComboBox::from_id_salt("oauth grant")
+    combo("oauth grant")
         .selected_text(shown)
         .width(width.min(200.0))
         .truncate()
@@ -1844,7 +2154,7 @@ fn oauth_rows(
         .iter()
         .find(|(way, _)| *way == oauth.client_auth)
         .map_or("Header", |(_, label)| label);
-    egui::ComboBox::from_id_salt("oauth client auth")
+    combo("oauth client auth")
         .selected_text(shown)
         .show_ui(ui, |ui| {
             for (way, label) in ways {
@@ -1981,7 +2291,7 @@ fn override_bool(
         on_off(value.value).to_owned()
     };
     let mut changed = false;
-    let combo = egui::ComboBox::from_id_salt(("request option", field.label()))
+    let combo = combo(("request option", field.label()))
         .selected_text(selected)
         .width(140.0)
         .show_ui(ui, |ui| {
@@ -2135,7 +2445,7 @@ pub fn method_picker(ui: &mut Ui, method: &mut String, custom: &mut Option<Strin
         });
         return changed;
     }
-    let response = egui::ComboBox::from_id_salt("method")
+    let response = combo("method")
         .width(100.0)
         .height(320.0)
         .selected_text(
@@ -2495,7 +2805,7 @@ pub fn viewer_tools_with(
                     // read as the one under the pointer.
                     let clicked = if matches!(tool, Tool::Wrap | Tool::Filter) {
                         let mut on = selected;
-                        ui.checkbox(&mut on, label).clicked()
+                        checkbox(ui, &mut on, label).clicked()
                     } else {
                         option(ui, false, label).clicked()
                     };

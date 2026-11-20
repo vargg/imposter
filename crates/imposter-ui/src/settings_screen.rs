@@ -115,7 +115,7 @@ const FORM_WIDTH: f32 = 720.0;
 /// A section: its title, then its fields in the shared two-column grid.
 fn section(ui: &mut Ui, title: &str, contents: impl FnOnce(&mut Ui)) {
     ui.add_space(14.0);
-    ui.label(egui::RichText::new(title).font(crate::theme::semibold(15.0)));
+    ui.label(crate::theme::section(title));
     ui.add_space(6.0);
     Grid::new(title)
         .num_columns(2)
@@ -136,7 +136,7 @@ fn choice<T: Copy + PartialEq>(
         .iter()
         .find(|(option, _)| option == value)
         .map_or("", |(_, label)| *label);
-    egui::ComboBox::from_id_salt(id)
+    crate::widgets::combo(id)
         .selected_text(selected)
         .show_ui(ui, |ui| {
             for (option, label) in options {
@@ -200,7 +200,7 @@ fn check(ui: &mut Ui, value: &mut bool, label: &str, help: Option<&str>) -> bool
     ui.label("");
     let changed = ui
         .vertical(|ui| {
-            let changed = ui.checkbox(value, label).changed();
+            let changed = crate::widgets::checkbox(ui, value, label).changed();
             if let Some(help) = help {
                 ui.add(egui::Label::new(help_text(help)).wrap());
             }

@@ -332,7 +332,7 @@ impl Dialog {
                     value,
                     purpose,
                 } => {
-                    ui.heading(title.as_str());
+                    ui.label(crate::theme::page_title(title.as_str()));
                     // Read before the field draws: a single-line field consumes Enter.
                     let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
                     let caption = ui.label(label.as_str());
@@ -364,11 +364,11 @@ impl Dialog {
                     chosen,
                     share,
                 } => {
-                    ui.heading(if id.is_some() {
+                    ui.label(crate::theme::page_title(if id.is_some() {
                         "Edit Environment"
                     } else {
                         "New Environment"
-                    });
+                    }));
                     let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
                     let caption = ui.label("Name");
                     let field =
@@ -392,7 +392,7 @@ impl Dialog {
                         );
                     }
                     ui.add_space(8.0);
-                    ui.checkbox(share, "Share values");
+                    crate::widgets::checkbox(ui, share, "Share values");
                     ui.add(
                         egui::Label::new(
                             tone_text(
@@ -441,7 +441,7 @@ impl Dialog {
                     confirm,
                     purpose,
                 } => {
-                    ui.heading(title.as_str());
+                    ui.label(crate::theme::page_title(title.as_str()));
                     ui.label(message.as_str());
                     match buttons(
                         ui,
@@ -459,19 +459,19 @@ impl Dialog {
                     failed,
                 } => {
                     if let Some(error) = failed {
-                        ui.heading("Request could not be saved");
+                        ui.label(crate::theme::page_title("Request could not be saved"));
                         ui.label(
                             "Retry saving this request, discard its changes, or keep editing.",
                         );
                         ui.label(tone_text(error.as_str(), Tone::Error));
                     } else if let Some(collection) = draft {
                         // A draft has no saved version: saving creates a request.
-                        ui.heading("Keep this draft?");
+                        ui.label(crate::theme::page_title("Keep this draft?"));
                         ui.label(format!(
                             "\"{request}\" is not saved yet. Save it as a new request in \"{collection}\", discard it, or stay."
                         ));
                     } else {
-                        ui.heading("Unsaved request changes");
+                        ui.label(crate::theme::page_title("Unsaved request changes"));
                         ui.label(format!("Save changes to \"{request}\" before continuing?"));
                     }
                     let save = match (&failed, &draft) {
@@ -485,21 +485,21 @@ impl Dialog {
                     }
                 }
                 Self::VariablesGuard => {
-                    ui.heading("Unsaved variables");
+                    ui.label(crate::theme::page_title("Unsaved variables"));
                     ui.label("Save variable changes before continuing?");
                     if let Some(choice) = guard_buttons(ui, "Cancel", "Save") {
                         outcome = Outcome::VariablesGuard(choice);
                     }
                 }
                 Self::MocksGuard => {
-                    ui.heading("Unsaved mocks");
+                    ui.label(crate::theme::page_title("Unsaved mocks"));
                     ui.label("Save mock configuration before continuing?");
                     if let Some(choice) = guard_buttons(ui, "Cancel", "Save") {
                         outcome = Outcome::MocksGuard(choice);
                     }
                 }
                 Self::SettingsGuard => {
-                    ui.heading("Unsaved application settings");
+                    ui.label(crate::theme::page_title("Unsaved application settings"));
                     ui.label("Save application settings before exiting?");
                     if let Some(choice) = guard_buttons(ui, "Cancel", "Save") {
                         outcome = Outcome::SettingsGuard(choice);
@@ -510,10 +510,10 @@ impl Dialog {
                     options,
                     choice,
                 } => {
-                    ui.heading("Move");
+                    ui.label(crate::theme::page_title("Move"));
                     let caption = ui.label("Destination");
                     let selected = options.get(*choice).map_or("", |(label, _)| label.as_str());
-                    let combo = egui::ComboBox::from_id_salt("move destination")
+                    let combo = crate::widgets::combo("move destination")
                         .width(300.0)
                         .selected_text(selected)
                         .show_ui(ui, |ui| {
@@ -541,7 +541,7 @@ impl Dialog {
                     message,
                     tone,
                 } => {
-                    ui.heading(title.as_str());
+                    ui.label(crate::theme::page_title(title.as_str()));
                     let text = ui.add(egui::Label::new(tone_text(message.as_str(), *tone)).wrap());
                     name(&text, message);
                     if buttons(ui, &[("OK", Kind::Primary, true)], true).is_some() {
@@ -553,7 +553,7 @@ impl Dialog {
                     // A sheet to read, with nothing to choose: Esc or a click outside closes
                     // it, as every modal, so it has no button row.
                     ui.horizontal(|ui| {
-                        ui.heading("Keyboard shortcuts");
+                        ui.label(crate::theme::page_title("Keyboard shortcuts"));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(tone_text("Esc to close", Tone::Muted).small());
                         });
@@ -602,7 +602,7 @@ impl Dialog {
                 Self::ScriptReference => {
                     // A sheet to read, like the shortcut sheet: Esc or a click outside.
                     ui.horizontal(|ui| {
-                        ui.heading("Script reference");
+                        ui.label(crate::theme::page_title("Script reference"));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(tone_text("Esc to close", Tone::Muted).small());
                         });
@@ -642,7 +642,7 @@ impl Dialog {
                 }
                 Self::Scripts { owner, scripts, .. } => {
                     ui.set_min_width(560.0);
-                    ui.heading(format!("Scripts: {owner}"));
+                    ui.label(crate::theme::page_title(format!("Scripts: {owner}")));
                     ui.add(
                         egui::Label::new(tone_text(
                             "They run around every request inside, before the request's own, outer ones first.",
@@ -686,7 +686,7 @@ impl Dialog {
                     }
                 }
                 Self::Companions { .. } => {
-                    ui.heading("Companion files");
+                    ui.label(crate::theme::page_title("Companion files"));
                     ui.label("Include Postman environment or global JSON files?");
                     match buttons(
                         ui,
@@ -740,7 +740,7 @@ fn guard_buttons(ui: &mut egui::Ui, stay: &str, save: &str) -> Option<GuardChoic
 fn curl(ui: &mut egui::Ui, text: &mut String) -> Outcome {
     let mut outcome = Outcome::Open;
     ui.set_min_width(560.0);
-    ui.heading("Import from curl");
+    ui.label(crate::theme::page_title("Import from curl"));
     let caption = ui.label("curl command");
     let field = ui.add(
         egui::TextEdit::multiline(text)
@@ -1016,7 +1016,7 @@ fn counted(count: usize, noun: &str) -> String {
 fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outcome {
     let mut outcome = Outcome::Open;
     ui.set_min_width(520.0);
-    ui.heading("Review collection import");
+    ui.label(crate::theme::page_title("Review collection import"));
     // Nested folders and their requests count too: the summary is what gets written.
     ui.label(format!(
         "Creates {}: {} in {}",
@@ -1048,7 +1048,11 @@ fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outc
             }
         });
     if preview.requires_removal {
-        ui.checkbox(remove, "Remove the listed unsupported execution features");
+        crate::widgets::checkbox(
+            ui,
+            remove,
+            "Remove the listed unsupported execution features",
+        );
     }
     let allowed = !preview.requires_removal || *remove;
     match buttons(
@@ -1074,7 +1078,7 @@ fn export(
 ) -> Outcome {
     let mut outcome = Outcome::Open;
     ui.set_min_width(480.0);
-    ui.heading("Export collection");
+    ui.label(crate::theme::page_title("Export collection"));
     ui.horizontal(|ui| {
         ui.radio_value(postman, false, "Native (.imposter.json)");
         ui.radio_value(postman, true, "Postman v2.1");
@@ -1089,10 +1093,10 @@ fn export(
         .auto_shrink([false, true])
         .show(ui, |ui| {
             for (_, label, include) in environments.iter_mut() {
-                ui.checkbox(include, label.as_str());
+                crate::widgets::checkbox(ui, include, label.as_str());
             }
         });
-    ui.checkbox(globals, "Include global variables");
+    crate::widgets::checkbox(ui, globals, "Include global variables");
     ui.label(tone_text(
         "Literal credentials and file paths are included. Uploaded file contents are excluded.",
         Tone::Muted,

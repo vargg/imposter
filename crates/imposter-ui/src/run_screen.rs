@@ -337,7 +337,7 @@ fn controls(ui: &mut Ui, state: &mut State, actions: &mut Vec<Action>) {
                 .target
                 .as_ref()
                 .map_or_else(|| "Choose…".to_owned(), |t| t.label.clone());
-            let picker = egui::ComboBox::from_id_salt("run target")
+            let picker = widgets::combo("run target")
                 .selected_text(selected)
                 .width(220.0)
                 .truncate()
@@ -359,7 +359,7 @@ fn controls(ui: &mut Ui, state: &mut State, actions: &mut Vec<Action>) {
             name(&picker.response, "What to run");
 
             let shown = environment_label(state, state.run.environment);
-            let picker = egui::ComboBox::from_id_salt("run environment")
+            let picker = widgets::combo("run environment")
                 .selected_text(shown)
                 .width(160.0)
                 .truncate()
@@ -385,7 +385,7 @@ fn controls(ui: &mut Ui, state: &mut State, actions: &mut Vec<Action>) {
                     }
                 });
             name(&picker.response, "Environment for the run");
-            ui.checkbox(&mut state.run.keep_going, "Keep going after a failure");
+            widgets::checkbox(ui, &mut state.run.keep_going, "Keep going after a failure");
         });
         if let Some(run) = &state.run.run {
             let stop = ui.add_enabled(!run.stopping, egui::Button::new("Stop"));
@@ -468,7 +468,7 @@ fn result_line(ui: &mut Ui, screen: &RunScreen, actions: &mut Vec<Action>) {
 }
 
 fn runs_menu(ui: &mut Ui, screen: &RunScreen, actions: &mut Vec<Action>) {
-    let menu = egui::ComboBox::from_id_salt("earlier runs")
+    let menu = widgets::combo("earlier runs")
         .selected_text("Runs")
         .show_ui(ui, |ui| {
             for (index, run) in screen.runs.iter().enumerate() {

@@ -88,7 +88,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         let font = egui::TextStyle::Button.resolve(ui.style());
         let text = palette().text;
         ui.label(tone_text("Editing", Tone::Muted));
-        let combo = egui::ComboBox::from_id_salt("variables scope")
+        let combo = crate::widgets::combo("variables scope")
             .width(260.0)
             .selected_text(env_text(
                 &scope_label(state, current),
@@ -140,7 +140,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         icons::menu(ui, Icon::More, "Variable actions", |ui| {
             if current == Scope::Global {
                 let mut share = state.globals_shared;
-                if ui.checkbox(&mut share, "Share values").clicked() {
+                if crate::widgets::checkbox(ui, &mut share, "Share values").clicked() {
                     actions.push(Action::Variables(VariablesAction::ShareGlobals(share)));
                 }
                 ui.separator();
