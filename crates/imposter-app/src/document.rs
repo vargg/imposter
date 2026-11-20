@@ -376,7 +376,6 @@ pub fn select_all(
             }
         }
     }
-    let context = context(document, environment)?;
     let mut found = Vec::new();
     match single {
         Some(template) => found.push(Found {
@@ -385,6 +384,46 @@ pub fn select_all(
         }),
         None => ordered(&mut folders, within, requests, &mut found),
     }
+    select_found(document, environment, values, &found)
+}
+
+/// Select a stable project target by its location in the same snapshot as `document`.
+pub(crate) fn select_location(
+    document: &NativeDocument,
+    location: &[usize],
+    request: Option<usize>,
+    environment: Option<&str>,
+    values: &Variables,
+) -> Result<Vec<Selected>, DocumentError> {
+    let collection = &document.collection;
+    let (mut within, mut requests) = (&collection.folders[..], &collection.requests[..]);
+    let mut folders = Vec::new();
+    for &index in location {
+        let folder = &within[index];
+        folders.push(folder);
+        within = &folder.folders;
+        requests = &folder.requests;
+    }
+    let mut found = Vec::new();
+    if let Some(index) = request {
+        found.push(Found {
+            folders,
+            template: &requests[index],
+        });
+    } else {
+        ordered(&mut folders, within, requests, &mut found);
+    }
+    select_found(document, environment, values, &found)
+}
+
+fn select_found(
+    document: &NativeDocument,
+    environment: Option<&str>,
+    values: &Variables,
+    found: &[Found<'_>],
+) -> Result<Vec<Selected>, DocumentError> {
+    let context = context(document, environment)?;
+    let collection_name = document.collection.name.as_str();
     let jar = imposter_http::cookies::SharedJar::default();
     let tokens = crate::oauth::SharedTokens::default();
     Ok(found

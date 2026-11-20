@@ -247,10 +247,22 @@ async fn an_interrupt_cancels_the_run() {
 async fn mcp_answers_over_stdio_and_ends_with_its_input() {
     use std::io::Write as _;
     let home = tempfile::tempdir().unwrap();
-    let file = write_document(home.path(), "http://127.0.0.1:1");
+    let project = home.path().join("project");
+    let api = project.join("api");
+    std::fs::create_dir_all(&api).unwrap();
+    std::fs::write(
+        api.join("imposter.yaml"),
+        "format: imposter-project\nversion: 1\nid: collection\nname: API\n",
+    )
+    .unwrap();
+    std::fs::write(
+        api.join("list.yaml"),
+        "id: list\nname: List\nurl: http://127.0.0.1:1/list\n",
+    )
+    .unwrap();
     let mut command = imposter(home.path());
     command
-        .args(["mcp", "--file", file.to_str().unwrap()])
+        .args(["mcp", "--project", project.to_str().unwrap(), "--inspect"])
         .stdin(Stdio::piped());
     let mut child = command.spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
@@ -259,7 +271,7 @@ async fn mcp_answers_over_stdio_and_ends_with_its_input() {
             concat!(
                 r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}"#,
                 "\n",
-                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_requests","arguments":{}}}"#,
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"find_requests","arguments":{}}}"#,
                 "\n"
             )
             .as_bytes(),
@@ -277,8 +289,8 @@ async fn mcp_answers_over_stdio_and_ends_with_its_input() {
         .collect();
     assert_eq!(answers[0]["result"]["protocolVersion"], "2025-11-25");
     assert_eq!(
-        answers[1]["result"]["structuredContent"]["requests"],
-        json!(["Users/List", "Users/Hold"])
+        answers[1]["result"]["structuredContent"]["requests"][0]["request"]["path"],
+        "API/List"
     );
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("experimental"),

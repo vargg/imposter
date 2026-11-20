@@ -769,7 +769,10 @@ async fn collection_and_folder_scripts_survive_import_and_export() {
 #[tokio::test]
 async fn results_read_back_and_other_files_say_why_not() {
     let golden = fixtures().join("results/sent.imposter-result.json");
-    let result = read_result(golden).await.unwrap();
+    let imposter_app::transfer::HeadlessResult::Send(result) = read_result(golden).await.unwrap()
+    else {
+        panic!("expected a send result")
+    };
     assert_eq!(result.definition.request, "Users/Create user");
     let collection = read_result(fixtures().join("native/minimal.imposter.json")).await;
     assert!(

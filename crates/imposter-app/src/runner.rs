@@ -7,6 +7,7 @@
 
 use imposter_core::execution::{ExecutionRecord, Via};
 use imposter_core::model::Variables;
+pub use imposter_core::run_report::SKIPPED_AFTER_CANCEL;
 use imposter_core::run_result::RunOutcome;
 use imposter_core::variables::Source;
 use imposter_store::StoreHandle;
@@ -62,7 +63,6 @@ impl Step {
 }
 
 pub const SKIPPED_AFTER_FAILURE: &str = "an earlier request did not pass";
-pub const SKIPPED_AFTER_CANCEL: &str = "the run was cancelled";
 
 /// Run `requests` in order. `on_step` sees each step as it ends, so progress can be shown
 /// while the run goes on.
@@ -70,6 +70,16 @@ pub async fn run(
     requests: Vec<Selected>,
     options: Options,
     cancel: CancellationToken,
+    on_step: impl FnMut(&Step),
+) -> Vec<Step> {
+    run_with_grant(requests, options, cancel, None, on_step).await
+}
+
+pub async fn run_with_grant(
+    requests: Vec<Selected>,
+    options: Options,
+    cancel: CancellationToken,
+    destinations: Option<&imposter_http::destination::Destinations>,
     mut on_step: impl FnMut(&Step),
 ) -> Vec<Step> {
     let mut carried = Variables::new();
@@ -88,7 +98,12 @@ pub async fn run(
         } else {
             let mut inputs = selected.inputs;
             inputs.snapshot = inputs.snapshot.with_layer(&carried, &Source::Run);
-            match executor::run(&inputs, selected.request, cancel.clone()).await {
+            let result = if let Some(destinations) = destinations {
+                executor::run_granted(&inputs, selected.request, cancel.clone(), destinations).await
+            } else {
+                executor::run(&inputs, selected.request, cancel.clone()).await
+            };
+            match result {
                 Ok(ran) => {
                     for write in &ran.writes {
                         carried.insert(write.key(), write.value.clone());

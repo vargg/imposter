@@ -14,6 +14,7 @@ use egui::ViewportCommand;
 use imposter_app::core::execution::{ExecutionRecord, Outcome as ExchangeOutcome, Response};
 use imposter_app::core::ids::{CollectionId, EnvironmentId, ExecutionId, FolderId, RequestId};
 use imposter_app::core::model::{EnvColor, FormItem, OAuth2, Request, Variables};
+use imposter_app::core::run_report::Step as ReportStep;
 use imposter_app::core::run_result::RunResult;
 use imposter_app::core::settings::AppSettings;
 use imposter_app::core::variables::{SecretScope, Snapshot};
@@ -28,6 +29,7 @@ use imposter_app::store::environments::{self, Environment};
 use imposter_app::store::executions::{self, ExecutionSummary};
 use imposter_app::store::kv::{self, Table};
 use imposter_app::store::{Store, StoreError, StoreHandle, files, scopes, secrets};
+use imposter_app::transfer::HeadlessResult;
 use imposter_app::transfer::{self, ExportScope, ImportKind, ImportPreview};
 use imposter_app::{ops, store};
 use serde_json::Value;
@@ -309,7 +311,7 @@ pub enum Message {
     ResultPicked(Option<PathBuf>),
     ResultRead {
         file: String,
-        result: Result<Box<RunResult>, String>,
+        result: Result<HeadlessResult, String>,
     },
     Flushed(Result<(), Failure>),
     /// Background work with nothing to apply (it logs its own failures).
@@ -574,6 +576,7 @@ pub enum HistoryAction {
     /// Choose a result file `imposter send` wrote and show it in the details.
     OpenResult,
     CloseResult,
+    ResultStep(usize),
 }
 
 /// A result file shown in History's details. It is not stored: closing it, or choosing an
@@ -581,7 +584,20 @@ pub enum HistoryAction {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OpenedResult {
     pub file: String,
-    pub result: RunResult,
+    pub document: HeadlessResult,
+    pub step: usize,
+}
+
+impl OpenedResult {
+    pub fn current(&self) -> Option<&RunResult> {
+        match &self.document {
+            HeadlessResult::Send(result) => Some(result),
+            HeadlessResult::Run(report) => match report.steps.get(self.step)? {
+                ReportStep::Ran(result) => Some(result),
+                ReportStep::Skipped { .. } => None,
+            },
+        }
+    }
 }
 
 /// What History's details show; the response first, as it is what a run is looked up for.
@@ -618,6 +634,25 @@ pub struct HistoryScreen {
     /// What history holds now, beside the limits; `None` until first read.
     pub usage: Option<executions::Usage>,
     generation: u64,
+}
+
+fn show_result_step(history: &mut HistoryScreen) {
+    let result = history.opened.as_ref().and_then(OpenedResult::current);
+    history.request = result
+        .and_then(|result| result.request.as_ref())
+        .map(crate::viewer::result_request);
+    history.request_body_view = ViewerState::default();
+    history.request_headers_view = ViewerState::default();
+    history.response = ResponsePane::default();
+    if let Some(response) = result.and_then(RunResult::response) {
+        history.response.show(response);
+    }
+    if let Some(notice) = result
+        .and_then(|result| result.response.as_ref())
+        .and_then(crate::viewer::result_notice)
+    {
+        history.response.notice = Some((notice, Tone::Muted));
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1133,6 +1168,7 @@ impl From<ExecuteError> for NotSent {
             ExecuteError::Invalid(_)
             | ExecuteError::Script(_)
             | ExecuteError::Token(_)
+            | ExecuteError::Denied(_)
             | ExecuteError::SignIn { .. }
             | ExecuteError::Store(_) => Vec::new(),
         };
@@ -1848,7 +1884,7 @@ impl ImposterApp {
                         |n| n.to_string_lossy().into(),
                     );
                     self.bridge.spawn(move |_| async move {
-                        let result = transfer::read_result(path).await.map(Box::new);
+                        let result = transfer::read_result(path).await;
                         Message::ResultRead { file, result }
                     });
                 }
@@ -1858,24 +1894,14 @@ impl ImposterApp {
                     let history = &mut self.state.history;
                     history.selected = None;
                     history.record = None;
-                    history.request = result.request.as_ref().map(crate::viewer::result_request);
-                    history.response = ResponsePane::default();
-                    if let Some(response) = result.response() {
-                        history.response.show(response);
-                    }
-                    if let Some(notice) = result
-                        .response
-                        .as_ref()
-                        .and_then(crate::viewer::result_notice)
-                    {
-                        history.response.notice = Some((notice, Tone::Muted));
-                    }
                     history.tab = HistoryTab::Response;
                     history.status = None;
                     history.opened = Some(OpenedResult {
                         file,
-                        result: *result,
+                        document: result,
+                        step: 0,
                     });
+                    show_result_step(history);
                 }
                 Err(error) => {
                     self.state.history.status =
@@ -5280,6 +5306,13 @@ impl ImposterApp {
                 history.opened = None;
                 history.request = None;
                 history.response = ResponsePane::default();
+            }
+            HistoryAction::ResultStep(step) => {
+                let history = &mut self.state.history;
+                if let Some(opened) = &mut history.opened {
+                    opened.step = step;
+                    show_result_step(history);
+                }
             }
         }
     }

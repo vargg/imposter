@@ -15,6 +15,7 @@ use reqwest::{Method, StatusCode, Url};
 use tokio_util::sync::CancellationToken;
 
 use crate::cookies::{self, SharedJar};
+use crate::destination::{Denied, Destinations};
 use crate::digest::{self, Challenge};
 use crate::tls::{self, TlsSettings};
 use crate::upload::{self, UploadError};
@@ -32,6 +33,8 @@ pub struct Policy {
     pub proxy: Option<String>,
     pub tls: TlsSettings,
     pub identity_routing: Option<Box<IdentityRouting>>,
+    /// An agent session's network and file authority. Ordinary sends have no grant.
+    pub destinations: Option<Destinations>,
     /// Bytes of body to keep; `None` keeps everything.
     pub capture_limit: Option<u64>,
     /// The cookie jar: what every hop's response sets goes in, and with `send_jar` its
@@ -94,6 +97,7 @@ impl Policy {
                     base_dir: None,
                 })
             }),
+            destinations: None,
             timeout: Duration::from_secs_f64(settings.timeout),
             follow_redirects: settings.follow_redirects,
             proxy: (!settings.proxy_url.is_empty()).then(|| settings.proxy_url.clone()),
@@ -108,6 +112,22 @@ impl Policy {
             jar: None,
             send_jar: settings.attach_cookies,
         }
+    }
+
+    pub fn restrict(&mut self, destinations: Destinations) -> Result<(), Denied> {
+        if self.proxy.is_some()
+            || self.tls.ca_bundle.is_some()
+            || self.tls.certificate.is_some()
+            || self.tls.key.is_some()
+            || !self.tls.verify
+            || self.identity_routing.is_some()
+        {
+            return Err(Denied::Settings);
+        }
+        self.destinations = Some(destinations);
+        let max = crate::destination::CAPTURE_LIMIT;
+        self.capture_limit = Some(self.capture_limit.unwrap_or(max).min(max));
+        Ok(())
     }
 }
 
@@ -240,6 +260,9 @@ fn client(
         })?),
         None => builder.no_proxy(),
     };
+    if let Some(destinations) = &policy.destinations {
+        builder = destinations.configure(builder);
+    }
     builder.build().map_err(Into::into)
 }
 
@@ -464,6 +487,9 @@ impl Session {
     }
 
     async fn client_for(&self, url: &Url) -> Result<reqwest::Client, SendError> {
+        if let Some(destinations) = &self.policy.destinations {
+            destinations.check(url).map_err(grant_error)?;
+        }
         let mut settings = self.policy.tls.clone();
         if let Some(routing) = &self.policy.identity_routing {
             routing.apply(url, &mut settings)?;
@@ -734,6 +760,12 @@ async fn exchange(
     session: &Session,
 ) -> Result<(reqwest::Response, Vec<SetCookie>), SendError> {
     let policy = &session.policy;
+    let url = Url::parse(&prepared.url)
+        .map_err(|e| SendError::new(ErrorKind::InvalidUrl, format!("Invalid URL: {e}")))?;
+    if let Some(destinations) = &policy.destinations {
+        destinations.check(&url).map_err(grant_error)?;
+        authorize_request(prepared).map_err(grant_error)?;
+    }
     match &prepared.body {
         PreparedBody::Multipart(fields) => {
             upload::validate(upload::multipart_files(fields)).await?;
@@ -759,8 +791,6 @@ async fn exchange(
             "Request method must be a nonempty HTTP token",
         )
     })?;
-    let url = Url::parse(&prepared.url)
-        .map_err(|e| SendError::new(ErrorKind::InvalidUrl, format!("Invalid URL: {e}")))?;
     let mut attempt = Attempt {
         client: session.client_for(&url).await?,
         method,
@@ -821,6 +851,34 @@ async fn exchange(
         attempt.method = method;
         attempt.url = next;
     }
+}
+
+pub fn authorize_request(prepared: &Prepared) -> Result<(), Denied> {
+    use imposter_core::model::FormKind;
+
+    match &prepared.body {
+        PreparedBody::File(_) => return Err(Denied::File),
+        PreparedBody::Multipart(fields)
+            if fields.iter().any(|field| field.kind == FormKind::File) =>
+        {
+            return Err(Denied::File);
+        }
+        _ => {}
+    }
+    if prepared.method.eq_ignore_ascii_case("CONNECT")
+        || prepared.headers.iter().any(|(name, _)| {
+            ["host", "upgrade", "proxy-authorization"]
+                .iter()
+                .any(|header| name.eq_ignore_ascii_case(header))
+        })
+    {
+        return Err(Denied::Tunnel);
+    }
+    Ok(())
+}
+
+fn grant_error(error: Denied) -> SendError {
+    SendError::new(ErrorKind::Protocol, error.to_string())
 }
 
 /// Send `prepared` once and capture the response, with no connection kept afterwards.

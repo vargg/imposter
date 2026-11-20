@@ -22,6 +22,7 @@ fn policy(jar: Option<SharedJar>, send_jar: bool) -> Policy {
             ..TlsSettings::default()
         },
         identity_routing: None,
+        destinations: None,
         capture_limit: None,
         jar,
         send_jar,

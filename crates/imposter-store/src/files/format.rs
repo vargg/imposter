@@ -955,9 +955,22 @@ fn read_level(
 /// Every `.yaml` file under `root` by its `/`-separated path, skipping hidden entries
 /// (`.git`). A missing folder reads as empty.
 pub fn read_dir(root: &std::path::Path) -> std::io::Result<BTreeMap<String, Vec<u8>>> {
+    read_directory(root, false)
+}
+
+/// Read definitions for an agent session, where a YAML link could disclose an unrelated file.
+pub fn read_agent_dir(root: &std::path::Path) -> std::io::Result<BTreeMap<String, Vec<u8>>> {
+    read_directory(root, true)
+}
+
+fn read_directory(
+    root: &std::path::Path,
+    regular_only: bool,
+) -> std::io::Result<BTreeMap<String, Vec<u8>>> {
     fn walk(
         root: &std::path::Path,
         dir: &std::path::Path,
+        regular_only: bool,
         out: &mut BTreeMap<String, Vec<u8>>,
     ) -> std::io::Result<()> {
         for entry in std::fs::read_dir(dir)? {
@@ -968,12 +981,18 @@ pub fn read_dir(root: &std::path::Path) -> std::io::Result<BTreeMap<String, Vec<
                 continue;
             }
             let path = entry.path();
-            if entry.file_type()?.is_dir() {
-                walk(root, &path, out)?;
+            let kind = entry.file_type()?;
+            if kind.is_dir() {
+                walk(root, &path, regular_only, out)?;
             } else if std::path::Path::new(name)
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("yaml"))
             {
+                if regular_only && !kind.is_file() {
+                    return Err(std::io::Error::other(
+                        "Agent project definitions must be regular files",
+                    ));
+                }
                 let rel = path
                     .strip_prefix(root)
                     .map_err(std::io::Error::other)?
@@ -988,7 +1007,7 @@ pub fn read_dir(root: &std::path::Path) -> std::io::Result<BTreeMap<String, Vec<
     }
     let mut out = BTreeMap::new();
     if root.exists() {
-        walk(root, root, &mut out)?;
+        walk(root, root, regular_only, &mut out)?;
     }
     Ok(out)
 }

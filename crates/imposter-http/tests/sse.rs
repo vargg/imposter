@@ -66,6 +66,7 @@ fn policy(timeout: Duration, capture_limit: Option<u64>) -> Policy {
             ..TlsSettings::default()
         },
         identity_routing: None,
+        destinations: None,
         capture_limit,
         jar: None,
         send_jar: true,

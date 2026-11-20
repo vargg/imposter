@@ -193,6 +193,24 @@ pub struct Input {
     pub secret: bool,
 }
 
+pub(crate) fn redact_metadata(
+    definition: &mut Definition,
+    inputs: &mut [Input],
+    redactor: &Redactor,
+) {
+    definition.request = redactor.text(&definition.request);
+    for text in [&mut definition.file, &mut definition.environment]
+        .into_iter()
+        .flatten()
+    {
+        *text = redactor.text(text);
+    }
+    for input in inputs {
+        input.variable = redactor.text(&input.variable);
+        input.from = redactor.text(&input.from);
+    }
+}
+
 /// The start of a body, as text. A body that is not UTF-8 text is described, not shown.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -322,7 +340,7 @@ pub enum ReadError {
 
 /// The first `limit` bytes of `body` as text, redacted before the cut so a secret that
 /// straddles it cannot leave its first half behind.
-fn excerpt(body: &[u8], limit: usize, redactor: &Redactor) -> Option<Excerpt> {
+pub fn excerpt(body: &[u8], limit: usize, redactor: &Redactor) -> Option<Excerpt> {
     if limit == 0 {
         return None;
     }
@@ -542,8 +560,28 @@ impl RunResult {
     #[must_use]
     pub fn redacted(self, redactor: &Redactor) -> Self {
         let mut value = serde_json::to_value(&self).expect("a result always serializes");
-        redactor.json(&mut value);
-        serde_json::from_value(value).expect("redacting strings keeps a result's shape")
+        redactor.json_values(&mut value);
+        let mut safe_meta = Meta {
+            run: self.run,
+            definition: self.definition,
+            inputs: self.inputs,
+            limits: self.limits,
+        };
+        redact_metadata(&mut safe_meta.definition, &mut safe_meta.inputs, redactor);
+        value["format"] = serde_json::json!(self.format);
+        value["outcome"] = serde_json::json!(self.outcome);
+        value["origin"] = serde_json::json!(self.origin);
+        value["definition"] = serde_json::json!(safe_meta.definition);
+        value["run"] = serde_json::json!(safe_meta.run);
+        value["inputs"] = serde_json::json!(safe_meta.inputs);
+        serde_json::from_value(value).unwrap_or_else(|_| {
+            // A secret can have the same spelling as a typed verdict or script level.
+            // Keep the outcome and provenance when masking would make evidence unreadable.
+            let mut result =
+                Self::unsent(self.outcome, "Evidence withheld after redaction", safe_meta);
+            result.summary = redactor.text(&self.summary);
+            result
+        })
     }
 
     /// Pretty JSON with a trailing newline.
@@ -585,7 +623,7 @@ impl RunResult {
             script: self.script.clone(),
             stream: self.stream.as_ref().map(|stream| Stream {
                 end: stream.end,
-                more_events: stream.received - stream.events.len() as u64,
+                more_events: stream.received.saturating_sub(stream.events.len() as u64),
                 events: stream.events.clone(),
             }),
             ..Response::default()

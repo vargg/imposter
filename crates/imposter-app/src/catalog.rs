@@ -32,6 +32,25 @@ pub struct Listed {
     pub scripts: bool,
 }
 
+impl Listed {
+    pub fn redact(&mut self, redactor: &imposter_core::redact::Redactor) {
+        self.path = redactor.text(&self.path);
+        self.method = redactor.text(&self.method);
+        self.url = redactor.text(&self.url);
+    }
+
+    pub fn matches(&self, query: &Query) -> bool {
+        let shown_path = self.path.replace('/', " / ");
+        let name = self.path.rsplit('/').next().unwrap_or_default();
+        query.matches(&Candidate {
+            path: &shown_path,
+            name,
+            method: &self.method,
+            url: &self.url,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Listing {
     pub source: Source,
@@ -44,21 +63,12 @@ impl Listing {
     #[must_use]
     pub fn filtered(mut self, filter: &str) -> Self {
         let query = Query::parse(filter);
-        self.requests.retain(|request| {
-            let shown_path = request.path.replace('/', " / ");
-            let name = request.path.rsplit('/').next().unwrap_or_default();
-            query.matches(&Candidate {
-                path: &shown_path,
-                name,
-                method: &request.method,
-                url: &request.url,
-            })
-        });
+        self.requests.retain(|request| request.matches(&query));
         self
     }
 }
 
-fn listed(path: &RequestPath, template: &RequestTemplate, inherited: bool) -> Listed {
+pub(crate) fn listed(path: &RequestPath, template: &RequestTemplate, inherited: bool) -> Listed {
     Listed {
         path: path.to_string(),
         method: template.method.clone(),
@@ -324,7 +334,7 @@ fn label(source: &Defined) -> String {
     }
 }
 
-fn view(
+pub(crate) fn view(
     source: Source,
     path: &RequestPath,
     environment: Option<&str>,

@@ -266,6 +266,12 @@ impl State {
             }
         }
         removals.retain(|path| !writes.iter().any(|(p, _)| p == path));
+        let _lock = (!writes.is_empty() || !removals.is_empty())
+            .then(|| lock_project(&self.root))
+            .transpose()
+            .map_err(|error| {
+                StoreError::Files(format!("Cannot lock the collections folder: {error}"))
+            })?;
         for path in writes.iter().map(|(p, _)| p).chain(&removals) {
             let on_disk = std::fs::read(self.root.join(path)).ok();
             if on_disk.as_ref() != before.files.get(path) {
@@ -339,7 +345,7 @@ fn kept_directories<'a>(
 
 /// Write to a temporary file beside `path`, then rename it over: a crash leaves the old
 /// file or the new one, never half of one.
-fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write as _;
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir)?;
@@ -348,6 +354,18 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     file.as_file().sync_all()?;
     file.persist(path).map_err(|e| e.error)?;
     Ok(())
+}
+
+/// All app and agent writers use the same lock around comparison and replacement.
+pub fn lock_project(root: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::create_dir_all(root)?;
+    let lock = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root.join(".imposter.lock"))?;
+    lock.lock()?;
+    Ok(lock)
 }
 
 /// Remove directories left empty by a removal, up to (not including) `root`.

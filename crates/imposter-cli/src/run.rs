@@ -9,6 +9,7 @@ use std::time::Instant;
 use imposter_app::document::{self, RequestPath, Selected};
 use imposter_app::executor::{self, SystemEntropy};
 use imposter_app::formats::native;
+use imposter_app::http::destination::Destinations;
 use imposter_app::runner::{self, Options};
 use imposter_app::{paths, profile};
 use imposter_core::redact::Redactor;
@@ -130,9 +131,7 @@ pub async fn run(
 ) -> RunReport {
     let clock = Instant::now();
     let started = executor::now().to_rfc3339();
-    let mut entropy = SystemEntropy::default();
-    let mut uuid = || imposter_core::generate::generate("$uuid", &mut entropy).unwrap_or_default();
-    let run_id = uuid();
+    let run_id = new_id();
     let mut redactor = Redactor::default();
     let mut definition = Definition {
         source: source_of(&args.send),
@@ -152,15 +151,15 @@ pub async fn run(
         excerpt_bytes: args.send.max_body,
     };
     let selected = select(&args.send, var, &mut redactor, &mut definition).await;
-    let meta = |definition: Definition, elapsed_ms| run_report::Meta {
+    let meta = run_report::Meta {
         run: RunInfo {
-            id: run_id.clone(),
+            id: run_id,
             tool: crate::version(),
-            started: started.clone(),
-            elapsed_ms,
+            started,
+            elapsed_ms: 0,
         },
         definition,
-        inputs: inputs.clone(),
+        inputs,
         limits,
     };
     let (requests, store) = match selected {
@@ -172,17 +171,10 @@ pub async fn run(
             } else {
                 outcome
             };
-            return RunReport::unsent(outcome, &message, meta(definition, milliseconds(clock)))
-                .redacted(&redactor);
+            let mut meta = meta;
+            meta.run.elapsed_ms = milliseconds(clock);
+            return RunReport::unsent(outcome, &message, meta).redacted(&redactor);
         }
-    };
-    let capture_bytes = requests
-        .first()
-        .map_or(0, |r| r.inputs.settings.download_limit.saturating_mul(1024));
-    let mut steps: Vec<Step> = Vec::with_capacity(requests.len());
-    let step_definition = |path: &str| Definition {
-        request: path.to_owned(),
-        ..definition.clone()
     };
     let options = Options {
         keep_going: args.keep_going,
@@ -191,7 +183,52 @@ pub async fn run(
             .map(|store| (store.handle(), imposter_core::execution::Via::CommandLine)),
         headless: true,
     };
-    runner::run(requests, options, cancel, |ended| {
+    let report = run_selected(requests, options, meta, redactor, cancel, None, |line| {
+        let _ = writeln!(stderr, "{line}");
+    })
+    .await;
+    if let Some(store) = store {
+        // Closing waits for the database thread to finish its last History write.
+        let _ = tokio::task::spawn_blocking(move || store.close()).await;
+    }
+    report
+}
+
+pub(crate) fn new_id() -> String {
+    imposter_core::generate::generate("$uuid", &mut SystemEntropy::default()).unwrap_or_default()
+}
+
+pub(crate) async fn run_selected(
+    requests: Vec<Selected>,
+    options: Options,
+    mut meta: run_report::Meta,
+    mut redactor: Redactor,
+    cancel: CancellationToken,
+    destinations: Option<&Destinations>,
+    mut print: impl FnMut(&str),
+) -> RunReport {
+    let clock = Instant::now();
+    let mut steps: Vec<Step> = Vec::with_capacity(requests.len());
+    let step_meta = |path: &str, started, limits: Limits| run_result::Meta {
+        run: RunInfo {
+            id: new_id(),
+            tool: meta.run.tool.clone(),
+            started,
+            elapsed_ms: 0,
+        },
+        definition: Definition {
+            request: path.to_owned(),
+            ..meta.definition.clone()
+        },
+        inputs: meta.inputs.clone(),
+        limits,
+    };
+    if destinations.is_some() {
+        for selected in &requests {
+            redactor.credentials(&selected.request.template, &selected.inputs.settings);
+        }
+    }
+    runner::run_with_grant(requests, options, cancel, destinations, |ended| {
         let step = match ended {
             runner::Step::Ran {
                 path,
@@ -201,65 +238,54 @@ pub async fn run(
             } => {
                 let record = without_secrets(record, secrets, &mut redactor);
                 redactor.credentials(&record.resolved.template, &record.settings);
+                let effective = record.settings.download_limit_bytes();
+                let capture_bytes = destinations.map_or(effective.unwrap_or_default(), |_| {
+                    let max = imposter_app::http::destination::CAPTURE_LIMIT;
+                    effective.unwrap_or(max).min(max)
+                });
+                meta.limits.capture_bytes = meta.limits.capture_bytes.max(capture_bytes);
                 let mut result = RunResult::sent(
                     &record,
-                    run_result::Meta {
-                        run: RunInfo {
-                            id: uuid(),
-                            tool: crate::version(),
-                            started: record.timestamp.to_rfc3339(),
-                            elapsed_ms: 0,
-                        },
-                        definition: step_definition(path),
-                        inputs: inputs.clone(),
-                        limits: Limits {
+                    step_meta(
+                        path,
+                        record.timestamp.to_rfc3339(),
+                        Limits {
                             capture_bytes,
-                            ..limits
+                            ..meta.limits
                         },
-                    },
+                    ),
                     &redactor,
                 );
                 result.notes.clone_from(notes);
-                Step::Ran(Box::new(result.redacted(&redactor)))
+                Step::Ran(Box::new(result))
             }
             runner::Step::NotSent {
                 path,
                 outcome,
                 error,
-            } => Step::Ran(Box::new(
-                RunResult::unsent(
-                    *outcome,
-                    error.clone(),
-                    run_result::Meta {
-                        run: RunInfo {
-                            id: uuid(),
-                            tool: crate::version(),
-                            started: executor::now().to_rfc3339(),
-                            elapsed_ms: 0,
-                        },
-                        definition: step_definition(path),
-                        inputs: inputs.clone(),
-                        limits,
+            } => Step::Ran(Box::new(RunResult::unsent(
+                *outcome,
+                error.clone(),
+                step_meta(
+                    path,
+                    executor::now().to_rfc3339(),
+                    Limits {
+                        capture_bytes: 0,
+                        ..meta.limits
                     },
-                )
-                .redacted(&redactor),
-            )),
+                ),
+            ))),
             runner::Step::Skipped { path, reason } => Step::Skipped {
                 path: path.clone(),
                 reason: reason.clone(),
             },
         };
-        let _ = writeln!(stderr, "{}", redactor.text(&progress(&step)));
+        print(&redactor.text(&progress(&step)));
         steps.push(step);
     })
     .await;
-    if let Some(store) = store {
-        // Closing waits for the database thread to finish its last History write.
-        let _ = tokio::task::spawn_blocking(move || store.close()).await;
-    }
-    let mut definition = definition.clone();
-    definition.request.clone_from(&args.send.request);
-    RunReport::new(steps, meta(definition, milliseconds(clock))).redacted(&redactor)
+    meta.run.elapsed_ms = milliseconds(clock);
+    RunReport::new(steps, meta).redacted(&redactor)
 }
 
 /// Write the report: JSON on stdout, the summary on stderr, and the files `--out` and

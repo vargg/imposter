@@ -37,9 +37,9 @@ fn collection(dir: &Path, base: &str) -> PathBuf {
 }
 
 /// Run `imposter send … --out` in process, as a CI job would, and return the exit status.
-fn send(file: &Path, request: &str, out: &Path) -> u8 {
+fn headless(command: &str, file: &Path, request: &str, out: &Path) -> u8 {
     let args: Vec<OsString> = [
-        "send",
+        command,
         "--file",
         file.to_str().unwrap(),
         request,
@@ -94,7 +94,7 @@ fn results_written_by_the_command_line_open_in_history_with_the_same_verdicts() 
         let out = dir
             .path()
             .join(format!("{}.json", request.replace('/', "-")));
-        let status = send(&file, request, &out);
+        let status = headless("send", &file, request, &out);
         assert_eq!(status, outcome.exit_status(), "{request}");
         let result = RunResult::read(&std::fs::read(&out).unwrap()).unwrap();
         assert_eq!(result.outcome, outcome);
@@ -103,10 +103,14 @@ fn results_written_by_the_command_line_open_in_history_with_the_same_verdicts() 
         assert_eq!(app.harness.state().state.screen, Screen::History);
         let opened = app.harness.state().state.history.opened.clone().unwrap();
         assert_eq!(
-            opened.result, result,
+            opened.current(),
+            Some(&result),
             "the desktop shows the file as written"
         );
         app.harness.get_by_label(&result.summary);
+        let revision = result.definition.sha256.as_deref().unwrap();
+        app.harness
+            .get_by_label(&format!("Revision {}", &revision[..12]));
         app.harness.get_by_label_contains(&format!(
             "From imposter send · {request} · no environment · run "
         ));
@@ -138,6 +142,46 @@ fn results_written_by_the_command_line_open_in_history_with_the_same_verdicts() 
     assert_eq!(app.harness.state().state.history.opened, None);
     app.harness
         .get_by_label("Select an execution to see what was sent and received.");
+}
+
+#[test]
+fn a_run_report_shows_its_source_and_lets_the_reader_choose_a_failed_check() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime.block_on(Server::start(|_, _| response("200 OK", &[], b"ok")));
+    let dir = tempfile::tempdir().unwrap();
+    let file = collection(dir.path(), &server.url);
+    let out = dir.path().join("run.json");
+    assert_eq!(
+        headless("run", &file, "API", &out),
+        RunOutcome::Failed.exit_status()
+    );
+    let mut report =
+        imposter_app::core::run_report::RunReport::read(&std::fs::read(&out).unwrap()).unwrap();
+    let mut app = start();
+    click(&mut app.harness, "History");
+    settle(&mut app.harness);
+    open_result(&mut app, &out);
+    app.harness.get_by_label(&report.summary);
+    app.harness
+        .get_by_label_contains("From imposter run · API · no environment");
+    click(&mut app.harness, "Result request");
+    let label = match &report.steps[1] {
+        imposter_app::core::run_report::Step::Ran(result) => {
+            format!("API/Users/Fail · {}", result.summary)
+        }
+        skipped @ imposter_app::core::run_report::Step::Skipped { .. } => panic!("{skipped:?}"),
+    };
+    click(&mut app.harness, &label);
+    settle(&mut app.harness);
+    let opened = app.harness.state().state.history.opened.as_ref().unwrap();
+    assert_eq!(opened.current().unwrap().outcome, RunOutcome::Failed);
+
+    report.run.tool = "imposter mcp test-version".to_owned();
+    report.definition.environment = Some("Dev".to_owned());
+    std::fs::write(&out, report.to_json()).unwrap();
+    open_result(&mut app, &out);
+    app.harness
+        .get_by_label_contains("From imposter mcp · API · Dev");
 }
 
 #[test]

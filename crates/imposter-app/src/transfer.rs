@@ -484,11 +484,29 @@ pub async fn is_file(path: PathBuf) -> bool {
         .is_ok_and(|metadata| metadata.is_file())
 }
 
-/// A result `imposter send` wrote, read off the async threads with the import size limit.
-pub async fn read_result(path: PathBuf) -> Result<imposter_core::run_result::RunResult, String> {
+#[derive(Debug, Clone, PartialEq)]
+pub enum HeadlessResult {
+    Send(Box<imposter_core::run_result::RunResult>),
+    Run(Box<imposter_core::run_report::RunReport>),
+}
+
+/// A headless result, read off the async threads with the import size limit.
+pub async fn read_result(path: PathBuf) -> Result<HeadlessResult, String> {
     tokio::task::spawn_blocking(move || {
         let bytes = native::read_document(&path).map_err(|e| e.to_string())?;
-        imposter_core::run_result::RunResult::read(&bytes).map_err(|e| e.to_string())
+        let format = serde_json::from_slice::<Value>(&bytes).ok();
+        if format
+            .as_ref()
+            .is_some_and(|value| value["format"] == "imposter-run")
+        {
+            imposter_core::run_report::RunReport::read(&bytes)
+                .map(|report| HeadlessResult::Run(Box::new(report)))
+                .map_err(|e| e.to_string())
+        } else {
+            imposter_core::run_result::RunResult::read(&bytes)
+                .map(|result| HeadlessResult::Send(Box::new(result)))
+                .map_err(|e| e.to_string())
+        }
     })
     .await
     .map_err(|_| TransferError::Task.to_string())?

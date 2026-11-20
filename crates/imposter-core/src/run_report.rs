@@ -11,9 +11,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::Verdict;
 use crate::redact::Redactor;
-use crate::run_result::{Definition, Input, Limits, RunInfo, RunOutcome, RunResult};
+use crate::run_result::{
+    Definition, Input, Limits, ReadError, RunInfo, RunOutcome, RunResult, redact_metadata,
+};
 
 pub const VERSION: u32 = 1;
+pub const SKIPPED_AFTER_CANCEL: &str = "the run was cancelled";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Format {
@@ -154,6 +157,9 @@ fn step_outcomes(steps: &[Step]) -> Vec<Option<RunOutcome>> {
         .iter()
         .map(|step| match step {
             Step::Ran(result) => Some(result.outcome),
+            Step::Skipped { reason, .. } if reason == SKIPPED_AFTER_CANCEL => {
+                Some(RunOutcome::Cancelled)
+            }
             Step::Skipped { .. } => None,
         })
         .collect()
@@ -185,7 +191,14 @@ fn summary(steps: &[Step], totals: &Totals, outcome: RunOutcome, elapsed_ms: u64
                 _ => None,
             });
             let Some(result) = first else {
-                return "Not sent: nothing to run".to_owned();
+                return if outcome == RunOutcome::Cancelled {
+                    format!(
+                        "Cancelled · {ran} of {} ran",
+                        plural(totals.requests, "request")
+                    )
+                } else {
+                    "Not sent: nothing to run".to_owned()
+                };
             };
             let (word, rest) = result
                 .summary
@@ -230,15 +243,30 @@ impl RunReport {
     }
 
     /// Every string through `redactor`, as [`RunResult::redacted`] does.
-    ///
-    /// # Panics
-    /// Never: a report holds only strings, numbers, booleans and string-keyed maps, and
-    /// replacing strings keeps every field's type.
     #[must_use]
-    pub fn redacted(self, redactor: &Redactor) -> Self {
-        let mut value = serde_json::to_value(&self).expect("a report always serializes");
-        redactor.json(&mut value);
-        serde_json::from_value(value).expect("redacting strings keeps a report's shape")
+    pub fn redacted(mut self, redactor: &Redactor) -> Self {
+        redact_metadata(&mut self.definition, &mut self.inputs, redactor);
+        self.summary = redactor.text(&self.summary);
+        self.steps = self
+            .steps
+            .into_iter()
+            .map(|step| match step {
+                Step::Ran(result) => Step::Ran(Box::new(result.redacted(redactor))),
+                Step::Skipped { path, reason } => Step::Skipped {
+                    path: redactor.text(&path),
+                    reason: redactor.text(&reason),
+                },
+            })
+            .collect();
+        self
+    }
+
+    pub fn read(data: &[u8]) -> Result<Self, ReadError> {
+        let report: Self = serde_json::from_slice(data)?;
+        if report.version != VERSION {
+            return Err(ReadError::Version(report.version));
+        }
+        Ok(report)
     }
 
     /// Pretty JSON with a trailing newline.
@@ -402,6 +430,22 @@ mod tests {
         assert_eq!(
             outcome(&[Some(O::NotChecked), Some(O::Passed)], 3),
             O::NotChecked
+        );
+    }
+
+    #[test]
+    fn cancellation_between_steps_is_a_cancelled_run() {
+        let steps = [Step::Skipped {
+            path: "API/Check".to_owned(),
+            reason: SKIPPED_AFTER_CANCEL.to_owned(),
+        }];
+        let totals = totals(&steps);
+        let outcome = outcome(&step_outcomes(&steps), totals.checks_passed);
+        assert_eq!(outcome, RunOutcome::Cancelled);
+        assert_eq!(totals.skipped, 1);
+        assert_eq!(
+            summary(&steps, &totals, outcome, 0),
+            "Cancelled · 0 of 1 request ran"
         );
     }
 

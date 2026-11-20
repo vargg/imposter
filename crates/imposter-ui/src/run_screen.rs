@@ -196,7 +196,11 @@ fn plural(count: usize, word: &str) -> String {
 /// The run's outcome and a line about it, by the command line's rule
 /// (`run_report::outcome`).
 pub fn summary(steps: &[Step]) -> (RunOutcome, String) {
-    let outcomes: Vec<Option<RunOutcome>> = steps.iter().map(Step::outcome).collect();
+    let mut outcomes: Vec<Option<RunOutcome>> = steps.iter().map(Step::outcome).collect();
+    let skipped = outcomes.iter().filter(|o| o.is_none()).count();
+    if steps.iter().any(|step| matches!(step, Step::Skipped { reason, .. } if reason == imposter_app::runner::SKIPPED_AFTER_CANCEL)) {
+        outcomes.push(Some(RunOutcome::Cancelled));
+    }
     let mut checks_passed = 0;
     let mut checks_failed = 0;
     for step in steps {
@@ -218,7 +222,6 @@ pub fn summary(steps: &[Step]) -> (RunOutcome, String) {
         }
     }
     let outcome = imposter_app::core::run_report::outcome(&outcomes, checks_passed);
-    let skipped = outcomes.iter().filter(|o| o.is_none()).count();
     let ran = steps.len() - skipped;
     let mut parts = vec![plural(ran, "request") + " ran"];
     if checks_passed + checks_failed > 0 {

@@ -1261,14 +1261,12 @@ numbers, so both are excluded. Each logical change is its own commit.
   never a `{{secret:name}}` (`InputSource::Literal` has no secret flag, so a literal secret
   is unrepresentable): a literal bypasses the redactor and sits in the shell history, so
   secrets stay with `--secret` and the profile. A leading `@` reads the value's whole file
-  relative to the working directory (`@@` is a literal `@`; `@-` is refused, as stdin is
-  the MCP channel); a file that cannot be read, is not UTF-8 or is empty stops the run as
+  relative to the working directory (`@@` is a literal `@`; `@-` is refused); a file that cannot be read, is not UTF-8 or is empty stops the run as
   not_sent, as an unset process variable does. A name given twice across
   `--input`/`--secret`/`--var` is a usage error, so a `--var` can never silently shadow the
   user's `--secret`. The result schema is unchanged: the input records
-  `from: "--var"` (or "send_request inputs"), never the value. The MCP `send_request` call
-  takes the same literals as its own `inputs` object. Pinned by
-  `imposter-cli/tests/send.rs`, `run.rs`, `mcp.rs` and `imposter/tests/cli.rs`.
+  `from: "--var"`, never the value. Pinned by `imposter-cli/tests/send.rs`,
+  `run.rs` and `imposter/tests/cli.rs`.
 - **`imposter list`, `show` and `envs` let an agent find and read requests before running
   them** (`imposter_app::catalog`, `imposter_cli::catalog`), from the profile or a `--file`,
   writing nothing. `list` gives each request's path, method, URL template and how many
@@ -1360,32 +1358,41 @@ numbers, so both are excluded. Each logical change is its own commit.
   when printed, so it cannot drift from the parser. It only prints: the user decides
   where their agent reads it, and the app writes no agent configuration (the roadmap's
   rule). It teaches the order `list`, `show`, `send`.
-- **`imposter mcp` is an experimental MCP server over stdio** (`imposter_cli::mcp`), the M1
-  spike, not the M4 tool list: `list_requests` and `send_request {path}` over the saved
-  requests (or a `--file`), answered with the same `RunResult` as `send` (structured, and
-  repeated as text as MCP asks). The source, environment and inputs come only from its
-  command line, except the literal values a `send_request` call passes for that one call
-  (`inputs`, strings only, merged over the command line's but never overriding a
-  `--secret`), so an agent chooses which request runs and nothing else; there is no
-  `--out` and no port. Messages are
-  newline-delimited JSON-RPC 2.0, hand-written over `serde_json` (no SDK dependency for a
-  spike); diagnostics go to stderr. One send runs at a time while further messages are
-  read: `notifications/cancelled` for it cancels it, others wait, and a closed input
-  cancels and ends the server. Its findings are in ROADMAP.md under the experiment. Pinned
-  by `imposter-cli/tests/mcp.rs` and the process test in `imposter/tests/cli.rs`.
-- **History opens a result file the command line wrote** (⋯ → "Open result file…", also
-  in the palette), in place of a selected execution: the summary in its outcome's tone, a
-  muted line saying where it came from ("From imposter send · Shop API/Users/Create user ·
-  Dev · run 0b5c7f0e · also in History · secrets removed", or "from a file, not in History";
-  the file, SHA-256 and start time on hover), × to close it, and the same Response, Request body and Request headers tabs. A
-  run that sent nothing shows its error instead of a response. Nothing is stored, and
-  Restore and Copy as curl are not offered, since a result holds redacted values. The
-  file is read on the bridge with the import size limit (`transfer::read_result`). Why:
-  a person must be able to explain a failure from the result, without logs or asking the
-  agent to reconstruct the run (the roadmap's "How we know"). Pinned by
-  `imposter-ui/tests/results.rs`, which writes results with the real command line
-  (`imposter-cli` is a dev-dependency of the UI for that test only) and checks that the
-  desktop shows the same outcome and verdicts, and by the layout lint.
+- **MCP authority lives in the stdio subprocess configuration.** The experiment uses
+  one explicitly named collections folder and environment. Inspection, editing, execution
+  and evidence disclosure are separate grants, and red environments need a named
+  production opt-in. The host selects by stable file ID and revision. It can supply
+  neither inputs nor paths to file operations. Why: project files and tool arguments are
+  editable by the agent, and the initial spike let an input name a local file. Stdio
+  carries JSON-RPC alone on stdout, and the server ends with its input.
+  - A network grant pins each allowed origin to a literal IP. The shared transport
+    checks the URL after scripts and checks redirects and OAuth token requests before
+    connecting. Proxies, custom Host headers, HTTP tunnels, uploads, custom
+    certificates and disabled TLS verification are refused in this experiment. Why:
+    an origin is only enforceable if the transport controls the connection, and the
+    initial grant has no separate authority to read arbitrary files. Tests pin direct
+    denial, a script changing destinations, redirects, host resolution and file denial.
+  - A granted edit replaces the method, URL, description or checks in the existing
+    request file and returns a redacted before-and-after diff. App and MCP writers lock
+    the same hidden project lock file before comparing bytes and replacing definitions.
+    MCP compares the entire expected revision; the desktop's existing outside-edit
+    guard preserves an unsaved draft. Why: two writers could otherwise both compare
+    against the same bytes before either replaces them.
+  - Execute uses the shared sequential runner and returns a run ID immediately. A
+    separate call cancels the active run and the outcome remains readable. Evidence is
+    redacted by the same result code as the CLI. A session keeps eight completed runs,
+    accepts up to 32 requests per run, captures up to 1 MiB per response and discloses
+    at most 4 KiB per body. Oversized reports can be read a step at a time. Why:
+    a host should remain responsive and responses should fit the disclosure grant.
+  Pinned by the stdio process test and the MCP integration tests using a project on
+  disk and loopback servers. Host usefulness remains an experiment in ROADMAP.md.
+- **History opens a headless result or report** through “Open result file…” or the
+  palette. It shows the command, target, environment, run ID, revision and outcome.
+  Reports choose a step to view the same request, response and verdicts; a skipped
+  step shows its reason. The file is read on the bridge with the import size limit.
+  Restore and Copy as curl stay unavailable because the file holds redacted evidence.
+  Why: someone can explain a failure without reconstructing a run or reading logs.
+  The History result tests open files written by the real CLI.
 - **Release measurements use the packaged smoke workflow, with one excluded warm-up and
   ten successful runs, each in a fresh temporary profile.** Launch-to-request is measured
   before spawning the process through receipt at the loopback server, not first-frame time;

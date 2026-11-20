@@ -13,6 +13,7 @@ use imposter_core::settings::AppSettings;
 use imposter_core::variables::{
     CollectionScope, Scope, Snapshot, VariableContext, resolve_template,
 };
+use imposter_http::destination::{Denied, Destinations};
 use imposter_http::{Policy, SendError};
 use imposter_store::{StoreError, StoreHandle, collections, environments, executions, kv, scopes};
 use tokio_util::sync::CancellationToken;
@@ -187,6 +188,8 @@ pub enum ExecuteError {
     /// The request was not sent.
     #[error("{0}")]
     Token(String),
+    #[error(transparent)]
+    Denied(#[from] Denied),
     /// A person must sign in first (OAuth 2.0 authorization code), which a send never does.
     /// `forget` names the cached token that no longer works, for Send to drop.
     #[error("Sign in to get a token: {reason}")]
@@ -680,7 +683,17 @@ pub async fn run_streaming(
 ) -> Result<Ran, ExecuteError> {
     // Boxed: scripts, the token request and the exchange keep a large state, and inline it
     // pushed every caller's future past clippy's `large_futures` limit.
-    Box::pin(run_boxed(inputs, request, cancel, sink)).await
+    Box::pin(run_boxed(inputs, request, cancel, sink, None)).await
+}
+
+/// Execute using only the destinations granted by the person who started the session.
+pub async fn run_granted(
+    inputs: &Inputs,
+    request: Request,
+    cancel: CancellationToken,
+    destinations: &Destinations,
+) -> Result<Ran, ExecuteError> {
+    Box::pin(run_boxed(inputs, request, cancel, None, Some(destinations))).await
 }
 
 async fn run_boxed(
@@ -688,25 +701,38 @@ async fn run_boxed(
     request: Request,
     cancel: CancellationToken,
     sink: Option<imposter_http::EventSink>,
+    destinations: Option<&Destinations>,
 ) -> Result<Ran, ExecuteError> {
     let chain = inputs.scripts.with_request(&request).compile()?;
     let (mut resolved, settings, mut values) =
         resolve_with(&request, inputs, &mut SystemEntropy::default())?;
+    let mut report_secrets = imposter_core::redact::Redactor::default();
+    if destinations.is_some() {
+        report_secrets.credentials(&resolved.template, &settings);
+    }
     let before = chain
         .before(resolved.template, values.clone(), cancel.clone())
         .await
-        .map_err(ExecuteError::Script)?;
+        .map_err(|error| ExecuteError::Script(report_secrets.text(&error)))?;
     resolved.template = before.template;
     if let Some(base) = &inputs.base_dir {
         root_template(&mut resolved.template, base);
     }
     let mut policy = Policy::from_settings(&settings);
-    policy.identity_routing = Some(Box::new(imposter_http::transport::IdentityRouting {
-        settings: inputs.settings.clone(),
-        options: request.template.options.clone(),
-        variables: values.clone(),
-        base_dir: inputs.base_dir.clone(),
-    }));
+    if let Some(destinations) = destinations {
+        report_secrets.credentials(&resolved.template, &settings);
+        policy.restrict(destinations.clone())?;
+        let prepared = preview_template(&resolved.template, &settings)?;
+        destinations.check_url(&prepared.url)?;
+        imposter_http::transport::authorize_request(&prepared)?;
+    } else {
+        policy.identity_routing = Some(Box::new(imposter_http::transport::IdentityRouting {
+            settings: inputs.settings.clone(),
+            options: request.template.options.clone(),
+            variables: values.clone(),
+            base_dir: inputs.base_dir.clone(),
+        }));
+    }
     let mut secrets: Vec<String> = Vec::new();
     let token = oauth_token(
         inputs,
@@ -715,7 +741,13 @@ async fn run_boxed(
         &mut resolved.template,
         &mut secrets,
     )
-    .await?;
+    .await
+    .map_err(|error| match error {
+        ExecuteError::Token(message) if destinations.is_some() => {
+            ExecuteError::Token(report_secrets.text(&message))
+        }
+        error => error,
+    })?;
     add_jar_cookies(inputs, &settings, &mut resolved.template);
     let prepared = prepare(&resolved.template, settings.attach_cookies)
         .map_err(|e| ExecuteError::Invalid(e.to_string()))?;
@@ -832,6 +864,42 @@ async fn run_boxed(
         secrets,
         token,
     })
+}
+
+fn preview_template(
+    template: &RequestTemplate,
+    settings: &AppSettings,
+) -> Result<imposter_core::prepare::Prepared, ExecuteError> {
+    let mut template = template.clone();
+    if matches!(
+        template.auth.active(),
+        Ok(Some(imposter_core::model::Auth::OAuth2(_)))
+    ) {
+        template.auth = imposter_core::model::RequestAuth::bearer(imposter_core::redact::MARK);
+    }
+    prepare(&template, settings.attach_cookies)
+        .map_err(|error| ExecuteError::Invalid(error.to_string()))
+}
+
+/// Resolve and apply the before-sending scripts without reading files or fetching OAuth tokens.
+pub async fn preview(
+    inputs: &Inputs,
+    request: &Request,
+    cancel: CancellationToken,
+    redactor: &mut imposter_core::redact::Redactor,
+) -> Result<imposter_core::prepare::Prepared, ExecuteError> {
+    let (resolved, settings, values) =
+        resolve_with(request, inputs, &mut SystemEntropy::default())?;
+    redactor.credentials(&resolved.template, &settings);
+    let before = inputs
+        .scripts
+        .with_request(request)
+        .compile()?
+        .before(resolved.template, values, cancel)
+        .await
+        .map_err(ExecuteError::Script)?;
+    redactor.credentials(&before.template, &settings);
+    preview_template(&before.template, &settings)
 }
 
 /// With OAuth 2.0 in effect, send the cached token while it is good, as Copy as curl does:

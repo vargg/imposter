@@ -93,7 +93,7 @@ Protect these. The milestones run on them.
   app, by the same rule. `imposter list`, `show` and `envs` let an agent find a request and read it
   (placeholders and variable names, never values) before running it. `imposter skill`
   prints the agent instructions. `imposter mcp` is the
-  experimental spike below.
+  project-scoped experiment below.
 
 ## Core, still to build
 
@@ -126,31 +126,10 @@ worth trying.
   file.
 - The desktop, the CLI and CI are a complete release without M4.
 
-**M1 spike findings (7 November 2026).** `imposter mcp <FILE>` (experimental) serves two
-tools, `list_requests` and `send_request {path}`, over stdio on the same `send` code as the
-CLI. The file, environment and inputs come only from the command line the user wrote.
-Covered by protocol, cancellation and secret tests; not yet tried in a real host. What it
-showed for M4's contract:
-
-- Discovery came to the command line first (`imposter list`, `show`, `envs`, 7 November
-  2026); M4's "Find requests", "Inspect request" and "List environments" tools should
-  return the same `catalog` structures.
-- Paths of names are a weak identity. A rename breaks every reference an agent kept, and
-  duplicate names are refused at call time. The tool contract needs M2's stable request
-  ids, with paths for display only.
-- MCP asks for structured content to be repeated as text, so a result with a 64 KiB
-  excerpt costs twice that in context. M4 needs a smaller default excerpt and the
-  planned "Read result" by run id, not the whole result in every call.
-- A failed check is a successful tool call (`isError: false`, the outcome is data). A
-  host that only shows `isError` presents a failing run as fine. The summary leads the
-  text for that reason; M4 should also declare an `outputSchema`.
-- Starting the server with fixed inputs works as a coarse execution grant, but it grants
-  the whole file. It has no per-destination limit, and redirects are not checked against
-  one. These are M4's grant and security tests.
-- One send runs at a time. Other calls wait, and a long send can reach a host's timeout,
-  since no progress notifications are sent. `notifications/cancelled` stops a send. A
-  client that closes its input cancels the send and the server exits without answering
-  queued calls.
+**M1 spike findings (7 November 2026).** The two-tool spike exposed weak path
+identity, duplicated evidence in host context, coarse execution grants and a blocking
+send. The M4 implementation supersedes the spike with stable IDs, a separate result
+read, pinned origins and asynchronous execution.
 
 ## Not now
 
@@ -386,13 +365,13 @@ and SSE read as events arrive, judged by how the stream ends, with per-request l
 limits and streams in results (version 2). The settled behavior and its tests are in
 `AGENTS.md`.
 
-### M4 — MCP experiment
+### M4 — MCP experiment, ready for the two-host pilot
 
-- The tool list above, on the same services as the CLI, inside the grants from the
-  secrets decision.
-- The desktop shows origin, revision, environment and outcomes for a headless result.
-- Written setup for two MCP hosts and for shell agents. The app installs nothing into
-  an agent.
+The stdio adapter uses the shared CLI runner, project catalog and report schema, with
+launch-time grants and revision-checked edits. History opens headless reports with the
+command, revision, environment and step outcomes. The [setup guide](docs/mcp.md) covers
+Codex, Claude Code and shell agents. The shipped decisions and automated tests are
+recorded in `AGENTS.md`. Local stdio discovery was verified in Codex and Claude Code.
 
 Exit: either a person completes a real reproduce-and-check task through two hosts, and
 the security tests pass (cancellation, a stale write, a denied execution, a redirect

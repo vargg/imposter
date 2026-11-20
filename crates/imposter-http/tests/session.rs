@@ -22,6 +22,7 @@ fn policy() -> Policy {
         jar: None,
         send_jar: true,
         identity_routing: None,
+        destinations: None,
     }
 }
 

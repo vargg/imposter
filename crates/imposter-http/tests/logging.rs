@@ -81,6 +81,7 @@ async fn nothing_secret_reaches_the_logs() {
         jar: Some(imposter_http::cookies::SharedJar::default()),
         send_jar: true,
         identity_routing: None,
+        destinations: None,
     };
     let requests = [
         Prepared {

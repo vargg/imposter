@@ -69,7 +69,7 @@ pub const COMMANDS: [CommandHelp; 7] = [
     },
     CommandHelp {
         name: "mcp",
-        arguments: "[--project DIR] [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--var NAME=VALUE]... [--max-body BYTES]",
+        arguments: "--project DIR [--inspect] [--edit] [--env NAME] [--allow-origin ORIGIN[=IP]]... [--allow-production NAME] [--max-body BYTES] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]...",
         help: "Experimental: an MCP server over stdio.",
     },
 ];
@@ -297,7 +297,7 @@ enum Command {
     Run(run::RunArgs),
     Catalog(catalog::CatalogArgs),
     /// The experimental MCP server: a FILE and the run's environment and inputs.
-    Mcp(SendArgs),
+    Mcp(mcp::Args),
 }
 
 fn parse(args: Vec<OsString>) -> Result<Command, String> {
@@ -321,7 +321,7 @@ fn parse(args: Vec<OsString>) -> Result<Command, String> {
         "list" => parse_list(&mut parser),
         "show" => parse_catalog(&mut parser, catalog::Kind::Show),
         "envs" => parse_catalog(&mut parser, catalog::Kind::Envs),
-        "mcp" => parse_send(&mut parser, Mode::Mcp),
+        "mcp" => parse_mcp(&mut parser),
         other => Err(format!("unknown command {other:?}")),
     }
 }
@@ -474,14 +474,10 @@ fn parse_catalog(parser: &mut lexopt::Parser, kind: catalog::Kind) -> Result<Com
 enum Mode {
     Send,
     Run,
-    Mcp,
 }
 
-/// `send`'s arguments, `run`'s, or with `mcp` the server's: no REQUEST (the agent chooses it
-/// per call) and no `--out`.
 fn parse_send(parser: &mut lexopt::Parser, mode: Mode) -> Result<Command, String> {
     use lexopt::prelude::*;
-    let mcp = mode == Mode::Mcp;
     let mut keep_going = false;
     let mut junit = None;
     let mut positional: Vec<OsString> = Vec::new();
@@ -500,7 +496,7 @@ fn parse_send(parser: &mut lexopt::Parser, mode: Mode) -> Result<Command, String
             Long("input") => args.inputs.push(input(value(parser)?, false)?),
             Long("secret") => args.inputs.push(input(value(parser)?, true)?),
             Long("var") => args.inputs.push(literal(value(parser)?)?),
-            Long("out") if !mcp => args.out = Some(PathBuf::from(value(parser)?)),
+            Long("out") => args.out = Some(PathBuf::from(value(parser)?)),
             Long("file") => args.file = Some(PathBuf::from(value(parser)?)),
             Long("project") => args.project = Some(PathBuf::from(value(parser)?)),
             Long("keep-going") if mode == Mode::Run => keep_going = true,
@@ -528,12 +524,6 @@ fn parse_send(parser: &mut lexopt::Parser, mode: Mode) -> Result<Command, String
         }
     }
     let mut positional = positional.into_iter();
-    if mcp {
-        return match positional.next() {
-            None => Ok(Command::Mcp(args)),
-            Some(_) => Err("mcp takes no REQUEST: the agent chooses one per call".into()),
-        };
-    }
     let (Some(request), None) = (positional.next(), positional.next()) else {
         return Err(if mode == Mode::Run {
             "run takes one TARGET: a collection, a folder or a request".into()
@@ -553,6 +543,81 @@ fn parse_send(parser: &mut lexopt::Parser, mode: Mode) -> Result<Command, String
     } else {
         Command::Send(args)
     })
+}
+
+fn parse_mcp(parser: &mut lexopt::Parser) -> Result<Command, String> {
+    use lexopt::prelude::*;
+
+    let mut project = None;
+    let mut environment = None;
+    let mut production = None;
+    let mut destinations = imposter_app::http::destination::Destinations::default();
+    let mut inspect = false;
+    let mut edit = false;
+    let mut excerpt = None;
+    let mut inputs = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let text = |parser: &mut lexopt::Parser| {
+        parser
+            .value()
+            .and_then(ValueExt::string)
+            .map_err(|error| error.to_string())
+    };
+    while let Some(arg) = parser.next().map_err(|error| error.to_string())? {
+        match arg {
+            Long("help") | Short('h') => return Ok(Command::Help),
+            Long("project") if project.is_none() => {
+                project = Some(PathBuf::from(parser.value().map_err(|e| e.to_string())?));
+            }
+            Long("env") if environment.is_none() => environment = Some(text(parser)?),
+            Long("allow-production") if production.is_none() => production = Some(text(parser)?),
+            Long("allow-origin") => destinations
+                .allow(&text(parser)?)
+                .map_err(|e| e.to_string())?,
+            Long("inspect") => inspect = true,
+            Long("edit") => edit = true,
+            Long("max-body") if excerpt.is_none() => {
+                excerpt = Some(
+                    text(parser)?
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|&size| size <= mcp::MAX_EXCERPT)
+                        .ok_or_else(|| {
+                            format!("--max-body takes 0 through {} bytes", mcp::MAX_EXCERPT)
+                        })?,
+                );
+            }
+            Long(name @ ("input" | "secret")) => {
+                let secret = name == "secret";
+                let variable = input(parser.value().map_err(|e| e.to_string())?, secret)?;
+                if !seen.insert(variable.variable.clone()) {
+                    return Err(format!(
+                        "the variable {} is given more than once",
+                        variable.variable
+                    ));
+                }
+                inputs.push(variable);
+            }
+            other => return Err(other.unexpected().to_string()),
+        }
+    }
+    let project = project.ok_or("mcp requires --project DIR")?;
+    if production.is_some() && (production != environment || destinations.is_empty()) {
+        return Err("--allow-production must name the granted --env with --allow-origin".into());
+    }
+    if !inspect && !edit && destinations.is_empty() {
+        return Err("mcp needs --inspect, --edit or at least one --allow-origin".into());
+    }
+    Ok(Command::Mcp(mcp::Args {
+        project,
+        environment,
+        production: production.is_some(),
+        destinations,
+        inspect,
+        edit,
+        excerpt,
+        inputs,
+    }))
 }
 
 /// Run the command line and return the process exit status. Ctrl+C cancels a running send,
@@ -662,28 +727,20 @@ pub fn main(args: Vec<OsString>, io: &mut Io<'_>) -> u8 {
                     return USAGE_STATUS;
                 }
             };
-            let (lines, received) = tokio::sync::mpsc::unbounded_channel();
+            let (lines, received) = tokio::sync::mpsc::channel(16);
             // Reading stdin blocks, so a thread feeds the server; it ends with stdin.
             std::thread::spawn(move || {
-                for line in std::io::stdin().lines() {
-                    let Ok(line) = line else { break };
-                    if lines.send(line).is_err() {
-                        break;
-                    }
-                }
+                mcp::read_lines(std::io::stdin().lock(), &lines);
             });
             let _ = writeln!(
                 io.stderr,
                 "imposter mcp (experimental): serving {} over stdio",
-                args.file.as_ref().map_or_else(
-                    || "your saved requests".to_owned(),
-                    |file| file.display().to_string()
-                )
+                args.project.display()
             );
-            match runtime.block_on(mcp::serve(received, io.stdout, &args, io.var)) {
+            match runtime.block_on(mcp::serve(received, io.stdout, args, io.var)) {
                 Ok(()) => 0,
                 Err(error) => {
-                    let _ = writeln!(io.stderr, "error: stdout closed: {error}");
+                    let _ = writeln!(io.stderr, "error: {error}");
                     1
                 }
             }
@@ -823,25 +880,46 @@ mod tests {
         ] {
             assert_eq!(parse(args(line)), Err(message.to_owned()), "{line:?}");
         }
-        assert_eq!(
-            parse(args(&["mcp", "Users/List"])),
-            Err("mcp takes no REQUEST: the agent chooses one per call".to_owned())
-        );
+        assert!(parse(args(&["mcp", "Users/List"])).is_err());
         assert_eq!(
             parse(args(&["mcp", "--out", "x"])),
             Err("invalid option '--out'".to_owned())
         );
-        assert!(matches!(
+        assert_eq!(
             parse(args(&["mcp"])),
-            Ok(Command::Mcp(SendArgs { file: None, .. }))
-        ));
+            Err("mcp requires --project DIR".to_owned())
+        );
         assert!(matches!(
-            parse(args(&["mcp", "--file", "a.json", "--env", "Dev"])),
-            Ok(Command::Mcp(SendArgs {
+            parse(args(&[
+                "mcp",
+                "--project",
+                "sample",
+                "--inspect",
+                "--env",
+                "Dev"
+            ])),
+            Ok(Command::Mcp(mcp::Args {
                 environment: Some(_),
                 ..
             }))
         ));
+        for bad in [
+            &[
+                "--env",
+                "Dev",
+                "--allow-production",
+                "Prod",
+                "--allow-origin",
+                "http://127.0.0.1:8080",
+            ][..],
+            &["--allow-origin", "http://internal.example:8080"],
+            &["--max-body", "4097"],
+            &["--secret", "token=X", "--input", "token=Y"],
+        ] {
+            let mut line = vec!["mcp", "--project", "sample", "--inspect"];
+            line.extend_from_slice(bad);
+            assert!(parse(args(&line)).is_err(), "{line:?}");
+        }
         assert_eq!(parse(args(&["help"])), Ok(Command::Help));
         assert_eq!(parse(args(&["send", "--help"])), Ok(Command::Help));
         assert_eq!(parse(args(&["-V"])), Ok(Command::Version));

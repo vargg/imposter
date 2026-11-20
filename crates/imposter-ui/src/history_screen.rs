@@ -3,8 +3,11 @@
 
 use egui::{Rect, Sense, Ui, UiBuilder, vec2};
 use imposter_app::core::execution::Outcome;
+use imposter_app::core::run_report::Step as ReportStep;
+use imposter_app::core::run_result::Source;
 use imposter_app::core::settings::AppSettings;
 use imposter_app::store::executions::{ExecutionSummary, Usage};
+use imposter_app::transfer::HeadlessResult;
 
 use crate::app::{Action, HISTORY_PAGE, HistoryAction, HistoryTab, SentTab, State};
 use crate::theme::{Tone, palette};
@@ -400,6 +403,12 @@ fn pager(
 fn detail(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Vec<Action>) {
     if let Some(opened) = &history.opened {
         result_header(ui, opened, actions);
+        if let HeadlessResult::Run(report) = &opened.document {
+            if report.steps.is_empty() {
+                return;
+            }
+            result_picker(ui, report, opened.step, actions);
+        }
     } else if !record_header(ui, history, actions) {
         return;
     }
@@ -409,7 +418,26 @@ fn detail(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Ve
 /// What a result file says about its run: the summary in the outcome's tone, then where it
 /// came from, and a close button.
 fn result_header(ui: &mut Ui, opened: &crate::app::OpenedResult, actions: &mut Vec<Action>) {
-    let result = &opened.result;
+    let (summary, outcome, definition, info, command) = match &opened.document {
+        HeadlessResult::Send(result) => (
+            &result.summary,
+            result.outcome,
+            &result.definition,
+            &result.run,
+            "imposter send",
+        ),
+        HeadlessResult::Run(report) => (
+            &report.summary,
+            report.outcome,
+            &report.definition,
+            &report.run,
+            if report.run.tool.starts_with("imposter mcp ") {
+                "imposter mcp"
+            } else {
+                "imposter run"
+            },
+        ),
+    };
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -419,47 +447,71 @@ fn result_header(ui: &mut Ui, opened: &crate::app::OpenedResult, actions: &mut V
             }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(
-                    egui::Label::new(tone_text(
-                        &result.summary,
-                        viewer::outcome_tone(result.outcome),
-                    ))
-                    .truncate()
-                    .selectable(true),
+                    egui::Label::new(tone_text(summary, viewer::outcome_tone(outcome)))
+                        .truncate()
+                        .selectable(true),
                 )
-                .on_hover_text(&result.summary);
+                .on_hover_text(summary);
             });
         });
     });
-    let environment = result
-        .definition
+    let environment = definition
         .environment
         .as_deref()
         .unwrap_or("no environment");
-    let run: String = result.run.id.chars().take(8).collect();
+    let run: String = info.id.chars().take(8).collect();
     // A run against the profile is also in History; a file run never is.
-    let kept = match result.definition.source {
-        imposter_app::core::run_result::Source::Profile => "also in History",
-        imposter_app::core::run_result::Source::File => "from a file, not in History",
-        imposter_app::core::run_result::Source::Project => "from a folder, not in History",
+    let kept = match definition.source {
+        Source::Profile => "also in History",
+        Source::File => "from a collection file",
+        Source::Project => "from a project folder",
     };
     let origin = format!(
-        "From imposter send · {} · {environment} · run {run} · {kept} · secrets removed",
-        result.definition.request
+        "From {command} · {} · {environment} · run {run} · {kept}",
+        definition.request
     );
     let mut details = vec![format!("Opened from {}", opened.file)];
-    if let Some(file) = &result.definition.file {
+    if let Some(file) = &definition.file {
         details.push(format!("Ran {file}"));
     }
-    if let Some(sha256) = &result.definition.sha256 {
-        details.push(format!("SHA-256 {sha256}"));
-    }
-    details.push(format!(
-        "Started {} by {}",
-        result.run.started, result.run.tool
-    ));
+    details.push(format!("Started {} by {}", info.started, info.tool));
     let details = details.join("\n");
     ui.add(egui::Label::new(tone_text(origin, Tone::Muted)).truncate())
         .on_hover_text(details);
+    if let Some(sha256) = &definition.sha256 {
+        let short: String = sha256.chars().take(12).collect();
+        ui.label(tone_text(format!("Revision {short}"), Tone::Muted))
+            .on_hover_text(format!("SHA-256 {sha256}"));
+    }
+}
+
+fn result_picker(
+    ui: &mut Ui,
+    report: &imposter_app::core::run_report::RunReport,
+    selected: usize,
+    actions: &mut Vec<Action>,
+) {
+    fn label(step: &ReportStep) -> String {
+        match step {
+            ReportStep::Ran(result) => format!("{} · {}", step.path(), result.summary),
+            ReportStep::Skipped { .. } => format!("{} · Skipped", step.path()),
+        }
+    }
+    let response = egui::ComboBox::from_id_salt("headless run steps")
+        .selected_text(report.steps.get(selected).map(label).unwrap_or_default())
+        .truncate()
+        .show_ui(ui, |ui| {
+            for (index, step) in report.steps.iter().enumerate() {
+                if ui
+                    .selectable_label(index == selected, label(step))
+                    .clicked()
+                {
+                    actions.push(Action::History(HistoryAction::ResultStep(index)));
+                }
+            }
+        })
+        .response;
+    name(&response, "Result request");
 }
 
 /// The selected execution's line and actions; `false` while there is nothing to show.
@@ -589,19 +641,20 @@ fn detail_tabs(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &m
     match history.tab {
         HistoryTab::Request => sent_request(ui, history),
         HistoryTab::Response => {
-            if let Some(opened) = &history.opened
-                && opened.result.response.is_none()
-            {
-                // Nothing arrived: the summary says how it ended, the error why.
-                ui.add_space(8.0);
-                if !opened.result.error.is_empty() {
-                    ui.add(
-                        egui::Label::new(&opened.result.error)
-                            .wrap()
-                            .selectable(true),
-                    );
+            if let Some(opened) = &history.opened {
+                if let Some(result) = opened.current().filter(|result| result.response.is_none()) {
+                    ui.add_space(8.0);
+                    if !result.error.is_empty() {
+                        ui.add(egui::Label::new(&result.error).wrap().selectable(true));
+                    }
+                    return;
                 }
-                return;
+                if let HeadlessResult::Run(report) = &opened.document
+                    && let Some(ReportStep::Skipped { reason, .. }) = report.steps.get(opened.step)
+                {
+                    ui.label(tone_text(reason.as_str(), Tone::Muted));
+                    return;
+                }
             }
             // History responses are not the open request's: no row adds a check.
             if let Some(crate::workspace::PaneAction::SaveBody) =

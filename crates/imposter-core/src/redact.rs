@@ -111,28 +111,55 @@ impl Redactor {
     /// Remove the credentials `template` sends and the client key password in `settings`.
     /// Basic credentials also go as the `user:password` pair a server could echo.
     pub fn credentials(&mut self, template: &RequestTemplate, settings: &AppSettings) {
+        self.request_credentials(template, false);
+        self.secret(&settings.password);
+    }
+
+    /// Redact literal credentials in a stored definition while preserving references.
+    pub fn definition_credentials(&mut self, template: &RequestTemplate) {
+        self.request_credentials(template, true);
+    }
+
+    fn request_credentials(&mut self, template: &RequestTemplate, definition: bool) {
+        let mut credential = |value: &str| {
+            if !definition || crate::variables::placeholders(value).is_empty() {
+                self.secret(value);
+            }
+        };
         match template.auth.active() {
             Ok(Some(Auth::Basic(credentials))) => {
-                self.secret(&credentials.password);
+                credential(&credentials.password);
                 if !credentials.password.is_empty() {
-                    self.secret(&format!(
+                    credential(&format!(
                         "{}:{}",
                         credentials.username, credentials.password
                     ));
                 }
             }
-            Ok(Some(Auth::Digest(credentials))) => self.secret(&credentials.password),
-            Ok(Some(Auth::Bearer(token))) => self.secret(&token.token),
+            Ok(Some(Auth::Digest(credentials))) => credential(&credentials.password),
+            Ok(Some(Auth::Bearer(token))) => credential(&token.token),
             // Its percent-encoded form covers a key sent in the query.
-            Ok(Some(Auth::ApiKey(key))) => self.secret(&key.value),
+            Ok(Some(Auth::ApiKey(key))) => credential(&key.value),
             // The token it got is sent as a Bearer token, which the request as sent holds.
-            Ok(Some(Auth::OAuth2(oauth))) => self.secret(&oauth.client_secret),
+            Ok(Some(Auth::OAuth2(oauth))) => credential(&oauth.client_secret),
             Ok(None) | Err(_) => {}
         }
         if let Some(password) = &template.options.password {
-            self.secret(password);
+            credential(password);
         }
-        self.secret(&settings.password);
+        for header in template.headers.iter().filter(|row| row.is_sent()) {
+            if SECRET_HEADERS.contains(&header.name.to_ascii_lowercase().as_str()) {
+                credential(&header.value);
+                if header.name.eq_ignore_ascii_case("authorization")
+                    && let Some((_, value)) = header.value.split_once(' ')
+                {
+                    credential(value);
+                }
+            }
+        }
+        for cookie in template.cookies.iter().filter(|row| row.is_sent()) {
+            credential(&cookie.value);
+        }
     }
 
     /// Whether nothing was given to remove.
@@ -240,6 +267,17 @@ impl Redactor {
                 }
             }
             Value::Null | Value::Bool(_) | Value::Number(_) => {}
+        }
+    }
+
+    /// Redact data in JSON whose object keys belong to a published schema.
+    pub fn json_values(&self, value: &mut serde_json::Value) {
+        use serde_json::Value;
+        match value {
+            Value::String(text) => *text = self.text(text),
+            Value::Array(items) => items.iter_mut().for_each(|item| self.json_values(item)),
+            Value::Object(map) => map.values_mut().for_each(|item| self.json_values(item)),
+            _ => {}
         }
     }
 }

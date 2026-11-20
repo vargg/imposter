@@ -353,7 +353,7 @@ imposter send "Shop API / Users / Create user" --env Dev --secret token=API_TOKE
 | `imposter send <REQUEST> [OPTIONS]` | Run a saved request as Send does and print its checked, redacted result. Kept in History as the command line's. |
 | `imposter run <TARGET> [OPTIONS]` | Run every request of a collection, a folder or one request in order, carrying captured values forward; stops at the first that does not pass. |
 | `imposter skill` | Print instructions for a coding agent. |
-| `imposter mcp [--project DIR] [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--var NAME=VALUE]... [--max-body BYTES]` | Experimental: an MCP server over stdio. |
+| `imposter mcp --project DIR [--inspect] [--edit] [--env NAME] [--allow-origin ORIGIN[=IP]]... [--allow-production NAME] [--max-body BYTES] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]...` | Experimental: an MCP server over stdio. |
 
 `list`, `show` and `envs` write nothing. They show templates as stored, with their
 `{{placeholders}}`, and only the names of variables, never their values; a credential
@@ -455,10 +455,11 @@ For a coding agent, `imposter skill` prints instructions on running requests, pa
 secrets and reading results. Put them wherever your agent reads instructions; I’mposter
 writes no agent configuration itself.
 
-`imposter mcp` is an experiment: an MCP server over stdio that lets a chat tool list your
-saved requests (or those of a `--file`) and send one, with the environment and inputs you
-give on its command line. A `send_request` call may add its own literal values for that one
-call, never overriding your secrets. Its tools and output may change or go away.
+`imposter mcp` is a local stdio experiment for an explicitly granted project folder. It
+can find and prepare saved requests, make revision-checked edits, run requests and read
+bounded evidence with the permissions you give it at launch. The
+[MCP setup guide](docs/mcp.md) covers Codex and Claude Code and shows how to open a run
+report in History. You can also open `imposter run --out` reports there.
 
 ## Your data
 

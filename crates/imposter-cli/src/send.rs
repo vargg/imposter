@@ -31,10 +31,9 @@ pub enum InputSource {
     /// Read from a named process variable (`--input`, or `--secret`, which also fills
     /// `{{secret:VAR}}` and removes the value from the output).
     ProcessVar { name: String, secret: bool },
-    /// Given literally (`--var`, or an MCP call's `inputs`). A leading `@` reads the file
+    /// Given literally (`--var`). A leading `@` reads the file
     /// it names; `@@` is a literal `@`. Never a secret, never removed from the output.
-    /// `origin` is how the result names where it was given ("--var", "`send_request`
-    /// inputs").
+    /// `origin` is how the result names where it was given.
     Literal { value: String, origin: &'static str },
 }
 
@@ -147,7 +146,7 @@ fn literal_value(variable: &str, text: &str) -> Result<String, Unsent> {
         return Ok(format!("@{literal}"));
     }
     if rest == "-" {
-        // stdin is the MCP channel, and nothing else reads it.
+        // An input source must leave stdin available for the calling process.
         return Err(format!("Input {variable}: @- is not supported; name a file").into());
     }
     let bytes = std::fs::read(rest)
@@ -282,7 +281,7 @@ pub(crate) fn without_secrets(
     secrets: &[String],
     redactor: &mut Redactor,
 ) -> ExecutionRecord {
-    for secret in secrets.iter().filter(|s| s.chars().count() >= MIN_SECRET) {
+    for secret in secrets {
         redactor.secret(secret);
     }
     let mut record = record.clone();
