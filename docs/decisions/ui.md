@@ -135,13 +135,13 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     at least 10 tree rows at the minimum window in Compact (7 before).
 
 - **Orange means primary, selected or focused; nothing else.**
-  - **Hover and press** outline a control in the muted text color; a hovered icon turns
-    the text color.
+  - **Hover and press** outline framed controls in the muted text color. A hovered icon
+    turns the text color.
   - **Selection** (`selection.stroke`) is the accent: selected items' text, a focused field's
-    1.5-point ring, and a 2-point bar on the left of selected tree, History and palette rows
-    (`widgets::selection_bar`). Selected rows and menu options are filled, never outlined
-    (`widgets::option`): egui outlines a selected button with the control edge, which
-    read as a hover left on.
+    1.5-point ring, and a 2-point bar on the left of selected rail items and selected rows
+    in the tree, History and palette (`widgets::selection_bar`). Selected rows and menu
+    options use a fill (`widgets::option`), since egui's selected button outline read as
+    a hover left on.
   - **Tabs** are frameless: muted text, or semibold accent text with an underline. Hover
     previews the underline in the muted color rather than drawing a button frame. They
     keep the button padding (a transparent frame; `frame(false)` drops the padding and ran
@@ -212,20 +212,28 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
 ### Layout, Panes & Global Navigation
 
-- **The header keeps Requests, Variables and History together.** Mocks, Load and Run live
-  in a named Tools menu; application Settings is a gear at the far right, beside Tools and
-  the environment picker. Why: variables belong to everyday request work, while the two
-  supporting tools need less prominence and settings is application configuration.
-  Tools is selected while any tool is open, and each screen has its own title.
-  Unsaved mock edits mark Tools even when its menu is closed; the menu names running,
-  stopping and unsaved states. Settings keeps its own unsaved marker. Running tools are
-  clickable in the status bar, including while starting or stopping, with room reserved
-  before the latest result (which truncates with its full text on hover). Load remains
-  available from a request's context menu and the palette, keeping its connection to the
-  chosen request. No speculative future features determine this menu's shape. Long
-  environment names truncate with their full name on hover, so the picker cannot overlap
-  navigation. Checked by `imposter-ui/tests/header.rs`, the load and mock UI tests, and
-  the layout lint.
+- **Every screen has a home in the left icon rail.** The 48-point rail runs from the header
+  to the status bar. Requests, Variables and History come first, then a gap before Mocks,
+  Load and Run. Settings sits at the bottom. The frameless buttons are 32-point squares in
+  Compact and 36 in Comfortable. A selected item shows an accent glyph and a 2-point bar
+  at the rail's left edge. Inactive glyphs are muted
+  and take the text color on hover. The screen name is the accessible name and the tooltip
+  includes its shortcut when one exists. The design review found that the old Tools menu
+  lighting up like a tab confused navigation.
+  - Variables, Mocks and Settings mark unsaved edits with an amber corner dot
+    (`widgets::corner_dot`). Mocks, Load and Run mark active work with a green dot or a
+    muted dot while stopping. Mocks can show both dots together. Accessible descriptions
+    and tooltips name those states. The marks leave each button's position fixed and
+    distinguish changes from activity.
+  - The header pairs the app icon with the full wordmark. At narrow widths the icon stands
+    on its own and keeps the full accessible brand name. The environment picker stays at
+    the right and truncates long names with the full name on hover.
+  - Running tools are clickable in the status bar, including while starting or stopping.
+    They reserve room before the latest result, which truncates with its full text on hover.
+    Load and Run also open from their context menus and palette actions so they can start
+    with the chosen request, collection or folder.
+
+  Checked by `imposter-ui/tests/header.rs`, the load, run and mock UI tests, and the layout lint.
 
 - **The layout is a switch, not a mode:** side by side or stacked, changed only by the status
   bar's two layout buttons (the current one selected: one button showing the other
@@ -243,7 +251,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   they share in proportion. A drag starts from the size as drawn, not the stored ratio, so
   dragging back from a held minimum responds at once. Each split has a grip in the
   control-edge color (`widgets::split_grip`, ≥3:1), History's included. Why: a ratio alone left a pane with
-  only its tab row at 720×480 (the review's #10, #14). Checked by `imposter-ui/tests/fit.rs`.
+  only its tab row at 720×480 (the review's #10, #14). At narrow widths the sidebar
+  gives up width down to 184 points so both horizontal pane minimums fit beside the rail.
+  Its preferred width returns when space allows.
+  Checked by `imposter-ui/tests/fit.rs`.
 
 - **Rows of tabs, tools and status stay one row high; what does not fit goes into a menu.**
   - **Tabs** (`widgets::tab_strip`): tabs that do not fit go under "More", a chevron no
@@ -258,11 +269,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     tab's description, so its name stays the label. "More" shows how many tabs it hides
     ("+2", so it does not read as the tools' "⋯" beside it; dropped only when even the
     selected tab leaves no room) and the dot when one of them holds something, and names
-    those tabs in its description. A screen with unsaved edits (Variables, Settings,
-    Mocks) has a dot in the amber of the word "Unsaved", described as "Unsaved
-    changes": one muted "•" for both meant two things a few centimetres apart (Q16). It is
-    painted over the tab's corner (`widgets::corner_dot`), not written into its text, so the
-    tabs after it do not move (the review's #54).
+    those tabs in its description.
   - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
     first, then Wrap, the filter, Find and Copy. In the menu, Wrap and the filter are
     check boxes: a filled row for "on" read as the row under the pointer (Q11).
@@ -387,7 +394,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   dragging cannot be done from a keyboard or screen reader. Checked by
   `imposter-ui/tests/editing.rs` and the store's `placing_*` tests.
 
-- **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `imposter-ui/tests/editing.rs`. `{{variables}}` in a name are drawn in the accent, as in the editor, and the sidebar's edge has a grip like the splits', since it can be dragged wider (200–400 points, remembered) and nothing said so (the review's #59).
+- **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `imposter-ui/tests/editing.rs`. `{{variables}}` in a name are drawn in the accent, as in the editor, and the sidebar's edge has a grip like the splits', since it can be dragged wider (184–400 points, limited by the space the panes need) and nothing said so (the review's #59).
 
 
 ### Request Bar & Editors
@@ -667,8 +674,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   "Verify TLS certificates", not SSL. Why: label columns differed per group, paths had to be
   typed, and a wrong path showed only on the next send (the review's #50, #51).
 
-- **The Run screen runs a collection or a folder in the app** (`run_screen.rs`, Tools →
-  Run, "Run…" in the collection's ⋯ menu and a folder's context menu, and the palette's
+- **The Run screen runs a collection or a folder in the app** (`run_screen.rs`, Run in the
+  left rail, "Run…" in the collection's ⋯ menu and a folder's context menu, and the palette's
   "Run Collection" and "Go to Run"), through the same runner as `imposter run`. Its target
   is chosen by id (`profile::select_under`), so a renamed folder cannot make it run
   another. Opened with nothing chosen it takes the open collection.

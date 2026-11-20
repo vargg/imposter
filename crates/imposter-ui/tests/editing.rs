@@ -755,12 +755,13 @@ fn collection_controls_share_a_row_and_plus_creates_a_folder() {
     let plus = app.harness.get_by_label("New").rect();
     let more = app.harness.get_by_label("Collection actions").rect();
     assert!(picker.right() < plus.left() && plus.right() < more.left());
+    let sidebar_right =
+        imposter_ui::layout::RAIL_WIDTH + app.harness.state().state.layout.sidebar_width;
     for icon in [plus, more] {
         assert!((icon.center().y - picker.center().y).abs() < 1.0);
         assert!(
-            icon.right() < app.harness.state().state.layout.sidebar_width,
-            "picker: {picker:?}, plus: {plus:?}, more: {more:?}, sidebar: {}",
-            app.harness.state().state.layout.sidebar_width
+            icon.right() < sidebar_right,
+            "picker: {picker:?}, plus: {plus:?}, more: {more:?}, sidebar ends at {sidebar_right}"
         );
     }
     click(&mut app.harness, "New");

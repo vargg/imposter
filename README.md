@@ -159,7 +159,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 
 **Runs**
 - Send every request of a collection or a folder in the sidebar's order from the Run screen
-  (Tools → Run, "Run…" in a collection's ⋯ menu or a folder's right-click menu, or the
+  (the left rail, "Run…" in a collection's ⋯ menu or a folder's right-click menu, or the
   command palette), as `imposter run` does. A value a request captures reaches the requests
   after it; your variables do not change.
 - The environment is the active one unless you choose another for the run; with a red one,
@@ -171,7 +171,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   the session stay a menu away.
 
 **Load tests**
-- Send one request many times from the Load screen (Tools → Load, a request's right-click menu,
+- Send one request many times from the Load screen (the left rail, a request's right-click menu,
   or the command palette), as `ab` does: total requests, concurrency, an optional time
   limit and ramp-up, with or without keep-alive. Every request gets fresh generated values.
 - The summary: requests and bytes per second, the share of errors (failed checks count),
@@ -240,10 +240,10 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   works in any checkout; Browse stores a file inside the folder that way.
 
 **Interface**
-- Requests, Variables and History stay in the header. Tools opens Mocks, Load and Run; the
-  gear opens application Settings. Running tools stay visible in the status bar: click
-  their status to return to the screen. Unsaved mock edits mark Tools, even with its menu
-  closed; unsaved application settings mark the gear.
+- The left rail opens Requests, Variables, History, Mocks, Load and Run, with application
+  Settings at the bottom. Amber dots mark unsaved changes in Variables, Mocks and Settings.
+  Running tools show a green dot, which turns muted while stopping. You can also click a
+  running tool in the status bar to return to its screen.
 - Command palette (Cmd/Ctrl+K) over actions, the requests of every collection and
   environments; recent requests with Cmd/Ctrl+P, and Ctrl+Tab back to the previous one.
 - Sidebar filter: text, `"phrases"`, `method:POST`, `url:users`, `name:…`, `-word`, OR.
@@ -301,10 +301,11 @@ and xkbcommon. File dialogs go through the XDG desktop portal
 2. Enter a URL, choose a method, add what the request needs in the tabs below, and **Send**.
 3. Put shared values on the **Variables** screen (globals, an environment, or the
    collection) and use them as `{{name}}`. Choose the active environment at the top right.
-4. Run a whole folder in order with **Run…** in its right-click menu (Tools → Run).
+4. Run a whole folder in order with **Run…** in its right-click menu, or open **Run** from
+   the left rail and choose a folder.
 5. Find any earlier execution on the **History** screen.
 6. Application defaults (timeout, proxy, TLS, history limits, autosave) are behind the
-   **Settings** gear in the header.
+   **Settings** icon at the bottom of the left rail.
 
 ### Keyboard shortcuts
 
@@ -463,8 +464,8 @@ report in History. You can also open `imposter run --out` reports there.
 
 ## Your data
 
-I’mposter is the display name; the installed app is **Imposter**, the command is `imposter`,
-and the compact header wordmark is **I’mp**.
+I’mposter is the display name. The installed app is **Imposter**, and the command is
+`imposter`. Narrow windows show the app icon in the header.
 
 On default-profile startup, if the new database is absent, the app copies the previous Rust
 Poster profile at `~/.poster/poster.db` using SQLite's backup API, including committed WAL data.
@@ -579,7 +580,7 @@ An open request copies its current edits; navigation still resolves unsaved chan
 
 Settings → **Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.
 
-Use **Tools → Mocks** to configure a local HTTP server on `127.0.0.1` (port 8080 by default; 0 chooses an available port). Add routes by exact method and encoded path, with a response status, headers and text body. Query strings and request bodies do not affect matching; unmatched requests return 404. Save before Start; edits to a running server apply after Stop and Start. Configuration persists, but the server never starts automatically and stops when Imposter closes.
+Open **Mocks** in the left rail to configure a local HTTP server on `127.0.0.1` (port 8080 by default; 0 chooses an available port). Add routes by exact method and encoded path, with a response status, headers and text body. Query strings and request bodies do not affect matching; unmatched requests return 404. Save before Start; edits to a running server apply after Stop and Start. Configuration persists, but the server never starts automatically and stops when Imposter closes.
 
 A mock answers locally from the routes and scripts you define. A passing check against
 that answer does **not verify the live API**.

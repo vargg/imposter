@@ -281,15 +281,14 @@ fn stop_cancels_the_request_in_flight_and_skips_the_rest() {
     click(&mut f.app.harness, "Requests");
     click(&mut f.app.harness, "Run running");
     assert_eq!(f.app.harness.state().state.screen, Screen::Run);
-    click(&mut f.app.harness, "Tools");
-    let description = f
+    let item = f
         .app
         .harness
-        .get_all_by_label("Run")
-        .find_map(|node| node.accesskit_node().description());
-    assert_eq!(description.as_deref(), Some("Running"));
-    f.app.harness.key_press(egui::Key::Escape);
-    f.app.harness.run_steps(2);
+        .get_by_role_and_label(egui::Role::Button, "Run");
+    assert_eq!(
+        item.accesskit_node().description().as_deref(),
+        Some("Running")
+    );
 
     click(&mut f.app.harness, "Stop the run");
     settle(&mut f.app.harness);

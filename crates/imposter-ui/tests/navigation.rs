@@ -581,7 +581,7 @@ fn the_sidebar_marks_variables_in_names_and_widens_from_its_edge() {
 
     let before = app.harness.state().state.layout.sidebar_width;
     // Over the edge, then step by step, as a pointer moves.
-    let edge = egui::pos2(before, 300.0);
+    let edge = egui::pos2(imposter_ui::layout::RAIL_WIDTH + before, 300.0);
     app.harness.hover_at(edge);
     app.harness.run_steps(1);
     app.harness.drag_at(edge);
@@ -598,7 +598,7 @@ fn the_sidebar_marks_variables_in_names_and_widens_from_its_edge() {
 }
 
 #[test]
-fn an_unsaved_screen_does_not_move_the_tabs_after_it() {
+fn an_unsaved_screen_keeps_the_rail_items_after_it_in_place() {
     let mut app = start_with(|store| {
         store
             .call_blocking(|db| {

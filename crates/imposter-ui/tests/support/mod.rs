@@ -72,11 +72,8 @@ pub fn click(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     harness.run_steps(2);
 }
 
-/// Navigate through the visible header, including the supporting tools' menu.
+/// Navigate through the left rail.
 pub fn open_screen(harness: &mut Harness<'_, ImposterApp>, label: &str) {
-    if matches!(label, "Mocks" | "Load" | "Run") {
-        click(harness, "Tools");
-    }
     click_button(harness, label);
 }
 
@@ -190,14 +187,21 @@ pub fn save_state(harness: &Harness<'_, ImposterApp>, save: &str) -> String {
         .unwrap_or_else(|| panic!("{save} has no save state"))
 }
 
-/// The button named `label` is an icon: square, a control high, its name for screen
-/// readers and its words in the hover text.
+/// The button named `label` is a square toolbar icon with its accessible name.
 pub fn assert_icon_button(harness: &Harness<'_, ImposterApp>, label: &str) {
+    assert_icon_button_in_range(harness, label, 0.0..=32.0);
+}
+
+pub fn assert_icon_button_in_range(
+    harness: &Harness<'_, ImposterApp>,
+    label: &str,
+    size: std::ops::RangeInclusive<f32>,
+) {
     let rect = harness
         .get_by_role_and_label(egui::accesskit::Role::Button, label)
         .rect();
     assert!(
-        (rect.width() - rect.height()).abs() < 0.5 && rect.width() <= 32.0,
+        (rect.width() - rect.height()).abs() < 0.5 && size.contains(&rect.width()),
         "{label} is not an icon button: {rect:?}"
     );
 }

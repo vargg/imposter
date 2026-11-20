@@ -122,7 +122,9 @@ fn shapes_in(app: &support::App, area: egui::Rect) -> Vec<egui::Shape> {
 #[test]
 fn hovering_a_tab_previews_its_underline_without_a_button_frame() {
     let mut app = many_requests();
-    let tab = app.harness.get_by_role_and_label(Role::Button, "History");
+    click(&mut app.harness, "GET Request 03");
+    settle(&mut app.harness);
+    let tab = app.harness.get_by_role_and_label(Role::Button, "Auth");
     let area = tab.rect();
     tab.hover();
     app.harness.run_steps(2);
@@ -244,7 +246,7 @@ fn painted(app: &support::App, exactly: &str) -> Vec<egui::Rect> {
 }
 
 #[test]
-fn tab_labels_keep_their_distance() {
+fn request_tab_labels_and_rail_buttons_keep_their_distance() {
     let mut app = many_requests();
     click(&mut app.harness, "GET Request 03");
     settle(&mut app.harness);
@@ -259,8 +261,13 @@ fn tab_labels_keep_their_distance() {
     };
     let request = gap(&app, "Body", "Auth");
     assert!(request >= 10.0, "request tabs {request} apart");
-    let screens = gap(&app, "Requests", "Variables");
-    assert!(screens >= 16.0, "screen tabs {screens} apart");
+    let rail_rect = |label| {
+        app.harness
+            .get_by_role_and_label(Role::Button, label)
+            .rect()
+    };
+    let rail_gap = rail_rect("Variables").top() - rail_rect("Requests").bottom();
+    assert!(rail_gap >= 4.0, "rail buttons {rail_gap} apart");
 }
 
 #[test]
@@ -327,7 +334,7 @@ fn splits_show_a_grip_that_can_be_found() {
         2,
         "request and response, and the sidebar's edge"
     );
-    let sidebar = app.harness.state().state.layout.sidebar_width;
+    let sidebar = imposter_ui::layout::RAIL_WIDTH + app.harness.state().state.layout.sidebar_width;
     let edge = imposter_ui::theme::palette().field_border;
     let on_edge = app.harness.output().shapes.iter().any(|clipped| {
         matches!(&clipped.shape, egui::Shape::Rect(rect)

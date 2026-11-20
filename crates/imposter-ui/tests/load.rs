@@ -60,7 +60,7 @@ fn set_plan(app: &mut support::App, requests: &str, concurrency: &str) {
 }
 
 #[test]
-fn the_load_menu_takes_the_open_request_and_a_run_shows_its_summary() {
+fn the_load_rail_item_takes_the_open_request_and_a_run_shows_its_summary() {
     let mut f = fixture(Duration::ZERO, false);
     click(&mut f.app.harness, "GET Ping");
     settle(&mut f.app.harness);
@@ -224,26 +224,17 @@ fn both_running_tools_remain_reachable_with_unsaved_mocks_and_a_long_result() {
             assert!(!mocks.intersects(load));
             assert!(!f.app.harness.get_by_label(&result).rect().intersects(mocks));
             assert!(mocks.height() >= 24.0 && load.height() >= 24.0);
-            assert_eq!(
-                f.app
+            for (label, expected) in [("Mocks", "Running · Unsaved changes"), ("Load", "Running")]
+            {
+                let item = f
+                    .app
                     .harness
-                    .get_by_label("Tools")
-                    .accesskit_node()
-                    .description()
-                    .as_deref(),
-                Some("Unsaved mocks")
-            );
-            click(&mut f.app.harness, "Tools");
-            let item = f
-                .app
-                .harness
-                .get_by_role_and_label(egui::accesskit::Role::Button, "Mocks");
-            assert_eq!(
-                item.accesskit_node().description().as_deref(),
-                Some("Running · Unsaved changes")
-            );
-            f.app.harness.key_press(egui::Key::Escape);
-            f.app.harness.run_steps(2);
+                    .get_by_role_and_label(egui::Role::Button, label);
+                assert_eq!(
+                    item.accesskit_node().description().as_deref(),
+                    Some(expected)
+                );
+            }
             click(&mut f.app.harness, "Environment");
             click(&mut f.app.harness, "Global (no environment)");
         }

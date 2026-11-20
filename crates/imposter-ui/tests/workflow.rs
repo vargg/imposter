@@ -512,7 +512,10 @@ fn brand_and_header_controls_fit_both_layouts_and_keep_the_full_accessible_name(
                 "Variables",
                 "History",
                 "Settings",
-                "Tools",
+                "Mocks",
+                "Run",
+                "Load",
+                "Environment",
             ] {
                 let node = app.get_by_label(label);
                 let rect = node.rect();

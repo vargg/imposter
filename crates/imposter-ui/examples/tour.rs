@@ -613,7 +613,7 @@ fn main() {
         tour.settle();
 
         // Task 6: mocks.
-        tour.open_from("Tools", "Mocks");
+        tour.click("Mocks");
         tour.settle();
         tour.shot("6-01-mocks");
         tour.click("Start mock server");
@@ -651,7 +651,7 @@ fn main() {
         tour.shot("6-03b-mock-script");
 
         // Task 6b: a load test of the open request.
-        tour.open_from("Tools", "Load");
+        tour.click("Load");
         tour.settle();
         tour.shot("6-04-load");
         {

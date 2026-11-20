@@ -91,6 +91,37 @@ pub fn button(ui: &mut Ui, variant: Variant, icon: Option<Icon>, label: &str) ->
     }
 }
 
+/// A rail destination uses the glyph and the rail's selection bar without a button frame.
+pub fn rail_button(
+    ui: &mut Ui,
+    icon: Icon,
+    label: &str,
+    size: f32,
+    selected: bool,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(size), egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
+    response
+        .ctx
+        .accesskit_node_builder(response.id, |node| node.set_selected(selected));
+    let p = palette();
+    let color = if selected {
+        p.accent
+    } else if response.hovered() || response.has_focus() {
+        p.text
+    } else {
+        p.text_muted
+    };
+    paint_glyph(ui, icon, 16.0, rect.center(), color);
+    if selected {
+        selection_bar(
+            ui,
+            rect.translate(egui::vec2(ui.max_rect().left() - rect.left(), 0.0)),
+        );
+    }
+    response
+}
+
 fn control_text(ui: &Ui, text: RichText, max_width: f32) -> std::sync::Arc<egui::Galley> {
     egui::WidgetText::from(text.color(Color32::PLACEHOLDER)).into_galley(
         ui,
@@ -523,19 +554,17 @@ pub fn tab_with(
     response
 }
 
-/// A small dot in `tone` over the top right corner of `response` (a tab), drawn over it
-/// rather than in its text, so nothing after it moves; screen readers hear `description`.
-pub fn corner_dot(ui: &Ui, response: &egui::Response, tone: Tone, description: &str) {
+/// A marker inset from a button's right corner, with room for one at each end.
+pub fn corner_dot(ui: &Ui, rect: egui::Rect, vertical: egui::Align, tone: Tone) {
     let center = egui::pos2(
-        response.rect.right() - ui.spacing().button_padding.x + 3.0,
-        response.rect.top() + 6.0,
+        rect.right() - 6.0,
+        egui::lerp(
+            (rect.top() + 6.0)..=(rect.bottom() - 6.0),
+            vertical.to_factor(),
+        ),
     );
     ui.painter()
         .circle_filled(center, DOT_SIZE / 2.0, palette().tone(tone));
-    let description = description.to_owned();
-    response
-        .ctx
-        .accesskit_node_builder(response.id, |node| node.set_description(description));
 }
 
 /// A tab's underline in `color`, under its text, and the outline of keyboard focus.

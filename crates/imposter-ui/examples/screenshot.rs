@@ -225,17 +225,15 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-custom-method.png")))
             .unwrap();
-        harness.get_by_label("Tools").click();
-        settle(&mut harness);
-        harness
-            .render()
-            .unwrap()
-            .save(out.join(format!("{label}-tools.png")))
-            .unwrap();
         harness
             .get_by_role_and_label(egui::accesskit::Role::Button, "Mocks")
             .click();
         settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-navigation.png")))
+            .unwrap();
         harness.get_by_label("Mock route 1").click();
         settle(&mut harness);
         harness

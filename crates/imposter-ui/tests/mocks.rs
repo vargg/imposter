@@ -124,17 +124,20 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
     let mut app = opened(0);
     click(&mut app.harness, "Mock route 1");
     type_into(&mut app.harness, "Mock response body", "-kept");
-    // The closed Tools menu still reveals unsaved mock edits.
+    // The Mocks rail item reveals unsaved edits.
     let marked = |app: &support::App| {
         app.harness
-            .get_by_label("Tools")
+            .get_by_role_and_label(egui::Role::Button, "Mocks")
             .accesskit_node()
             .description()
     };
-    assert_eq!(marked(&app).as_deref(), Some("Unsaved mocks"));
+    assert_eq!(marked(&app).as_deref(), Some("Unsaved changes"));
     // Amber, as the word "Unsaved": a request tab's green dot means it holds something. It is
-    // painted over the tab's corner, not written into its text.
-    let tab = app.harness.get_by_label("Tools").rect();
+    // painted over the rail item's corner.
+    let tab = app
+        .harness
+        .get_by_role_and_label(egui::Role::Button, "Mocks")
+        .rect();
     let dots: Vec<egui::Color32> = app
         .harness
         .output()
@@ -172,7 +175,7 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
     click(&mut app.harness, "Discard");
     settle(&mut app.harness);
     assert_eq!(app.harness.state().state.mocks.form.routes[0].body, "first");
-    assert_eq!(marked(&app), None);
+    assert_eq!(marked(&app).as_deref(), Some("Mocks"));
 }
 
 #[test]

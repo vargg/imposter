@@ -59,5 +59,5 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing native
 - **Toolchain pinned in `rust-toolchain.toml`, `Cargo.lock` committed, CI uses `--locked`.**
   Why: every machine and CI run builds the same thing.
 
-- **Branding: I’mposter in the UI, I’mp in narrow headers, Imposter for installed apps, and `imposter` for code and commands; bundle ID `dev.imposter.app`.** Only `’m` uses the orange accent; the icon is a geometric I/apostrophe. Why: preserve the wordplay while keeping shell and package names portable. Wordmark/layout tests and icon tests pin accessible naming, colors and generated packaging images.
+- **Branding: I’mposter in the UI, the app icon in narrow headers, Imposter for installed apps, and `imposter` for code and commands; bundle ID `dev.imposter.app`.** Only `’m` uses the orange accent; the icon is a geometric I/apostrophe. Why: preserve the wordplay while keeping shell and package names portable. Wordmark/layout tests and icon tests pin accessible naming, colors and generated packaging images.
 

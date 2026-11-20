@@ -1,5 +1,5 @@
-//! The Requests screen. Drawing only: it reads state, edits the editor's form fields in place
-//! and records what the user asked for as actions.
+//! Workspace chrome and the Requests screen. Drawing only: it reads state, edits the editor's
+//! form fields in place and records what the user asked for as actions.
 
 use egui::{Align, Layout, Rect, RichText, Sense, Ui, UiBuilder, vec2};
 use imposter_app::core::ids::FolderId;
@@ -9,7 +9,7 @@ use crate::app::{Action, EditorTab, ImposterApp, ResponseTab, Screen, State, Tok
 use crate::dialogs::{Dialog, NamePurpose};
 use crate::editor::BODY_CHOICES;
 use crate::icons::{self, Icon};
-use crate::layout::{Orientation, SIDEBAR_WIDTH, WorkspaceLayout};
+use crate::layout::{Orientation, RAIL_WIDTH, SIDEBAR_WIDTH, WorkspaceLayout};
 use crate::theme::{Tone, method_color, palette};
 use crate::tree::{Node, NodeId, Place};
 use crate::viewer::{self, Language};
@@ -17,12 +17,12 @@ use crate::widgets::{self, FileRequest, VarUi, name, tone_text};
 
 const SEPARATOR: f32 = 12.0;
 const ENVIRONMENT_WIDTH: f32 = 200.0;
+const REQUESTS_MARGIN: i8 = 16;
 
 pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
     let save = app.save_label();
     let save_text = app.save_button_text();
     let executing = app.is_executing();
-    let variables_dirty = app.variables_dirty();
     let state = &mut app.state;
     crate::shortcuts::handle(state, ui.ctx());
 
@@ -32,71 +32,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                 .fill(palette().surface)
                 .inner_margin(egui::Margin::symmetric(16, 10)),
         )
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // The same drawing as the window and Dock icon.
-                let logo = state.logo.get_or_insert_with(|| {
-                    let size = 96;
-                    let image = egui::ColorImage::from_rgba_unmultiplied(
-                        [size, size],
-                        &icons::app_icon(96),
-                    );
-                    ui.ctx()
-                        .load_texture("app icon", image, egui::TextureOptions::LINEAR)
-                });
-                ui.add(egui::Image::new(&*logo).fit_to_exact_size(vec2(34.0, 34.0)));
-                let compact = ui.max_rect().width() < 900.0;
-                let galley = ui.fonts_mut(|fonts| fonts.layout_job(wordmark(compact)));
-                let (rect, brand) = ui.allocate_exact_size(galley.size(), Sense::hover());
-                brand.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::accesskit::Role::Image, true, "I’mposter")
-                });
-                ui.painter().galley(rect.min, galley, palette().text);
-                ui.add_space(if compact { 8.0 } else { 24.0 });
-                for (screen, label) in [
-                    (Screen::Requests, "Requests"),
-                    (Screen::Variables, "Variables"),
-                    (Screen::History, "History"),
-                ] {
-                    // In the tone of the "Unsaved" state, so it differs from the green dot
-                    // of a request tab that holds something.
-                    let tab = widgets::tab_with(ui, state.screen == screen, label, None);
-                    if screen == Screen::Variables && variables_dirty {
-                        // Over the tab's corner, so the tabs after it do not move.
-                        widgets::corner_dot(ui, &tab, Tone::Warning, "Unsaved changes");
-                    }
-                    if tab.clicked() {
-                        state.actions.push(Action::Screen(screen));
-                    }
-                }
-                // Draw in reading order so Tab follows the visible controls, even though
-                // this group is aligned to the right edge.
-                let width = ENVIRONMENT_WIDTH
-                    + 8.0
-                    + icons::size()
-                    + widgets::menu_text_button_width(ui, tools_text(state.screen))
-                    + 2.0 * ui.spacing().item_spacing.x;
-                ui.add_space((ui.available_width() - width).max(0.0));
-                ui.allocate_ui(
-                    vec2(ENVIRONMENT_WIDTH, crate::theme::spacing().control),
-                    |ui| environment_picker(state, ui),
-                );
-                ui.add_space(8.0);
-                tools_menu(state, ui);
-                let settings = icons::button(
-                    ui,
-                    Icon::Settings,
-                    "Settings",
-                    state.screen == Screen::Settings,
-                );
-                if state.settings_screen.dirty() {
-                    widgets::corner_dot(ui, &settings, Tone::Warning, "Unsaved changes");
-                }
-                if settings.clicked() {
-                    state.actions.push(Action::Screen(Screen::Settings));
-                }
-            });
-        });
+        .show(ui, |ui| header(state, ui));
     egui::Panel::bottom("status")
         .frame(
             egui::Frame::new()
@@ -147,6 +83,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                 });
             });
         });
+    navigation_rail(state, ui);
     if state.screen == Screen::Variables {
         egui::CentralPanel::default()
             .frame(
@@ -208,20 +145,36 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
         return;
     }
     if state.layout.sidebar_visible {
-        let panel = egui::Panel::left("sidebar")
+        const SIDEBAR: &str = "sidebar";
+        let max_width = if state.layout.orientation == Orientation::SideBySide {
+            // Leave room for both pane minimums before allocating the sidebar.
+            ui.available_width()
+                - 2.0 * (crate::layout::MIN_PANE_WIDE + f32::from(REQUESTS_MARGIN))
+                - SEPARATOR
+        } else {
+            SIDEBAR_WIDTH.1
+        }
+        .clamp(SIDEBAR_WIDTH.0, SIDEBAR_WIDTH.1);
+        let panel = egui::Panel::left(SIDEBAR)
             .frame(egui::Frame::new().fill(palette().surface).inner_margin(12))
             .resizable(true)
             .default_size(state.layout.sidebar_width)
-            .size_range(SIDEBAR_WIDTH.0..=SIDEBAR_WIDTH.1)
+            .size_range(SIDEBAR_WIDTH.0..=max_width)
             .show(ui, |ui| sidebar(state, ui));
-        state.layout.sidebar_width = panel
-            .response
-            .rect
-            .width()
-            .clamp(SIDEBAR_WIDTH.0, SIDEBAR_WIDTH.1)
-            .round();
-        // A grip on the edge says the sidebar can be dragged wider, as the splits' do.
         let edge = panel.response.rect;
+        let preferred = state.layout.sidebar_width;
+        if preferred > max_width && edge.width().round() >= max_width.round() {
+            // Keep the preferred width in the panel's cache too, so a window resize
+            // only constrains the drawn width and a wider window restores the preference.
+            let layout = egui::panel::PanelState {
+                outer_rect: Rect::from_min_size(edge.min, vec2(preferred, edge.height())),
+            };
+            ui.ctx()
+                .data_mut(|data| data.insert_persisted(ui.make_persistent_id(SIDEBAR), layout));
+        } else {
+            state.layout.sidebar_width = edge.width().clamp(SIDEBAR_WIDTH.0, max_width).round();
+        }
+        // A grip on the edge says the sidebar can be dragged wider, as the splits' do.
         let near = ui
             .ctx()
             .pointer_hover_pos()
@@ -236,7 +189,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
         .frame(
             egui::Frame::new()
                 .fill(palette().background)
-                .inner_margin(16),
+                .inner_margin(REQUESTS_MARGIN),
         )
         .show(ui, |ui| {
             if state.editor.is_none() {
@@ -1129,92 +1082,133 @@ fn context_bar(
     });
 }
 
-fn tools_text(screen: Screen) -> RichText {
-    if matches!(screen, Screen::Mocks | Screen::Load | Screen::Run) {
-        RichText::new("Tools")
-            .font(crate::theme::semibold(13.0))
-            .color(palette().accent)
-    } else {
-        RichText::new("Tools").color(palette().text_muted)
-    }
-}
-
-fn tools_menu(state: &mut State, ui: &mut Ui) {
-    let selected = matches!(state.screen, Screen::Mocks | Screen::Load | Screen::Run);
-    let button = widgets::menu_text_button(ui, tools_text(state.screen), "Tools");
-    button
-        .ctx
-        .accesskit_node_builder(button.id, |node| node.set_selected(selected));
-    if state.mocks.dirty() {
-        widgets::corner_dot(ui, &button, Tone::Warning, "Unsaved mocks");
-    }
-    egui::Popup::menu(&button).show(|ui| {
-        for (screen, label, running, stopping, dirty) in [
-            (
-                Screen::Mocks,
-                "Mocks",
-                state.mocks.run.is_some(),
-                state.mocks.run.as_ref().is_some_and(|run| run.stopping),
-                state.mocks.dirty(),
-            ),
-            (
-                Screen::Load,
-                "Load",
-                state.load.running(),
-                state.load.run.as_ref().is_some_and(|run| run.stopping),
-                false,
-            ),
-            (
-                Screen::Run,
-                "Run",
-                state.run.running(),
-                state.run.run.as_ref().is_some_and(|run| run.stopping),
-                false,
-            ),
-        ] {
-            let mut details = Vec::new();
-            if stopping {
-                details.push("Stopping…");
-            } else if running {
-                details.push("Running");
-            }
-            if dirty {
-                details.push("Unsaved changes");
-            }
-            let description = details.join(" · ");
-            let mut job = egui::text::LayoutJob::default();
-            job.append(
-                label,
-                0.0,
-                egui::TextFormat::simple(
-                    egui::TextStyle::Button.resolve(ui.style()),
-                    palette().text,
-                ),
-            );
-            if !description.is_empty() {
-                job.append(
-                    &format!("    {description}"),
-                    0.0,
-                    egui::TextFormat::simple(
-                        egui::TextStyle::Small.resolve(ui.style()),
-                        palette().text_muted,
-                    ),
-                );
-            }
-            let item = widgets::option(ui, state.screen == screen, job);
-            name(&item, label);
-            item.ctx.accesskit_node_builder(item.id, |node| {
-                node.set_description(description);
-            });
-            if item.clicked() {
-                state.actions.push(Action::Screen(screen));
-                ui.close();
-            }
+fn header(state: &mut State, ui: &mut Ui) {
+    let show_wordmark = ui.available_width() >= 900.0;
+    ui.horizontal(|ui| {
+        // The same drawing as the window and Dock icon.
+        let logo = state.logo.get_or_insert_with(|| {
+            let image = egui::ColorImage::from_rgba_unmultiplied([96, 96], &icons::app_icon(96));
+            ui.ctx()
+                .load_texture("app icon", image, egui::TextureOptions::LINEAR)
+        });
+        let mark = ui.add(egui::Image::new(&*logo).fit_to_exact_size(vec2(34.0, 34.0)));
+        mark.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, "I’mposter"));
+        if show_wordmark {
+            let galley = ui.fonts_mut(|fonts| fonts.layout_job(wordmark()));
+            let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
+            ui.painter().galley(rect.min, galley, palette().text);
         }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            environment_picker(state, ui);
+        });
     });
 }
 
-/// Running tools remain reachable without opening their menu, including during shutdown.
+fn navigation_rail(state: &mut State, ui: &mut Ui) {
+    let spacing = crate::theme::spacing();
+    let size = spacing.control + spacing.sm;
+    egui::Panel::left("navigation rail")
+        .resizable(false)
+        .exact_size(RAIL_WIDTH)
+        .frame(
+            egui::Frame::new()
+                .fill(palette().surface)
+                .inner_margin(egui::epaint::MarginF32::symmetric(0.0, spacing.sm)),
+        )
+        .show(ui, |ui| {
+            ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.y = spacing.xs;
+                for screen in [Screen::Requests, Screen::Variables, Screen::History] {
+                    rail_item(state, ui, screen, size);
+                }
+                ui.add_space(spacing.xs);
+                for screen in [Screen::Mocks, Screen::Load, Screen::Run] {
+                    rail_item(state, ui, screen, size);
+                }
+                ui.add_space((ui.available_height() - size).max(0.0));
+                rail_item(state, ui, Screen::Settings, size);
+            });
+        });
+}
+
+fn activity(stopping: bool) -> (Tone, &'static str) {
+    if stopping {
+        (Tone::Muted, "Stopping…")
+    } else {
+        (Tone::Ok, "Running")
+    }
+}
+
+fn rail_item(state: &mut State, ui: &mut Ui, screen: Screen, size: f32) {
+    use crate::shortcuts::{self, Command};
+
+    let (icon, label) = match screen {
+        Screen::Requests => (Icon::Requests, "Requests"),
+        Screen::Variables => (Icon::Variables, "Variables"),
+        Screen::History => (Icon::History, "History"),
+        Screen::Mocks => (Icon::Mocks, "Mocks"),
+        Screen::Load => (Icon::Load, "Load"),
+        Screen::Run => (Icon::Run, "Run"),
+        Screen::Settings => (Icon::Settings, "Settings"),
+    };
+    let dirty = match screen {
+        Screen::Variables => state.variables.dirty(),
+        Screen::Mocks => state.mocks.dirty(),
+        Screen::Settings => state.settings_screen.dirty(),
+        _ => false,
+    };
+    let running = match screen {
+        Screen::Mocks => state
+            .mocks
+            .run
+            .as_ref()
+            .filter(|run| run.stopping || run.address.is_some())
+            .map(|run| activity(run.stopping)),
+        Screen::Load => state.load.run.as_ref().map(|run| activity(run.stopping)),
+        Screen::Run => state.run.run.as_ref().map(|run| activity(run.stopping)),
+        _ => None,
+    };
+
+    let button = widgets::rail_button(ui, icon, label, size, state.screen == screen);
+    if dirty {
+        widgets::corner_dot(ui, button.rect, Align::Min, Tone::Warning);
+    }
+    if let Some((tone, _)) = running {
+        widgets::corner_dot(ui, button.rect, Align::Max, tone);
+    }
+    let mut hint = if screen == Screen::Settings {
+        shortcuts::ALL
+            .iter()
+            .find(|entry| entry.command == Command::Settings)
+            .and_then(|entry| entry.keys.first())
+            .map_or_else(
+                || label.to_owned(),
+                |key| shortcuts::hint(ui.ctx(), label, key),
+            )
+    } else {
+        label.to_owned()
+    };
+    let description = [
+        running.map(|(_, text)| text),
+        dirty.then_some("Unsaved changes"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ");
+    if !description.is_empty() {
+        hint.push('\n');
+        hint.push_str(&description);
+        button
+            .ctx
+            .accesskit_node_builder(button.id, |node| node.set_description(description));
+    }
+    if button.on_hover_text(hint).clicked() {
+        state.actions.push(Action::Screen(screen));
+    }
+}
+
+/// Running tools stay reachable from the status bar, including during shutdown.
 fn status_context(state: &mut State, ui: &mut Ui) {
     if let Some(run) = &state.load.run {
         let (label, hint) = if run.stopping {
@@ -1937,7 +1931,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
     let tabs = EditorTab::ALL.map(|(tab, label)| {
         let spec = widgets::TabSpec::new(tab, label).badge(editor_badge(&pane.editor, tab));
         if tab == EditorTab::Settings {
-            // The Settings screen tab has the same text; screen readers need them apart.
+            // Screen readers need distinct names for this tab and the Settings destination.
             spec.named("Request settings")
         } else {
             spec
@@ -2915,12 +2909,12 @@ fn run_label(run: &imposter_app::store::executions::ExecutionSummary) -> String 
     }
 }
 
-fn wordmark(compact: bool) -> egui::text::LayoutJob {
+fn wordmark() -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     for (text, color) in [
         ("I", palette().text),
         ("’m", palette().accent),
-        (if compact { "p" } else { "poster" }, palette().text),
+        ("poster", palette().text),
     ] {
         job.append(
             text,
@@ -2941,18 +2935,16 @@ mod branding_tests {
 
     #[test]
     fn only_apostrophe_m_uses_the_accent() {
-        for (compact, expected) in [(false, "I’mposter"), (true, "I’mp")] {
-            let job = wordmark(compact);
-            assert_eq!(job.text, expected);
-            assert_eq!(job.sections.len(), 3);
-            assert_eq!(
-                &job.text[job.sections[1].byte_range.start.0..job.sections[1].byte_range.end.0],
-                "’m"
-            );
-            assert_eq!(job.sections[1].format.color, palette().accent);
-            assert_eq!(job.sections[0].format.color, palette().text);
-            assert_eq!(job.sections[2].format.color, palette().text);
-        }
+        let job = wordmark();
+        assert_eq!(job.text, "I’mposter");
+        assert_eq!(job.sections.len(), 3);
+        assert_eq!(
+            &job.text[job.sections[1].byte_range.start.0..job.sections[1].byte_range.end.0],
+            "’m"
+        );
+        assert_eq!(job.sections[1].format.color, palette().accent);
+        assert_eq!(job.sections[0].format.color, palette().text);
+        assert_eq!(job.sections[2].format.color, palette().text);
     }
 }
 

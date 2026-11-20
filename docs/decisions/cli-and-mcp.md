@@ -43,7 +43,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing the CL
     says so for an open request with scripts.
   - **Stopping** (the user or the time limit) drops the requests in flight and sums up
     what finished.
-  - **The Load screen** (`load_screen.rs`) opens from Tools → Load, reached also from a
+  - **The Load screen** (`load_screen.rs`) opens from Load in the left rail, reached also from a
     request's right-click "Load test…" and the palette ("Load Test This Request", and
     "Change…" opens the palette to choose any saved request). Opened with nothing chosen
     it takes the open request. The request bar does not change: a Send menu whose one

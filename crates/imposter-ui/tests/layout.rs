@@ -464,6 +464,32 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     }
     check(app, "Mocks with a script and a log");
     app.harness.state_mut().state.mocks.log.clear();
+    // Revert the script edit before starting, then dirty the running configuration.
+    click(&mut app.harness, "Revert to saved mocks");
+    click(&mut app.harness, "Discard");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Start mock server");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while app
+        .harness
+        .state()
+        .state
+        .mocks
+        .run
+        .as_ref()
+        .is_none_or(|run| run.address.is_none())
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "mock server did not start"
+        );
+        app.harness.run_steps(2);
+        std::thread::yield_now();
+    }
+    app.harness.state_mut().state.mocks.form.routes[0].body = "unsaved".into();
+    check(app, "Mocks running with unsaved changes");
+    click(&mut app.harness, "Stop mock server");
+    settle(&mut app.harness);
     // The Load screen on the open request: idle, asking about production, running, and a
     // stopped run's summary with its error pills and tables.
     support::open_screen(&mut app.harness, "Load");
@@ -657,7 +683,16 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
                                 prod.id,
                                 Some(imposter_app::core::model::EnvColor::Red),
                             )?;
-                            env::set_active_environment(db, Some(prod.id))
+                            env::set_active_environment(db, Some(prod.id))?;
+                            imposter_app::store::kv::set(
+                                db,
+                                imposter_app::store::kv::Table::Settings,
+                                "mock_server",
+                                &imposter_app::core::mock::MockConfig {
+                                    port: 0,
+                                    routes: vec![imposter_app::core::mock::MockRoute::default()],
+                                },
+                            )
                         })
                         .unwrap();
                     let api = collection(store, "API");

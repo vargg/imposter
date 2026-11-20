@@ -7,8 +7,9 @@ mod support;
 
 use egui::accesskit::Role;
 use egui_kittest::kittest::{NodeT, Queryable};
-use imposter_ui::app::EditorTab;
-use imposter_ui::layout::MIN_WINDOW;
+use imposter_ui::app::{Action, Appearance, EditorTab};
+use imposter_ui::layout::{MIN_PANE_WIDE, MIN_WINDOW, RAIL_WIDTH, SIDEBAR_WIDTH, WorkspaceLayout};
+use imposter_ui::theme::{self, Density, ThemeChoice};
 use support::{click, collection, request, settle, start_with};
 
 const EDITOR_TABS: [&str; 9] = [
@@ -26,7 +27,63 @@ fn small() -> support::App {
     app
 }
 
-/// The tops of the request tabs in the row, by role so the screen tabs are left out.
+#[test]
+fn the_rail_and_sidebar_leave_room_for_both_pane_minimums() {
+    let mut app = small();
+    let preferred = WorkspaceLayout::default().sidebar_width;
+    let far_right = |app: &support::App| {
+        app.harness
+            .get_by_label("Collection actions")
+            .rect()
+            .right()
+    };
+    for theme in [ThemeChoice::Dark, ThemeChoice::Light] {
+        for density in [Density::Compact, Density::Comfortable] {
+            app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
+            app.harness
+                .state_mut()
+                .state
+                .actions
+                .push(Action::SetAppearance(Appearance { theme, density }));
+            app.harness.run_steps(3);
+            let mut panes: Vec<_> = app
+                .harness
+                .output()
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Rect(frame)
+                        if frame.stroke.color == theme::palette().border
+                            && frame.corner_radius == egui::CornerRadius::same(12) =>
+                    {
+                        Some(frame.rect)
+                    }
+                    _ => None,
+                })
+                .collect();
+            panes.sort_by(|a, b| a.left().total_cmp(&b.left()));
+            assert_eq!(panes.len(), 2);
+            for pane in panes {
+                assert!(
+                    pane.width() >= MIN_PANE_WIDE,
+                    "{theme:?} {density:?}: {pane:?}"
+                );
+            }
+            let narrow_right = far_right(&app);
+            assert!(narrow_right >= RAIL_WIDTH + SIDEBAR_WIDTH.0 - 24.0);
+            assert!(narrow_right < RAIL_WIDTH + preferred - 24.0);
+            app.harness.set_size(egui::vec2(1500.0, 850.0));
+            app.harness.run_steps(3);
+            assert!(
+                far_right(&app) > narrow_right + 40.0,
+                "the sidebar returns to its preferred width"
+            );
+            assert!((app.harness.state().state.layout.sidebar_width - preferred).abs() < 0.5);
+        }
+    }
+}
+
+/// The tops of the request tabs in the row.
 fn editor_tab_tops(app: &support::App) -> Vec<f32> {
     let mut labels: Vec<&str> = EDITOR_TABS.to_vec();
     labels.push("Request settings");
@@ -340,7 +397,7 @@ fn a_set_tab_has_a_raised_green_dot_and_more_counts_what_it_hides() {
         .collect();
     assert_eq!(marks.len(), 1, "one dot on Body");
     assert_eq!(marks[0].valign, egui::Align::TOP);
-    assert_eq!(marks[0].color, imposter_ui::theme::palette().ok);
+    assert_eq!(marks[0].color, theme::palette().ok);
 
     // "+n", unlike the tools' "⋯" that can sit beside it.
     let shown = editor_tab_tops(&app).len();

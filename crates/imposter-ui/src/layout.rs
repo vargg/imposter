@@ -5,6 +5,7 @@ use serde_json::Value;
 
 /// The smallest window the app is laid out for (logical points).
 pub const MIN_WINDOW: [f32; 2] = [720.0, 480.0];
+pub const RAIL_WIDTH: f32 = 48.0;
 
 /// Request and response side by side or stacked; only the user switches it, never the width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -53,7 +54,7 @@ impl Default for WorkspaceLayout {
     }
 }
 
-pub const SIDEBAR_WIDTH: (f32, f32) = (200.0, 400.0);
+pub const SIDEBAR_WIDTH: (f32, f32) = (184.0, 400.0);
 pub const RATIO: (f32, f32) = (0.15, 0.85);
 
 /// The least a request or response pane gets beside the other: room for the tab row and
