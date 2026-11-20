@@ -105,8 +105,16 @@ fn a_new_environment_named_for_production_is_offered_red_until_a_color_is_chosen
     support::text_input(&app.harness, "Name").type_text("Prod");
     app.harness.run_steps(2);
     assert_eq!(chosen(&app), ["Red"], "a production name suggests red");
-    app.harness
-        .get_by_label("Suggested for production environments");
+    let has_suggestion = |app: &support::App| {
+        app.harness.get_all_by_label("Help").any(|node| {
+            node.accesskit_node().description().as_deref()
+                == Some("Suggested for production environments")
+        })
+    };
+    assert!(
+        has_suggestion(&app),
+        "the suggested color has contextual help"
+    );
     support::text_input(&app.harness, "Name").type_text("ucts");
     app.harness.run_steps(2);
     assert_eq!(
@@ -122,11 +130,7 @@ fn a_new_environment_named_for_production_is_offered_red_until_a_color_is_chosen
     support::text_input(&app.harness, "Name").type_text(" eu");
     app.harness.run_steps(2);
     assert_eq!(chosen(&app), ["Blue"], "a chosen color stays while typing");
-    assert!(
-        app.harness
-            .query_by_label("Suggested for production environments")
-            .is_none()
-    );
+    assert!(!has_suggestion(&app), "a chosen color has no suggestion");
     click_button(&mut app.harness, "Create");
     settle(&mut app.harness);
 

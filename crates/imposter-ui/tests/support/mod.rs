@@ -198,6 +198,29 @@ pub fn assert_icon_button(harness: &Harness<'_, ImposterApp>, label: &str) {
     assert_icon_button_in_range(harness, label, 0.0..=32.0);
 }
 
+pub fn import_review(notes: usize) -> imposter_ui::dialogs::Dialog {
+    use imposter_app::core::model::{SavedValues, Scripts, Variables};
+    use imposter_app::formats::native::{Name, NativeDocument, TransferCollection};
+    use imposter_app::transfer::ImportPreview;
+
+    let document = NativeDocument::new(TransferCollection {
+        name: Name::new("Pet Store").unwrap(),
+        description: String::new(),
+        variables: Variables::new(),
+        folders: Vec::new(),
+        requests: Vec::new(),
+        saved_values: SavedValues::default(),
+        scripts: Scripts::default(),
+    });
+    imposter_ui::dialogs::Dialog::review_import(Box::new(ImportPreview {
+        document,
+        collection_name: "Pet Store".into(),
+        environment_names: Vec::new(),
+        warnings: (1..=notes).map(|n| format!("Import warning {n}")).collect(),
+        requires_removal: true,
+    }))
+}
+
 pub fn assert_icon_button_in_range(
     harness: &Harness<'_, ImposterApp>,
     label: &str,

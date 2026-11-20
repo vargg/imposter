@@ -2,7 +2,7 @@
 //! other (two levels of tabs were removed from History for good reason), each with the
 //! examples for its phase and a line saying whether it compiles.
 
-use egui::{FontId, RichText, Ui};
+use egui::{FontId, Ui};
 use imposter_app::core::model::Scripts;
 use imposter_app::script::{self, Phase};
 
@@ -147,7 +147,7 @@ pub fn draw(
     edited
 }
 
-/// One script: its title with "Insert example…" for `phase`, a hint, the highlighted editor
+/// One script: its title and help, examples for `phase`, the highlighted editor
 /// with the typing aids, and whether it compiles. `label` names the editor for screen readers
 /// and keeps its cursor apart from other editors'.
 pub fn script_editor(
@@ -162,21 +162,18 @@ pub fn script_editor(
     let mut inserted = None;
     // Wrapped: in a narrow pane the menu goes under the title rather than past the edge.
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(title).font(crate::theme::semibold(13.0)));
-        let examples = ui.menu_button("Insert example…", |ui| {
+        widgets::label_with_help(ui, title, hint);
+        let examples = widgets::button(ui, widgets::Variant::Secondary, None, "Insert example…");
+        name(&examples, &format!("Insert an example into the {label}"));
+        egui::Popup::menu(&examples).show(|ui| {
             for (_, what, code) in EXAMPLES.iter().filter(|(p, ..)| *p == phase) {
-                if ui.button(*what).clicked() {
+                if widgets::option(ui, false, *what).clicked() {
                     inserted = Some(*code);
                     ui.close();
                 }
             }
         });
-        name(
-            &examples.response,
-            &format!("Insert an example into the {label}"),
-        );
     });
-    ui.add(egui::Label::new(tone_text(hint, Tone::Muted).small()).wrap());
     let typing = (text.len() <= HIGHLIGHT_LIMIT)
         .then(|| widgets::Typing::read(ui, id, text))
         .flatten();

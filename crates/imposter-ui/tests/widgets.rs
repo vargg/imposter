@@ -430,11 +430,12 @@ mod controls_kit {
         widgets::{self, Variant},
     };
 
-    const VARIANTS: [(Variant, &str); 4] = [
+    const VARIANTS: [(Variant, &str); 5] = [
         (Variant::Primary, "Create request"),
         (Variant::Secondary, "Save draft"),
         (Variant::Ghost, "Preview"),
         (Variant::Danger, "Delete request"),
+        (Variant::DangerPrimary, "Delete collection"),
     ];
 
     fn harness(choice: ThemeChoice, density: Density) -> Harness<'static, (bool, u8, usize)> {
@@ -508,6 +509,7 @@ mod controls_kit {
                             (Color32::TRANSPARENT, p.text_muted, Color32::TRANSPARENT)
                         }
                         Variant::Danger => (p.input, p.error, p.field_border),
+                        Variant::DangerPrimary => (p.error, p.on_accent, p.error),
                     };
                     assert_eq!(shape.fill, fill, "{label}");
                     assert_eq!(shape.stroke.color, edge, "{label}");

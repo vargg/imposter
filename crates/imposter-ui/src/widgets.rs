@@ -26,6 +26,7 @@ pub enum Variant {
     Secondary,
     Ghost,
     Danger,
+    DangerPrimary,
 }
 
 const BUTTON_PAD: f32 = 10.0;
@@ -123,6 +124,7 @@ pub fn button(ui: &mut Ui, variant: Variant, icon: Option<Icon>, label: &str) ->
             Variant::Secondary => (p.input, p.text, p.field_border),
             Variant::Ghost => (Color32::TRANSPARENT, p.text_muted, Color32::TRANSPARENT),
             Variant::Danger => (p.input, p.error, p.field_border),
+            Variant::DangerPrimary => (p.error, p.on_accent, p.error),
         }
     } else {
         // The disabled Ui already fades its painter, so keep the stronger neutral text.
@@ -203,7 +205,7 @@ fn control_text(ui: &Ui, text: RichText, max_width: f32) -> std::sync::Arc<egui:
 fn control_edge(response: &egui::Response, fill: Color32, resting: Color32) -> egui::Stroke {
     let p = palette();
     if response.enabled() && response.has_focus() {
-        let color = if fill == p.accent {
+        let color = if fill == p.accent || fill == p.error {
             p.on_accent
         } else {
             p.accent
@@ -216,7 +218,7 @@ fn control_edge(response: &egui::Response, fill: Color32, resting: Color32) -> e
     }
 }
 
-fn paint_glyph(ui: &Ui, icon: Icon, size: f32, center: egui::Pos2, color: Color32) {
+pub(crate) fn paint_glyph(ui: &Ui, icon: Icon, size: f32, center: egui::Pos2, color: Color32) {
     let galley = egui::WidgetText::from(icons::glyph_text(icon, size).color(Color32::PLACEHOLDER))
         .into_galley(
             ui,

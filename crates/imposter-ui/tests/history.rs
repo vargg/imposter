@@ -365,9 +365,8 @@ fn leaving_a_restored_draft_offers_to_keep_it_as_a_new_request() {
     click(&mut app.harness, "GET Other");
     settle(&mut app.harness);
     app.harness.get_by_label("Keep this draft?");
-    app.harness.get_by_label(
-        "\"Create\" is not saved yet. Save it as a new request in \"API\", discard it, or stay.",
-    );
+    app.harness
+        .get_by_label("Save \"Create\" as a new request in \"API\"?");
     click_button(&mut app.harness, "Stay");
     settle(&mut app.harness);
     assert!(

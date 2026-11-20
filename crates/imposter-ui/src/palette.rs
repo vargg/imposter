@@ -8,7 +8,7 @@ use imposter_app::core::model::EnvColor;
 use imposter_app::store::collections::IndexedRequest;
 
 use crate::app::{Action, Screen, State};
-use crate::dialogs::{Dialog, NamePurpose, Outcome};
+use crate::dialogs::{self, Dialog, NamePurpose, Outcome};
 use crate::shortcuts;
 use crate::theme::{Tone, palette};
 use crate::tree::NodeId;
@@ -237,9 +237,16 @@ impl Palette {
             .collect()
     }
 
-    /// Draw the palette inside its modal and report a choice or a close.
-    pub fn show(&mut self, ui: &mut Ui, outcome: &mut Outcome) {
-        ui.set_width(560.0);
+    pub(crate) const fn title(&self) -> &'static str {
+        match self.mode {
+            Mode::All => "Command palette",
+            Mode::Requests => "Recent requests",
+            Mode::LoadTarget => "Choose a request",
+        }
+    }
+
+    /// Keep the search field fixed above the scrolling results.
+    pub(crate) fn show(&mut self, ui: &mut Ui, height: f32) -> Outcome {
         let items = self.items();
         let (up, down, enter) = ui.input_mut(|i| {
             (
@@ -270,46 +277,44 @@ impl Palette {
                 .desired_width(f32::INFINITY),
         );
         name(&field, "Command palette search");
-        if !field.has_focus() {
-            field.request_focus();
-        }
+        dialogs::initial_focus(ui, &field);
         if field.changed() {
             self.selected = 0;
         }
-        ui.add_space(6.0);
+        let spacing = crate::theme::spacing();
         let mut clicked = None;
-        egui::ScrollArea::vertical()
-            .max_height(360.0)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                let mut group = None;
-                for (position, item) in items.iter().enumerate() {
-                    if group != Some(item.group) {
-                        group = Some(item.group);
-                        ui.label(tone_text(item.group.heading(), Tone::Muted).small());
-                    }
-                    let row = row(ui, item, &self.query, position == self.selected);
-                    if position == self.selected && (up || down) {
-                        row.scroll_to_me(None);
-                    }
-                    if row.clicked() {
-                        clicked = Some(position);
-                    }
+        dialogs::scroll_body(ui, height - field.rect.height() - spacing.md, |ui| {
+            ui.spacing_mut().item_spacing.y = spacing.xs;
+            let mut group = None;
+            for (position, item) in items.iter().enumerate() {
+                if group != Some(item.group) {
+                    group = Some(item.group);
+                    ui.label(tone_text(item.group.heading(), Tone::Muted).small());
                 }
-                if items.is_empty() {
-                    let text = if self.index.is_none() && self.mode != Mode::All {
-                        "Loading requests…"
-                    } else {
-                        "Nothing matches"
-                    };
-                    ui.label(tone_text(text, Tone::Muted));
+                let row = row(ui, item, &self.query, position == self.selected);
+                if position == self.selected && (up || down) {
+                    row.scroll_to_me(None);
                 }
-            });
+                if row.clicked() {
+                    clicked = Some(position);
+                }
+            }
+            if items.is_empty() {
+                let text = if self.index.is_none() && self.mode != Mode::All {
+                    "Loading requests…"
+                } else {
+                    "Nothing matches"
+                };
+                ui.label(tone_text(text, Tone::Muted));
+            }
+        });
         if let Some(position) = clicked.or_else(|| (enter || released).then_some(self.selected))
             && let Some(item) = items.get(position)
         {
             self.chosen = Some(item.action.clone());
-            *outcome = Outcome::Palette;
+            Outcome::Palette
+        } else {
+            Outcome::Open
         }
     }
 }

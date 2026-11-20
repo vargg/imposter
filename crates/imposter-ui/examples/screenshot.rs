@@ -285,7 +285,10 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-palette.png")))
             .unwrap();
-        harness.key_press(egui::Key::Escape);
+        harness
+            .get_by_role(egui::accesskit::Role::Dialog)
+            .get_by_role_and_label(egui::accesskit::Role::Button, "Close")
+            .click();
         settle(&mut harness);
         harness
             .get_by_role_and_label(egui::accesskit::Role::Button, "Requests")

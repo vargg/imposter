@@ -1925,10 +1925,7 @@ impl ImposterApp {
             },
             Message::CompanionsPicked { path, companions } => self.read_import(path, companions),
             Message::ImportPreviewed(Ok(preview)) => {
-                self.state.dialog = Some(Dialog::Import {
-                    preview,
-                    remove_unsupported: false,
-                });
+                self.state.dialog = Some(Dialog::review_import(preview));
             }
             Message::ImportPreviewed(Err(error)) | Message::Imported(Err(error)) => {
                 self.error("Import failed", error);
@@ -3759,6 +3756,7 @@ impl ImposterApp {
                 if let Some(Dialog::Import {
                     preview,
                     remove_unsupported,
+                    ..
                 }) = self.state.dialog.take()
                 {
                     self.navigate(Navigation::Import {

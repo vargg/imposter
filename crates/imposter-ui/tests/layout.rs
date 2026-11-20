@@ -12,7 +12,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::{Action, Appearance, Screen};
 use imposter_ui::layout::MIN_WINDOW;
-use imposter_ui::theme::{Density, ThemeChoice};
+use imposter_ui::theme::{self, Density, ThemeChoice};
 use support::{click, click_button, collection, request, settle, start_with, type_into};
 
 /// The status bar's own controls.
@@ -118,7 +118,47 @@ fn problems(app: &support::App, state: &str) -> Vec<String> {
             ));
         }
     }
-    if app.harness.state().state.dialog.is_some() || egui::Popup::is_any_open(&app.harness.ctx) {
+    if app.harness.state().state.dialog.is_some() && !egui::Popup::is_any_open(&app.harness.ctx) {
+        let palette = theme::palette();
+        let modal = app
+            .harness
+            .output()
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Rect(frame)
+                    if frame.fill == palette.surface
+                        && frame.stroke.color == palette.field_border
+                        && frame.corner_radius.nw == 8 =>
+                {
+                    Some(frame.rect)
+                }
+                _ => None,
+            })
+            .expect("painted modal frame");
+        if !window.expand(0.5).contains_rect(modal) {
+            found.push(format!("{state}: modal runs past the window: {modal:?}"));
+        }
+        let boundary = modal.expand(0.5);
+        for node in app.harness.get_by_role(Role::Dialog).children_recursive() {
+            let widget = node.accesskit_node();
+            if !ROLES.contains(&widget.role()) && widget.role() != Role::DisclosureTriangle {
+                continue;
+            }
+            let rect = node.rect();
+            if rect.width() > 0.0
+                && (rect.left() < boundary.left() || rect.right() > boundary.right())
+            {
+                found.push(format!(
+                    "{state}: {:?} {:?} runs past the modal {modal:?}: {rect:?}",
+                    widget.role(),
+                    widget.label()
+                ));
+            }
+        }
+        return found;
+    }
+    if egui::Popup::is_any_open(&app.harness.ctx) {
         return found;
     }
     let toolbar = app.harness.get_by_role(Role::Toolbar);
@@ -690,7 +730,88 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     app.harness.key_press(egui::Key::Escape);
     settle(&mut app.harness);
     app.harness.state_mut().state.screen = Screen::Requests;
+    walk_modals(app, &mut check);
     found
+}
+
+fn walk_modals(app: &mut support::App, check: &mut impl FnMut(&mut support::App, &str)) {
+    use imposter_app::core::ids::RequestId;
+    use imposter_ui::dialogs::Dialog;
+    use imposter_ui::tree::NodeId;
+
+    for (name, dialog) in [
+        (
+            "curl paste",
+            Dialog::Curl {
+                text: "curl https://example.com".into(),
+            },
+        ),
+        ("script reference", Dialog::ScriptReference),
+        ("delete confirmation", Dialog::clear_history(Some(42))),
+        (
+            "message",
+            Dialog::error("Import failed", "Could not open the collection"),
+        ),
+        (
+            "move dialog",
+            Dialog::Move {
+                node: NodeId::Request(RequestId(1)),
+                options: vec![("A long folder path / ".repeat(8), None)],
+                choice: 0,
+            },
+        ),
+        ("application settings guard", Dialog::SettingsGuard),
+        ("variables guard", Dialog::VariablesGuard),
+        ("mocks guard", Dialog::MocksGuard),
+        (
+            "draft guard",
+            Dialog::Guard {
+                request: "Users".into(),
+                draft: Some("API".into()),
+                failed: None,
+            },
+        ),
+        (
+            "failed save guard",
+            Dialog::Guard {
+                request: "Users".into(),
+                draft: None,
+                failed: Some("Could not save the request".into()),
+            },
+        ),
+        (
+            "companion files",
+            Dialog::Companions {
+                path: std::path::PathBuf::new(),
+            },
+        ),
+        (
+            "export options",
+            Dialog::Export {
+                environments: app
+                    .harness
+                    .state()
+                    .state
+                    .environments
+                    .iter()
+                    .map(|env| (env.id, env.name.clone(), false))
+                    .collect(),
+                globals: false,
+                postman: false,
+            },
+        ),
+        ("import review with few notes", support::import_review(3)),
+        (
+            "import review with collapsed notes",
+            support::import_review(12),
+        ),
+    ] {
+        app.harness.state_mut().state.dialog = Some(dialog);
+        check(app, name);
+    }
+    click(&mut app.harness, "12 notes");
+    check(app, "import review with expanded notes");
+    click_button(&mut app.harness, "Close");
 }
 
 #[test]

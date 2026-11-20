@@ -518,6 +518,14 @@ mod tests {
             );
             assert!(contrast(p.on_accent, p.accent) >= AA, "{name} check glyph");
             assert!(contrast(p.error, p.input) >= AA, "{name} danger label");
+            assert!(
+                contrast(p.on_accent, p.error) >= AA,
+                "{name} filled danger label"
+            );
+            assert!(
+                contrast(p.error, p.surface) >= NON_TEXT,
+                "{name} filled danger edge"
+            );
             assert!(contrast(p.text_muted, p.input) >= AA, "{name} caret");
             let visuals = visuals(
                 p,
@@ -760,9 +768,8 @@ mod tests {
     #[test]
     fn text_on_the_send_button_is_readable_in_both_states() {
         for (name, palette) in BOTH {
-            // Send and dialogs' main buttons use the accent fill; Cancel (while a request
-            // runs) the warning fill; destructive dialog buttons the error fill.
-            for fill in [palette.accent, palette.warning, palette.error] {
+            // Send uses the accent fill; Cancel (while a request runs) the warning fill.
+            for fill in [palette.accent, palette.warning] {
                 let ratio = contrast(palette.on_accent, fill);
                 assert!(ratio >= AA, "{name} {fill:?}: {ratio:.2}");
             }

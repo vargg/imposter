@@ -2,15 +2,16 @@
 
 use std::path::PathBuf;
 
-use egui::{Id, RichText};
+use egui::{Id, RichText, Ui};
 use imposter_app::core::ids::{CollectionId, EnvironmentId, FolderId};
 use imposter_app::core::model::EnvColor;
 use imposter_app::transfer::ImportPreview;
 
-use crate::theme::Tone;
+use crate::icons::{self, Icon};
+use crate::theme::{self, Tone};
 use crate::tree::{Node, NodeId};
 use crate::vars::Scope;
-use crate::widgets::{name, tone_text};
+use crate::widgets::{self, Variant, name, tone_text};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NamePurpose {
@@ -43,6 +44,23 @@ pub enum ConfirmPurpose {
     StartLoad,
     /// Start a run against a red (production) environment.
     StartRun,
+}
+
+impl ConfirmPurpose {
+    const fn variant(self) -> Variant {
+        match self {
+            Self::PostmanExport | Self::StartLoad | Self::StartRun => Variant::Primary,
+            Self::DeleteCollection(_)
+            | Self::Delete(_)
+            | Self::DeleteEnvironment(_)
+            | Self::ClearHistory
+            | Self::ClearVariables(_)
+            | Self::RevertVariables(_)
+            | Self::RemoveCookie(_)
+            | Self::ClearCookies(_)
+            | Self::DiscardOnClose => Variant::DangerPrimary,
+        }
+    }
 }
 
 /// Whose scripts a scripts dialog edits.
@@ -113,6 +131,7 @@ pub enum Dialog {
     Import {
         preview: Box<ImportPreview>,
         remove_unsupported: bool,
+        notes_open: bool,
     },
     /// Paste a curl command; it opens as an unsaved draft.
     Curl {
@@ -182,75 +201,123 @@ impl NamePurpose {
     }
 }
 
-/// How a dialog button reads: the main action, a destructive one, or the rest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Kind {
-    Primary,
-    Danger,
-    Plain,
-}
-
-/// The width of the shortcut sheet's key column.
+/// The minimum width of the shortcut sheet's key column.
 const KEYS_COLUMN: f32 = 180.0;
 
-/// Space kept free at the right of a scrolling list for its scroll bar.
-const SCROLL_BAR_ROOM: f32 = 16.0;
+const FRAME_RADIUS: u8 = 8;
+const PALETTE_TOP: f32 = 72.0;
 
-/// How a dialog button is drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Look {
-    Accent,
-    Red,
-    /// Neutral, with red text.
-    RedText,
-    Neutral,
+struct Choice<'a> {
+    label: &'a str,
+    variant: Variant,
+    outcome: Option<Outcome>,
 }
 
-/// Only the main action, last in the row, is filled: red when destructive. A destructive
-/// choice before it keeps red text, so "discard" never looks like "keep". A disabled
-/// button is neutral, so its label stays readable.
-fn look(kind: Kind, enabled: bool, last: bool) -> Look {
-    match (kind, enabled, last) {
-        (_, false, _) | (Kind::Plain, _, _) => Look::Neutral,
-        (Kind::Primary, true, _) => Look::Accent,
-        (Kind::Danger, true, true) => Look::Red,
-        (Kind::Danger, true, false) => Look::RedText,
-    }
-}
-
-/// The button row every dialog ends with, laid out left to right as given: choices and
-/// Cancel first, the main or destructive action last. Enter presses the
-/// last button when `enter` and it is enabled; Escape closes the dialog (the modal does that).
-/// Returns the index of the button pressed.
-fn buttons(ui: &mut egui::Ui, row: &[(&str, Kind, bool)], enter: bool) -> Option<usize> {
-    let mut pressed = None;
-    ui.add_space(12.0);
-    // Left to right: a right-to-left row in an auto-sized modal can land outside it.
-    ui.horizontal(|ui| {
-        for (index, (label, kind, enabled)) in row.iter().enumerate() {
-            let palette = crate::theme::palette();
-            let button = match look(*kind, *enabled, index + 1 == row.len()) {
-                Look::Red => egui::Button::new(RichText::new(*label).color(palette.on_accent))
-                    .fill(palette.error),
-                Look::Accent => egui::Button::new(RichText::new(*label).color(palette.on_accent))
-                    .fill(palette.accent),
-                Look::RedText => egui::Button::new(RichText::new(*label).color(palette.error)),
-                Look::Neutral => egui::Button::new(*label),
-            };
-            if ui.add_enabled(*enabled, button).clicked() {
-                pressed = Some(index);
-            }
+impl<'a> Choice<'a> {
+    fn new(label: &'a str, variant: Variant, outcome: Outcome) -> Self {
+        Self {
+            label,
+            variant,
+            outcome: Some(outcome),
         }
-    });
-    let last = row.len().checked_sub(1);
-    if pressed.is_none()
-        && enter
-        && last.is_some_and(|last| row[last].2)
-        && ui.input(|i| i.key_pressed(egui::Key::Enter))
-    {
-        pressed = last;
     }
-    pressed
+}
+
+struct Footer<'a> {
+    choices: [Option<Choice<'a>>; 2],
+    main: Choice<'a>,
+}
+
+impl<'a> Footer<'a> {
+    fn new(label: &'a str, outcome: Option<Outcome>) -> Self {
+        Self {
+            choices: [
+                Some(Choice::new("Cancel", Variant::Secondary, Outcome::Closed)),
+                None,
+            ],
+            main: Choice {
+                label,
+                variant: Variant::Primary,
+                outcome,
+            },
+        }
+    }
+
+    fn show(mut self, ui: &mut Ui, enter: bool) -> Outcome {
+        let spacing = theme::spacing();
+        let (divider, _) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().hline(
+            divider.x_range(),
+            divider.center().y,
+            egui::Stroke::new(1.0, theme::palette().border),
+        );
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let choices_width: f32 = self
+                .choices
+                .iter()
+                .flatten()
+                .map(|choice| widgets::action_width(ui, choice.label) + spacing.sm)
+                .sum();
+            let row_width = choices_width + widgets::action_width(ui, self.main.label);
+            // Reserve the leading space before drawing in Tab order. A right-to-left
+            // layout in an auto-sized modal placed the buttons outside its click target.
+            ui.add_space((ui.available_width() - row_width).max(0.0));
+            let mut activated = None;
+            for choice in self.choices.iter_mut().flatten() {
+                if draw_choice(ui, choice) {
+                    activated = choice.outcome.take();
+                }
+                ui.add_space(spacing.sm);
+            }
+            let main_clicked = draw_choice(ui, &self.main);
+            activated
+                .or_else(|| {
+                    (main_clicked || enter)
+                        .then_some(self.main.outcome)
+                        .flatten()
+                })
+                .unwrap_or(Outcome::Open)
+        })
+        .inner
+    }
+}
+
+fn draw_choice(ui: &mut Ui, choice: &Choice<'_>) -> bool {
+    ui.add_enabled_ui(choice.outcome.is_some(), |ui| {
+        widgets::button(ui, choice.variant, None, choice.label).clicked()
+    })
+    .inner
+}
+
+pub(crate) fn scroll_body<R>(ui: &mut Ui, max_height: f32, body: impl FnOnce(&mut Ui) -> R) -> R {
+    // Solid bars reserve space for wrapping instead of covering the text on hover.
+    ui.spacing_mut().scroll = egui::style::ScrollStyle {
+        bar_inner_margin: theme::spacing().md,
+        ..egui::style::ScrollStyle::solid()
+    };
+    egui::ScrollArea::vertical()
+        .max_height(max_height)
+        .auto_shrink([false, true])
+        .show(ui, body)
+        .inner
+}
+
+fn title_row(ui: &mut Ui, title: &str) -> bool {
+    let spacing = theme::spacing();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = spacing.sm;
+        let width = ui.available_width() - icons::size() - spacing.sm;
+        ui.add_sized(
+            [width, spacing.control],
+            egui::Label::new(theme::page_title(title))
+                .truncate()
+                .halign(egui::Align::Min),
+        );
+        icons::button_with_hint(ui, Icon::Close, "Close", "Close (Esc)", false).clicked()
+    })
+    .inner
 }
 
 /// "Name:" and "Name" read the same; dialogs show captions without the colon.
@@ -310,454 +377,450 @@ impl Dialog {
         }
     }
 
-    pub fn show(&mut self, ctx: &egui::Context) -> Outcome {
-        let mut outcome = Outcome::Open;
-        // One id per kind: a dialog replacing another must not inherit its size and position.
-        let id = Id::unique(("dialog", std::mem::discriminant(self)));
-        let mut modal = egui::Modal::new(id);
-        if matches!(self, Self::Palette(_)) {
-            // Pinned to the top: centred, it would move as the list shrinks while typing.
-            modal = modal
-                .area(egui::Modal::default_area(id).anchor(egui::Align2::CENTER_TOP, [0.0, 72.0]));
+    pub fn review_import(preview: Box<ImportPreview>) -> Self {
+        Self::Import {
+            notes_open: preview.warnings.len() <= 3,
+            preview,
+            remove_unsupported: false,
         }
-        // Taller dialogs scroll inside the window instead of running off it.
-        let max_height = ctx.content_rect().height() - 96.0;
-        let modal = modal.show(ctx, |ui| {
-            ui.set_min_width(360.0);
-            ui.set_max_height(max_height);
-            match self {
-                Self::Name {
-                    title,
-                    label,
-                    value,
-                    purpose,
-                } => {
-                    ui.label(crate::theme::page_title(title.as_str()));
-                    // Read before the field draws: a single-line field consumes Enter.
-                    let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    let caption = ui.label(label.as_str());
-                    let field =
-                        ui.add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY));
-                    let field = field.labelled_by(caption.id);
-                    if !field.has_focus() && ui.memory(|m| m.focused().is_none()) {
-                        field.request_focus();
-                    }
-                    let valid = !value.trim().is_empty();
-                    let enter = enter_pressed && (field.lost_focus() || field.has_focus());
-                    match buttons(
-                        ui,
-                        &[("Cancel", Kind::Plain, true), (purpose.verb(), Kind::Primary, valid)],
-                        false,
-                    ) {
-                        Some(0) => outcome = Outcome::Closed,
-                        Some(_) => outcome = Outcome::Name(*purpose, value.trim().to_owned()),
-                        None if valid && enter => {
-                            outcome = Outcome::Name(*purpose, value.trim().to_owned());
-                        }
-                        None => {}
-                    }
+    }
+
+    fn title(&self) -> std::borrow::Cow<'_, str> {
+        match self {
+            Self::Name { title, .. }
+            | Self::Confirm { title, .. }
+            | Self::Message { title, .. } => title.as_str().into(),
+            Self::Environment { id: None, .. } => "New Environment".into(),
+            Self::Environment { .. } => "Edit Environment".into(),
+            Self::Guard {
+                failed: Some(_), ..
+            } => "Request could not be saved".into(),
+            Self::Guard { draft: Some(_), .. } => "Keep this draft?".into(),
+            Self::Guard { .. } => "Unsaved request changes".into(),
+            Self::VariablesGuard => "Unsaved variables".into(),
+            Self::MocksGuard => "Unsaved mocks".into(),
+            Self::SettingsGuard => "Unsaved application settings".into(),
+            Self::Move { .. } => "Move".into(),
+            Self::Companions { .. } => "Companion files".into(),
+            Self::Import { .. } => "Review collection import".into(),
+            Self::Export { .. } => "Export collection".into(),
+            Self::Curl { .. } => "Import from curl".into(),
+            Self::Shortcuts => "Keyboard shortcuts".into(),
+            Self::ScriptReference => "Script reference".into(),
+            Self::Scripts { owner, .. } => format!("Scripts: {owner}").into(),
+            Self::Palette(palette) => palette.title().into(),
+        }
+    }
+
+    fn width(&self) -> f32 {
+        match self {
+            Self::Palette(_) | Self::Scripts { .. } | Self::Curl { .. } | Self::ScriptReference => {
+                560.0
+            }
+            Self::Shortcuts | Self::Import { .. } => 520.0,
+            Self::Export { .. } => 480.0,
+            Self::Guard { .. } => 440.0,
+            _ => 360.0,
+        }
+    }
+
+    fn cancel(&self) -> Outcome {
+        match self {
+            Self::Guard { .. } => Outcome::Guard(GuardChoice::Cancel),
+            Self::VariablesGuard => Outcome::VariablesGuard(GuardChoice::Cancel),
+            Self::SettingsGuard => Outcome::SettingsGuard(GuardChoice::Cancel),
+            Self::MocksGuard => Outcome::MocksGuard(GuardChoice::Cancel),
+            _ => Outcome::Closed,
+        }
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context) -> Outcome {
+        // A dialog replacing another must not inherit its size and position.
+        let id = Id::unique(("dialog", std::mem::discriminant(self)));
+        let spacing = theme::spacing();
+        let colors = theme::palette();
+        let frame = egui::Frame::new()
+            .inner_margin(spacing.lg)
+            .corner_radius(FRAME_RADIUS)
+            .fill(colors.surface)
+            .stroke(egui::Stroke::new(1.0, colors.field_border));
+        let scrim = if ctx.theme() == egui::Theme::Light {
+            132
+        } else {
+            120
+        };
+        let mut modal = egui::Modal::new(id)
+            .frame(frame)
+            .backdrop_color(egui::Color32::from_black_alpha(scrim));
+        let top = if matches!(self, Self::Palette(_)) {
+            // Centred, it would move as the list shrinks while typing.
+            modal = modal.area(
+                egui::Modal::default_area(id).anchor(egui::Align2::CENTER_TOP, [0.0, PALETTE_TOP]),
+            );
+            PALETTE_TOP
+        } else {
+            spacing.lg
+        };
+        let window = ctx.content_rect().size();
+        let insets = frame.total_margin().sum();
+        let width = self.width().min(window.x - insets.x - 2.0 * spacing.lg);
+        let has_footer = !matches!(
+            self,
+            Self::Palette(_) | Self::Shortcuts | Self::ScriptReference
+        );
+        let footer_height = if has_footer {
+            spacing.control + 2.0 * spacing.md + 1.0
+        } else {
+            0.0
+        };
+        let content_height = window.y - top - spacing.lg - insets.y;
+        let body_height = content_height - spacing.control - spacing.md - footer_height;
+        // Read before the body: a single-line field consumes Enter.
+        let enter = !matches!(self, Self::Scripts { .. } | Self::Curl { .. })
+            && !egui::Popup::is_any_open(ctx)
+            && ctx.input(|i| i.key_pressed(egui::Key::Enter));
+
+        let response = modal.show(ctx, |ui| {
+            ui.set_width(width);
+            // An Area starts with its previous size. Give a growing body the current cap.
+            ui.set_max_height(content_height);
+            ui.spacing_mut().item_spacing.y = spacing.md;
+            // A focused control already receives Enter as a click from egui.
+            let enter = enter
+                && !focused_widget(ctx).is_some_and(|widget| {
+                    widget.layer_id == ui.layer_id() && widget.sense == egui::Sense::click()
+                });
+            let close = title_row(ui, &self.title());
+            let outcome = if let Self::Palette(palette) = self {
+                palette.show(ui, body_height)
+            } else {
+                scroll_body(ui, body_height, |ui| self.body(ui))
+                    .map_or(Outcome::Open, |footer| footer.show(ui, enter))
+            };
+            (close, outcome)
+        });
+        if response.inner.0 || (response.inner.1 == Outcome::Open && response.should_close()) {
+            self.cancel()
+        } else {
+            response.inner.1
+        }
+    }
+
+    fn body(&mut self, ui: &mut Ui) -> Option<Footer<'_>> {
+        Some(match self {
+            Self::Name {
+                label,
+                value,
+                purpose,
+                ..
+            } => {
+                name_field(ui, label, value);
+                Footer::new(
+                    purpose.verb(),
+                    (!value.trim().is_empty())
+                        .then(|| Outcome::Name(*purpose, value.trim().to_owned())),
+                )
+            }
+            Self::Environment {
+                id,
+                name: value,
+                color,
+                chosen,
+                share,
+            } => {
+                if name_field(ui, "Name", value).changed() && !*chosen {
+                    *color = EnvColor::suggested_for(value);
                 }
-                Self::Environment {
-                    id,
-                    name: value,
-                    color,
-                    chosen,
-                    share,
-                } => {
-                    ui.label(crate::theme::page_title(if id.is_some() {
-                        "Edit Environment"
+                ui.vertical(|ui| {
+                    if !*chosen && color.is_some() {
+                        widgets::label_with_help(
+                            ui,
+                            "Color",
+                            "Suggested for production environments",
+                        );
                     } else {
-                        "New Environment"
-                    }));
-                    let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    let caption = ui.label("Name");
-                    let field =
-                        ui.add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY));
-                    let field = field.labelled_by(caption.id);
-                    if !field.has_focus() && ui.memory(|m| m.focused().is_none()) {
-                        field.request_focus();
+                        ui.label("Color");
                     }
-                    if field.changed() && !*chosen {
-                        *color = EnvColor::suggested_for(value);
-                    }
-                    ui.add_space(8.0);
-                    ui.label("Color");
-                    if crate::widgets::env_swatches(ui, color) {
+                    if widgets::env_swatches(ui, color) {
                         *chosen = true;
                     }
-                    if !*chosen && color.is_some() {
-                        ui.label(
-                            tone_text("Suggested for production environments", Tone::Muted)
-                                .small(),
-                        );
-                    }
-                    ui.add_space(8.0);
-                    crate::widgets::checkbox(ui, share, "Share values");
-                    ui.add(
-                        egui::Label::new(
-                            tone_text(
-                                if *share {
-                                    "Its values are written to its file in the collections folder."
-                                } else {
-                                    "Its file lists the names only; the values stay on this computer."
-                                },
-                                Tone::Muted,
-                            )
-                            .small(),
-                        )
-                        .wrap(),
+                });
+                ui.horizontal(|ui| {
+                    widgets::checkbox(ui, share, "Share values");
+                    widgets::help(
+                        ui,
+                        if *share {
+                            "Its values are written to its file in the collections folder."
+                        } else {
+                            "Its file lists the names only; the values stay on this computer."
+                        },
                     );
-                    let valid = !value.trim().is_empty();
-                    let enter = enter_pressed && (field.lost_focus() || field.has_focus());
-                    let verb = if id.is_some() { "Save" } else { "Create" };
-                    match buttons(
-                        ui,
-                        &[("Cancel", Kind::Plain, true), (verb, Kind::Primary, valid)],
-                        false,
-                    ) {
-                        Some(0) => outcome = Outcome::Closed,
-                        Some(_) => {
-                            outcome = Outcome::Environment {
-                                id: *id,
-                                name: value.trim().to_owned(),
-                                color: *color,
-                                share: *share,
-                            };
-                        }
-                        None if valid && enter => {
-                            outcome = Outcome::Environment {
-                                id: *id,
-                                name: value.trim().to_owned(),
-                                color: *color,
-                                share: *share,
-                            };
-                        }
-                        None => {}
-                    }
-                }
-                Self::Confirm {
-                    title,
-                    message,
-                    confirm,
-                    purpose,
-                } => {
-                    ui.label(crate::theme::page_title(title.as_str()));
-                    ui.label(message.as_str());
-                    match buttons(
-                        ui,
-                        &[("Cancel", Kind::Plain, true), (confirm.as_str(), Kind::Danger, true)],
-                        true,
-                    ) {
-                        Some(0) => outcome = Outcome::Closed,
-                        Some(_) => outcome = Outcome::Confirmed(*purpose),
-                        None => {}
-                    }
-                }
-                Self::Guard {
-                    request,
-                    draft,
-                    failed,
-                } => {
-                    if let Some(error) = failed {
-                        ui.label(crate::theme::page_title("Request could not be saved"));
-                        ui.label(
-                            "Retry saving this request, discard its changes, or keep editing.",
-                        );
-                        ui.label(tone_text(error.as_str(), Tone::Error));
-                    } else if let Some(collection) = draft {
-                        // A draft has no saved version: saving creates a request.
-                        ui.label(crate::theme::page_title("Keep this draft?"));
-                        ui.label(format!(
-                            "\"{request}\" is not saved yet. Save it as a new request in \"{collection}\", discard it, or stay."
-                        ));
-                    } else {
-                        ui.label(crate::theme::page_title("Unsaved request changes"));
-                        ui.label(format!("Save changes to \"{request}\" before continuing?"));
-                    }
-                    let save = match (&failed, &draft) {
-                        (Some(_), _) => "Retry",
-                        (None, Some(_)) => "Save as new request",
-                        (None, None) => "Save",
-                    };
-                    let stay = if draft.is_some() { "Stay" } else { "Cancel" };
-                    if let Some(choice) = guard_buttons(ui, stay, save) {
-                        outcome = Outcome::Guard(choice);
-                    }
-                }
-                Self::VariablesGuard => {
-                    ui.label(crate::theme::page_title("Unsaved variables"));
-                    ui.label("Save variable changes before continuing?");
-                    if let Some(choice) = guard_buttons(ui, "Cancel", "Save") {
-                        outcome = Outcome::VariablesGuard(choice);
-                    }
-                }
-                Self::MocksGuard => {
-                    ui.label(crate::theme::page_title("Unsaved mocks"));
-                    ui.label("Save mock configuration before continuing?");
-                    if let Some(choice) = guard_buttons(ui, "Cancel", "Save") {
-                        outcome = Outcome::MocksGuard(choice);
-                    }
-                }
-                Self::SettingsGuard => {
-                    ui.label(crate::theme::page_title("Unsaved application settings"));
-                    ui.label("Save application settings before exiting?");
-                    if let Some(choice) = guard_buttons(ui, "Cancel", "Save") {
-                        outcome = Outcome::SettingsGuard(choice);
-                    }
-                }
-                Self::Move {
-                    node,
-                    options,
-                    choice,
-                } => {
-                    ui.label(crate::theme::page_title("Move"));
-                    let caption = ui.label("Destination");
-                    let selected = options.get(*choice).map_or("", |(label, _)| label.as_str());
-                    let combo = crate::widgets::combo("move destination")
-                        .width(300.0)
-                        .selected_text(selected)
-                        .show_ui(ui, |ui| {
-                            for (index, (label, _)) in options.iter().enumerate() {
-                                ui.selectable_value(choice, index, label.as_str());
-                            }
-                        });
-                    combo.response.labelled_by(caption.id);
-                    match buttons(
-                        ui,
-                        &[("Cancel", Kind::Plain, true), ("Move", Kind::Primary, true)],
-                        true,
-                    ) {
-                        Some(0) => outcome = Outcome::Closed,
-                        Some(_) => {
-                            if let Some((_, target)) = options.get(*choice) {
-                                outcome = Outcome::Move(*node, *target);
-                            }
-                        }
-                        None => {}
-                    }
-                }
-                Self::Message {
-                    title,
-                    message,
-                    tone,
-                } => {
-                    ui.label(crate::theme::page_title(title.as_str()));
-                    let text = ui.add(egui::Label::new(tone_text(message.as_str(), *tone)).wrap());
-                    name(&text, message);
-                    if buttons(ui, &[("OK", Kind::Primary, true)], true).is_some() {
-                        outcome = Outcome::Closed;
-                    }
-                }
-                Self::Palette(palette) => palette.show(ui, &mut outcome),
-                Self::Shortcuts => {
-                    // A sheet to read, with nothing to choose: Esc or a click outside closes
-                    // it, as every modal, so it has no button row.
-                    ui.horizontal(|ui| {
-                        ui.label(crate::theme::page_title("Keyboard shortcuts"));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(tone_text("Esc to close", Tone::Muted).small());
-                        });
-                    });
-                    ui.add_space(4.0);
-                    // The title stays visible; the list scrolls in what is left. Full
-                    // width, so its scroll bar runs along the sheet's edge.
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false, true])
-                        .max_height((max_height - 56.0).max(120.0))
-                        .show(ui, |ui| {
-                            // Clear of the scroll bar; descriptions wrap in what is left
-                            // after the keys, whose column fits the widest row in every
-                            // group, so all descriptions line up.
-                            let width = ui.available_width() - SCROLL_BAR_ROOM;
-                            ui.set_max_width(width);
-                            let keys_column = crate::shortcuts::ALL
-                                .iter()
-                                .map(|s| crate::widgets::key_caps_width(ui, s.keys))
-                                .fold(KEYS_COLUMN, f32::max);
-                            for (group, title) in crate::shortcuts::Group::ALL {
-                                ui.add_space(6.0);
-                                ui.label(
-                                    RichText::new(title)
-                                        .font(crate::theme::semibold(13.0))
-                                        .color(crate::theme::palette().text_muted),
-                                );
-                                egui::Grid::new(("shortcuts", title))
-                                    .num_columns(2)
-                                    .spacing([24.0, 6.0])
-                                    .min_col_width(keys_column)
-                                    .max_col_width((width - keys_column - 24.0).max(160.0))
-                                    .show(ui, |ui| {
-                                        for shortcut in crate::shortcuts::ALL
-                                            .iter()
-                                            .filter(|s| s.group == group)
-                                        {
-                                            crate::widgets::key_caps(ui, shortcut.keys);
-                                            ui.add(egui::Label::new(shortcut.description).wrap());
-                                            ui.end_row();
-                                        }
-                                    });
-                            }
-                        });
-                }
-                Self::ScriptReference => {
-                    // A sheet to read, like the shortcut sheet: Esc or a click outside.
-                    ui.horizontal(|ui| {
-                        ui.label(crate::theme::page_title("Script reference"));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(tone_text("Esc to close", Tone::Muted).small());
-                        });
-                    });
-                    ui.add_space(4.0);
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false, true])
-                        .max_height((max_height - 56.0).max(120.0))
-                        .show(ui, |ui| {
-                            let width = ui.available_width() - SCROLL_BAR_ROOM;
-                            ui.set_max_width(width.min(640.0));
-                            for phase in imposter_app::script::Phase::LISTED {
-                                ui.add_space(6.0);
-                                ui.label(
-                                    RichText::new(phase.label())
-                                        .font(crate::theme::semibold(13.0))
-                                        .color(crate::theme::palette().text_muted),
-                                );
-                                for entry in
-                                    imposter_app::script::API.iter().filter(|e| e.phase == phase)
-                                {
-                                    ui.add_space(4.0);
-                                    ui.add(
-                                        egui::Label::new(RichText::new(entry.name).monospace())
-                                            .wrap(),
-                                    );
-                                    ui.add(egui::Label::new(entry.description).wrap());
-                                    ui.add(
-                                        egui::Label::new(
-                                            tone_text(entry.example, Tone::Muted).monospace(),
-                                        )
-                                        .wrap(),
-                                    );
-                                }
-                            }
-                        });
-                }
-                Self::Scripts { owner, scripts, .. } => {
-                    ui.set_min_width(560.0);
-                    ui.label(crate::theme::page_title(format!("Scripts: {owner}")));
-                    ui.add(
-                        egui::Label::new(tone_text(
-                            "They run around every request inside, before the request's own, outer ones first.",
-                            Tone::Muted,
-                        ))
-                        .wrap(),
-                    );
-                    ui.add_space(6.0);
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false, true])
-                        .max_height((max_height - 150.0).max(160.0))
-                        .show(ui, |ui| {
-                            ui.set_max_width(ui.available_width() - SCROLL_BAR_ROOM);
-                            crate::scripts_tab::script_editor(
-                                ui,
-                                imposter_app::script::Phase::Before,
-                                "Before sending",
-                                "Runs on every request inside, with its variables filled in",
-                                &format!("{owner} before-sending script"),
-                                &mut scripts.before,
-                            );
-                            ui.add_space(10.0);
-                            crate::scripts_tab::script_editor(
-                                ui,
-                                imposter_app::script::Phase::After,
-                                "After response",
-                                "Runs on every response; its tests show with the request's",
-                                &format!("{owner} after-response script"),
-                                &mut scripts.after,
-                            );
-                        });
-                    // Enter belongs to the editors, which take new lines.
-                    match buttons(
-                        ui,
-                        &[("Cancel", Kind::Plain, true), ("Save", Kind::Primary, true)],
-                        false,
-                    ) {
-                        Some(0) => outcome = Outcome::Closed,
-                        Some(_) => outcome = Outcome::Scripts,
-                        None => {}
-                    }
-                }
-                Self::Companions { .. } => {
-                    ui.label(crate::theme::page_title("Companion files"));
-                    ui.label("Include Postman environment or global JSON files?");
-                    match buttons(
-                        ui,
-                        &[("No", Kind::Plain, true), ("Yes", Kind::Primary, true)],
-                        true,
-                    ) {
-                        Some(0) => outcome = Outcome::Companions(false),
-                        Some(_) => outcome = Outcome::Companions(true),
-                        None => {}
-                    }
-                }
-                Self::Import {
-                    preview,
-                    remove_unsupported,
-                } => outcome = import(ui, preview, remove_unsupported),
-                Self::Export {
-                    environments,
-                    globals,
-                    postman,
-                } => outcome = export(ui, environments, globals, postman),
-                Self::Curl { text } => outcome = curl(ui, text),
+                });
+                Footer::new(
+                    if id.is_some() { "Save" } else { "Create" },
+                    (!value.trim().is_empty()).then(|| Outcome::Environment {
+                        id: *id,
+                        name: value.trim().to_owned(),
+                        color: *color,
+                        share: *share,
+                    }),
+                )
             }
-        });
-        if outcome == Outcome::Open && modal.should_close() {
-            outcome = match self {
-                Self::Guard { .. } => Outcome::Guard(GuardChoice::Cancel),
-                Self::VariablesGuard => Outcome::VariablesGuard(GuardChoice::Cancel),
-                Self::SettingsGuard => Outcome::SettingsGuard(GuardChoice::Cancel),
-                Self::MocksGuard => Outcome::MocksGuard(GuardChoice::Cancel),
-                _ => Outcome::Closed,
-            };
-        }
-        outcome
+            Self::Confirm {
+                message,
+                confirm,
+                purpose,
+                ..
+            } => {
+                ui.label(message.as_str());
+                let mut footer = Footer::new(confirm, Some(Outcome::Confirmed(*purpose)));
+                footer.main.variant = purpose.variant();
+                footer
+            }
+            Self::Guard {
+                request,
+                draft,
+                failed,
+            } => {
+                let save = if let Some(error) = failed {
+                    ui.label(tone_text(error.as_str(), Tone::Error));
+                    "Retry"
+                } else if let Some(collection) = draft {
+                    ui.label(format!(
+                        r#"Save "{request}" as a new request in "{collection}"?"#
+                    ));
+                    "Save as new request"
+                } else {
+                    ui.label(format!(r#"Save changes to "{request}" before continuing?"#));
+                    "Save"
+                };
+                guard_footer(
+                    if draft.is_some() { "Stay" } else { "Cancel" },
+                    save,
+                    Outcome::Guard,
+                )
+            }
+            Self::VariablesGuard => {
+                ui.label("Save variable changes before continuing?");
+                guard_footer("Cancel", "Save", Outcome::VariablesGuard)
+            }
+            Self::MocksGuard => {
+                ui.label("Save mock configuration before continuing?");
+                guard_footer("Cancel", "Save", Outcome::MocksGuard)
+            }
+            Self::SettingsGuard => {
+                ui.label("Save application settings before exiting?");
+                guard_footer("Cancel", "Save", Outcome::SettingsGuard)
+            }
+            Self::Move {
+                node,
+                options,
+                choice,
+            } => {
+                let caption = ui.label("Destination");
+                let selected = options.get(*choice).map_or("", |(label, _)| label.as_str());
+                let combo = widgets::combo("move destination")
+                    .width(ui.available_width())
+                    .truncate()
+                    .selected_text(selected)
+                    .show_ui(ui, |ui| {
+                        for (index, (label, _)) in options.iter().enumerate() {
+                            if widgets::option(ui, index == *choice, label.as_str()).clicked() {
+                                *choice = index;
+                                ui.close();
+                            }
+                        }
+                    });
+                combo.response.labelled_by(caption.id);
+                Footer::new(
+                    "Move",
+                    options
+                        .get(*choice)
+                        .map(|(_, target)| Outcome::Move(*node, *target)),
+                )
+            }
+            Self::Message { message, tone, .. } => {
+                let text = ui.add(egui::Label::new(tone_text(message.as_str(), *tone)).wrap());
+                name(&text, message);
+                Footer {
+                    choices: [None, None],
+                    main: Choice::new("OK", Variant::Primary, Outcome::Closed),
+                }
+            }
+            Self::Shortcuts => {
+                shortcut_sheet(ui);
+                return None;
+            }
+            Self::ScriptReference => {
+                script_reference(ui);
+                return None;
+            }
+            Self::Scripts { owner, scripts, .. } => {
+                crate::scripts_tab::script_editor(
+                    ui,
+                    imposter_app::script::Phase::Before,
+                    "Before sending",
+                    "Runs on every request inside. Outer scripts run first, then the request's own.",
+                    &format!("{owner} before-sending script"),
+                    &mut scripts.before,
+                );
+                crate::scripts_tab::script_editor(
+                    ui,
+                    imposter_app::script::Phase::After,
+                    "After response",
+                    "Runs on every response. Its tests show with the request's.",
+                    &format!("{owner} after-response script"),
+                    &mut scripts.after,
+                );
+                Footer::new("Save", Some(Outcome::Scripts))
+            }
+            Self::Companions { .. } => {
+                ui.label("Include Postman environment or global JSON files?");
+                Footer {
+                    choices: [
+                        Some(Choice::new(
+                            "No",
+                            Variant::Secondary,
+                            Outcome::Companions(false),
+                        )),
+                        None,
+                    ],
+                    main: Choice::new("Yes", Variant::Primary, Outcome::Companions(true)),
+                }
+            }
+            Self::Import {
+                preview,
+                remove_unsupported,
+                notes_open,
+            } => import(ui, preview, remove_unsupported, notes_open),
+            Self::Export {
+                environments,
+                globals,
+                postman,
+            } => export(ui, environments, globals, postman),
+            Self::Curl { text } => curl(ui, text),
+            Self::Palette(_) => return None, // The palette scrolls its results below a fixed search field.
+        })
     }
 }
 
-/// Stay, then Discard (destructive), then the save action, which Enter presses.
-fn guard_buttons(ui: &mut egui::Ui, stay: &str, save: &str) -> Option<GuardChoice> {
-    buttons(
-        ui,
-        &[
-            (stay, Kind::Plain, true),
-            ("Discard", Kind::Danger, true),
-            (save, Kind::Primary, true),
-        ],
-        true,
-    )
-    .map(|index| [GuardChoice::Cancel, GuardChoice::Discard, GuardChoice::Save][index])
+fn name_field(ui: &mut Ui, label: &str, value: &mut String) -> egui::Response {
+    let caption = ui.label(label);
+    let field = ui
+        .add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY))
+        .labelled_by(caption.id);
+    initial_focus(ui, &field);
+    field
 }
 
-fn curl(ui: &mut egui::Ui, text: &mut String) -> Outcome {
-    let mut outcome = Outcome::Open;
-    ui.set_min_width(560.0);
-    ui.label(crate::theme::page_title("Import from curl"));
-    let caption = ui.label("curl command");
-    let field = ui.add(
-        egui::TextEdit::multiline(text)
-            .code_editor()
-            .desired_rows(8)
-            .desired_width(f32::INFINITY)
-            .hint_text("curl 'https://api.example.com/items' -H 'Accept: application/json'"),
-    );
-    let field = field.labelled_by(caption.id);
-    if !field.has_focus() && ui.memory(|m| m.focused().is_none()) {
+fn focused_widget(ctx: &egui::Context) -> Option<egui::Response> {
+    ctx.memory(egui::Memory::focused)
+        .and_then(|id| ctx.read_response(id))
+}
+
+pub(crate) fn initial_focus(ui: &Ui, field: &egui::Response) {
+    if focused_widget(ui.ctx()).is_none_or(|focused| focused.layer_id != ui.layer_id()) {
         field.request_focus();
     }
+}
+
+fn guard_footer(
+    stay: &'static str,
+    save: &'static str,
+    outcome: fn(GuardChoice) -> Outcome,
+) -> Footer<'static> {
+    Footer {
+        choices: [
+            Some(Choice::new(
+                stay,
+                Variant::Secondary,
+                outcome(GuardChoice::Cancel),
+            )),
+            Some(Choice::new(
+                "Discard",
+                Variant::Danger,
+                outcome(GuardChoice::Discard),
+            )),
+        ],
+        main: Choice::new(save, Variant::Primary, outcome(GuardChoice::Save)),
+    }
+}
+
+fn shortcut_sheet(ui: &mut Ui) {
+    let spacing = theme::spacing();
+    let description_width = |ui: &Ui, keys_column| ui.available_width() - keys_column - spacing.xl;
+    let keys_column = crate::shortcuts::ALL
+        .iter()
+        .map(|s| widgets::key_caps_width(ui, s.keys))
+        .fold(KEYS_COLUMN, f32::max);
+    for (group, title) in crate::shortcuts::Group::ALL {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = spacing.xs;
+            ui.label(theme::section(title).color(theme::palette().text_muted));
+            egui::Grid::new(("shortcuts", title))
+                .num_columns(2)
+                .spacing([spacing.xl, spacing.sm])
+                .min_col_width(keys_column)
+                .max_col_width(description_width(ui, keys_column))
+                .show(ui, |ui| {
+                    for shortcut in crate::shortcuts::ALL.iter().filter(|s| s.group == group) {
+                        widgets::key_caps(ui, shortcut.keys);
+                        ui.add(egui::Label::new(shortcut.description).wrap());
+                        ui.end_row();
+                    }
+                });
+        });
+    }
+}
+
+fn script_reference(ui: &mut Ui) {
+    for phase in imposter_app::script::Phase::LISTED {
+        ui.label(theme::section(phase.label()));
+        for entry in imposter_app::script::API
+            .iter()
+            .filter(|e| e.phase == phase)
+        {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme::spacing().xs;
+                ui.add(egui::Label::new(RichText::new(entry.name).monospace()).wrap());
+                ui.add(egui::Label::new(entry.description).wrap());
+                ui.add(egui::Label::new(tone_text(entry.example, Tone::Muted).monospace()).wrap());
+            });
+        }
+    }
+}
+
+fn warning_line(ui: &mut Ui, warning: &str) {
+    ui.horizontal_top(|ui| {
+        let (_, rect) = ui.allocate_space(egui::Vec2::splat(16.0));
+        widgets::paint_glyph(
+            ui,
+            Icon::Warning,
+            16.0,
+            rect.center(),
+            theme::palette().warning,
+        );
+        ui.add(egui::Label::new(theme::body(warning)).wrap());
+    });
+}
+
+fn curl<'a>(ui: &mut Ui, text: &mut String) -> Footer<'a> {
+    let caption = ui.label("curl command");
+    let field = ui
+        .add(
+            egui::TextEdit::multiline(text)
+                .code_editor()
+                .desired_rows(8)
+                .desired_width(f32::INFINITY)
+                .hint_text("curl 'https://api.example.com/items' -H 'Accept: application/json'"),
+        )
+        .labelled_by(caption.id);
+    initial_focus(ui, &field);
     let parsed = (!text.trim().is_empty()).then(|| imposter_app::core::curl::parse(text));
     match &parsed {
         Some(Ok(parsed)) => {
             for warning in &parsed.warnings {
-                ui.label(tone_text(warning.as_str(), Tone::Warning));
+                warning_line(ui, warning);
             }
         }
         Some(Err(error)) => {
@@ -765,21 +828,10 @@ fn curl(ui: &mut egui::Ui, text: &mut String) -> Outcome {
         }
         None => {}
     }
-    let valid = matches!(parsed, Some(Ok(_)));
-    // Enter types a new line in the command, so it does not press the button.
-    match buttons(
-        ui,
-        &[
-            ("Cancel", Kind::Plain, true),
-            ("Open as draft", Kind::Primary, valid),
-        ],
-        false,
-    ) {
-        Some(0) => outcome = Outcome::Closed,
-        Some(_) => outcome = Outcome::Curl,
-        None => {}
-    }
-    outcome
+    Footer::new(
+        "Open as draft",
+        matches!(parsed, Some(Ok(_))).then_some(Outcome::Curl),
+    )
 }
 
 /// What a delete takes with it: "8 requests in 2 folders", "1 request", "nothing inside".
@@ -1013,10 +1065,12 @@ fn counted(count: usize, noun: &str) -> String {
     }
 }
 
-fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outcome {
-    let mut outcome = Outcome::Open;
-    ui.set_min_width(520.0);
-    ui.label(crate::theme::page_title("Review collection import"));
+fn import<'a>(
+    ui: &mut Ui,
+    preview: &ImportPreview,
+    remove: &mut bool,
+    notes_open: &mut bool,
+) -> Footer<'a> {
     // Nested folders and their requests count too: the summary is what gets written.
     ui.label(format!(
         "Creates {}: {} in {}",
@@ -1030,90 +1084,78 @@ fn import(ui: &mut egui::Ui, preview: &ImportPreview, remove: &mut bool) -> Outc
         preview.environment_names.join(", ")
     };
     ui.label(format!("New environments: {environments}"));
-    // A script can only change its own request and read the variables that request could
-    // already use, so it adds no way out a plain imported request lacks; still, say so.
     if let Some(line) = scripted_line(&preview.document) {
         ui.label(line);
     }
-    ui.add_space(6.0);
-    egui::ScrollArea::vertical()
-        .max_height(240.0)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            if preview.warnings.is_empty() {
-                ui.label(tone_text("All supported fields validated.", Tone::Ok));
+    if !preview.warnings.is_empty() {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme::spacing().xs;
+            let icon = if *notes_open {
+                Icon::ChevronDown
+            } else {
+                Icon::ChevronRight
+            };
+            let toggle = widgets::button(
+                ui,
+                Variant::Ghost,
+                Some(icon),
+                &counted(preview.warnings.len(), "note"),
+            );
+            if toggle.clicked() {
+                *notes_open = !*notes_open;
             }
-            for warning in &preview.warnings {
-                ui.label(tone_text(warning.as_str(), Tone::Warning));
+            ui.ctx().accesskit_node_builder(toggle.id, |node| {
+                node.set_role(egui::Role::DisclosureTriangle);
+                node.set_expanded(*notes_open);
+            });
+            if *notes_open {
+                for warning in &preview.warnings {
+                    warning_line(ui, warning);
+                }
             }
         });
+    }
     if preview.requires_removal {
-        crate::widgets::checkbox(
+        widgets::checkbox(
             ui,
             remove,
             "Remove the listed unsupported execution features",
         );
     }
-    let allowed = !preview.requires_removal || *remove;
-    match buttons(
-        ui,
-        &[
-            ("Cancel", Kind::Plain, true),
-            ("Import", Kind::Primary, allowed),
-        ],
-        true,
-    ) {
-        Some(0) => outcome = Outcome::Closed,
-        Some(_) => outcome = Outcome::Import,
-        None => {}
-    }
-    outcome
+    Footer::new(
+        "Import",
+        (!preview.requires_removal || *remove).then_some(Outcome::Import),
+    )
 }
 
-fn export(
-    ui: &mut egui::Ui,
+fn export<'a>(
+    ui: &mut Ui,
     environments: &mut [(EnvironmentId, String, bool)],
     globals: &mut bool,
     postman: &mut bool,
-) -> Outcome {
-    let mut outcome = Outcome::Open;
-    ui.set_min_width(480.0);
-    ui.label(crate::theme::page_title("Export collection"));
-    ui.horizontal(|ui| {
-        ui.radio_value(postman, false, "Native (.imposter.json)");
-        ui.radio_value(postman, true, "Postman v2.1");
-    });
-    ui.add_space(6.0);
-    ui.label("Include optional environments");
-    if environments.is_empty() {
-        ui.label(tone_text("No environments", Tone::Muted));
-    }
-    egui::ScrollArea::vertical()
-        .max_height(200.0)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            for (_, label, include) in environments.iter_mut() {
-                crate::widgets::checkbox(ui, include, label.as_str());
-            }
-        });
-    crate::widgets::checkbox(ui, globals, "Include global variables");
-    ui.label(tone_text(
-        "Literal credentials and file paths are included. Uploaded file contents are excluded.",
-        Tone::Muted,
-    ));
-    match buttons(
+) -> Footer<'a> {
+    widgets::segmented(
         ui,
-        &[
-            ("Cancel", Kind::Plain, true),
-            ("Export", Kind::Primary, true),
-        ],
-        true,
-    ) {
-        Some(0) => outcome = Outcome::Closed,
-        Some(_) => outcome = Outcome::Export,
-        None => {}
-    }
-    outcome
+        "export format",
+        postman,
+        &[(false, "Native (.imposter.json)"), (true, "Postman v2.1")],
+    );
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme::spacing().xs;
+        ui.label("Include optional environments");
+        if environments.is_empty() {
+            ui.label(tone_text("No environments", Tone::Muted));
+        }
+        for (_, label, include) in environments.iter_mut() {
+            widgets::checkbox(ui, include, label.as_str());
+        }
+    });
+    widgets::checkbox(ui, globals, "Include global variables");
+    warning_line(
+        ui,
+        "Literal credentials and file paths are included. Uploaded file contents are excluded.",
+    );
+    Footer::new("Export", Some(Outcome::Export))
 }
 
 #[cfg(test)]
@@ -1126,19 +1168,5 @@ mod tests {
         assert_eq!(contents(1, 0), "1 request");
         assert_eq!(contents(8, 2), "8 requests in 2 folders");
         assert_eq!(contents(0, 1), "0 requests in 1 folder");
-    }
-
-    #[test]
-    fn only_the_main_action_is_filled_and_disabled_buttons_are_neutral() {
-        assert_eq!(look(Kind::Primary, true, true), Look::Accent);
-        assert_eq!(look(Kind::Danger, true, true), Look::Red);
-        assert_eq!(
-            look(Kind::Danger, true, false),
-            Look::RedText,
-            "Discard before Save must not look like it"
-        );
-        assert_eq!(look(Kind::Primary, false, true), Look::Neutral);
-        assert_eq!(look(Kind::Danger, false, true), Look::Neutral);
-        assert_eq!(look(Kind::Plain, true, true), Look::Neutral);
     }
 }

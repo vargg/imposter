@@ -152,12 +152,12 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
 - **One controls kit defines action hierarchy** (`widgets::button`, `Variant`): Primary
   uses accent fill and `on_accent` text; Secondary uses input fill and a `field_border`
-  edge; Ghost has no fill or edge at rest; Danger is neutral with red text. Filled red
-  remains reserved for a dialog's main destructive action. Disabled actions are neutral
-  and readable. Buttons use the density's control height, 6 pt radius, 10 pt horizontal
+  edge; Ghost has no fill or edge at rest; Danger is neutral with red text. DangerPrimary
+  uses the error fill and `on_accent` text for a dialog's main destructive action. Disabled
+  actions are neutral and readable. Buttons use the density's control height, 6 pt radius, 10 pt horizontal
   padding and an optional 16 pt Phosphor icon with a 6 pt gap. Labels are sentence case
   and are also their accessible names. Hover outlines are muted. The focus ring uses
-  the accent on neutral fills and `on_accent` on accent fills.
+  the accent on neutral fills and `on_accent` on accent and error fills.
   Why: the owner's review found mixed button treatments unfinished. Screen migrations
   adopt the kit incrementally rather than changing their hierarchy in the foundation step.
 
@@ -641,25 +641,32 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **File dialogs go through one seam** (`ImposterApp::pick`); tests answer them with
   `script_file_dialogs`, since native dialogs cannot be driven headless.
 
-- **Every dialog ends with the same button row** (`dialogs::buttons`), except a sheet with
-  nothing to choose (the shortcut sheet): it says "Esc to close" beside its title, since Esc
-  and a click outside close every modal, and a lone Close button only took a row. The
-  find and filter bars keep Close: Esc reaches them only while their field has focus.
-  - **Order:** the choices and Cancel come first; the main action comes last, filled with
-    the accent (or red when destructive) and labelled with a verb (Create, Rename, Save,
-    Delete, Import).
-  - **Fill:** only the main action is filled. A destructive choice before it (the guard's
-    Discard) is a neutral button with red text, because filled red beside filled orange
-    differ only in hue (1.02:1); a disabled button is neutral, so its label stays readable.
-  - **Keys:** Enter presses it unless the dialog edits multi-line text (curl); a name field
-    reads Enter before drawing, because a single-line field consumes it. Escape cancels.
-  - **Captions** have no trailing colons.
-  - **Height:** dialogs are capped at the window, and long ones scroll inside, with their
-    text wrapped clear of the scroll bar.
-  - **Layout:** the row is laid out left to right, because a right-to-left row in an
-    auto-sized modal put its buttons outside the modal, where clicks missed.
+- **Every in-app modal shares one frame.** It uses the surface fill, a 1-point
+  control-edge border, 8-point corners and 16-point inner padding. The stronger backdrop
+  keeps the dialog distinct, especially in light mode. The title and a Close icon button
+  with the tooltip "Close (Esc)" stay above a body with 12-point gaps. Long bodies scroll
+  inside the window cap, with room for the scrollbar. The cap is recalculated before the
+  body lays out so an expanded list can grow beyond the dialog's previous frame size.
+  The shortcut and script reference sheets close from the title row.
+  - A 1-point divider separates the footer. The buttons sit at the right in reading and
+    Tab order, with the main action rightmost. Cramped modals with buttons at the bottom
+    left looked unfinished in design review and put the main action far from the reading
+    end. Each dialog sets its width first, capped to the window. The footer measures the
+    buttons and adds the free width before laying them out left to right. A right-to-left
+    row in an auto-sized modal put its buttons outside the modal, where clicks missed.
+  - Cancel and secondary choices use Secondary. The main action uses Primary or, for a
+    destructive action, DangerPrimary. The guard's Discard uses Danger, a neutral fill with
+    red text, because filled red beside filled orange differ only in hue (1.02:1).
+    Disabled buttons stay neutral.
+  - Enter presses the main action by default. Focused buttons and other clickable controls
+    handle Enter themselves. Curl and script editors use Enter for newlines. The dialog
+    reads Enter before drawing single-line fields, which consume it. Escape, a click
+    outside and the Close button cancel. Captions have no trailing colons.
+  - Import review leads with what will be created. Warning glyphs mark a compact list
+    under the note count, expanded by default for up to three notes. Longer lists start
+    collapsed so the summary and consent controls are easy to find.
 
-  Checked by `imposter-ui/tests/dialogs.rs`.
+  Checked by `imposter-ui/tests/dialogs.rs`, the layout lint and the theme contrast tests.
 
 - **Each dialog kind has its own modal id.** Why: a dialog replacing another (the import review
   followed by the unsaved-changes guard) inherited the old one's area, so a click on its buttons

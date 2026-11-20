@@ -708,7 +708,10 @@ fn main() {
         );
         tour.settle();
         tour.shot("7-05-shortcuts");
-        tour.harness.key_press(egui::Key::Escape);
+        tour.harness
+            .get_by_role(egui::accesskit::Role::Dialog)
+            .get_by_role_and_label(egui::accesskit::Role::Button, "Close")
+            .click();
         tour.settle();
         tour.click("Collection");
         tour.shot("7-06-collection-picker");
