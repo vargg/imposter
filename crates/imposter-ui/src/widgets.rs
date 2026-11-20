@@ -923,8 +923,8 @@ fn var_edit_with(
         };
         ui.fonts_mut(|fonts| fonts.layout_job(job))
     };
-    // A body fills what its pane shows, keeping a line for the footer under it.
-    let fill = (ui.clip_rect().bottom() - ui.cursor().top() - BODY_FOOTER).max(MIN_BODY_HEIGHT);
+    // A body fills the scroll area `body_editor` gives it.
+    let fill = ui.available_height().max(MIN_BODY_HEIGHT);
     let mut edit = match multiline {
         Some((_, hint)) => egui::TextEdit::multiline(text)
             .code_editor()
@@ -2168,23 +2168,36 @@ const MIN_BODY_HEIGHT: f32 = 96.0;
 pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi) -> bool {
     let was_empty = text.trim().is_empty();
     let width = ui.available_width();
-    let id = var_edit_id(ui, "Request body");
-    let typing = (json && text.len() <= HIGHLIGHT_LIMIT)
-        .then(|| Typing::read(ui, id, text))
-        .flatten();
-    let response = var_edit_with(
-        ui,
-        text,
-        "Request body",
-        width,
-        false,
-        vars,
-        Some((Some(json), "Enter request body (JSON, XML, etc.)")),
-    );
-    let mut changed = response.changed();
-    if let Some(typing) = typing {
-        typing.help(ui, id, text, changed);
-    }
+    // Measured against the content rect, which scrolls with the pane, not the clip rect,
+    // which stays put: from the clip rect the editor grew by every point scrolled, so the
+    // pane's end was never reached.
+    let fill = (ui.max_rect().bottom() - ui.cursor().top() - BODY_FOOTER).max(MIN_BODY_HEIGHT);
+    let mut changed = egui::ScrollArea::vertical()
+        .id_salt("request body")
+        .max_height(fill)
+        .min_scrolled_height(fill)
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            let id = var_edit_id(ui, "Request body");
+            let typing = (json && text.len() <= HIGHLIGHT_LIMIT)
+                .then(|| Typing::read(ui, id, text))
+                .flatten();
+            let changed = var_edit_with(
+                ui,
+                text,
+                "Request body",
+                width,
+                false,
+                vars,
+                Some((Some(json), "Enter request body (JSON, XML, etc.)")),
+            )
+            .changed();
+            if let Some(typing) = typing {
+                typing.help(ui, id, text, changed);
+            }
+            changed
+        })
+        .inner;
     // A document pasted into an empty body is laid out at once; one typed is left alone,
     // since re-indenting under the cursor would fight it.
     let pasted = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Paste(_))));

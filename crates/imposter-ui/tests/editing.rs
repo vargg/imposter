@@ -292,6 +292,31 @@ fn type_key(app: &mut support::App, text: &str) {
 }
 
 #[test]
+fn scrolling_a_long_body_reaches_its_end() {
+    let mut app = empty_json_body();
+    let lines: Vec<String> = (0..200).map(|n| format!("  \"key{n}\": {n},")).collect();
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .body_text = format!("{{\n{}\n}}", lines.join("\n"));
+    app.harness.run_steps(2);
+    let before = app.harness.get_by_label("Request body").rect().height();
+    for _ in 0..60 {
+        app.harness.get_by_label("Request body").scroll_down();
+        app.harness.run_steps(2);
+    }
+    let after = app.harness.get_by_label("Request body").rect().height();
+    assert!(
+        (after - before).abs() < 1.0,
+        "scrolling grew the editor from {before} to {after}: its end kept moving away"
+    );
+}
+
+#[test]
 fn typing_json_closes_pairs_and_indents_new_lines() {
     let mut app = empty_json_body();
     type_key(&mut app, "{");

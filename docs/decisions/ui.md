@@ -338,7 +338,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests, Captures, Scripts.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks and Captures the variables it sets from a response, each tab counting its own rows ("Set variable" from a JSON row opens Captures). Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document; checks and captures in one tab under two headings made captures hard to find (user's note). The response keeps one Tests tab for check results and capture writes, both results of the run. Enforced by `imposter-ui/tests/editing.rs`.
 
 - **The body editor fills its pane**, above a one-line footer ("Valid JSON" or the parse
-  error with its line, then Format), and is never shorter than about four lines. A
+  error with its line, then Format), and is never shorter than about four lines. It
+  scrolls its own text in a scroll area sized from the pane's content rect, which moves
+  with scrolling, never from the clip rect, which does not: sized from the clip rect it grew
+  by every point scrolled, so a long body never reached its end (user's note; checked by
+  `scrolling_a_long_body_reaches_its_end`). A
   `{{placeholder}}` outside a string stands for a value, so `{"n": {{n}}}` is valid
   (`viewer::check_json_template`). Format (the button, Cmd/Ctrl+Shift+F or the palette)
   re-indents with two spaces, keeping every token and placeholder as typed
