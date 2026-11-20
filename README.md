@@ -561,7 +561,8 @@ which an architecture test enforces:
 
 Further reading:
 - [AGENTS.md](AGENTS.md): architecture principles, rules and decisions, with their reasons.
-  Read it before changing anything substantial.
+  Read it before changing anything substantial. Subsystem-specific decision records live in
+  [docs/decisions/](docs/decisions/).
 - [docs/testing.md](docs/testing.md): where tests go and how they are written.
 - [docs/validation.md](docs/validation.md): the manual checklist run before each release.
 - [docs/release.md](docs/release.md): packaging, signing and cutting a release.
