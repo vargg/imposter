@@ -278,7 +278,7 @@ fn stop_cancels_the_request_in_flight_and_skips_the_rest() {
     f.app
         .harness
         .get_by_label_contains("Running API / Slow with Dev");
-    click(&mut f.app.harness, "Requests");
+    support::open_screen(&mut f.app.harness, "Requests");
     click(&mut f.app.harness, "Run running");
     assert_eq!(f.app.harness.state().state.screen, Screen::Run);
     let item = f

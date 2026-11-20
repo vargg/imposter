@@ -201,7 +201,7 @@ fn history_keeps_the_results_of_each_run() {
     let app = &mut fixture.app;
     send(app);
     app.harness.get_by_label("Checks: 1 passed");
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
     app.harness.get_by_label_contains("History GET").click();
     app.harness.run_steps(1);
@@ -319,25 +319,25 @@ fn captures_wait_for_unsaved_variables_and_refresh_a_clean_screen() {
         .unwrap();
 
     // Unsaved edits to the globals: the captured value is not written.
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     type_into(&mut app.harness, "Add value to variable 1", "0");
-    click(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Requests");
     send(app);
     assert_eq!(globals(app)["user_id"], "1");
     app.harness
         .get_by_label("Not set: user_id — the Variables screen has unsaved changes to that scope");
 
     // Once saved, the next capture is written and the clean screen shows it.
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
-    click(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Requests");
     send(app);
     assert_eq!(globals(app)["user_id"], "7");
     let screen = &app.harness.state().state.variables;
     assert!(!screen.dirty());
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     app.harness.get_by_label("Variable 1 latest capture: 7");
     assert_eq!(
         app.harness.state().state.variables.rows[0].current(),

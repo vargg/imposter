@@ -82,7 +82,7 @@ fn settings_switches_the_collections_folder() {
     )
     .unwrap();
 
-    click(&mut app.harness, "Settings");
+    support::open_screen(&mut app.harness, "Settings");
     settle(&mut app.harness);
     assert_eq!(app.harness.state().state.screen, Screen::Settings);
     app.harness
@@ -96,7 +96,7 @@ fn settings_switches_the_collections_folder() {
     assert_eq!(state.collections_folder, other.path());
     let names: Vec<&str> = state.collections.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["Admin"]);
-    click(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Requests");
     settle(&mut app.harness);
     app.harness.get_by_label("GET Stats");
 }
@@ -104,7 +104,7 @@ fn settings_switches_the_collections_folder() {
 #[test]
 fn an_environment_can_keep_its_values_on_this_computer() {
     let mut app = start_with(|_| {});
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     click(&mut app.harness, "New environment");
     app.harness.run_steps(2);
@@ -144,7 +144,7 @@ fn the_global_page_can_keep_its_values_on_this_computer() {
             .unwrap();
     });
     assert_eq!(file(&app, "globals.yaml"), "variables:\n  region: eu\n");
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     app.harness
         .get_by_label_contains("Saved to globals.yaml in the collections folder");
@@ -342,7 +342,7 @@ fn the_variables_screen_reloads_or_asks() {
             })
             .unwrap();
     });
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     change_on_disk(&app, "globals.yaml", "region: eu", "region: us");
     reload(&mut app);

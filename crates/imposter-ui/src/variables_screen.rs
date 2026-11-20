@@ -8,8 +8,8 @@ use crate::icons::{self, Icon};
 use crate::theme::{Tone, palette};
 use crate::vars::{self, Choice, Scope};
 use crate::widgets::{
-    REMOVE_WIDTH, SaveStatus, SaveWord, env_option_text, env_text, name, remove_button,
-    save_controls, saved_label, tone_text,
+    REMOVE_WIDTH, SaveStatus, SaveWord, Variant, button, env_option_text, env_text, name,
+    remove_button, save_controls, saved_label, screen_toolbar, tone_text,
 };
 use imposter_app::core::model::EnvColor;
 
@@ -84,85 +84,96 @@ pub fn explanation(state: &State, scope: Scope) -> (String, &'static str) {
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut actions = Vec::new();
     let current = state.variables.scope;
-    ui.horizontal(|ui| {
-        let font = egui::TextStyle::Button.resolve(ui.style());
-        let text = palette().text;
-        ui.label(tone_text("Editing", Tone::Muted));
-        let combo = crate::widgets::combo("variables scope")
-            .width(260.0)
-            .selected_text(env_text(
-                &scope_label(state, current),
-                scope_color(state, current),
-                font.clone(),
-                text,
-            ))
-            .show_ui(ui, |ui| {
-                let mut pick = |ui: &mut Ui, scope: Scope, label: String| {
-                    let shown =
-                        env_option_text(&label, scope_color(state, scope), font.clone(), text);
-                    let option = crate::widgets::option(ui, scope == current, shown);
-                    name(&option, &label);
-                    if option.clicked() {
-                        actions.push(Action::Variables(VariablesAction::SelectScope(scope)));
-                    }
-                };
-                pick(ui, Scope::Global, "Global".into());
-                for environment in &state.environments {
-                    let active = if state.active_environment == Some(environment.id) {
-                        " (active)"
-                    } else {
-                        ""
+    let mut saves = Vec::new();
+    screen_toolbar(
+        ui,
+        "Variables",
+        |ui| {
+            let font = egui::TextStyle::Button.resolve(ui.style());
+            let text = palette().text;
+            ui.label(tone_text("Editing", Tone::Muted));
+            let gap = crate::theme::spacing().sm;
+            let reserve =
+                crate::widgets::action_width(ui, "+ Environment") + icons::size() + 2.0 * gap;
+            let label = scope_label(state, current);
+            let width = (ui.available_width() - reserve).clamp(100.0, 260.0);
+            let combo = crate::widgets::toolbar_combo(
+                ui,
+                "variables scope",
+                width,
+                env_text(&label, scope_color(state, current), font.clone(), text),
+                |ui| {
+                    let mut pick = |ui: &mut Ui, scope: Scope, label: String| {
+                        let shown =
+                            env_option_text(&label, scope_color(state, scope), font.clone(), text);
+                        let option = crate::widgets::option(ui, scope == current, shown);
+                        name(&option, &label);
+                        if option.clicked() {
+                            actions.push(Action::Variables(VariablesAction::SelectScope(scope)));
+                        }
                     };
-                    pick(
-                        ui,
-                        Scope::Environment(environment.id),
-                        format!("Environment · {}{active}", environment.name),
-                    );
+                    pick(ui, Scope::Global, "Global".into());
+                    for environment in &state.environments {
+                        let active = if state.active_environment == Some(environment.id) {
+                            " (active)"
+                        } else {
+                            ""
+                        };
+                        pick(
+                            ui,
+                            Scope::Environment(environment.id),
+                            format!("Environment · {}{active}", environment.name),
+                        );
+                    }
+                    for collection in &state.collections {
+                        pick(
+                            ui,
+                            Scope::Collection(collection.id),
+                            format!("Collection · {}", collection.name),
+                        );
+                    }
+                },
+            );
+            // Named for what it chooses; the caption says what the screen does with it.
+            name(&combo, "Variable scope");
+            combo.on_hover_text(label);
+            let new = button(ui, Variant::Secondary, None, "+ Environment")
+                .on_hover_text("Create an environment");
+            name(&new, "New environment");
+            if new.clicked() {
+                actions.push(Action::Variables(VariablesAction::NewEnvironment));
+            }
+            let has_rows = !state.variables.rows.is_empty();
+            icons::menu(ui, Icon::More, "Variable actions", |ui| {
+                if current == Scope::Global {
+                    let mut share = state.globals_shared;
+                    if crate::widgets::checkbox(ui, &mut share, "Share values").clicked() {
+                        actions.push(Action::Variables(VariablesAction::ShareGlobals(share)));
+                    }
+                    ui.separator();
                 }
-                for collection in &state.collections {
-                    pick(
-                        ui,
-                        Scope::Collection(collection.id),
-                        format!("Collection · {}", collection.name),
-                    );
+                if let Scope::Environment(id) = current {
+                    if button(ui, Variant::Ghost, None, "Edit name and color…").clicked() {
+                        actions.push(Action::Variables(VariablesAction::RenameEnvironment(id)));
+                    }
+                    if button(ui, Variant::Ghost, None, "Delete environment…").clicked() {
+                        actions.push(Action::Variables(VariablesAction::DeleteEnvironment(id)));
+                    }
+                    ui.separator();
+                }
+                // Asks first, naming how many go.
+                if ui
+                    .add_enabled_ui(has_rows, |ui| {
+                        button(ui, Variant::Ghost, None, "Clear all variables…")
+                    })
+                    .inner
+                    .clicked()
+                {
+                    actions.push(Action::Variables(VariablesAction::ClearAll));
                 }
             });
-        // Named for what it chooses; the caption says what the screen does with it.
-        name(&combo.response, "Variable scope");
-        let new = ui
-            .button("+ Environment")
-            .on_hover_text("Create an environment");
-        name(&new, "New environment");
-        if new.clicked() {
-            actions.push(Action::Variables(VariablesAction::NewEnvironment));
-        }
-        let has_rows = !state.variables.rows.is_empty();
-        icons::menu(ui, Icon::More, "Variable actions", |ui| {
-            if current == Scope::Global {
-                let mut share = state.globals_shared;
-                if crate::widgets::checkbox(ui, &mut share, "Share values").clicked() {
-                    actions.push(Action::Variables(VariablesAction::ShareGlobals(share)));
-                }
-                ui.separator();
-            }
-            if let Scope::Environment(id) = current {
-                if ui.button("Edit name and color…").clicked() {
-                    actions.push(Action::Variables(VariablesAction::RenameEnvironment(id)));
-                }
-                if ui.button("Delete environment…").clicked() {
-                    actions.push(Action::Variables(VariablesAction::DeleteEnvironment(id)));
-                }
-                ui.separator();
-            }
-            // Asks first, naming how many go.
-            if ui
-                .add_enabled(has_rows, egui::Button::new("Clear all variables…"))
-                .clicked()
-            {
-                actions.push(Action::Variables(VariablesAction::ClearAll));
-            }
-        });
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        },
+        |ui| {
             let screen = &state.variables;
             let dirty = screen.dirty();
             let word = match screen.status {
@@ -183,7 +194,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 enabled: dirty,
             };
             if save_controls(ui, &status, "Save variables") {
-                actions.push(Action::Variables(VariablesAction::Save));
+                saves.push(Action::Variables(VariablesAction::Save));
             }
             let revert = ui
                 .add_enabled_ui(dirty, |ui| {
@@ -191,11 +202,11 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 })
                 .inner;
             if revert.clicked() {
-                actions.push(Action::Variables(VariablesAction::Revert));
+                saves.push(Action::Variables(VariablesAction::Revert));
             }
-        });
-    });
-    ui.separator();
+        },
+    );
+    actions.extend(saves);
     if state.variables_changed_on_disk {
         use crate::app::DiskChoice;
         match crate::workspace::notice_banner(
@@ -219,71 +230,64 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut edited = false;
     let highlight = state.variables.highlight.take();
     let (usage, precedence) = explanation(state, current);
-    egui::Frame::new()
-        .fill(palette().surface)
-        .stroke(egui::Stroke::new(1.0, palette().border))
-        .corner_radius(12)
-        .inner_margin(14)
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
         .show(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.label(usage);
-                    ui.add(egui::Label::new(tone_text(precedence, Tone::Muted)).wrap());
-                    ui.add_space(8.0);
-                    let height = ui.spacing().interact_size.y;
-                    let gap = ui.spacing().item_spacing.x;
-                    let available = ui.available_width() - REMOVE_WIDTH - 2.0 * gap;
-                    let name_width = (available * 0.35).clamp(140.0, 320.0);
-                    let value_width = (available - name_width).max(160.0);
-                    let widths = (name_width, value_width, height);
-                    ui.horizontal(|ui| {
-                        crate::widgets::heading_cell(ui, name_width, "Variable name");
-                        crate::widgets::heading_cell(ui, value_width, "Values");
-                    });
-                    let mut remove = None;
-                    for (index, row) in state.variables.rows.iter_mut().enumerate() {
-                        let (changed, removed) =
-                            variable_row(ui, row, index + 1, widths, highlight.as_deref());
-                        edited |= changed;
-                        if removed {
-                            remove = Some(index);
-                        }
+            ui.label(usage);
+            ui.add(egui::Label::new(tone_text(precedence, Tone::Muted)).wrap());
+            ui.add_space(crate::theme::spacing().sm);
+            let height = ui.spacing().interact_size.y;
+            let gap = ui.spacing().item_spacing.x;
+            let available = ui.available_width() - REMOVE_WIDTH - 2.0 * gap;
+            let name_width = (available * 0.35).clamp(140.0, 320.0);
+            let value_width = (available - name_width).max(160.0);
+            let widths = (name_width, value_width, height);
+            ui.horizontal(|ui| {
+                crate::widgets::heading_cell(ui, name_width, "Variable name");
+                crate::widgets::heading_cell(ui, value_width, "Values");
+            });
+            let mut remove = None;
+            for (index, row) in state.variables.rows.iter_mut().enumerate() {
+                let (changed, removed) =
+                    variable_row(ui, row, index + 1, widths, highlight.as_deref());
+                edited |= changed;
+                if removed {
+                    remove = Some(index);
+                }
+            }
+            if let Some(index) = remove {
+                state.variables.rows.remove(index);
+                edited = true;
+            }
+            ui.horizontal(|ui| {
+                if button(ui, Variant::Secondary, None, "Add Variable").clicked() {
+                    state.variables.rows.push(vars::VariableRow::new(""));
+                }
+            });
+            if imposter_app::core::variables::SecretScope::of_scope(current).is_some() {
+                edited |= secrets_section(
+                    ui,
+                    &mut state.variables.secrets,
+                    widths,
+                    highlight.as_deref(),
+                );
+                let requests = match current {
+                    Scope::Environment(id) => {
+                        state.environments.iter().find(|e| e.id == id).map_or_else(
+                            || "requests sent with this environment".to_owned(),
+                            |e| format!("requests sent with {}", e.name),
+                        )
                     }
-                    if let Some(index) = remove {
-                        state.variables.rows.remove(index);
-                        edited = true;
-                    }
-                    ui.horizontal(|ui| {
-                        if ui.button("Add Variable").clicked() {
-                            state.variables.rows.push(vars::VariableRow::new(""));
-                        }
-                    });
-                    if imposter_app::core::variables::SecretScope::of_scope(current).is_some() {
-                        edited |= secrets_section(
-                            ui,
-                            &mut state.variables.secrets,
-                            widths,
-                            highlight.as_deref(),
-                        );
-                        let requests = match current {
-                            Scope::Environment(id) => {
-                                state.environments.iter().find(|e| e.id == id).map_or_else(
-                                    || "requests sent with this environment".to_owned(),
-                                    |e| format!("requests sent with {}", e.name),
-                                )
-                            }
-                            _ => "requests sent without an environment".to_owned(),
-                        };
-                        cookies_section(
-                            ui,
-                            &state.variables.cookies,
-                            widths,
-                            &requests,
-                            &mut actions,
-                        );
-                    }
-                });
+                    _ => "requests sent without an environment".to_owned(),
+                };
+                cookies_section(
+                    ui,
+                    &state.variables.cookies,
+                    widths,
+                    &requests,
+                    &mut actions,
+                );
+            }
         });
     if edited {
         actions.push(Action::Variables(VariablesAction::Edited));

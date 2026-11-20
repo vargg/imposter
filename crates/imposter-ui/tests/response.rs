@@ -160,7 +160,7 @@ fn find_opens_the_folds_that_hide_a_match() {
 fn history_responses_can_be_folded_and_filtered() {
     let mut fixture = sent("application/json", BODY);
     let app = &mut fixture.app;
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
     app.harness.get_by_label_contains("History GET").click();
     app.harness.run_steps(1);

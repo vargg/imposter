@@ -140,15 +140,34 @@ fn problem_lines(ui: &mut Ui, problems: &[RouteProblem], route: usize, field: Ro
 const LIST_WIDTH: f32 = 260.0;
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
-    ui.label(egui::RichText::new("Mocks").font(crate::theme::semibold(15.0)));
-    ui.add_space(6.0);
     let screen = &mut state.mocks;
     let mut edited = false;
     // Checked every frame, so a problem shows while it is typed, not only on Save.
     let mut problems = screen.form.problems();
     problems.extend(script_problems(&screen.form));
     let mut actions = Vec::new();
-    header(ui, screen, &problems, &mut edited, &mut actions);
+    let mut port = screen.form.port;
+    let mut server_action = None;
+    widgets::screen_toolbar(
+        ui,
+        "Mocks",
+        |ui| {
+            server_action = server_controls(ui, screen, &problems, &mut port);
+            server_state(ui, screen);
+        },
+        |ui| save_controls(ui, screen, &mut actions),
+    );
+    actions.extend(server_action.map(Action::Mock));
+    edited |= port != screen.form.port;
+    screen.form.port = port;
+    if let Some(run) = &screen.run
+        && screen
+            .baseline
+            .as_ref()
+            .is_some_and(|base| *base != run.config)
+    {
+        ui.label(widgets::tone_text("Restart to apply", Tone::Warning));
+    }
     if let Some(notice) = &screen.notice {
         ui.label(notice);
     }
@@ -187,106 +206,93 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     state.actions.extend(actions);
 }
 
-/// The server's controls first, so they never move, then its state in words: "● Stopped",
-/// or "● Running at `http://127.0.0.1:62543`" with a copy button. Revert and Save at the right.
-fn header(
+fn server_controls(
     ui: &mut Ui,
-    screen: &mut MockScreen,
+    screen: &MockScreen,
     problems: &[RouteProblem],
-    edited: &mut bool,
-    actions: &mut Vec<Action>,
-) {
-    ui.horizontal(|ui| {
-        ui.label(widgets::tone_text("Port", Tone::Muted));
-        let editable = screen.loaded() && !screen.loading;
-        let port = ui
-            .add_enabled(
-                editable,
-                egui::DragValue::new(&mut screen.form.port)
-                    .range(0..=65535)
-                    .custom_formatter(|port, _| {
-                        if port == 0.0 {
-                            "auto".to_owned()
-                        } else {
-                            format!("{port}")
-                        }
-                    }),
-            )
-            .on_hover_text("auto: a free port chosen when the server starts");
-        widgets::name(&port, "Mock port");
-        *edited |= port.changed();
-        if let Some(run) = &screen.run {
-            if ui
-                .add_enabled(!run.stopping, egui::Button::new("Stop mock server"))
-                .clicked()
-            {
-                actions.push(Action::Mock(MockAction::Stop));
-            }
-        } else {
-            let start = ui
-                .add_enabled(
-                    screen.loaded()
-                        && !screen.dirty()
-                        && !screen.saving
-                        && !screen.loading
-                        && problems.is_empty(),
-                    egui::Button::new(
-                        egui::RichText::new("Start mock server").color(palette().on_accent),
-                    )
-                    .fill(palette().accent),
-                )
-                .on_disabled_hover_text(match problems.first() {
-                    Some(problem) => {
-                        format!("Fix route {} first: {}", problem.route + 1, problem.reason)
+    port: &mut u16,
+) -> Option<MockAction> {
+    ui.label(widgets::tone_text("Port", Tone::Muted));
+    let editable = screen.loaded() && !screen.loading;
+    let field = ui
+        .add_enabled(
+            editable,
+            egui::DragValue::new(port)
+                .range(0..=65535)
+                .custom_formatter(|port, _| {
+                    if port == 0.0 {
+                        "auto".to_owned()
+                    } else {
+                        format!("{port}")
                     }
-                    None => "Save changes before starting".to_owned(),
-                });
-            if start.clicked() {
-                actions.push(Action::Mock(MockAction::Start));
-            }
-        }
-        ui.add_space(8.0);
-        server_state(ui, screen);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let status = SaveStatus {
-                word: if screen.saving {
-                    SaveWord::Saving
-                } else if screen.error.is_some() {
-                    SaveWord::Failed
-                } else if !screen.loaded() {
-                    SaveWord::Loading
-                } else if screen.dirty() {
-                    SaveWord::Unsaved
-                } else {
-                    SaveWord::Saved
-                },
-                detail: screen
-                    .error
-                    .as_deref()
-                    .unwrap_or("Save the configuration; restart the server to apply changes"),
-                enabled: screen.loaded() && screen.dirty() && !screen.saving && !screen.loading,
-            };
-            if widgets::save_controls(ui, &status, "Save mocks") {
-                actions.push(Action::Save);
-            }
-            let revert = ui
-                .add_enabled_ui(!screen.saving && !screen.loading, |ui| {
-                    crate::icons::button(
-                        ui,
-                        crate::icons::Icon::Revert,
-                        "Revert to saved mocks",
-                        false,
-                    )
-                })
-                .inner;
-            if revert.clicked() {
-                actions.push(Action::Mock(MockAction::Reload));
-            }
-        });
-    });
+                }),
+        )
+        .on_hover_text("auto: a free port chosen when the server starts");
+    widgets::name(&field, "Mock port");
+    if let Some(run) = &screen.run {
+        return ui
+            .add_enabled_ui(!run.stopping, |ui| {
+                widgets::button(ui, widgets::Variant::Danger, None, "Stop mock server")
+            })
+            .inner
+            .clicked()
+            .then_some(MockAction::Stop);
+    }
+    let ready = screen.loaded()
+        && !screen.dirty()
+        && !screen.saving
+        && !screen.loading
+        && problems.is_empty();
+    ui.add_enabled_ui(ready, |ui| {
+        widgets::button(ui, widgets::Variant::Secondary, None, "Start mock server")
+    })
+    .inner
+    .on_disabled_hover_text(match problems.first() {
+        Some(problem) => format!("Fix route {} first: {}", problem.route + 1, problem.reason),
+        None => "Save changes before starting".to_owned(),
+    })
+    .clicked()
+    .then_some(MockAction::Start)
 }
 
-/// Whether the server runs, where, and whether it serves what is saved.
+fn save_controls(ui: &mut Ui, screen: &MockScreen, actions: &mut Vec<Action>) {
+    let status = SaveStatus {
+        word: if screen.saving {
+            SaveWord::Saving
+        } else if screen.error.is_some() {
+            SaveWord::Failed
+        } else if !screen.loaded() {
+            SaveWord::Loading
+        } else if screen.dirty() {
+            SaveWord::Unsaved
+        } else {
+            SaveWord::Saved
+        },
+        detail: screen
+            .error
+            .as_deref()
+            .unwrap_or("Save the configuration; restart the server to apply changes"),
+        enabled: screen.loaded() && screen.dirty() && !screen.saving && !screen.loading,
+    };
+    if widgets::save_controls(ui, &status, "Save mocks") {
+        actions.push(Action::Save);
+    }
+    let revert = ui
+        .add_enabled_ui(!screen.saving && !screen.loading, |ui| {
+            crate::icons::button(
+                ui,
+                crate::icons::Icon::Revert,
+                "Revert to saved mocks",
+                false,
+            )
+        })
+        .inner;
+    if revert.clicked() {
+        actions.push(Action::Mock(MockAction::Reload));
+    }
+}
+
+/// Whether the server runs and where.
 fn server_state(ui: &mut Ui, screen: &MockScreen) {
     let (dot, text) = match &screen.run {
         None => (palette().text_muted, "Stopped".to_owned()),
@@ -298,21 +304,18 @@ fn server_state(ui: &mut Ui, screen: &MockScreen) {
     };
     let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
     ui.painter().circle_filled(rect.center(), 4.0, dot);
-    ui.add(egui::Label::new(text).truncate());
-    if let Some(address) = screen.run.as_ref().and_then(|run| run.address.as_deref())
-        && crate::icons::button(ui, crate::icons::Icon::Copy, "Copy mock server URL", false)
-            .clicked()
-    {
-        ui.ctx().copy_text(address.to_owned());
-    }
-    if let Some(run) = &screen.run
-        && screen
-            .baseline
-            .as_ref()
-            .is_some_and(|base| *base != run.config)
-    {
-        ui.label(widgets::tone_text("Restart to apply", Tone::Warning));
-    }
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if let Some(address) = screen.run.as_ref().and_then(|run| run.address.as_deref())
+            && crate::icons::button(ui, crate::icons::Icon::Copy, "Copy mock server URL", false)
+                .clicked()
+        {
+            ui.ctx().copy_text(address.to_owned());
+        }
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            ui.add(egui::Label::new(&text).truncate())
+                .on_hover_text(&text);
+        });
+    });
 }
 
 /// The routes, one row each: enabled, method in its color, path, status; a route with a

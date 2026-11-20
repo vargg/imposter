@@ -109,7 +109,7 @@ fn the_sidebar_menu_opens_the_screen_on_its_request_and_stop_ends_a_run() {
         .accesskit_node()
         .description();
     assert_eq!(tab.as_deref(), Some("Load test running"));
-    click(&mut f.app.harness, "Requests");
+    support::open_screen(&mut f.app.harness, "Requests");
     click(&mut f.app.harness, "Load running");
     assert_eq!(f.app.harness.state().state.screen, Screen::Load);
     assert_eq!(
@@ -194,7 +194,7 @@ fn both_running_tools_remain_reachable_with_unsaved_mocks_and_a_long_result() {
     support::open_screen(&mut f.app.harness, "Load");
     set_plan(&mut f.app, "1000", "2");
     click(&mut f.app.harness, "Start the load test");
-    click(&mut f.app.harness, "Requests");
+    support::open_screen(&mut f.app.harness, "Requests");
     f.app.harness.set_size(egui::vec2(720.0, 480.0));
     for theme in [ThemeChoice::Dark, ThemeChoice::Light] {
         for density in [Density::Compact, Density::Comfortable] {

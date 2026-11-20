@@ -97,7 +97,7 @@ fn with_environments(active: bool) -> support::App {
 #[test]
 fn a_new_environment_named_for_production_is_offered_red_until_a_color_is_chosen() {
     let mut app = start_with(|_| {});
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     click(&mut app.harness, "New environment");
     assert_eq!(chosen(&app), ["No color"]);
@@ -139,7 +139,7 @@ fn a_new_environment_named_for_production_is_offered_red_until_a_color_is_chosen
 #[test]
 fn renaming_shows_the_color_and_can_clear_it() {
     let mut app = with_environments(false);
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Environment · Prod");
@@ -327,7 +327,7 @@ fn manage_environments_opens_variables_on_the_active_environment() {
     assert_eq!(state.variables.scope, Scope::Environment(prod.id));
 
     // Without an active environment, Global.
-    click(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Requests");
     click(&mut app.harness, "Environment");
     click(&mut app.harness, "Global (no environment)");
     settle(&mut app.harness);

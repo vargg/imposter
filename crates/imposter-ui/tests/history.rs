@@ -14,7 +14,7 @@ use imposter_ui::app::{HistoryTab, Screen};
 use support::{click, click_button, collection, request, settle, start_with, type_into};
 
 fn open_history(app: &mut support::App) {
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
 }
 
@@ -166,7 +166,7 @@ fn restoring_over_unsaved_changes_asks_first() {
 #[test]
 fn the_filter_shows_only_the_open_request() {
     let (mut app, _server, _runtime) = sent_app();
-    click(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Requests");
     click(&mut app.harness, "GET Other");
     settle(&mut app.harness);
     open_history(&mut app);

@@ -1,11 +1,11 @@
 //! The Settings screen: application defaults, edited against a saved baseline.
 
-use egui::{Align, Grid, Layout, Ui};
+use egui::{Grid, Ui};
 use imposter_app::core::settings::{AppSettings, HostIdentity};
 
 use crate::app::{Action, State};
 use crate::theme::Tone;
-use crate::widgets::{SaveStatus, SaveWord, save_controls, tone_text};
+use crate::widgets::{SaveStatus, SaveWord, save_controls, screen_toolbar, tone_text};
 use imposter_app::store::executions::Usage;
 
 const MIB: u64 = 1024 * 1024;
@@ -264,8 +264,11 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut save = false;
     let mut actions = Vec::new();
     let loaded = screen.is_loaded();
-    ui.horizontal(|ui| {
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+    screen_toolbar(
+        ui,
+        "Settings",
+        |_| {},
+        |ui| {
             let word = match screen.status {
                 Some(word) => word,
                 None if !loaded => SaveWord::Loading,
@@ -284,9 +287,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 enabled: screen.dirty() && !screen.is_saving(),
             };
             save = save_controls(ui, &status, "Save settings");
-        });
-    });
-    ui.separator();
+        },
+    );
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {

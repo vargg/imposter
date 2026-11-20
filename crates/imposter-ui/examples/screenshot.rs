@@ -241,7 +241,9 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-mocks.png")))
             .unwrap();
-        harness.get_by_label("Variables").click();
+        harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, "Variables")
+            .click();
         settle(&mut harness);
         harness
             .render()
@@ -257,7 +259,9 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-saved-values.png")))
             .unwrap();
-        harness.get_by_label("History").click();
+        harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, "History")
+            .click();
         settle(&mut harness);
         harness
             .get_all_by_label_contains("History GET")
@@ -283,7 +287,9 @@ fn main() {
             .unwrap();
         harness.key_press(egui::Key::Escape);
         settle(&mut harness);
-        harness.get_by_label("Requests").click();
+        harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, "Requests")
+            .click();
         settle(&mut harness);
         harness.state_mut().state.sidebar_filter = "method:POST".into();
         settle(&mut harness);

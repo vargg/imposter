@@ -67,7 +67,7 @@ fn fixture() -> Fixture {
 }
 
 fn send(f: &mut Fixture, request: &str) {
-    click(&mut f.app.harness, "Requests");
+    support::open_screen(&mut f.app.harness, "Requests");
     settle(&mut f.app.harness);
     click(&mut f.app.harness, request);
     settle(&mut f.app.harness);
@@ -76,7 +76,7 @@ fn send(f: &mut Fixture, request: &str) {
 }
 
 fn show_dev_cookies(f: &mut Fixture) {
-    click(&mut f.app.harness, "Variables");
+    support::open_screen(&mut f.app.harness, "Variables");
     settle(&mut f.app.harness);
     let dev = f
         .app

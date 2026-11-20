@@ -46,23 +46,9 @@ fn the_rail_and_sidebar_leave_room_for_both_pane_minimums() {
                 .actions
                 .push(Action::SetAppearance(Appearance { theme, density }));
             app.harness.run_steps(3);
-            let mut panes: Vec<_> = app
-                .harness
-                .output()
-                .shapes
-                .iter()
-                .filter_map(|clipped| match &clipped.shape {
-                    egui::Shape::Rect(frame)
-                        if frame.stroke.color == theme::palette().border
-                            && frame.corner_radius == egui::CornerRadius::same(12) =>
-                    {
-                        Some(frame.rect)
-                    }
-                    _ => None,
-                })
-                .collect();
-            panes.sort_by(|a, b| a.left().total_cmp(&b.left()));
-            assert_eq!(panes.len(), 2);
+            let panes = ["Request pane", "Response pane"]
+                .map(|label| app.harness.get_by_role_and_label(Role::Group, label).rect());
+            assert!(panes[0].right() < panes[1].left());
             for pane in panes {
                 assert!(
                     pane.width() >= MIN_PANE_WIDE,
@@ -250,8 +236,8 @@ fn the_body_editor_fills_its_pane_with_its_footer_below() {
         }
         app.harness.run_steps(3);
         let footer = app.harness.get_by_label("Valid JSON").rect();
-        let status_bar = app.harness.get_by_label("Hide Collections").rect().top();
-        // The pane ends above the status bar, inside its frame and padding.
+        let status_bar = support::status_bar(&app).top();
+        // The pane ends above the status bar, inside its padding.
         let gap = status_bar - footer.bottom();
         assert!(
             (0.0..60.0).contains(&gap),
@@ -414,4 +400,47 @@ fn a_set_tab_has_a_raised_green_dot_and_more_counts_what_it_hides() {
         "{:?}",
         painted(&app, more)
     );
+}
+
+#[test]
+fn the_flat_response_centres_its_empty_message_on_both_sides_of_the_switch() {
+    let mut app = small();
+    for (layout, side_by_side) in [
+        ("Put request and response side by side", true),
+        ("Stack request and response", false),
+    ] {
+        click(&mut app.harness, layout);
+        let pane = |label| app.harness.get_by_role_and_label(Role::Group, label).rect();
+        let request = pane("Request pane");
+        let response = pane("Response pane");
+        let (title, detail) = (
+            app.harness
+                .get_by_label("Your response will appear here")
+                .rect(),
+            app.harness
+                .get_by_label("Send a request to inspect its status, headers and body.")
+                .rect(),
+        );
+        assert!((title.union(detail).center().y - response.center().y).abs() <= 1.0);
+        let color = theme::palette().field_border;
+        let shapes = &app.harness.output().shapes;
+        assert!(
+            shapes.iter().any(|clipped| {
+                matches!(clipped.shape, egui::Shape::LineSegment { points: [a, b], stroke }
+                if stroke.color == color && (stroke.width - 1.0).abs() < f32::EPSILON
+                && if side_by_side {
+                    request.right() < a.x && a.x < response.left()
+                        && (b.y - a.y - request.height()).abs() < f32::EPSILON
+                } else {
+                    request.bottom() < a.y && a.y < response.top()
+                        && (b.x - a.x - request.width()).abs() < f32::EPSILON
+                })
+            }),
+            "a divider between the panes in {layout}"
+        );
+        assert!(shapes.iter().all(|clipped| {
+            !matches!(&clipped.shape, egui::Shape::Rect(rect)
+                if [request, response].contains(&rect.rect) && rect.fill == theme::palette().surface)
+        }));
+    }
 }

@@ -15,7 +15,7 @@ use imposter_ui::app::{Action, CloseState};
 use support::{click, save_state, settle, start, start_with, type_into};
 
 fn open_settings(app: &mut support::App) {
-    click(&mut app.harness, "Settings");
+    support::open_screen(&mut app.harness, "Settings");
     settle(&mut app.harness);
 }
 

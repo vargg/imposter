@@ -149,7 +149,7 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
         })
         .collect();
     assert_eq!(dots, [imposter_ui::theme::palette().warning]);
-    click(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Requests");
     support::open_screen(&mut app.harness, "Mocks");
     assert_eq!(
         app.harness.state().state.mocks.form.routes[0].body,

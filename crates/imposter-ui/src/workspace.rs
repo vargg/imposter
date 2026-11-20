@@ -9,7 +9,7 @@ use crate::app::{Action, EditorTab, ImposterApp, ResponseTab, Screen, State, Tok
 use crate::dialogs::{Dialog, NamePurpose};
 use crate::editor::BODY_CHOICES;
 use crate::icons::{self, Icon};
-use crate::layout::{Orientation, RAIL_WIDTH, SIDEBAR_WIDTH, WorkspaceLayout};
+use crate::layout::{Orientation, RAIL_WIDTH, SIDEBAR_WIDTH};
 use crate::theme::{Tone, method_color, palette};
 use crate::tree::{Node, NodeId, Place};
 use crate::viewer::{self, Language};
@@ -17,7 +17,7 @@ use crate::widgets::{self, FileRequest, VarUi, name, tone_text};
 
 const SEPARATOR: f32 = 12.0;
 const ENVIRONMENT_WIDTH: f32 = 200.0;
-const REQUESTS_MARGIN: i8 = 16;
+const SCREEN_MARGIN: i8 = 16;
 
 pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
     let save = app.save_label();
@@ -40,23 +40,20 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                 .inner_margin(egui::Margin::symmetric(16, 5)),
         )
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let toggle = if state.layout.sidebar_visible {
-                    "Hide Collections"
-                } else {
-                    "Show Collections"
-                };
-                // An action named by what it does, never drawn selected, and set apart from
-                // the layout pair: beside it, selected the same way, it read as a third layout.
-                if icons::button(ui, Icon::Sidebar, toggle, false).clicked() {
-                    state.layout.sidebar_visible = !state.layout.sidebar_visible;
-                }
-                ui.separator();
-                layout_switch(&mut state.layout, ui);
-                ui.separator();
-                // Reserve the running tools first: a long result must not push Stop's
-                // way back to its screen outside the window.
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let available = ui.available_rect_before_wrap();
+            let row = Rect::from_min_size(
+                available.min,
+                vec2(available.width(), crate::theme::spacing().control),
+            );
+            ui.scope_builder(
+                UiBuilder::new()
+                    .max_rect(row)
+                    .layout(Layout::right_to_left(Align::Center))
+                    .accessibility_role(egui::Role::Status)
+                    .accessibility_label("Status bar"),
+                |ui| {
+                    ui.set_min_size(row.size());
+                    widgets::region_bounds(ui, row);
                     status_context(state, ui);
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                         let now = ui.input(|i| i.time);
@@ -80,68 +77,27 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
                             .on_hover_text(&line.text);
                         }
                     });
-                });
-            });
+                },
+            );
         });
     navigation_rail(state, ui);
-    if state.screen == Screen::Variables {
+    let screen_draw: Option<fn(&mut State, &mut Ui)> = match state.screen {
+        Screen::Requests => None,
+        Screen::Variables => Some(crate::variables_screen::draw),
+        Screen::History => Some(crate::history_screen::draw),
+        Screen::Mocks => Some(crate::mock_screen::draw),
+        Screen::Load => Some(crate::load_screen::draw),
+        Screen::Run => Some(crate::run_screen::draw),
+        Screen::Settings => Some(crate::settings_screen::draw),
+    };
+    if let Some(draw) = screen_draw {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
                     .fill(palette().background)
-                    .inner_margin(16),
+                    .inner_margin(SCREEN_MARGIN),
             )
-            .show(ui, |ui| crate::variables_screen::draw(state, ui));
-        return;
-    }
-    if state.screen == Screen::History {
-        egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(palette().background)
-                    .inner_margin(16),
-            )
-            .show(ui, |ui| crate::history_screen::draw(state, ui));
-        return;
-    }
-    if state.screen == Screen::Mocks {
-        egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(palette().background)
-                    .inner_margin(16),
-            )
-            .show(ui, |ui| crate::mock_screen::draw(state, ui));
-        return;
-    }
-    if state.screen == Screen::Load {
-        egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(palette().background)
-                    .inner_margin(16),
-            )
-            .show(ui, |ui| crate::load_screen::draw(state, ui));
-        return;
-    }
-    if state.screen == Screen::Run {
-        egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(palette().background)
-                    .inner_margin(16),
-            )
-            .show(ui, |ui| crate::run_screen::draw(state, ui));
-        return;
-    }
-    if state.screen == Screen::Settings {
-        egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(palette().background)
-                    .inner_margin(16),
-            )
-            .show(ui, |ui| crate::settings_screen::draw(state, ui));
+            .show(ui, |ui| draw(state, ui));
         return;
     }
     if state.layout.sidebar_visible {
@@ -149,7 +105,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
         let max_width = if state.layout.orientation == Orientation::SideBySide {
             // Leave room for both pane minimums before allocating the sidebar.
             ui.available_width()
-                - 2.0 * (crate::layout::MIN_PANE_WIDE + f32::from(REQUESTS_MARGIN))
+                - 2.0 * (crate::layout::MIN_PANE_WIDE + f32::from(SCREEN_MARGIN))
                 - SEPARATOR
         } else {
             SIDEBAR_WIDTH.1
@@ -189,15 +145,16 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
         .frame(
             egui::Frame::new()
                 .fill(palette().background)
-                .inner_margin(REQUESTS_MARGIN),
+                .inner_margin(SCREEN_MARGIN),
         )
         .show(ui, |ui| {
+            context_bar(state, ui, save, save_text);
             if state.editor.is_none() {
-                nothing_open(state, ui);
+                let area = ui.available_rect_before_wrap();
+                pane(ui, area, "Request pane", |ui| empty_request_pane(state, ui));
+                ui.allocate_rect(area, Sense::hover());
                 return;
             }
-            context_bar(state, ui, save, save_text);
-            ui.add_space(8.0);
             disk_banner(state, ui);
             draft_banner(state, ui);
             command_bar(state, ui, executing);
@@ -1021,13 +978,19 @@ fn breadcrumb(path: &str) -> egui::text::LayoutJob {
         job.append(
             &format!("{place} / "),
             0.0,
-            format(egui::FontId::proportional(15.0), palette().text_muted),
+            format(
+                egui::FontId::proportional(crate::theme::PAGE_TITLE),
+                palette().text_muted,
+            ),
         );
     }
     job.append(
         name,
         0.0,
-        format(crate::theme::semibold(15.0), palette().text),
+        format(
+            crate::theme::semibold(crate::theme::PAGE_TITLE),
+            palette().text,
+        ),
     );
     job
 }
@@ -1038,48 +1001,64 @@ fn context_bar(
     save: Option<widgets::SaveStatus<'static>>,
     save_text: &str,
 ) {
-    ui.horizontal(|ui| {
-        let path = match &state.editor {
-            // The request pane says what to do.
-            None => String::new(),
-            Some(pane) => match pane.editor.id() {
-                None => format!(
-                    "Unsaved draft / {}",
-                    if pane.editor.name().is_empty() {
-                        "Untitled request"
-                    } else {
-                        pane.editor.name()
-                    }
-                ),
-                Some(id) => state
-                    .tree
-                    .as_ref()
-                    .and_then(|t| t.request_path(id))
-                    .unwrap_or_else(|| pane.editor.name().to_owned()),
-            },
+    let path = match &state.editor {
+        None => "Requests".to_owned(),
+        Some(pane) => match pane.editor.id() {
+            None => format!(
+                "Unsaved draft / {}",
+                if pane.editor.name().is_empty() {
+                    "Untitled request"
+                } else {
+                    pane.editor.name()
+                }
+            ),
+            Some(id) => state
+                .tree
+                .as_ref()
+                .and_then(|t| t.request_path(id))
+                .unwrap_or_else(|| pane.editor.name().to_owned()),
+        },
+    };
+    let has_editor = state.editor.is_some();
+    let left = |ui: &mut Ui| {
+        ui.add(egui::Label::new(breadcrumb(&path)).truncate())
+            .on_hover_text(&path);
+    };
+    let right = |ui: &mut Ui| {
+        if layout_switch(ui, state.layout.orientation) {
+            state.actions.push(Action::ToggleLayout);
+        }
+        divider(ui, crate::theme::spacing().control);
+        let toggle = if state.layout.sidebar_visible {
+            "Hide Collections"
+        } else {
+            "Show Collections"
         };
-        // The right end first, so the path is cut to what is left rather than run under it.
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if let Some(save) = save {
-                // Copy as curl sits between the icon and the word, so a passing "Saving…"
-                // moves only the end of the path.
-                let mut curl = false;
-                let saved = widgets::save_controls_with(ui, &save, save_text, |ui| {
-                    curl = icons::button(ui, Icon::Terminal, "Copy as curl", false).clicked();
-                });
-                if saved {
-                    state.actions.push(Action::Save);
-                }
-                if curl {
-                    state.actions.push(Action::CopyCurl);
-                }
-            }
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.add(egui::Label::new(breadcrumb(&path)).truncate())
-                    .on_hover_text(&path);
+        if icons::button(ui, Icon::Sidebar, toggle, false).clicked() {
+            state.actions.push(Action::ToggleSidebar);
+        }
+        // The toggle and layout choices have distinct selected-state semantics.
+        if save.is_some() {
+            divider(ui, crate::theme::spacing().control);
+        }
+        if let Some(save) = save {
+            let mut curl = false;
+            let saved = widgets::save_controls_with(ui, &save, save_text, |ui| {
+                curl = icons::button(ui, Icon::Terminal, "Copy as curl", false).clicked();
             });
-        });
-    });
+            if saved {
+                state.actions.push(Action::Save);
+            }
+            if curl {
+                state.actions.push(Action::CopyCurl);
+            }
+        }
+    };
+    if has_editor {
+        widgets::toolbar_row(ui, left, right);
+    } else {
+        widgets::screen_toolbar(ui, &path, |_| {}, right);
+    }
 }
 
 fn header(state: &mut State, ui: &mut Ui) {
@@ -1255,11 +1234,7 @@ fn status_context(state: &mut State, ui: &mut Ui) {
 }
 
 fn activity_button(ui: &mut Ui, label: &str, hint: &str) -> egui::Response {
-    let button = ui.add(
-        egui::Button::new(tone_text(format!("● {label}"), Tone::Muted).small())
-            .frame(false)
-            .min_size(vec2(24.0, crate::theme::spacing().control)),
-    );
+    let button = widgets::button(ui, widgets::Variant::Ghost, None, &format!("● {label}"));
     name(&button, label);
     button
         .ctx
@@ -1365,27 +1340,26 @@ fn environment_picker(state: &mut State, ui: &mut Ui) {
     combo.response.on_hover_text(hint);
 }
 
-/// Switch between side by side and stacked. The icon shows what a click switches to.
 /// Two buttons, one per layout; the current one is selected. One button showing the other
 /// layout's icon read as the current state.
-fn layout_switch(layout: &mut WorkspaceLayout, ui: &mut Ui) {
+fn layout_switch(ui: &mut Ui, current: Orientation) -> bool {
+    let mut switched = false;
     for (orientation, icon, label) in [
-        (
-            Orientation::SideBySide,
-            Icon::Columns,
-            "Put request and response side by side",
-        ),
         (
             Orientation::Stacked,
             Icon::Rows,
             "Stack request and response",
         ),
+        (
+            Orientation::SideBySide,
+            Icon::Columns,
+            "Put request and response side by side",
+        ),
     ] {
-        let current = layout.orientation == orientation;
-        if icons::button(ui, icon, label, current).clicked() {
-            layout.orientation = orientation;
-        }
+        let selected = current == orientation;
+        switched |= icons::button(ui, icon, label, selected).clicked() && !selected;
     }
+    switched
 }
 
 fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
@@ -1590,28 +1564,25 @@ fn split(state: &mut State, ui: &mut Ui) {
         orientation == Orientation::SideBySide,
         drag.hovered() || drag.dragged(),
     );
-    for rect in [first, second] {
-        pane_frame(ui, rect);
-    }
-    ui.scope_builder(
-        UiBuilder::new()
-            .max_rect(first.shrink(14.0))
-            .id_salt("request pane"),
-        |ui| {
-            ui.set_clip_rect(ui.clip_rect().intersect(first));
-            request_pane(state, ui);
-        },
-    );
-    ui.scope_builder(
-        UiBuilder::new()
-            .max_rect(second.shrink(14.0))
-            .id_salt("response pane"),
-        |ui| {
-            ui.set_clip_rect(ui.clip_rect().intersect(second));
-            response_pane(state, ui);
-        },
-    );
+    pane(ui, first, "Request pane", |ui| request_pane(state, ui));
+    pane(ui, second, "Response pane", |ui| response_pane(state, ui));
     ui.allocate_rect(area, Sense::hover());
+}
+
+fn pane(ui: &mut Ui, area: Rect, label: &str, content: impl FnOnce(&mut Ui)) {
+    let mut pane = ui.new_child(
+        UiBuilder::new()
+            .max_rect(area)
+            .id_salt(label)
+            .accessibility_role(egui::Role::Group)
+            .accessibility_label(label),
+    );
+    widgets::region_bounds(&pane, area);
+    pane.set_clip_rect(pane.clip_rect().intersect(area));
+    // Give the scroll areas their own padded space while the group describes the entire pane.
+    let mut content_ui =
+        pane.new_child(UiBuilder::new().max_rect(area.shrink(crate::theme::spacing().sm)));
+    content(&mut content_ui);
 }
 
 /// "3" in `tone`, or nothing for none.
@@ -1640,7 +1611,6 @@ fn editor_badge(editor: &crate::editor::Editor, tab: EditorTab) -> Option<widget
 /// The request pane with no request open: what to do next, as buttons. On first run
 /// that is a collection to create, import or start from curl.
 fn empty_request_pane(state: &mut State, ui: &mut Ui) {
-    ui.add_space((ui.available_height() * 0.2).min(80.0));
     let first_run = state.collections.is_empty();
     let empty = state
         .tree
@@ -1662,12 +1632,6 @@ fn empty_request_pane(state: &mut State, ui: &mut Ui) {
             "Choose one in the sidebar, or start a new one.",
         )
     };
-    ui.vertical_centered(|ui| {
-        ui.label(RichText::new(title).font(crate::theme::semibold(15.0)));
-        ui.add_space(4.0);
-        ui.add(egui::Label::new(tone_text(text, Tone::Muted)).wrap());
-        ui.add_space(10.0);
-    });
     let mut offers = Vec::new();
     if first_run {
         offers.push((
@@ -1692,79 +1656,85 @@ fn empty_request_pane(state: &mut State, ui: &mut Ui) {
             text: String::new(),
         }),
     ));
-    if let Some(action) = offer_buttons(ui, offers) {
+    if let Some(action) = centered_message(ui, title, text, offers) {
         state.actions.push(action);
     }
 }
 
-/// Centred under the text that introduces them, the first filled as the next step; one
-/// above the other when they do not fit side by side.
-fn offer_buttons(ui: &mut Ui, offers: Vec<(&str, Action)>) -> Option<Action> {
+/// Measure the text and actions together so the whole message is centred even when it wraps.
+fn centered_message(
+    ui: &mut Ui,
+    title: &str,
+    detail: &str,
+    offers: Vec<(&str, Action)>,
+) -> Option<Action> {
+    let width = ui.available_width();
+    let spacing = crate::theme::spacing();
     let gap = ui.spacing().item_spacing.x;
-    let widths: Vec<f32> = offers
-        .iter()
-        .map(|(label, _)| widgets::button_width(ui, RichText::new(*label)))
-        .collect();
-    let total = widths.iter().map(|width| width + gap).sum::<f32>() - gap;
-    let button = |ui: &mut Ui, index: usize, label: &str| {
-        let button = if index == 0 {
-            egui::Button::new(RichText::new(label).color(palette().on_accent))
-                .fill(palette().accent)
-        } else {
-            egui::Button::new(label)
-        };
-        ui.add(button).clicked()
+    let rows_gap = ui.spacing().item_spacing.y;
+    let galley = |text: RichText| {
+        egui::WidgetText::from(text).into_galley(
+            ui,
+            Some(egui::TextWrapMode::Wrap),
+            width,
+            egui::TextStyle::Body,
+        )
     };
+    let title = galley(crate::theme::section(title));
+    let detail = galley(tone_text(detail, Tone::Muted));
+    let buttons_width = offers
+        .iter()
+        .map(|(label, _)| widgets::action_width(ui, label) + gap)
+        .sum::<f32>()
+        - gap;
+    let inline = buttons_width <= width;
+    let button_height = if offers.is_empty() {
+        0.0
+    } else if inline {
+        spacing.control + spacing.sm + rows_gap
+    } else {
+        offers
+            .iter()
+            .map(|_| spacing.control + rows_gap)
+            .sum::<f32>()
+            + spacing.sm
+    };
+    let height = title.size().y + detail.size().y + rows_gap + button_height;
+    ui.add_space(((ui.available_height() - height) / 2.0).max(0.0));
+    ui.vertical_centered(|ui| {
+        ui.label(title);
+        ui.label(detail);
+    });
+    if offers.is_empty() {
+        return None;
+    }
+    ui.add_space(spacing.sm);
     let mut chosen = None;
-    if total <= ui.available_width() {
-        ui.horizontal(|ui| {
-            ui.add_space((ui.available_width() - total) / 2.0);
-            for (index, (label, action)) in offers.into_iter().enumerate() {
-                if button(ui, index, label) {
-                    chosen = Some(action);
-                }
+    let buttons = |ui: &mut Ui| {
+        for (index, (label, action)) in offers.into_iter().enumerate() {
+            let variant = if index == 0 {
+                widgets::Variant::Primary
+            } else {
+                widgets::Variant::Secondary
+            };
+            if widgets::button(ui, variant, None, label).clicked() {
+                chosen = Some(action);
             }
+        }
+    };
+    if inline {
+        ui.horizontal(|ui| {
+            ui.add_space((width - buttons_width) / 2.0);
+            buttons(ui);
         });
     } else {
-        ui.vertical_centered(|ui| {
-            for (index, (label, action)) in offers.into_iter().enumerate() {
-                if button(ui, index, label) {
-                    chosen = Some(action);
-                }
-            }
-        });
+        ui.vertical_centered(buttons);
     }
     chosen
 }
 
 /// The one name of starting a request from a curl command.
 pub const PASTE_CURL: &str = "Paste curl…";
-
-/// With no request open, one pane over the whole area says what to do next: an empty
-/// request bar and response pane beside it read as a failed render.
-fn nothing_open(state: &mut State, ui: &mut Ui) {
-    let area = ui.available_rect_before_wrap();
-    pane_frame(ui, area);
-    ui.scope_builder(
-        UiBuilder::new()
-            .max_rect(area.shrink(14.0))
-            .id_salt("request pane"),
-        |ui| empty_request_pane(state, ui),
-    );
-    ui.allocate_rect(area, Sense::hover());
-}
-
-fn pane_frame(ui: &Ui, rect: Rect) {
-    ui.painter().rect(
-        rect,
-        PANE_RADIUS,
-        palette().surface,
-        egui::Stroke::new(1.0, palette().border),
-        egui::StrokeKind::Inside,
-    );
-}
-
-const PANE_RADIUS: f32 = 12.0;
 
 /// The collection's and enclosing folders' scripts around the open request, outermost
 /// first, as the executor runs them; only levels that have scripts.
@@ -2096,13 +2066,9 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
 }
 
 fn response_pane(state: &mut State, ui: &mut Ui) {
-    // Without a request there is nothing to send: the request pane says what to do.
-    if state.editor.is_none() {
-        return;
-    }
     let now = ui.input(|i| i.time);
     if let Some(seconds) = state.sending_for(now) {
-        // A stream shows its events as they come, in place of the waiting card.
+        // A stream shows its events as they come, in place of the waiting message.
         if !state.response.live_events.is_empty() {
             let response = &mut state.response;
             ui.label(tone_text(
@@ -2301,24 +2267,15 @@ fn blocked_card(
     });
 }
 
-/// A bordered block for a problem, inside the pane's padding and wrapping its text; it
-/// scrolls when the pane is too short for it.
+/// Scrolls when the pane is too short for the error and its available actions.
 fn problem_frame(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
-    ui.add_space(8.0);
+    let spacing = crate::theme::spacing();
+    ui.add_space(spacing.sm);
     egui::ScrollArea::vertical()
         .id_salt("problem")
         .auto_shrink([false, true])
-        .show(ui, |ui| problem_box(ui, contents));
-}
-
-fn problem_box(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
-    egui::Frame::new()
-        .stroke(egui::Stroke::new(1.0, palette().error.gamma_multiply(0.6)))
-        .corner_radius(8)
-        .inner_margin(12)
         .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing.y = 8.0;
+            ui.spacing_mut().item_spacing.y = spacing.sm;
             contents(ui);
         });
 }
@@ -2567,14 +2524,12 @@ pub fn response_body(
         ..
     } = response_state;
     let Some((preview, headers)) = preview.as_ref() else {
-        ui.add_space(20.0);
-        ui.vertical_centered(|ui| {
-            ui.label(RichText::new("Your response will appear here").strong());
-            ui.label(tone_text(
-                "Send a request to inspect its status, headers and body.",
-                Tone::Muted,
-            ));
-        });
+        centered_message(
+            ui,
+            "Your response will appear here",
+            "Send a request to inspect its status, headers and body.",
+            Vec::new(),
+        );
         return None;
     };
     if let Some(failure) = response

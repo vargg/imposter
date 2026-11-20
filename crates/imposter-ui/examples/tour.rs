@@ -78,6 +78,18 @@ impl Tour {
         true
     }
 
+    fn open_screen(&mut self, label: &str) {
+        let Some(button) = self
+            .harness
+            .query_by_role_and_label(egui::accesskit::Role::Button, label)
+        else {
+            eprintln!("tour ({}): no rail button named {label:?}", self.size);
+            return;
+        };
+        button.click();
+        self.harness.run_steps(2);
+    }
+
     fn type_into(&mut self, label: &str, text: &str) {
         if self.click(label) {
             self.harness.query_by_label(label).unwrap().type_text(text);
@@ -456,7 +468,7 @@ fn main() {
         tour.harness.run_steps(3);
         tour.shot("3-02-inspector");
         tour.harness.state_mut().state.inspect = None;
-        tour.click("Variables");
+        tour.open_screen("Variables");
         tour.settle();
         tour.shot("3-03-variables");
         tour.harness
@@ -486,7 +498,7 @@ fn main() {
         tour.shot("3-07-unsaved-variables");
         tour.click("Revert unsaved changes");
         tour.settle();
-        tour.click("Requests");
+        tour.open_screen("Requests");
         tour.settle();
         tour.click("Environment");
         tour.click("Production");
@@ -497,7 +509,7 @@ fn main() {
         tour.settle();
 
         // Task 4: checks and captured variables.
-        tour.click("Requests");
+        tour.open_screen("Requests");
         tour.settle();
         tour.open_tab("Tests");
         tour.send();
@@ -576,7 +588,7 @@ fn main() {
         tour.settle();
 
         // Task 5: History.
-        tour.click("History");
+        tour.open_screen("History");
         tour.settle();
         tour.shot("5-01-history");
         tour.type_into("Filter history", "status:5xx OR status:failed");
@@ -613,7 +625,7 @@ fn main() {
         tour.settle();
 
         // Task 6: mocks.
-        tour.click("Mocks");
+        tour.open_screen("Mocks");
         tour.settle();
         tour.shot("6-01-mocks");
         tour.click("Start mock server");
@@ -651,7 +663,7 @@ fn main() {
         tour.shot("6-03b-mock-script");
 
         // Task 6b: a load test of the open request.
-        tour.click("Load");
+        tour.open_screen("Load");
         tour.settle();
         tour.shot("6-04-load");
         {
@@ -669,7 +681,7 @@ fn main() {
         tour.shot("6-06-load-result");
 
         // Task 7: getting around.
-        tour.click("Requests");
+        tour.open_screen("Requests");
         tour.settle();
         tour.type_into("Filter requests", "method:GET -health");
         tour.settle();
@@ -704,10 +716,10 @@ fn main() {
         tour.settle();
 
         // Settings and layout.
-        tour.click("Settings");
+        tour.open_screen("Settings");
         tour.settle();
         tour.shot("8-01-settings");
-        tour.click("Requests");
+        tour.open_screen("Requests");
         tour.settle();
         tour.click("Stack request and response");
         tour.settle();

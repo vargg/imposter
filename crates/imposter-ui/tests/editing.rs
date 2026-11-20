@@ -164,7 +164,7 @@ fn dragging_near_the_trees_bottom_edge_scrolls_it() {
     let first = || "GET r00";
     let before = app.harness.get_by_label(first()).rect().top();
     // The tree ends a little above the status bar's controls.
-    let bottom = app.harness.get_by_label("Hide Collections").rect().top() - 12.0;
+    let bottom = support::status_bar(&app).top() - 12.0;
     let from = app.harness.get_by_label(first()).rect().center();
     let to = egui::pos2(from.x, bottom);
     app.harness.drag_at(from);
@@ -840,9 +840,13 @@ fn response_tools_share_the_tab_row_with_copy_at_the_right() {
             let last = app.harness.get_by_label(end).rect();
             assert!(copy.right() < last.left(), "{end} after Copy");
             assert!((last.center().y - tab_rect.center().y).abs() < 1.0);
+            let pane = app
+                .harness
+                .get_by_role_and_label(egui::accesskit::Role::Group, "Response pane")
+                .rect();
             assert!(
-                (last.right() - (size.x - 30.0)).abs() < 2.0,
-                "the last tool is anchored to the panel's right inset"
+                (last.right() - (pane.right() - imposter_ui::theme::spacing().sm)).abs() < 2.0,
+                "the last tool is anchored to the pane's 8-point inset"
             );
             app.harness.get_by_label(copy_label).click();
             app.harness.step();
@@ -864,7 +868,7 @@ fn response_tools_share_the_tab_row_with_copy_at_the_right() {
 const MIN_TARGET: f32 = 24.0;
 
 #[test]
-fn sidebar_icon_stays_in_the_bottom_left_and_supports_the_keyboard() {
+fn sidebar_icon_stays_at_the_right_of_the_requests_toolbar_and_supports_the_keyboard() {
     let mut app = start_with(|store| {
         collection(store, "API");
     });
@@ -872,7 +876,12 @@ fn sidebar_icon_stays_in_the_bottom_left_and_supports_the_keyboard() {
         app.harness.set_size(size);
         app.harness.run_steps(2);
         let visible = app.harness.get_by_label("Hide Collections").rect();
-        assert!(visible.left() < 32.0 && visible.bottom() > size.y - 20.0);
+        let toolbar = app
+            .harness
+            .get_by_role(egui::accesskit::Role::Toolbar)
+            .rect();
+        assert!(toolbar.contains_rect(visible));
+        assert!(visible.center().x > toolbar.center().x);
         // WCAG 2.5.8: a pointer target is at least 24 by 24 points, in every density.
         assert!(visible.width() >= MIN_TARGET && visible.height() >= MIN_TARGET);
         app.harness.get_by_label("Hide Collections").focus();

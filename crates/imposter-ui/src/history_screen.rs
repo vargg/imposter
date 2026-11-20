@@ -146,12 +146,6 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             / (area.height() - SEPARATOR))
             .clamp(crate::layout::RATIO.0, crate::layout::RATIO.1);
     }
-    // A hairline across, and a grip that says it can be dragged.
-    ui.painter().hline(
-        handle.x_range(),
-        handle.center().y,
-        egui::Stroke::new(1.0, palette().border),
-    );
     widgets::split_grip(ui, handle, false, drag.hovered() || drag.dragged());
 
     let retention = retention(&state.settings, history.usage);
@@ -172,45 +166,55 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
 /// The filter, "Current request only" and Refresh; clearing everything is in the menu at
 /// the end, away from them.
 fn toolbar(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Vec<Action>) {
-    ui.horizontal(|ui| {
-        let width = (ui.available_width() - 280.0).clamp(140.0, 360.0);
-        let field = ui.add(
-            egui::TextEdit::singleline(&mut history.filter)
-                .hint_text("Filter: text, status:4xx, method:POST, env:…")
-                .desired_width(width),
-        );
-        name(&field, "Filter history");
-        let field = field.on_hover_text(
+    let mut right_actions = Vec::new();
+    widgets::screen_toolbar(
+        ui,
+        "History",
+        |ui| {
+            let gap = crate::theme::spacing().sm;
+            let checkbox_width = 24.0
+                + crate::theme::spacing().xs
+                + widgets::text_width(ui, crate::theme::body("Current request only"));
+            let width = (ui.available_width() - checkbox_width - gap).min(360.0);
+            let field = ui.add_sized(
+                [width, crate::theme::spacing().control],
+                egui::TextEdit::singleline(&mut history.filter)
+                    .hint_text("Filter: text, status:4xx, method:POST, env:…"),
+            );
+            name(&field, "Filter history");
+            let field = field.on_hover_text(
             "Words match the request name and URL. status:404, status:4xx, status:failed, \
              method:, url:, name:, env:, via:cli, OR, NOT, -word and \"phrases\". Bodies are not searched.",
         );
-        if field.changed() {
-            actions.push(Action::History(HistoryAction::Filtered));
-        }
-        let mut only = history.only_current;
-        if widgets::checkbox(ui, &mut only, "Current request only").changed() {
-            actions.push(Action::History(HistoryAction::OnlyCurrent(only)));
-        }
-        if crate::icons::button(ui, crate::icons::Icon::Refresh, "Refresh", false).clicked() {
-            actions.push(Action::History(HistoryAction::Refresh));
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if field.changed() {
+                actions.push(Action::History(HistoryAction::Filtered));
+            }
+            let mut only = history.only_current;
+            if widgets::checkbox(ui, &mut only, "Current request only").changed() {
+                actions.push(Action::History(HistoryAction::OnlyCurrent(only)));
+            }
+        },
+        |ui| {
             crate::icons::menu(ui, crate::icons::Icon::More, "History actions", |ui| {
-                if ui
-                    .button("Open result file…")
+                if widgets::button(ui, widgets::Variant::Ghost, None, "Open result file…")
                     .on_hover_text("Show a result that imposter send wrote with --out")
                     .clicked()
                 {
-                    actions.push(Action::History(HistoryAction::OpenResult));
+                    right_actions.push(Action::History(HistoryAction::OpenResult));
                 }
                 ui.separator();
-                if ui.button("Clear all history…").clicked() {
-                    actions.push(Action::History(HistoryAction::Clear));
+                if widgets::button(ui, widgets::Variant::Ghost, None, "Clear all history…")
+                    .clicked()
+                {
+                    right_actions.push(Action::History(HistoryAction::Clear));
                 }
             });
-        });
-    });
-    ui.add_space(4.0);
+            if crate::icons::button(ui, crate::icons::Icon::Refresh, "Refresh", false).clicked() {
+                right_actions.push(Action::History(HistoryAction::Refresh));
+            }
+        },
+    );
+    actions.extend(right_actions);
 }
 
 /// The executions as a table, newest first, with the pager under it.

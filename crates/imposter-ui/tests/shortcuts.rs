@@ -110,7 +110,7 @@ fn shortcuts_do_nothing_while_a_dialog_is_open_or_off_their_screen() {
     assert_eq!(server.requests().len(), 0, "the dialog blocks Send");
     click(&mut app.harness, "Cancel");
 
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
     press(&mut app, Key::Enter);
     press(&mut app, Key::N);

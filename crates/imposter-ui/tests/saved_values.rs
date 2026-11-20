@@ -78,7 +78,7 @@ fn disabled(app: &support::App, label: &str) -> bool {
 
 fn variables_app() -> support::App {
     let mut app = with_saved_user("http://h".into());
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     app
 }
@@ -226,7 +226,7 @@ fn enter_adds_or_selects_a_value_and_escape_clears_the_draft() {
 #[test]
 fn unsaved_edits_to_the_scope_block_choosing_and_a_clean_screen_follows_the_choice() {
     let mut app = with_saved_user("http://h".into());
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     app.harness.state_mut().state.variables.rows[0].draft = "http://edited".into();
     app.harness.run_steps(2);
@@ -340,7 +340,7 @@ fn the_chip_menu_copies_the_full_value_and_removes_it() {
             })
             .unwrap();
     });
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     let chip = format!("Variable 1 value 2: {prefix}…");
     open_menu(&mut app, &chip);
@@ -460,7 +460,7 @@ fn keeping_the_latest_capture_while_another_chip_is_active_is_an_explicit_edit()
             Ok(())
         })
         .unwrap();
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     assert_eq!(
         app.harness.state().state.variables.rows[1].current(),

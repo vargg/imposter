@@ -65,7 +65,7 @@ fn compact_shows_more_of_the_tree_at_the_smallest_window() {
     app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
     app.harness.run_steps(3);
     let visible = |app: &support::App| {
-        let bottom = app.harness.get_by_label("Hide Collections").rect().top();
+        let bottom = support::status_bar(app).top();
         tops(app).iter().filter(|top| **top + 20.0 < bottom).count()
     };
     let compact = visible(&app);
@@ -80,7 +80,7 @@ fn compact_shows_more_of_the_tree_at_the_smallest_window() {
 #[test]
 fn the_density_is_chosen_in_settings_and_remembered() {
     let mut app = many_requests();
-    click(&mut app.harness, "Settings");
+    support::open_screen(&mut app.harness, "Settings");
     settle(&mut app.harness);
     app.harness
         .get_by_role_and_label(Role::ComboBox, "Density")
@@ -171,7 +171,7 @@ fn titles_use_the_title_style() {
     click(&mut app.harness, "GET Request 03");
     settle(&mut app.harness);
     app.harness.run_steps(1);
-    let title = imposter_ui::theme::semibold(15.0);
+    let title = imposter_ui::theme::semibold(imposter_ui::theme::PAGE_TITLE);
     assert_eq!(
         font_of(&app, "API / Request 03", "Request 03"),
         title,
@@ -182,9 +182,14 @@ fn titles_use_the_title_style() {
         egui::FontFamily::Proportional,
         "its place stays regular"
     );
-    click(&mut app.harness, "Settings");
+    support::open_screen(&mut app.harness, "Settings");
     settle(&mut app.harness);
     app.harness.run_steps(1);
+    assert_eq!(
+        font_of(&app, "Settings", "Settings"),
+        title,
+        "Settings page title"
+    );
     assert_eq!(
         font_of(&app, "Appearance", "Appearance"),
         imposter_ui::theme::semibold(14.0),
@@ -341,7 +346,7 @@ fn splits_show_a_grip_that_can_be_found() {
             if rect.fill == edge && (rect.rect.center().x - sidebar).abs() < 2.0)
     });
     assert!(on_edge, "a grip on the sidebar's edge at {sidebar}");
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
     app.harness.hover_at(egui::pos2(5.0, 5.0));
     app.harness.run_steps(2);

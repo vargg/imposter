@@ -155,7 +155,7 @@ fn history_copies_the_request_as_it_was_sent() {
     settle(&mut app.harness);
     click(&mut app.harness, "Send");
     settle(&mut app.harness);
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
     app.harness.get_by_label_contains("History GET").click();
     app.harness.run_steps(1);

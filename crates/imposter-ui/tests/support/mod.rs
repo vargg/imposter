@@ -67,6 +67,12 @@ pub fn settle(harness: &mut Harness<'_, ImposterApp>) {
     panic!("the app never settled");
 }
 
+pub fn status_bar(app: &App) -> egui::Rect {
+    app.harness
+        .get_by_role_and_label(egui::accesskit::Role::Status, "Status bar")
+        .rect()
+}
+
 pub fn click(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     harness.get_by_label(label).click();
     harness.run_steps(2);

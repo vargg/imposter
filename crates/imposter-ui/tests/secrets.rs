@@ -150,7 +150,7 @@ fn a_secret_is_defined_from_a_blocked_send_masked_and_sent() {
     );
     assert!(dev_variables.is_empty(), "a secret is not a variable");
 
-    click(&mut f.app.harness, "Requests");
+    support::open_screen(&mut f.app.harness, "Requests");
     settle(&mut f.app.harness);
     click(&mut f.app.harness, "Send");
     settle(&mut f.app.harness);
@@ -207,7 +207,7 @@ fn the_lock_stores_a_capture_as_a_secret_and_never_shows_it() {
     f.app.harness.get_by_label_contains("set secret:token");
 
     // With unsaved edits to Dev's page, a capture into it waits rather than racing them.
-    click(&mut f.app.harness, "Variables");
+    support::open_screen(&mut f.app.harness, "Variables");
     settle(&mut f.app.harness);
     let dev = dev(&f.app);
     f.app
@@ -220,7 +220,7 @@ fn the_lock_stores_a_capture_as_a_secret_and_never_shows_it() {
         ));
     settle(&mut f.app.harness);
     type_into(&mut f.app.harness, "Secret 1 value", "-edited");
-    click(&mut f.app.harness, "Requests");
+    support::open_screen(&mut f.app.harness, "Requests");
     settle(&mut f.app.harness);
     click(&mut f.app.harness, "Send");
     settle(&mut f.app.harness);

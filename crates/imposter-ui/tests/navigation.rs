@@ -609,7 +609,7 @@ fn an_unsaved_screen_keeps_the_rail_items_after_it_in_place() {
             })
             .unwrap();
     });
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     let history = |app: &support::App| {
         app.harness

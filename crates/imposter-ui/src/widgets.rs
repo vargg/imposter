@@ -32,6 +32,75 @@ const BUTTON_PAD: f32 = 10.0;
 const ICON_GAP: f32 = 6.0;
 const CONTROL_RADIUS: u8 = 6;
 
+/// The right-hand actions are drawn from the edge inward, primary action first.
+pub fn screen_toolbar(
+    ui: &mut Ui,
+    title: &str,
+    left: impl FnOnce(&mut Ui),
+    right: impl FnOnce(&mut Ui),
+) {
+    toolbar_row(
+        ui,
+        |ui| {
+            ui.label(crate::theme::page_title(title));
+            left(ui);
+        },
+        right,
+    );
+}
+
+/// Requests supplies its breadcrumb in place of the standard page title.
+pub(crate) fn toolbar_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
+    let spacing = crate::theme::spacing();
+    let available = ui.available_rect_before_wrap();
+    let row = egui::Rect::from_min_size(
+        available.min,
+        egui::vec2(available.width(), spacing.control),
+    );
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(row)
+            .layout(egui::Layout::right_to_left(egui::Align::Center))
+            .accessibility_role(egui::Role::Toolbar),
+        |ui| {
+            ui.set_min_size(row.size());
+            region_bounds(ui, row);
+            ui.spacing_mut().item_spacing.x = spacing.sm;
+            right(ui);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), left);
+        },
+    );
+    ui.add_space(spacing.sm);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(row.width(), 1.0), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        egui::Stroke::new(1.0, palette().field_border),
+    );
+    ui.add_space(spacing.sm);
+}
+
+/// egui provides automatic bounds for interactive widgets but omits them for container UIs.
+pub(crate) fn region_bounds(ui: &Ui, rect: egui::Rect) {
+    ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
+        node.set_bounds(egui::accesskit::Rect {
+            x0: rect.left().into(),
+            y0: rect.top().into(),
+            x1: rect.right().into(),
+            y1: rect.bottom().into(),
+        });
+    });
+}
+
+/// The untruncated width of an action without a glyph.
+pub(crate) fn action_width(ui: &Ui, label: &str) -> f32 {
+    (control_text(ui, crate::theme::body(label), f32::INFINITY)
+        .size()
+        .x
+        + 2.0 * BUTTON_PAD)
+        .max(24.0)
+}
+
 /// A fixed-height action with an optional leading icon, kept out of the text font.
 pub fn button(ui: &mut Ui, variant: Variant, icon: Option<Icon>, label: &str) -> egui::Response {
     let icon_width = icon.map_or(0.0, |_| 16.0 + ICON_GAP);
@@ -170,6 +239,29 @@ pub fn combo<'a>(id: impl egui::AsIdSalt) -> egui::ComboBox<'a> {
             palette().text_muted,
         );
     })
+}
+
+/// A toolbar picker reserves its slot even when the selected name is long.
+pub(crate) fn toolbar_combo(
+    ui: &mut Ui,
+    id: impl egui::AsIdSalt,
+    width: f32,
+    selected: impl Into<egui::WidgetText>,
+    contents: impl FnOnce(&mut Ui),
+) -> egui::Response {
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, crate::theme::spacing().control),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            combo(id)
+                .width(width)
+                .truncate()
+                .selected_text(selected)
+                .show_ui(ui, contents)
+                .response
+        },
+    )
+    .inner
 }
 
 /// Painter for both collapsing headers and the sidebar's collapsing state.
@@ -916,6 +1008,14 @@ pub fn env_swatches(ui: &mut Ui, color: &mut Option<EnvColor>) -> bool {
 /// The grip in the middle of a split's `handle`: a short bar across the split, in the
 /// control-edge color (≥3:1, so it can be found), the text color while `active`.
 pub fn split_grip(ui: &Ui, handle: egui::Rect, vertical_split: bool, active: bool) {
+    let edge = egui::Stroke::new(1.0, palette().field_border);
+    if vertical_split {
+        ui.painter()
+            .vline(handle.center().x, handle.y_range(), edge);
+    } else {
+        ui.painter()
+            .hline(handle.x_range(), handle.center().y, edge);
+    }
     let color = if active {
         palette().text_muted
     } else {
@@ -3168,111 +3268,107 @@ pub fn code_viewer(
         });
     }
 
-    egui::Frame::new()
-        .fill(palette().input)
-        .corner_radius(8)
-        .inner_margin(10)
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 2.0;
-            let font = FontId::monospace(12.5);
-            let char_width = ui.fonts_mut(|fonts| fonts.glyph_width(&font, 'M')).max(1.0);
-            let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font));
-            // Fold markers on the left; on the right the row actions' "⋯", which wrapped
-            // lines must not run under.
-            let gutter = if folding.is_some() {
-                GUTTER + ui.spacing().item_spacing.x + ROW_ACTIONS_WIDTH
-            } else {
-                0.0
-            };
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            // a positive count of columns
-            let columns = state
-                .wrap
-                .then(|| ((ui.available_width() - 16.0 - gutter) / char_width).max(20.0) as usize);
-            let mut rows = viewer::rows(text, columns);
-            if let Some(folding) = &mut folding {
-                if let Some(offset) = state.scroll_to {
-                    unfold_around(folding, offset, text);
-                }
-                rows = viewer::unfolded(rows, folding.outline, folding.folded);
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = 2.0;
+        let font = FontId::monospace(12.5);
+        let char_width = ui.fonts_mut(|fonts| fonts.glyph_width(&font, 'M')).max(1.0);
+        let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font));
+        // Fold markers on the left; on the right the row actions' "⋯", which wrapped
+        // lines must not run under.
+        let gutter = if folding.is_some() {
+            GUTTER + ui.spacing().item_spacing.x + ROW_ACTIONS_WIDTH
+        } else {
+            0.0
+        };
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        // a positive count of columns
+        let columns = state
+            .wrap
+            .then(|| ((ui.available_width() - 16.0 - gutter) / char_width).max(20.0) as usize);
+        let mut rows = viewer::rows(text, columns);
+        if let Some(folding) = &mut folding {
+            if let Some(offset) = state.scroll_to {
+                unfold_around(folding, offset, text);
             }
-            let target_row = state.scroll_to.take().and_then(|offset| {
-                rows.iter()
-                    .position(|r| r.range.end >= offset && r.range.start <= offset)
-            });
-            let mut scroll = egui::ScrollArea::both()
-                .id_salt(id)
-                .auto_shrink([false, false]);
-            if let Some(row) = target_row {
-                #[allow(clippy::cast_precision_loss)]
-                // row indexes are far below f32 precision limits
-                let offset = row as f32 * (row_height + ui.spacing().item_spacing.y);
-                scroll = scroll.vertical_scroll_offset((offset - 40.0).max(0.0));
-            }
-            let current = state.matches.get(state.current).cloned();
-            scroll.show_rows(ui, row_height, rows.len(), |ui, visible| {
-                // A row with a fold marker must stay exactly as tall as a plain row: the
-                // scroll area places rows by a fixed height.
-                ui.spacing_mut().interact_size.y = row_height;
-                for index in visible {
-                    let row = &rows[index];
-                    let range = &row.range;
-                    let line = &text[range.clone()];
-                    let mut job =
-                        spans_job(line, &highlight::line(language, line), &font, f32::INFINITY);
-                    let first = index == 0 || rows[index - 1].line != row.line;
-                    let last = rows.get(index + 1).is_none_or(|next| next.line != row.line);
-                    for found in &state.matches {
-                        if found.start < range.end && found.end > range.start {
-                            let start = found.start.max(range.start) - range.start;
-                            let end = found.end.min(range.end) - range.start;
-                            let strong = current.as_ref() == Some(found);
-                            mark(
-                                &mut job,
-                                start..end,
-                                if strong {
-                                    palette().accent.gamma_multiply(0.6)
-                                } else {
-                                    palette().accent.gamma_multiply(0.25)
-                                },
-                            );
-                        }
-                    }
-                    let label = |job| {
-                        egui::Label::new(job)
-                            .selectable(true)
-                            .wrap_mode(egui::TextWrapMode::Extend)
-                    };
-                    let Some(folding) = &mut folding else {
-                        ui.add(label(job));
-                        continue;
-                    };
-                    if last
-                        && folding.folded.contains(&row.line)
-                        && let Some(close) = folding.outline.lines[row.line].close
-                    {
-                        let closing = text.split('\n').nth(close).unwrap_or_default().trim();
-                        job.append(
-                            &format!(" … {closing}"),
-                            0.0,
-                            TextFormat::simple(font.clone(), palette().text_muted),
+            rows = viewer::unfolded(rows, folding.outline, folding.folded);
+        }
+        let target_row = state.scroll_to.take().and_then(|offset| {
+            rows.iter()
+                .position(|r| r.range.end >= offset && r.range.start <= offset)
+        });
+        let mut scroll = egui::ScrollArea::both()
+            .id_salt(id)
+            .auto_shrink([false, false]);
+        if let Some(row) = target_row {
+            #[allow(clippy::cast_precision_loss)]
+            // row indexes are far below f32 precision limits
+            let offset = row as f32 * (row_height + ui.spacing().item_spacing.y);
+            scroll = scroll.vertical_scroll_offset((offset - 40.0).max(0.0));
+        }
+        let current = state.matches.get(state.current).cloned();
+        scroll.show_rows(ui, row_height, rows.len(), |ui, visible| {
+            // A row with a fold marker must stay exactly as tall as a plain row: the
+            // scroll area places rows by a fixed height.
+            ui.spacing_mut().interact_size.y = row_height;
+            for index in visible {
+                let row = &rows[index];
+                let range = &row.range;
+                let line = &text[range.clone()];
+                let mut job =
+                    spans_job(line, &highlight::line(language, line), &font, f32::INFINITY);
+                let first = index == 0 || rows[index - 1].line != row.line;
+                let last = rows.get(index + 1).is_none_or(|next| next.line != row.line);
+                for found in &state.matches {
+                    if found.start < range.end && found.end > range.start {
+                        let start = found.start.max(range.start) - range.start;
+                        let end = found.end.min(range.end) - range.start;
+                        let strong = current.as_ref() == Some(found);
+                        mark(
+                            &mut job,
+                            start..end,
+                            if strong {
+                                palette().accent.gamma_multiply(0.6)
+                            } else {
+                                palette().accent.gamma_multiply(0.25)
+                            },
                         );
                     }
-                    ui.horizontal(|ui| {
-                        // Filled in below once the row's extent is known.
-                        let background = ui.painter().add(egui::Shape::Noop);
-                        fold_marker(ui, folding, row.line, first, row_height);
-                        let response = ui.add(label(job));
-                        response.context_menu(|ui| {
-                            row_menu(ui, folding, text, row.line, &mut action);
-                        });
-                        if first {
-                            row_actions(ui, background, folding, text, row.line, &mut action);
-                        }
-                    });
                 }
-            });
+                let label = |job| {
+                    egui::Label::new(job)
+                        .selectable(true)
+                        .wrap_mode(egui::TextWrapMode::Extend)
+                };
+                let Some(folding) = &mut folding else {
+                    ui.add(label(job));
+                    continue;
+                };
+                if last
+                    && folding.folded.contains(&row.line)
+                    && let Some(close) = folding.outline.lines[row.line].close
+                {
+                    let closing = text.split('\n').nth(close).unwrap_or_default().trim();
+                    job.append(
+                        &format!(" … {closing}"),
+                        0.0,
+                        TextFormat::simple(font.clone(), palette().text_muted),
+                    );
+                }
+                ui.horizontal(|ui| {
+                    // Filled in below once the row's extent is known.
+                    let background = ui.painter().add(egui::Shape::Noop);
+                    fold_marker(ui, folding, row.line, first, row_height);
+                    let response = ui.add(label(job));
+                    response.context_menu(|ui| {
+                        row_menu(ui, folding, text, row.line, &mut action);
+                    });
+                    if first {
+                        row_actions(ui, background, folding, text, row.line, &mut action);
+                    }
+                });
+            }
         });
+    });
     action
 }
 

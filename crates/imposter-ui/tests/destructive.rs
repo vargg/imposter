@@ -108,7 +108,7 @@ fn deleting_from_the_tree_asks_and_names_what_goes() {
 fn variables_ask_before_they_are_cleared_reverted_or_deleted() {
     let mut fixture = fixture();
     let app = &mut fixture.app;
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Environment · Dev");

@@ -247,7 +247,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Command palette (Cmd/Ctrl+K) over actions, the requests of every collection and
   environments; recent requests with Cmd/Ctrl+P, and Ctrl+Tab back to the previous one.
 - Sidebar filter: text, `"phrases"`, `method:POST`, `url:users`, `name:…`, `-word`, OR.
-- Side-by-side or stacked request and response, switched from the status bar. Collections
+- Side-by-side or stacked request and response, switched from the Requests toolbar. Collections
   sidebar can be hidden. Splitter positions, window size and the last selection are restored.
 - Dark, light or system theme, and Compact or Comfortable density (Settings → Appearance).
   Every control has an accessible name for screen readers; text colors meet WCAG AA

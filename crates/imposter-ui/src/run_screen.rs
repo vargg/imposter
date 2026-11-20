@@ -244,8 +244,6 @@ pub fn summary(steps: &[Step]) -> (RunOutcome, String) {
 // ---- drawing -------------------------------------------------------------------------------
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
-    ui.label(RichText::new("Run").font(crate::theme::semibold(15.0)));
-    ui.add_space(6.0);
     // Opened with nothing chosen, the open collection is the natural target.
     if state.run.target.is_none() && state.run.run.is_none() {
         state.run.target = RunTarget::from_tree(state, None);
@@ -255,7 +253,23 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         ui.ctx().request_repaint_after(Duration::from_millis(100));
     }
     let mut actions = Vec::new();
-    controls(ui, state, &mut actions);
+    let mut environment = state.run.environment;
+    let mut execution = None;
+    widgets::screen_toolbar(
+        ui,
+        "Run",
+        |ui| {
+            targets(ui, state, &mut environment, &mut actions);
+        },
+        |ui| {
+            execution = controls(ui, &state.run);
+        },
+    );
+    state.run.environment = environment;
+    actions.extend(execution.map(Action::Run));
+    ui.add_enabled_ui(state.run.run.is_none(), |ui| {
+        widgets::checkbox(ui, &mut state.run.keep_going, "Keep going after a failure");
+    });
     if let Some(note) = unsaved_note(state) {
         ui.add(egui::Label::new(tone_text(note, Tone::Muted)).wrap());
     }
@@ -328,85 +342,85 @@ fn environment_label(state: &State, choice: EnvironmentChoice) -> String {
         .map_or_else(|| "No environment".to_owned(), |e| e.name.clone())
 }
 
-fn controls(ui: &mut Ui, state: &mut State, actions: &mut Vec<Action>) {
-    let running = state.run.run.is_some();
-    ui.horizontal_wrapped(|ui| {
-        ui.add_enabled_ui(!running, |ui| {
-            let selected = state
-                .run
-                .target
-                .as_ref()
-                .map_or_else(|| "Choose…".to_owned(), |t| t.label.clone());
-            let picker = widgets::combo("run target")
-                .selected_text(selected)
-                .width(220.0)
-                .truncate()
-                .show_ui(ui, |ui| {
-                    let targets: Vec<RunTarget> = match state.tree.as_ref() {
-                        Some(tree) => std::iter::once(None)
-                            .chain(tree.destinations().into_iter().skip(1).map(|(_, f)| f))
-                            .filter_map(|folder| RunTarget::from_tree(state, folder))
-                            .collect(),
-                        None => Vec::new(),
-                    };
-                    for target in targets {
-                        let chosen = state.run.target.as_ref() == Some(&target);
-                        if widgets::option(ui, chosen, &target.label).clicked() {
-                            actions.push(Action::Run(RunAction::Choose(target)));
-                        }
-                    }
-                });
-            name(&picker.response, "What to run");
-
-            let shown = environment_label(state, state.run.environment);
-            let picker = widgets::combo("run environment")
-                .selected_text(shown)
-                .width(160.0)
-                .truncate()
-                .show_ui(ui, |ui| {
-                    let mut choices = vec![(
-                        format!(
-                            "{} (active)",
-                            environment_label(state, EnvironmentChoice::Active)
-                        ),
-                        EnvironmentChoice::Active,
-                    )];
-                    choices.push(("No environment".to_owned(), EnvironmentChoice::Chosen(None)));
-                    for environment in &state.environments {
-                        choices.push((
-                            environment.name.clone(),
-                            EnvironmentChoice::Chosen(Some(environment.id)),
-                        ));
-                    }
-                    for (label, choice) in choices {
-                        if widgets::option(ui, state.run.environment == choice, label).clicked() {
-                            state.run.environment = choice;
-                        }
-                    }
-                });
-            name(&picker.response, "Environment for the run");
-            widgets::checkbox(ui, &mut state.run.keep_going, "Keep going after a failure");
+fn targets(
+    ui: &mut Ui,
+    state: &State,
+    environment_choice: &mut EnvironmentChoice,
+    actions: &mut Vec<Action>,
+) {
+    ui.add_enabled_ui(state.run.run.is_none(), |ui| {
+        let selected = state
+            .run
+            .target
+            .as_ref()
+            .map_or_else(|| "Choose…".to_owned(), |t| t.label.clone());
+        let target_width = (ui.available_width() - 160.0 - crate::theme::spacing().sm).min(220.0);
+        let picker = widgets::toolbar_combo(ui, "run target", target_width, &selected, |ui| {
+            let targets: Vec<RunTarget> = match state.tree.as_ref() {
+                Some(tree) => std::iter::once(None)
+                    .chain(tree.destinations().into_iter().skip(1).map(|(_, f)| f))
+                    .filter_map(|folder| RunTarget::from_tree(state, folder))
+                    .collect(),
+                None => Vec::new(),
+            };
+            for target in targets {
+                let chosen = state.run.target.as_ref() == Some(&target);
+                if widgets::option(ui, chosen, &target.label).clicked() {
+                    actions.push(Action::Run(RunAction::Choose(target)));
+                }
+            }
         });
-        if let Some(run) = &state.run.run {
-            let stop = ui.add_enabled(!run.stopping, egui::Button::new("Stop"));
-            name(&stop, "Stop the run");
-            if stop.clicked() {
-                actions.push(Action::Run(RunAction::Stop));
+        name(&picker, "What to run");
+        picker.on_hover_text(selected);
+
+        let shown = environment_label(state, state.run.environment);
+        let width = ui.available_width().min(160.0);
+        let picker = widgets::toolbar_combo(ui, "run environment", width, &shown, |ui| {
+            let mut choices = vec![(
+                format!(
+                    "{} (active)",
+                    environment_label(state, EnvironmentChoice::Active)
+                ),
+                EnvironmentChoice::Active,
+            )];
+            choices.push(("No environment".to_owned(), EnvironmentChoice::Chosen(None)));
+            for environment in &state.environments {
+                choices.push((
+                    environment.name.clone(),
+                    EnvironmentChoice::Chosen(Some(environment.id)),
+                ));
             }
-        } else {
-            let start = ui
-                .add_enabled(
-                    state.run.target.is_some(),
-                    egui::Button::new(RichText::new("Start").color(palette().on_accent))
-                        .fill(palette().accent),
-                )
-                .on_disabled_hover_text("Open a collection first");
-            name(&start, "Start the run");
-            if start.clicked() {
-                actions.push(Action::Run(RunAction::Start { confirmed: false }));
+            for (label, choice) in choices {
+                if widgets::option(ui, *environment_choice == choice, label).clicked() {
+                    *environment_choice = choice;
+                }
             }
-        }
+        });
+        name(&picker, "Environment for the run");
+        picker.on_hover_text(shown);
     });
+}
+
+fn controls(ui: &mut Ui, screen: &RunScreen) -> Option<RunAction> {
+    if let Some(run) = &screen.run {
+        let stop = ui
+            .add_enabled_ui(!run.stopping, |ui| {
+                widgets::button(ui, widgets::Variant::Danger, None, "Stop")
+            })
+            .inner;
+        name(&stop, "Stop the run");
+        return stop.clicked().then_some(RunAction::Stop);
+    }
+    let start = ui
+        .add_enabled_ui(screen.target.is_some(), |ui| {
+            widgets::button(ui, widgets::Variant::Primary, None, "Start")
+        })
+        .inner
+        .on_disabled_hover_text("Open a collection first");
+    name(&start, "Start the run");
+    start
+        .clicked()
+        .then_some(RunAction::Start { confirmed: false })
 }
 
 /// The shown run's outcome and totals, or its progress, and the earlier runs.

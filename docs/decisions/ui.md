@@ -35,10 +35,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **The layout lint gates every screen** (`imposter-ui/tests/layout.rs`).
   - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
     walks the screens, a sent response, a History run and the dialogs.
-  - **Widths:** no visible control, and no outlined frame (panes, groups, cards, read
-    from the painted shapes), may run past the window's sides; a control inside a pane
-    card may not run past the card's sides, which clip it unseen (the Auth tab's eye at
-    720 points, Phase 6 review Q27).
+  - **Widths:** visible controls and outlined frames stay inside the window. The lint
+    checks frames in the painted shapes and checks controls against the accessible bounds of
+    the flat request and response panes. The window bounds alone missed the Auth tab's eye
+    clipping at 720 points (Phase 6 review Q27).
   - **Overlap:** no two buttons may overlap, and no text label may run into a button
     (a long "500 Internal Server Error" into the Runs menu). This is checked only without a dialog open,
     since a dialog is a layer above.
@@ -235,16 +235,35 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
   Checked by `imposter-ui/tests/header.rs`, the load, run and mock UI tests, and the layout lint.
 
-- **The layout is a switch, not a mode:** side by side or stacked, changed only by the status
-  bar's two layout buttons (the current one selected: one button showing the other
-  layout's icon read as the current state), never by the window width. The window can shrink to 720×480 (`MIN_WINDOW`;
-  1000×650 took more than half a laptop screen), so narrow panes adapt instead
-  of wrapping: single-line fields and button labels never wrap (a long label is cut, with
-  the whole text on hover).
-  Why: an automatic choice next to a manual one made the button seem broken. The sidebar
-  toggle beside them is an action named by what it does (Hide or Show Collections), never
-  drawn selected, with its own glyph and a separator: selected like the layouts, it read
-  as a third layout (Q4).
+- **Every screen has one toolbar above its content** (`widgets::screen_toolbar`), at
+  the density's control height, with a 1-point control-edge divider underneath. The page
+  title and scope controls sit at the left, and actions are reserved at the right with the
+  primary action rightmost. Requests uses the same row for its breadcrumb, with Copy as
+  curl and Save before a separated group of view controls. Until a request opens, the title
+  is "Requests". Run keeps "Keep going after a failure" with its configuration below the
+  toolbar so the two scope pickers and Start or Stop fit at the minimum width. Mocks puts
+  the restart notice in its content so the server address and copy button fit beside
+  Start or Stop. Fixed rows keep actions in the same place as content scrolls or
+  changes, and reclaim vertical space at 720×480. Checked by the layout lint and
+  `imposter-ui/tests/header.rs`.
+
+- **The layout is a user-controlled switch**, side by side or stacked. The Requests
+  toolbar's two layout buttons, the command palette and the keyboard shortcut change it.
+  The current layout's button is selected. A single button showing the other layout's
+  icon read as the current state, and a width-driven choice made the manual switch seem
+  broken. The window can shrink to 720×480 (`MIN_WINDOW`; 1000×650 took more than half
+  a laptop screen), so narrow panes adapt without wrapping single-line fields or button
+  labels. Truncated labels show their full text on hover. The toolbar's sidebar toggle
+  is separated from the layout buttons and named for its action (Hide or Show
+  Collections). Its neutral state distinguishes it from the layout choices (Q4).
+
+- **Request, response and Variables content share the window background.** The request
+  and response panes use 8-point inner padding and share a 1-point control-edge divider
+  with a split grip. The response viewer uses the same surface as its pane, while
+  editable controls keep their own edges. Rounded cards and nested fills competed
+  with the controls and spent space needed at the minimum window width. The first-start
+  message and empty response are centred in their available area. The layout and fit
+  tests check the flat pane bounds, and the workflow and fit tests check the empty states.
 
 - **Split panes keep a minimum in points** (`layout::split`): request and response 220 wide
   or 160 tall, the History list 110 and its details 160; when both minimums do not fit,
@@ -279,14 +298,15 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     status as a pill ("200 OK"), the checks as "✓3 ✗1 ?1" (a click opens their results;
     screen readers hear "Checks: 3 passed, 1 failed"), "12 ms", "103 B", the content type.
     The pill's hover text has them all; earlier runs are under a "Runs" menu at its end.
-    A transport failure has no pill, only its time: the card below names it, and a pill
+    A transport failure has no pill, only its time. The error message below names it, and a pill
     made "Couldn't connect" appear three times with the status bar (Q8). Check results
     list failures first, on a red tint.
 
   Why: at 720×480 the request tabs took three rows and the response header four before the
   body began (the review's #12, #13). Checked by `imposter-ui/tests/fit.rs`.
 
-- **The status bar tells the latest result, only while it applies** (`app::StatusLine`).
+- **The status bar shows the latest result at the left and running tools at the right.**
+  The result stays while it applies (`app::StatusLine`).
   - **Request messages:** a message about the open request (a send's result, "Not sent", a
     restored draft) lasts while that request and screen stay shown.
   - **Other messages** fade after `STATUS_SECONDS`.
@@ -298,8 +318,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   - **Merging:** a failed check makes the result read "· n checks failed", and a capture
     written right after a send is added to that result (" · set token") rather than
     replacing it.
-  - **The right end** shows the mock server's port while it serves; the environment is
-    left to the picker and Send.
+  - **The right end** links to active Mocks, Load and Run. Mocks shows the port while it
+    serves. The environment stays with the picker and Send.
 
   Why: the review found it reporting an earlier request's failure after a blocked send, and
   "Ready" during a send. A status that outlives its context misleads more than no status.
@@ -309,11 +329,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   Q7) offers the next step: New Collection, Import Collection… and Paste curl… on first run;
   New Request in an empty collection; otherwise "Select a request". The buttons are
   centred under the text, the first filled as the next step (left-aligned equal outlines
-  looked unfinished, Q6). The sidebar,
-  breadcrumb and response pane stay quiet meanwhile (they repeated it two or three times,
-  the review's #16, #17). Disabled menu items say why ("Create a collection first"),
-  under them rather than only on hover; the curl entry is "Paste curl…" everywhere; the
-  import review says what it creates ("Creates Pet Store: 8 requests in 2 folders",
+  looked unfinished, Q6). The empty pane owns this guidance because repeating it in the
+  sidebar and toolbar made it appear two or three times (the review's #16, #17).
+  Disabled menu items include a reason below them ("Create a collection first"). The
+  curl entry is "Paste curl…" everywhere. The import review says what it creates
+  ("Creates Pet Store: 8 requests in 2 folders",
   counted at every depth).
 
 - **Shortcuts are one table, `shortcuts::ALL`, handled in one place before widgets draw**

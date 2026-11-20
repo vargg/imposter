@@ -4,6 +4,8 @@
 
 mod support;
 
+use egui::accesskit::Role;
+
 use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::settings::AppSettings;
 use imposter_app::store::{collections, executions, kv};
@@ -445,7 +447,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
         imposter_ui::app::EditorTab::Auth
     );
 
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     app.harness.get_by_label("Variable scope");
     click(&mut app.harness, "Add Variable");
@@ -458,18 +460,17 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
     assert!(!app.harness.state().variables_dirty());
-    click(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Requests");
     app.harness.get_by_label("API / Health");
     app.harness.get_by_label("Send");
 }
 
 #[test]
-fn every_screen_saves_from_the_same_place() {
+fn save_is_at_the_right_edge_of_each_toolbars_actions() {
     let mut app = start_with(|store| {
         let api = collection(store, "API");
         request(store, api.id, "Health", "http://localhost/health");
     });
-    let size = egui::vec2(1400.0, 900.0);
     click(&mut app.harness, "GET Health");
     settle(&mut app.harness);
     for (screen, save) in [
@@ -477,13 +478,21 @@ fn every_screen_saves_from_the_same_place() {
         ("Variables", "Save variables"),
         ("Settings", "Save settings"),
     ] {
-        click(&mut app.harness, screen);
+        support::open_screen(&mut app.harness, screen);
         settle(&mut app.harness);
-        let icon = app.harness.get_by_label(save).rect();
-        assert!(
-            icon.top() < 120.0 && icon.right() > size.x - 60.0,
-            "{screen}: {icon:?}"
-        );
+        let toolbar = app.harness.get_by_role(Role::Toolbar);
+        let icon = toolbar.get_by_role_and_label(Role::Button, save).rect();
+        assert!(toolbar.rect().contains_rect(icon), "{screen}: {icon:?}");
+        if screen == "Requests" {
+            let curl = toolbar.get_by_label("Copy as curl").rect();
+            let toggle = toolbar.get_by_label("Hide Collections").rect();
+            assert!(curl.right() < icon.left() && icon.right() < toggle.left());
+        } else {
+            assert!(
+                (icon.right() - toolbar.rect().right()).abs() < 0.5,
+                "{screen}: {icon:?}"
+            );
+        }
         // A muted icon already says there is nothing to save; the word is for screen readers.
         assert_eq!(save_state(&app.harness, save), "Saved", "{screen}");
         assert!(
@@ -506,18 +515,18 @@ fn brand_and_header_controls_fit_both_layouts_and_keep_the_full_accessible_name(
         for orientation in [Orientation::Stacked, Orientation::SideBySide] {
             app.state_mut().state.layout.orientation = orientation;
             settle(&mut app);
-            for label in [
-                "I’mposter",
-                "Requests",
-                "Variables",
-                "History",
-                "Settings",
-                "Mocks",
-                "Run",
-                "Load",
-                "Environment",
+            for (role, label) in [
+                (Role::Image, "I’mposter"),
+                (Role::Button, "Requests"),
+                (Role::Button, "Variables"),
+                (Role::Button, "History"),
+                (Role::Button, "Settings"),
+                (Role::Button, "Mocks"),
+                (Role::Button, "Run"),
+                (Role::Button, "Load"),
+                (Role::ComboBox, "Environment"),
             ] {
-                let node = app.get_by_label(label);
+                let node = app.get_by_role_and_label(role, label);
                 let rect = node.rect();
                 assert!(
                     rect.min.x >= 0.0 && rect.max.x <= width,
@@ -566,18 +575,24 @@ fn the_first_run_offers_a_way_in_and_says_it_once() {
     assert!(filled(first));
     assert!(!filled(last));
     // One pane says it: no empty request bar or response pane beside it.
-    let panes = app
+    let pane = app
         .harness
-        .output()
-        .shapes
-        .iter()
-        .filter(|clipped| {
-            matches!(&clipped.shape, egui::Shape::Rect(rect)
-                if rect.corner_radius == egui::CornerRadius::same(12)
-                    && rect.fill == imposter_ui::theme::palette().surface)
-        })
-        .count();
-    assert_eq!(panes, 1);
+        .get_by_role_and_label(Role::Group, "Request pane")
+        .rect();
+    let message_center = title.union(last).center().y;
+    assert!(
+        (message_center - pane.center().y).abs() <= 1.0,
+        "{title:?} … {last:?} in {pane:?}"
+    );
+    assert!(
+        app.harness
+            .query_by_role_and_label(Role::Group, "Response pane")
+            .is_none()
+    );
+    assert!(app.harness.output().shapes.iter().all(|clipped| {
+        !matches!(&clipped.shape, egui::Shape::Rect(rect)
+            if rect.rect == pane && rect.fill == imposter_ui::theme::palette().surface)
+    }));
     assert!(app.harness.query_by_label("Request URL").is_none());
     // The New menu says why its folder and request items are greyed, without a hover.
     click(&mut app.harness, "New");

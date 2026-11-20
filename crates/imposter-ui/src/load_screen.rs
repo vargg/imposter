@@ -289,8 +289,6 @@ pub const SCRIPTS_RUN: &str =
 const FIELD_WIDTH: f32 = 90.0;
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
-    ui.label(RichText::new("Load").font(crate::theme::semibold(15.0)));
-    ui.add_space(6.0);
     // Opened with nothing chosen, the request in the editor is the natural target.
     if state.load.target.is_none()
         && let Some(id) = state.editor.as_ref().and_then(|p| p.editor.id())
@@ -299,13 +297,22 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     }
     let now = ui.input(|i| i.time);
     let mut actions = Vec::new();
+    let plan = state.load.form.plan();
+    let mut execution = None;
+    widgets::screen_toolbar(
+        ui,
+        "Load",
+        |ui| target_row(ui, &state.load, &mut actions),
+        |ui| {
+            execution = controls(ui, &state.load, &plan);
+        },
+    );
+    actions.extend(execution.map(Action::Load));
     egui::ScrollArea::vertical()
         .id_salt("load screen")
         .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.set_max_width(ui.available_width().min(760.0));
-            target_row(ui, &state.load, &mut actions);
-            ui.add_space(12.0);
             // Said where it is known before a run: when the request is open.
             let scripted = state
                 .editor
@@ -318,7 +325,14 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
             }
             plan_form(ui, &mut state.load);
             ui.add_space(12.0);
-            controls(ui, &state.load, &mut actions);
+            if let Some(problem) = state.load.error.as_deref().or_else(|| {
+                plan.as_ref()
+                    .err()
+                    .filter(|_| state.load.run.is_none())
+                    .map(String::as_str)
+            }) {
+                ui.add(egui::Label::new(tone_text(problem, Tone::Error)).wrap());
+            }
             if let Some(run) = &state.load.run {
                 ui.ctx().request_repaint_after(Duration::from_millis(100));
                 ui.add_space(8.0);
@@ -335,28 +349,39 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
 }
 
 fn target_row(ui: &mut Ui, screen: &LoadScreen, actions: &mut Vec<Action>) {
-    ui.horizontal(|ui| {
-        let choose = if let Some(target) = &screen.target {
-            ui.label(
-                RichText::new(&target.method)
-                    .monospace()
-                    .color(method_color(&target.method)),
-            );
-            ui.label(RichText::new(&target.name).font(crate::theme::semibold(15.0)));
-            if !target.place.is_empty() {
-                ui.add(egui::Label::new(tone_text(&target.place, Tone::Muted)).truncate());
-            }
-            "Change…"
-        } else {
-            ui.label(tone_text("Choose a request to load-test", Tone::Muted));
-            "Choose…"
-        };
-        let button = ui.add_enabled(screen.run.is_none(), egui::Button::new(choose));
-        name(&button, "Choose the request to load-test");
-        if button.clicked() {
-            actions.push(Action::Load(LoadAction::Choose));
-        }
-    });
+    let choose = if screen.target.is_some() {
+        "Change…"
+    } else {
+        "Choose…"
+    };
+    let button = ui
+        .add_enabled_ui(screen.run.is_none(), |ui| {
+            widgets::button(ui, widgets::Variant::Secondary, None, choose)
+        })
+        .inner;
+    name(&button, "Choose the request to load-test");
+    if button.clicked() {
+        actions.push(Action::Load(LoadAction::Choose));
+    }
+    if let Some(target) = &screen.target {
+        let method = RichText::new(&target.method)
+            .monospace()
+            .color(method_color(&target.method));
+        let width = widgets::text_width(ui, method.clone()).min(ui.available_width() / 6.0);
+        ui.add_sized(
+            [width, crate::theme::spacing().control],
+            egui::Label::new(method).truncate(),
+        )
+        .on_hover_text(&target.method);
+        ui.add(egui::Label::new(crate::theme::section(&target.name)).truncate())
+            .on_hover_text(if target.place.is_empty() {
+                target.name.clone()
+            } else {
+                format!("{} / {}", target.place, target.name)
+            });
+    } else {
+        ui.label(tone_text("Choose a request to load-test", Tone::Muted));
+    }
 }
 
 fn plan_form(ui: &mut Ui, screen: &mut LoadScreen) {
@@ -406,43 +431,35 @@ fn plan_form(ui: &mut Ui, screen: &mut LoadScreen) {
     });
 }
 
-fn controls(ui: &mut Ui, screen: &LoadScreen, actions: &mut Vec<Action>) {
-    let plan = screen.form.plan();
-    ui.horizontal(|ui| {
-        if let Some(run) = &screen.run {
-            let stop = ui.add_enabled(!run.stopping, egui::Button::new("Stop"));
-            name(&stop, "Stop the load test");
-            if stop.clicked() {
-                actions.push(Action::Load(LoadAction::Stop));
-            }
-        } else {
-            let ready = screen.target.is_some() && plan.is_ok();
-            let start = ui
-                .add_enabled(
-                    ready,
-                    egui::Button::new(RichText::new("Start").color(palette().on_accent))
-                        .fill(palette().accent),
-                )
-                .on_disabled_hover_text(match (&screen.target, &plan) {
-                    (None, _) => "Choose a request first".to_owned(),
-                    (_, Err(reason)) => reason.clone(),
-                    _ => String::new(),
-                });
-            name(&start, "Start the load test");
-            if start.clicked() {
-                actions.push(Action::Load(LoadAction::Start { confirmed: false }));
-            }
-        }
-        // Why it cannot start, in words beside the button rather than only on hover.
-        let problem = match (&screen.error, &plan) {
-            (Some(error), _) => Some(error.clone()),
-            (None, Err(reason)) if screen.run.is_none() => Some(reason.clone()),
-            _ => None,
-        };
-        if let Some(problem) = problem {
-            ui.add(egui::Label::new(tone_text(problem, Tone::Error)).wrap());
-        }
-    });
+fn controls(
+    ui: &mut Ui,
+    screen: &LoadScreen,
+    plan: &Result<LoadPlan, String>,
+) -> Option<LoadAction> {
+    if let Some(run) = &screen.run {
+        let stop = ui
+            .add_enabled_ui(!run.stopping, |ui| {
+                widgets::button(ui, widgets::Variant::Danger, None, "Stop")
+            })
+            .inner;
+        name(&stop, "Stop the load test");
+        return stop.clicked().then_some(LoadAction::Stop);
+    }
+    let ready = screen.target.is_some() && plan.is_ok();
+    let start = ui
+        .add_enabled_ui(ready, |ui| {
+            widgets::button(ui, widgets::Variant::Primary, None, "Start")
+        })
+        .inner
+        .on_disabled_hover_text(match (&screen.target, plan) {
+            (None, _) => "Choose a request first",
+            (_, Err(reason)) => reason,
+            _ => "",
+        });
+    name(&start, "Start the load test");
+    start
+        .clicked()
+        .then_some(LoadAction::Start { confirmed: false })
 }
 
 fn progress(ui: &mut Ui, run: &Running, now: f64) {

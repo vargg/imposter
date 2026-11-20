@@ -90,10 +90,10 @@ fn a_message_about_a_request_goes_with_it() {
     open_and_send(app, "GET Ping");
     app.harness.get_by_label_contains("200 OK · ");
 
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     assert!(app.harness.query_by_label_contains("200 OK · ").is_none());
-    click(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Requests");
     settle(&mut app.harness);
     assert!(
         app.harness.query_by_label_contains("200 OK · ").is_none(),
@@ -129,14 +129,14 @@ fn a_running_send_shows_its_time() {
             .is_none(),
         "no invitation to send while sending"
     );
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     app.harness.run_steps(2);
     assert_eq!(
         app.harness.query_all_by_label_contains("Sending… ").count(),
         1,
         "with the pane out of sight, the status bar counts it"
     );
-    click(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Requests");
     settle(&mut app.harness);
     assert!(app.harness.query_by_label_contains("Sending… ").is_none());
     app.harness.get_by_label_contains("200 OK · ");
@@ -246,7 +246,7 @@ fn a_connection_failure_reads_plainly_fits_and_can_be_retried() {
     settle(&mut app.harness);
     assert_eq!(runs(app), 2, "Retry sends again");
 
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
     app.harness
         .query_all_by_label_contains("History GET")

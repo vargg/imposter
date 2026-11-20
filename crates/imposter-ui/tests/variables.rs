@@ -23,7 +23,7 @@ fn vars(pairs: &[(&str, &str)]) -> Variables {
 }
 
 fn open_screen(app: &mut support::App) {
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
 }
 

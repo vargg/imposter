@@ -82,7 +82,7 @@ fn results_written_by_the_command_line_open_in_history_with_the_same_verdicts() 
     let dir = tempfile::tempdir().unwrap();
     let file = collection(dir.path(), &server.url);
     let mut app = start();
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
 
     for (request, outcome) in [
@@ -158,7 +158,7 @@ fn a_run_report_shows_its_source_and_lets_the_reader_choose_a_failed_check() {
     let mut report =
         imposter_app::core::run_report::RunReport::read(&std::fs::read(&out).unwrap()).unwrap();
     let mut app = start();
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
     open_result(&mut app, &out);
     app.harness.get_by_label(&report.summary);
@@ -189,7 +189,7 @@ fn a_file_that_is_not_a_result_says_so() {
     let dir = tempfile::tempdir().unwrap();
     let file = collection(dir.path(), "http://127.0.0.1:1");
     let mut app = start();
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
     open_result(&mut app, &file);
     assert_eq!(app.harness.state().state.history.opened, None);

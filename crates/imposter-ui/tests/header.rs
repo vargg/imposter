@@ -378,9 +378,113 @@ fn branding_and_the_rail_fit_with_a_long_environment_in_both_densities() {
                         .all(|pair| pair[0].bottom() < pair[1].top())
                 );
                 assert!(rects[3].top() - rects[2].bottom() > rects[2].top() - rects[1].bottom());
-                let status_top = app.harness.get_by_label("Hide Collections").rect().top();
+                let status_top = support::status_bar(&app).top();
                 assert!((8.0..=16.0).contains(&(status_top - rects[6].bottom())));
             }
+        }
+    }
+}
+
+#[test]
+fn every_screen_has_one_toolbar_above_its_content_and_the_status_bar_is_status_only() {
+    let mut app = start();
+    app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
+    for (screen, title, content_role, content, action) in [
+        (
+            Screen::Requests,
+            "Requests",
+            Role::Label,
+            "Start with a collection",
+            "Stack request and response",
+        ),
+        (
+            Screen::Variables,
+            "Variables",
+            Role::Label,
+            "Variable name",
+            "Save variables",
+        ),
+        (Screen::History, "History", Role::Label, "When", "Refresh"),
+        (
+            Screen::Mocks,
+            "Mocks",
+            Role::Button,
+            "Add mock route",
+            "Save mocks",
+        ),
+        (
+            Screen::Load,
+            "Load",
+            Role::TextInput,
+            "Total requests",
+            "Start the load test",
+        ),
+        (
+            Screen::Run,
+            "Run",
+            Role::CheckBox,
+            "Keep going after a failure",
+            "Start the run",
+        ),
+        (
+            Screen::Settings,
+            "Settings",
+            Role::Label,
+            "Appearance",
+            "Save settings",
+        ),
+    ] {
+        open_screen(&mut app.harness, title);
+        settle(&mut app.harness);
+        assert_eq!(app.harness.state().state.screen, screen);
+        let toolbar = app.harness.get_by_role(Role::Toolbar);
+        let row = toolbar.rect();
+        let heading = toolbar.get_by_role_and_label(Role::Label, title);
+        let action = toolbar.get_by_role_and_label(Role::Button, action);
+        let content = app
+            .harness
+            .get_by_role_and_label(content_role, content)
+            .rect();
+        assert!(row.contains_rect(heading.rect()), "{title}");
+        assert!(row.contains_rect(action.rect()), "{title}");
+        assert!(
+            (row.height() - theme::spacing().control).abs() <= 1.0,
+            "{title}: {row:?}"
+        );
+        assert!(heading.rect().right() < action.rect().left(), "{title}");
+        assert!(
+            row.bottom() < content.top(),
+            "{title}: {row:?}, {content:?}"
+        );
+        assert!(
+            app.harness.output().shapes.iter().any(|clipped| {
+                matches!(clipped.shape, Shape::LineSegment { points: [a, b], stroke }
+                if (a.x - row.left()).abs() < 0.5
+                    && (b.x - row.right()).abs() < 0.5
+                    && row.bottom() < a.y
+                    && a.y < content.top()
+                    && (a.y - b.y).abs() < f32::EPSILON
+                    && (stroke.width - 1.0).abs() < f32::EPSILON
+                    && stroke.color == theme::palette().field_border)
+            }),
+            "{title} toolbar divider"
+        );
+
+        let status = app
+            .harness
+            .get_by_role_and_label(Role::Status, "Status bar");
+        for label in [
+            "Hide Collections",
+            "Show Collections",
+            "Put request and response side by side",
+            "Stack request and response",
+        ] {
+            assert!(status.query_by_label(label).is_none(), "{title}: {label}");
+            assert_eq!(
+                toolbar.query_by_label(label).is_some(),
+                screen == Screen::Requests && label != "Show Collections",
+                "{title}: {label}"
+            );
         }
     }
 }

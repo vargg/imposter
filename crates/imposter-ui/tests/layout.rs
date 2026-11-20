@@ -16,11 +16,7 @@ use imposter_ui::theme::{Density, ThemeChoice};
 use support::{click, click_button, collection, request, settle, start_with, type_into};
 
 /// The status bar's own controls.
-const STATUS_BAR: [&str; 10] = [
-    "Hide Collections",
-    "Show Collections",
-    "Stack request and response",
-    "Put request and response side by side",
+const STATUS_BAR: [&str; 6] = [
     "Load running",
     "Load stopping…",
     "Run running",
@@ -48,11 +44,7 @@ fn controls(app: &support::App) -> Vec<(Role, String, Rect)> {
         .rect()
         .bottom()
         + 8.0;
-    let status_top = app
-        .harness
-        .query_by_label("Hide Collections")
-        .or_else(|| app.harness.query_by_label("Show Collections"))
-        .map_or(window.bottom(), |node| node.rect().top() - 6.0);
+    let status_top = support::status_bar(app).top() - 5.0;
     let crosses = |rect: &Rect, edge: f32| rect.top() < edge && rect.bottom() > edge;
     ROLES
         .iter()
@@ -82,11 +74,7 @@ fn labels(app: &support::App) -> Vec<(Role, String, Rect)> {
         .rect()
         .bottom()
         + 8.0;
-    let status_top = app
-        .harness
-        .query_by_label("Hide Collections")
-        .or_else(|| app.harness.query_by_label("Show Collections"))
-        .map_or(window.bottom(), |node| node.rect().top() - 6.0);
+    let status_top = support::status_bar(app).top() - 5.0;
     app.harness
         .query_all_by_role(Role::Label)
         .map(|node| {
@@ -133,30 +121,43 @@ fn problems(app: &support::App, state: &str) -> Vec<String> {
     if app.harness.state().state.dialog.is_some() || egui::Popup::is_any_open(&app.harness.ctx) {
         return found;
     }
-    // Inside a pane card a control stays within its sides: the pane clips what runs past,
-    // which the window's edges cannot show (the Auth tab at 720 points).
-    let panes: Vec<Rect> = app
-        .harness
-        .output()
-        .shapes
-        .iter()
-        .filter_map(|clipped| match &clipped.shape {
-            egui::Shape::Rect(frame)
-                if frame.stroke.color == imposter_ui::theme::palette().border
-                    && frame.corner_radius == egui::CornerRadius::same(12) =>
-            {
-                Some(frame.rect)
-            }
-            _ => None,
-        })
-        .collect();
-    for (role, label, rect) in &controls {
-        if let Some(pane) = panes.iter().find(|pane| pane.contains(rect.center()))
-            && (rect.left() < pane.left() - 0.5 || rect.right() > pane.right() + 0.5)
+    let toolbar = app.harness.get_by_role(Role::Toolbar);
+    let row = toolbar.rect().expand(0.5);
+    for node in toolbar.children_recursive() {
+        let ak = node.accesskit_node();
+        if (ROLES.contains(&ak.role()) || ak.role() == Role::Label)
+            && !row.contains_rect(node.rect())
         {
             found.push(format!(
-                "{state}: {role:?} {label:?} runs past its pane {pane:?}: {rect:?}"
+                "{state}: {:?} {:?} runs outside the toolbar {row:?}: {:?}",
+                ak.role(),
+                ak.label().or_else(|| ak.value()),
+                node.rect(),
             ));
+        }
+    }
+    // Ask which scope owns each control so a clipped control can't be attributed to
+    // the pane next door.
+    for name in ["Request pane", "Response pane"] {
+        if let Some(pane) = app.harness.query_by_role_and_label(Role::Group, name) {
+            let boundary = pane.rect();
+            for node in pane.children_recursive() {
+                let ak = node.accesskit_node();
+                if !ROLES.contains(&ak.role()) {
+                    continue;
+                }
+                let rect = node.rect();
+                if rect.intersects(boundary)
+                    && (rect.left() < boundary.left() - 0.5
+                        || rect.right() > boundary.right() + 0.5)
+                {
+                    found.push(format!(
+                        "{state}: {:?} {:?} runs past {name} {boundary:?}: {rect:?}",
+                        ak.role(),
+                        ak.label(),
+                    ));
+                }
+            }
         }
     }
     let buttons: Vec<&(Role, String, Rect)> = controls
@@ -205,8 +206,18 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         found.extend(problems(app, &format!("{label} {state}")));
     };
     check(app, "start");
+    click(&mut app.harness, "Hide Collections");
+    check(app, "no request or sidebar");
+    click(&mut app.harness, "Show Collections");
     click(&mut app.harness, "GET Users");
     settle(&mut app.harness);
+    check(app, "empty response");
+    click(&mut app.harness, "Hide Collections");
+    check(app, "empty response without sidebar");
+    click(&mut app.harness, "Show Collections");
+    click(&mut app.harness, "Stack request and response");
+    check(app, "stacked empty response");
+    click(&mut app.harness, "Put request and response side by side");
     click(&mut app.harness, SEND);
     settle(&mut app.harness);
     check(app, "response");
@@ -495,6 +506,14 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     support::open_screen(&mut app.harness, "Load");
     settle(&mut app.harness);
     check(app, "Load");
+    let load_target = app.harness.state().state.load.target.clone();
+    {
+        let target = app.harness.state_mut().state.load.target.as_mut().unwrap();
+        target.name = "A request with a very long name ".repeat(10);
+        target.method = "CUSTOM-".repeat(40);
+    }
+    check(app, "Load with a long request name and method");
+    app.harness.state_mut().state.load.target = load_target;
     {
         let form = &mut app.harness.state_mut().state.load.form;
         form.requests = "1000000".into();
@@ -519,6 +538,18 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     support::open_screen(&mut app.harness, "Run");
     settle(&mut app.harness);
     check(app, "Run");
+    let run_target = app.harness.state().state.run.target.clone();
+    let environment_name = {
+        let state = &mut app.harness.state_mut().state;
+        state.run.target.as_mut().unwrap().label = "A collection with a very long name ".repeat(10);
+        std::mem::replace(
+            &mut state.environments[0].name,
+            "A very long environment name ".repeat(10),
+        )
+    };
+    check(app, "Run with long target and environment names");
+    app.harness.state_mut().state.run.target = run_target;
+    app.harness.state_mut().state.environments[0].name = environment_name;
     click(&mut app.harness, "Start the run");
     check(app, "Run production question");
     click_button(&mut app.harness, "Start run");
@@ -530,7 +561,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     }
     settle(&mut app.harness);
     check(app, "Run result with a response");
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
     if let Some(row) = app
         .harness
@@ -547,7 +578,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, "Restore as draft");
     settle(&mut app.harness);
     check(app, "restored draft");
-    click(&mut app.harness, "History");
+    support::open_screen(&mut app.harness, "History");
     settle(&mut app.harness);
     // A result file from the command line, with its summary and origin lines.
     let result = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -558,7 +589,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     settle(&mut app.harness);
     check(app, "History result");
     click(&mut app.harness, "Close result");
-    click(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Requests");
     settle(&mut app.harness);
     for (dialog, keys) in [("palette", egui::Key::K), ("recent", egui::Key::P)] {
         app.harness
@@ -584,8 +615,24 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     check(app, "environment picker");
     app.harness.key_press(egui::Key::Escape);
     settle(&mut app.harness);
-    click(&mut app.harness, "Variables");
+    support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
+    let (scope, environment_name) = {
+        let state = &mut app.harness.state_mut().state;
+        let environment = &mut state.environments[0];
+        let original_name = std::mem::replace(
+            &mut environment.name,
+            "A very long environment name ".repeat(10),
+        );
+        let original_scope = std::mem::replace(
+            &mut state.variables.scope,
+            imposter_ui::vars::Scope::Environment(environment.id),
+        );
+        (original_scope, original_name)
+    };
+    check(app, "Variables with a long scope name");
+    app.harness.state_mut().state.variables.scope = scope;
+    app.harness.state_mut().state.environments[0].name = environment_name;
     let long_value = "a-saved-value-".repeat(8);
     let rows = std::mem::replace(
         &mut app.harness.state_mut().state.variables.rows,
@@ -704,6 +751,13 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
                 app.harness.set_size(size);
                 appearance(&mut app, theme, density);
                 let label = format!("{}x{} {theme:?} {density:?}", size.x, size.y);
+                let mut first_start = support::start();
+                first_start.harness.set_size(size);
+                appearance(&mut first_start, theme, density);
+                problems.extend(self::problems(
+                    &first_start,
+                    &format!("{label} first start"),
+                ));
                 problems.extend(walk(&mut app, &label));
             }
         }
