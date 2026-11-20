@@ -350,7 +350,7 @@ imposter send "Shop API / Users / Create user" --env Dev --secret token=API_TOKE
 | `imposter send <REQUEST> [OPTIONS]` | Run a saved request as Send does and print its checked, redacted result. Kept in History as the command line's. |
 | `imposter run <TARGET> [OPTIONS]` | Run every request of a collection, a folder or one request in order, carrying captured values forward; stops at the first that does not pass. |
 | `imposter skill` | Print instructions for a coding agent. |
-| `imposter mcp [--project DIR] [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--max-body BYTES]` | Experimental: an MCP server over stdio. |
+| `imposter mcp [--project DIR] [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--var NAME=VALUE]... [--max-body BYTES]` | Experimental: an MCP server over stdio. |
 
 `list`, `show` and `envs` write nothing. They show templates as stored, with their
 `{{placeholders}}`, and only the names of variables, never their values; a credential
@@ -366,10 +366,12 @@ on Settings → Command line → **Allow production environments** in the app. T
 in History, marked **CLI** (find them with `via:cli`); values its captures and scripts set
 stay in the run and change none of your variables. It works while the app is open.
 
-A run sends the request exactly as saved; there is no flag for a one-off body, header or
-query parameter. Values that change from run to run belong in `{{variables}}` in the
-request, filled per run with `--input` or `--secret`, which name a process variable rather
-than take a literal, so values stay off the command line:
+A run sends the request exactly as saved; there is no flag for a one-off header or query
+parameter. Values that change from run to run belong in `{{variables}}` in the request,
+filled per run. `--var` takes the value itself — a leading `@` reads it from a file, so a
+generated body can be a file — and the value stays in the shell history and the result, so
+never use it for a secret. Secrets, and values you keep off the command line, go through
+`--input` or `--secret`, which name a process variable:
 
 ```sh
 ORDER_ID=7654 imposter send "Shop API / Orders / Get order" --input order_id=ORDER_ID
@@ -393,6 +395,7 @@ the folder's files.
 | `--env NAME` | Use environment NAME; without it, only globals and collection variables apply, whatever the app has active. |
 | `--input VAR=PROCESS_VAR` | Set variable VAR from the process variable PROCESS_VAR, above every scope. Repeatable. |
 | `--secret VAR=PROCESS_VAR` | As --input, also filling {{secret:VAR}}, and remove its value from the result and error output. Repeatable. |
+| `--var NAME=VALUE` | Set variable NAME to the literal VALUE, above every scope; a leading @ reads the file it names (@@ is a literal @). Repeatable. Never for secrets: a literal stays in shell history and the result. |
 | `--out FILE` | Also write the result to FILE; History opens it (⋯ → Open result file…). |
 | `--max-body BYTES` | Show at most BYTES of each body in the result (default 65536; 0 shows none). |
 
@@ -451,7 +454,8 @@ writes no agent configuration itself.
 
 `imposter mcp` is an experiment: an MCP server over stdio that lets a chat tool list your
 saved requests (or those of a `--file`) and send one, with the environment and inputs you
-give on its command line. Its tools and output may change or go away.
+give on its command line. A `send_request` call may add its own literal values for that one
+call, never overriding your secrets. Its tools and output may change or go away.
 
 ## Your data
 

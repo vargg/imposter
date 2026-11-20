@@ -18,7 +18,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::USAGE_STATUS;
 use crate::send::{
-    SendArgs, Unsent, read_inputs, read_project, sha256_hex, source_of, without_secrets,
+    SendArgs, Unsent, read_inputs, read_project, recorded_input, sha256_hex, source_of,
+    without_secrets,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -145,16 +146,7 @@ pub async fn run(
         request: args.send.request.clone(),
         environment: args.send.environment.clone(),
     };
-    let inputs: Vec<Input> = args
-        .send
-        .inputs
-        .iter()
-        .map(|input| Input {
-            variable: input.variable.clone(),
-            from: input.from.clone(),
-            secret: input.secret,
-        })
-        .collect();
+    let inputs: Vec<Input> = args.send.inputs.iter().map(recorded_input).collect();
     let limits = Limits {
         capture_bytes: 0,
         excerpt_bytes: args.send.max_body,

@@ -72,6 +72,13 @@ fn write_document(dir: &Path, base: &str, refused: &str) -> PathBuf {
                         "client_id": "desktop"}}
                 })),
                 request("Refused", refused, json!({"checks": status_check("200")})),
+                request("Post", "{{base}}/post", json!({
+                    "method": "POST",
+                    // Bodies are base64 in a native document; this is "{{body}}".
+                    "body": "e3tib2R5fX0=",
+                    "checks": status_check("200")
+                })),
+                request("SecretRef", "{{base}}/secret?key={{secret:token}}", json!({})),
                 request("Echo", "{{base}}/echo?key={{token}}", json!({
                     "auth": {"type": "bearer_token", "bearer_token": {"token": "{{token}}"}},
                     "headers": [{"name": "X-Key", "value": "{{token}}", "is_enabled": true}],
@@ -210,6 +217,117 @@ fn every_outcome_has_its_exit_status_and_result() {
 }
 
 #[test]
+fn literal_inputs_fill_variables_without_reading_the_environment() {
+    let serving = serve(|_, _| response("200 OK", &[], b"{}"));
+    let dir = tempfile::tempdir().unwrap();
+    let file = write_document(dir.path(), &serving.server.url, &refused_url());
+    let none = |_: &str| None;
+    let ran = run_with(
+        &[
+            "send",
+            "--file",
+            file.to_str().unwrap(),
+            "Inputs",
+            "--var",
+            "id=u1",
+            "--var",
+            "expected=200",
+        ],
+        &none,
+    );
+    let result = ran.result();
+    assert_eq!(result.outcome, RunOutcome::Passed, "{}", ran.stderr);
+    assert_eq!(ran.status, 0);
+    assert_eq!(serving.server.requests()[0].target(), "/inputs?id=u1");
+    assert_eq!(result.inputs[0].from, "--var");
+    assert!(!result.inputs[0].secret);
+}
+
+#[test]
+fn a_var_from_a_file_sends_its_contents() {
+    let serving = serve(|_, _| response("200 OK", &[], b"{}"));
+    let dir = tempfile::tempdir().unwrap();
+    let file = write_document(dir.path(), &serving.server.url, &refused_url());
+    let query = dir.path().join("query.json");
+    let body = "{\"query\": {\"match_all\": {}}}\n";
+    std::fs::write(&query, body).unwrap();
+    let none = |_: &str| None;
+    let var = format!("body=@{}", query.display());
+    let ran = run_with(
+        &[
+            "send",
+            "--file",
+            file.to_str().unwrap(),
+            "Post",
+            "--var",
+            &var,
+        ],
+        &none,
+    );
+    assert_eq!(ran.result().outcome, RunOutcome::Passed, "{}", ran.stderr);
+    assert_eq!(
+        serving.server.requests()[0].body,
+        body.as_bytes(),
+        "the file's exact bytes are the body, newline included"
+    );
+}
+
+#[test]
+fn a_var_never_fills_a_secret() {
+    let serving = serve(|_, _| response("200 OK", &[], b"{}"));
+    let dir = tempfile::tempdir().unwrap();
+    let file = write_document(dir.path(), &serving.server.url, &refused_url());
+    let none = |_: &str| None;
+    let ran = run_with(
+        &[
+            "send",
+            "--file",
+            file.to_str().unwrap(),
+            "SecretRef",
+            "--var",
+            "token=a-long-enough-literal",
+        ],
+        &none,
+    );
+    assert_eq!(ran.result().outcome, RunOutcome::NotSent);
+    assert!(
+        ran.stderr.contains("secret:token"),
+        "the secret stays unresolved: {}",
+        ran.stderr
+    );
+    assert!(serving.server.requests().is_empty(), "nothing was sent");
+}
+
+#[test]
+fn a_literal_value_appears_in_the_result_unredacted() {
+    let serving = serve(|_, _| response("200 OK", &[], b"{}"));
+    let dir = tempfile::tempdir().unwrap();
+    let file = write_document(dir.path(), &serving.server.url, &refused_url());
+    let none = |_: &str| None;
+    let ran = run_with(
+        &[
+            "send",
+            "--file",
+            file.to_str().unwrap(),
+            "Inputs",
+            "--var",
+            "id=literal-value",
+            "--var",
+            "expected=200",
+        ],
+        &none,
+    );
+    // A literal is not a credential: the request as sent shows it, as the run of a
+    // `--secret` value would not.
+    assert_eq!(ran.result().outcome, RunOutcome::Passed);
+    assert_eq!(
+        ran.result().request.unwrap().url,
+        format!("{}/inputs?id=literal-value", serving.server.url)
+    );
+    assert!(ran.stdout.contains("literal-value"), "{}", ran.stdout);
+}
+
+#[test]
 fn unsent_runs_say_why_in_words() {
     let dir = tempfile::tempdir().unwrap();
     let file = write_document(dir.path(), "http://127.0.0.1:1", "http://127.0.0.1:1");
@@ -245,11 +363,38 @@ fn unsent_runs_say_why_in_words() {
             "Not sent: This request needs a person to sign in (OAuth 2.0 authorization code): \
              send it from the app.",
         ),
+        (
+            vec![
+                "send",
+                "--file",
+                file,
+                "Pass",
+                "--var",
+                "body=@missing.json",
+            ],
+            "Not sent: Input body: the file missing.json could not be read",
+        ),
+        (
+            vec!["send", "--file", file, "Pass", "--var", "body=@-"],
+            "Not sent: Input body: @- is not supported",
+        ),
     ];
     for (args, start) in cases {
         let ran = run_with(&args, &none);
         assert!(ran.stderr.starts_with(start), "{args:?}: {}", ran.stderr);
     }
+    let empty = dir.path().join("empty.json");
+    std::fs::write(&empty, "").unwrap();
+    let var = format!("body=@{}", empty.display());
+    let ran = run_with(&["send", "--file", file, "Pass", "--var", &var], &none);
+    assert!(
+        ran.stderr.starts_with(&format!(
+            "Not sent: Input body: the file {} is empty",
+            empty.display()
+        )),
+        "{}",
+        ran.stderr
+    );
     let garbage = dir.path().join("garbage.json");
     std::fs::write(&garbage, "{\"format\": \"imposter\", \"version\": 1}").unwrap();
     let ran = run_with(

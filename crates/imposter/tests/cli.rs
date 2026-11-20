@@ -92,6 +92,37 @@ async fn send_runs_headless_and_touches_no_personal_data() {
     );
 }
 
+/// A `--var` value travels in the command line alone: the process has no variable
+/// environment to read it from.
+#[tokio::test]
+async fn a_literal_input_sends_without_reading_the_environment() {
+    let server = Server::start(|_, _| response("200 OK", &[], b"ok")).await;
+    let home = tempfile::tempdir().unwrap();
+    let file = write_document(home.path(), &server.url);
+    let mut command = imposter(home.path());
+    command.args([
+        "send",
+        "--file",
+        file.to_str().unwrap(),
+        "Users/List",
+        "--var",
+        "token=literal-token",
+    ]);
+    let output = output(command).await;
+
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let result = json_of(&output);
+    assert_eq!(result["outcome"], "passed");
+    assert_eq!(
+        result["inputs"],
+        json!([{"variable": "token", "from": "--var", "secret": false}])
+    );
+    assert_eq!(
+        server.requests()[0].header("authorization"),
+        Some("Bearer literal-token")
+    );
+}
+
 /// A checkout's collections folder, as a teammate gets it: the process reads it with no
 /// profile and creates none.
 #[tokio::test]

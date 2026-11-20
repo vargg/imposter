@@ -16,7 +16,7 @@ pub mod mcp;
 pub mod run;
 pub mod send;
 
-pub use send::{InputArg, SendArgs};
+pub use send::{InputArg, InputSource, SendArgs};
 
 /// A flag of `imposter send`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,7 +69,7 @@ pub const COMMANDS: [CommandHelp; 7] = [
     },
     CommandHelp {
         name: "mcp",
-        arguments: "[--project DIR] [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--max-body BYTES]",
+        arguments: "[--project DIR] [--file FILE] [--env NAME] [--input VAR=PROCESS_VAR]... [--secret VAR=PROCESS_VAR]... [--var NAME=VALUE]... [--max-body BYTES]",
         help: "Experimental: an MCP server over stdio.",
     },
 ];
@@ -85,7 +85,7 @@ pub fn readme_command_rows() -> Vec<String> {
         .collect()
 }
 
-pub const SEND_FLAGS: [Flag; 7] = [
+pub const SEND_FLAGS: [Flag; 8] = [
     Flag {
         name: "--project",
         value: "DIR",
@@ -110,6 +110,11 @@ pub const SEND_FLAGS: [Flag; 7] = [
         name: "--secret",
         value: "VAR=PROCESS_VAR",
         help: "As --input, also filling {{secret:VAR}}, and remove its value from the result and error output. Repeatable.",
+    },
+    Flag {
+        name: "--var",
+        value: "NAME=VALUE",
+        help: "Set variable NAME to the literal VALUE, above every scope; a leading @ reads the file it names (@@ is a literal @). Repeatable. Never for secrets: a literal stays in shell history and the result.",
     },
     Flag {
         name: "--out",
@@ -326,12 +331,32 @@ fn input(value: OsString, secret: bool) -> Result<InputArg, String> {
         .into_string()
         .map_err(|_| "inputs must be valid UTF-8".to_owned())?;
     match text.split_once('=') {
-        Some((variable, from)) if !variable.is_empty() && !from.is_empty() => Ok(InputArg {
+        Some((variable, name)) if !variable.is_empty() && !name.is_empty() => Ok(InputArg {
             variable: variable.to_owned(),
-            from: from.to_owned(),
-            secret,
+            from: InputSource::ProcessVar {
+                name: name.to_owned(),
+                secret,
+            },
         }),
         _ => Err(format!("{text:?} is not VAR=PROCESS_VAR")),
+    }
+}
+
+/// `--var NAME=VALUE`: a literal value, resolved when the inputs are read (a leading `@`
+/// names a file).
+fn literal(value: OsString) -> Result<InputArg, String> {
+    let text = value
+        .into_string()
+        .map_err(|_| "inputs must be valid UTF-8".to_owned())?;
+    match text.split_once('=') {
+        Some((variable, value)) if !variable.is_empty() && !value.is_empty() => Ok(InputArg {
+            variable: variable.to_owned(),
+            from: InputSource::Literal {
+                value: value.to_owned(),
+                origin: "--var",
+            },
+        }),
+        _ => Err(format!("{text:?} is not NAME=VALUE")),
     }
 }
 
@@ -474,6 +499,7 @@ fn parse_send(parser: &mut lexopt::Parser, mode: Mode) -> Result<Command, String
             }
             Long("input") => args.inputs.push(input(value(parser)?, false)?),
             Long("secret") => args.inputs.push(input(value(parser)?, true)?),
+            Long("var") => args.inputs.push(literal(value(parser)?)?),
             Long("out") if !mcp => args.out = Some(PathBuf::from(value(parser)?)),
             Long("file") => args.file = Some(PathBuf::from(value(parser)?)),
             Long("project") => args.project = Some(PathBuf::from(value(parser)?)),
@@ -491,6 +517,16 @@ fn parse_send(parser: &mut lexopt::Parser, mode: Mode) -> Result<Command, String
         }
     }
     one_source(args.file.as_ref(), args.project.as_ref())?;
+    // One name, one source: a --var must never shadow the user's --input or --secret.
+    let mut seen = std::collections::BTreeSet::new();
+    for input in &args.inputs {
+        if !seen.insert(input.variable.as_str()) {
+            return Err(format!(
+                "the variable {} is given more than once",
+                input.variable
+            ));
+        }
+    }
     let mut positional = positional.into_iter();
     if mcp {
         return match positional.next() {
@@ -675,6 +711,12 @@ mod tests {
             "token=API_TOKEN",
             "Users/Create user",
             "--input=id=USER_ID",
+            "--var",
+            "body={\"q\": 1}",
+            "--var",
+            "q=@query.json",
+            "--var",
+            "n=-1",
             "--max-body",
             "0",
             "--out",
@@ -691,13 +733,38 @@ mod tests {
                 inputs: vec![
                     InputArg {
                         variable: "token".into(),
-                        from: "API_TOKEN".into(),
-                        secret: true
+                        from: InputSource::ProcessVar {
+                            name: "API_TOKEN".into(),
+                            secret: true
+                        }
                     },
                     InputArg {
                         variable: "id".into(),
-                        from: "USER_ID".into(),
-                        secret: false
+                        from: InputSource::ProcessVar {
+                            name: "USER_ID".into(),
+                            secret: false
+                        }
+                    },
+                    InputArg {
+                        variable: "body".into(),
+                        from: InputSource::Literal {
+                            value: "{\"q\": 1}".into(),
+                            origin: "--var"
+                        }
+                    },
+                    InputArg {
+                        variable: "q".into(),
+                        from: InputSource::Literal {
+                            value: "@query.json".into(),
+                            origin: "--var"
+                        }
+                    },
+                    InputArg {
+                        variable: "n".into(),
+                        from: InputSource::Literal {
+                            value: "-1".into(),
+                            origin: "--var"
+                        }
                     },
                 ],
                 out: Some("result.json".into()),
@@ -726,6 +793,22 @@ mod tests {
             (
                 &["send", "a", "b", "--input", "=Y"][..],
                 "\"=Y\" is not VAR=PROCESS_VAR",
+            ),
+            (
+                &["send", "a", "b", "--var", "x"][..],
+                "\"x\" is not NAME=VALUE",
+            ),
+            (
+                &["send", "a", "b", "--var", "=v"][..],
+                "\"=v\" is not NAME=VALUE",
+            ),
+            (
+                &["send", "a", "b", "--var", "id=1", "--input", "id=A"][..],
+                "the variable id is given more than once",
+            ),
+            (
+                &["send", "a", "b", "--var", "token=x", "--secret", "token=T"][..],
+                "the variable token is given more than once",
             ),
             (
                 &["send", "a", "b", "--max-body", "lots"][..],

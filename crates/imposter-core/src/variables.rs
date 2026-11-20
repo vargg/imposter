@@ -299,7 +299,8 @@ pub enum Source {
         id: Option<EnvironmentId>,
         name: String,
     },
-    /// A value given to one headless run (from a named process variable), above every scope.
+    /// A value given to one headless run (from a named process variable or a literal),
+    /// above every scope.
     Input,
     /// A value an earlier request of the same run captured or set, above the inputs: a
     /// login's token replaces the environment's for the requests after it.

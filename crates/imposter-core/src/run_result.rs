@@ -187,7 +187,8 @@ pub struct Definition {
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub variable: String,
-    /// The process variable it was read from.
+    /// The process variable it was read from, or where a literal value was given
+    /// ("--var", "`send_request` inputs"). Never the value.
     pub from: String,
     pub secret: bool,
 }

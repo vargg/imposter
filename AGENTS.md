@@ -828,7 +828,10 @@ numbers, so both are excluded. Each logical change is its own commit.
     it is on screen only. Why: History is kept for weeks and searched; the request as
     sent there shows `«redacted»` instead.
   - **The command line:** `--secret VAR=PROCESS_VAR` fills `{{secret:VAR}}` as well as
-    `{{VAR}}`, so commands written before secrets keep working. A profile run reads the
+    `{{VAR}}`, so commands written before secrets keep working. `--var` never fills one
+    (user's choice: "variables only, never secrets"): a literal stays in the shell
+    history and the result, so secrets come only from `--secret` or the profile. A profile
+    run reads the
     named environment's stored secrets with its variables; a `--file` run has none. Every
     secret a run used, captured or set goes into its redactor (`Ran::secrets`, carried on
     `runner::Step::Ran`), and a secret capture's value is replaced whatever its length
@@ -1235,7 +1238,8 @@ numbers, so both are excluded. Each logical change is its own commit.
   SHA-256; it writes nothing. Either way it prints the redacted `RunResult` on stdout, its
   summary and notes (a failed History write) on stderr, and with `--out` the same JSON to
   a file (atomically). It reads only the process variables named by `--input`/`--secret`
-  (`Io::var`) and `IMPOSTER_DATA_DIR`, never the rest of the environment; a missing or
+  (`Io::var`) and `IMPOSTER_DATA_DIR`, never the rest of the environment; `--var` takes its
+  value in the command line (or a file after `@`) and reads none. A missing or
   empty input, or a secret under 4 characters (`redact::MIN_SECRET`, which would redact
   ordinary text), stops the run before anything is sent. Ctrl+C cancels (exit 130). Logs
   default to warnings, since stderr carries the summary. Arguments are parsed with
@@ -1246,6 +1250,22 @@ numbers, so both are excluded. Each logical change is its own commit.
   History, production and a missing profile refused) and `imposter/tests/cli.rs` (the
   process: no profile created for a file run, no secret on stdout or stderr even at trace
   level, the interrupt).
+- **Literal per-run inputs: `--var NAME=VALUE`, variables only, never secrets** (user's
+  choice). An agent driving the command line must give values that change every run
+  without touching the saved request — an OpenSearch body changes completely per call, and
+  predefining every value was impractical enough that one agent rewrote the collections
+  folder's files to work around it. A `--var` literal fills a plain `{{variable}}` only,
+  never a `{{secret:name}}` (`InputSource::Literal` has no secret flag, so a literal secret
+  is unrepresentable): a literal bypasses the redactor and sits in the shell history, so
+  secrets stay with `--secret` and the profile. A leading `@` reads the value's whole file
+  relative to the working directory (`@@` is a literal `@`; `@-` is refused, as stdin is
+  the MCP channel); a file that cannot be read, is not UTF-8 or is empty stops the run as
+  not_sent, as an unset process variable does. A name given twice across
+  `--input`/`--secret`/`--var` is a usage error, so a `--var` can never silently shadow the
+  user's `--secret`. The result schema is unchanged: the input records
+  `from: "--var"` (or "send_request inputs"), never the value. The MCP `send_request` call
+  takes the same literals as its own `inputs` object. Pinned by
+  `imposter-cli/tests/send.rs`, `run.rs`, `mcp.rs` and `imposter/tests/cli.rs`.
 - **`imposter list`, `show` and `envs` let an agent find and read requests before running
   them** (`imposter_app::catalog`, `imposter_cli::catalog`), from the profile or a `--file`,
   writing nothing. `list` gives each request's path, method, URL template and how many
@@ -1341,7 +1361,9 @@ numbers, so both are excluded. Each logical change is its own commit.
   spike, not the M4 tool list: `list_requests` and `send_request {path}` over the saved
   requests (or a `--file`), answered with the same `RunResult` as `send` (structured, and
   repeated as text as MCP asks). The source, environment and inputs come only from its
-  command line, so an agent chooses which request runs and nothing else; there is no
+  command line, except the literal values a `send_request` call passes for that one call
+  (`inputs`, strings only, merged over the command line's but never overriding a
+  `--secret`), so an agent chooses which request runs and nothing else; there is no
   `--out` and no port. Messages are
   newline-delimited JSON-RPC 2.0, hand-written over `serde_json` (no SDK dependency for a
   spike); diagnostics go to stderr. One send runs at a time while further messages are

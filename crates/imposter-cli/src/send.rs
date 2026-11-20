@@ -25,12 +25,24 @@ use tokio_util::sync::CancellationToken;
 
 use crate::USAGE_STATUS;
 
-/// A variable set from a named process variable.
+/// Where an input's value comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputSource {
+    /// Read from a named process variable (`--input`, or `--secret`, which also fills
+    /// `{{secret:VAR}}` and removes the value from the output).
+    ProcessVar { name: String, secret: bool },
+    /// Given literally (`--var`, or an MCP call's `inputs`). A leading `@` reads the file
+    /// it names; `@@` is a literal `@`. Never a secret, never removed from the output.
+    /// `origin` is how the result names where it was given ("--var", "`send_request`
+    /// inputs").
+    Literal { value: String, origin: &'static str },
+}
+
+/// A variable set for one run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InputArg {
     pub variable: String,
-    pub from: String,
-    pub secret: bool,
+    pub from: InputSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,30 +92,72 @@ pub(crate) fn read_inputs(
 ) -> Result<Variables, Unsent> {
     let mut values = Variables::new();
     for input in inputs {
-        let value = var(&input.from).filter(|v| !v.is_empty()).ok_or_else(|| {
-            format!(
-                "Input {}: the process variable {} is not set",
-                input.variable, input.from
-            )
-        })?;
-        if input.secret {
-            if value.chars().count() < MIN_SECRET {
-                return Err(format!(
-                    "Secret {}: the value of {} is shorter than {MIN_SECRET} characters, too short to remove from the output reliably",
-                    input.variable, input.from
-                )
-                .into());
+        let value = match &input.from {
+            InputSource::ProcessVar { name, secret } => {
+                let value = var(name).filter(|v| !v.is_empty()).ok_or_else(|| {
+                    format!(
+                        "Input {}: the process variable {name} is not set",
+                        input.variable
+                    )
+                })?;
+                if *secret {
+                    if value.chars().count() < MIN_SECRET {
+                        return Err(format!(
+                            "Secret {}: the value of {name} is shorter than {MIN_SECRET} characters, too short to remove from the output reliably",
+                            input.variable
+                        )
+                        .into());
+                    }
+                    redactor.secret(&value);
+                    // `{{secret:name}}` too, so a request written for the app's secrets runs.
+                    values.insert(
+                        imposter_core::variables::secret_key(&input.variable),
+                        value.clone(),
+                    );
+                }
+                value
             }
-            redactor.secret(&value);
-            // `{{secret:name}}` too, so a request written for the app's secrets runs.
-            values.insert(
-                imposter_core::variables::secret_key(&input.variable),
-                value.clone(),
-            );
-        }
+            InputSource::Literal { value, .. } => literal_value(&input.variable, value)?,
+        };
         values.insert(input.variable.clone(), value);
     }
     Ok(values)
+}
+
+/// An input as the result records it: the variable's name and where its value came from,
+/// never the value.
+pub(crate) fn recorded_input(input: &InputArg) -> Input {
+    Input {
+        variable: input.variable.clone(),
+        from: match &input.from {
+            InputSource::ProcessVar { name, .. } => name.clone(),
+            InputSource::Literal { origin, .. } => (*origin).to_owned(),
+        },
+        secret: matches!(&input.from, InputSource::ProcessVar { secret: true, .. }),
+    }
+}
+
+/// A literal input's value: the text as given, or the whole contents of the file a
+/// leading `@` names (`@@` is a literal `@`).
+fn literal_value(variable: &str, text: &str) -> Result<String, Unsent> {
+    let Some(rest) = text.strip_prefix('@') else {
+        return Ok(text.to_owned());
+    };
+    if let Some(literal) = rest.strip_prefix('@') {
+        return Ok(format!("@{literal}"));
+    }
+    if rest == "-" {
+        // stdin is the MCP channel, and nothing else reads it.
+        return Err(format!("Input {variable}: @- is not supported; name a file").into());
+    }
+    let bytes = std::fs::read(rest)
+        .map_err(|e| format!("Input {variable}: the file {rest} could not be read: {e}"))?;
+    let value = String::from_utf8(bytes)
+        .map_err(|_| format!("Input {variable}: the file {rest} is not UTF-8 text"))?;
+    if value.is_empty() {
+        return Err(format!("Input {variable}: the file {rest} is empty").into());
+    }
+    Ok(value)
 }
 
 /// Run `args`. Every way a run can end gives a result; none panics or exits.
@@ -137,15 +191,7 @@ pub async fn send(
             elapsed_ms: u64::try_from(clock.elapsed().as_millis()).unwrap_or(u64::MAX),
         },
         definition,
-        inputs: args
-            .inputs
-            .iter()
-            .map(|input| Input {
-                variable: input.variable.clone(),
-                from: input.from.clone(),
-                secret: input.secret,
-            })
-            .collect(),
+        inputs: args.inputs.iter().map(recorded_input).collect(),
         limits: Limits {
             capture_bytes: 0,
             excerpt_bytes: args.max_body,

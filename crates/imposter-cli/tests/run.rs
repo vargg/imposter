@@ -188,6 +188,33 @@ fn a_folder_runs_as_one_run_and_writes_junit() {
 }
 
 #[test]
+fn a_run_takes_literal_inputs_without_reading_the_environment() {
+    let serving = serve();
+    let dir = tempfile::tempdir().unwrap();
+    let file = write_document(dir.path(), &serving.server.url);
+    let ran = run(&[
+        "run",
+        "Flow",
+        "--file",
+        file.to_str().unwrap(),
+        "--var",
+        "key=plain-literal",
+    ]);
+    assert_eq!(ran.status, 0, "{}\n{}", ran.stderr, ran.stdout);
+    assert_eq!(report(&ran)["outcome"], "passed");
+    assert_eq!(
+        serving.server.requests()[0].target(),
+        "/login?key=plain-literal",
+        "the literal filled the variable"
+    );
+    assert_eq!(
+        report(&ran)["inputs"],
+        json!([{"variable": "key", "from": "--var", "secret": false}]),
+        "the report names where the value was given, never the value"
+    );
+}
+
+#[test]
 fn a_failure_stops_the_run_and_keep_going_runs_the_rest() {
     let serving = serve();
     let dir = tempfile::tempdir().unwrap();

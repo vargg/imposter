@@ -167,6 +167,29 @@ fn a_result_reads_back_and_shows_as_a_response() {
     ));
 }
 
+/// A literal input records where it was given ("--var") in the `from` field, in the same
+/// schema a process-variable input uses, and reads back unchanged.
+#[test]
+fn a_literal_input_records_its_origin() {
+    let mut meta = meta();
+    meta.inputs.push(Input {
+        variable: "body".into(),
+        from: "--var".into(),
+        secret: false,
+    });
+    let result = RunResult::unsent(RunOutcome::NotSent, "nothing sent", meta);
+    let read = RunResult::read(result.to_json().as_bytes()).unwrap();
+    assert_eq!(read, result);
+    assert_eq!(
+        read.inputs[1],
+        Input {
+            variable: "body".into(),
+            from: "--var".into(),
+            secret: false,
+        }
+    );
+}
+
 #[test]
 fn unsent_and_failed_runs_say_why() {
     let unsent = RunResult::unsent(

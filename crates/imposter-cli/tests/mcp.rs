@@ -74,21 +74,31 @@ impl Session {
 
     /// A server over `file`, or over the profile in `data` without one.
     fn start_with(file: Option<PathBuf>, secret: bool, data: Option<String>) -> Self {
+        let inputs = if secret {
+            vec![imposter_cli::InputArg {
+                variable: "token".into(),
+                from: imposter_cli::InputSource::ProcessVar {
+                    name: "API_TOKEN".into(),
+                    secret: true,
+                },
+            }]
+        } else {
+            Vec::new()
+        };
+        Self::spawn(
+            SendArgs {
+                file,
+                inputs,
+                ..SendArgs::default()
+            },
+            data,
+        )
+    }
+
+    /// A server with the command line the user would have written.
+    fn spawn(args: SendArgs, data: Option<String>) -> Self {
         let (input, lines) = unbounded_channel();
         let (written, output) = unbounded_channel();
-        let args = SendArgs {
-            file,
-            inputs: if secret {
-                vec![imposter_cli::InputArg {
-                    variable: "token".into(),
-                    from: "API_TOKEN".into(),
-                    secret: true,
-                }]
-            } else {
-                Vec::new()
-            },
-            ..SendArgs::default()
-        };
         let task = tokio::task::spawn_blocking(move || {
             let mut env: HashMap<String, String> =
                 [("API_TOKEN".to_owned(), SECRET.to_owned())].into();
@@ -190,6 +200,12 @@ async fn a_client_lists_and_sends_requests_with_secrets_kept_out() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
     assert_eq!(tools, ["list_requests", "send_request"]);
+    assert!(
+        by_id(&messages, 2)["result"]["tools"][1]["inputSchema"]["properties"]
+            .get("inputs")
+            .is_some(),
+        "send_request takes per-call inputs"
+    );
     assert_eq!(
         by_id(&messages, 3)["result"]["structuredContent"]["requests"],
         json!(["Users/List", "Users/Hold"])
@@ -291,6 +307,119 @@ async fn a_client_that_leaves_mid_send_stops_it() {
         by_id(&messages, 2)["result"]["structuredContent"]["outcome"],
         "cancelled"
     );
+}
+
+/// A literal input on the server's command line, as `--var` parses it.
+fn server_literal(variable: &str, value: &str) -> imposter_cli::InputArg {
+    imposter_cli::InputArg {
+        variable: variable.into(),
+        from: imposter_cli::InputSource::Literal {
+            value: value.into(),
+            origin: "--var",
+        },
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn send_request_takes_per_call_literal_inputs() {
+    let server = Server::start(echo).await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut session = Session::start(write_document(dir.path(), &server.url), false);
+    session.send(&call(
+        1,
+        "send_request",
+        json!({"path": "Users/List", "inputs": {"token": "from-the-call"}}),
+    ));
+    let messages = session.answers(1).await;
+    session.finish().await;
+    assert_eq!(
+        server.requests()[0].header("authorization"),
+        Some("Bearer from-the-call")
+    );
+    let result = &by_id(&messages, 1)["result"]["structuredContent"];
+    assert_eq!(result["outcome"], "passed");
+    assert_eq!(
+        result["inputs"],
+        json!([{"variable": "token", "from": "send_request inputs", "secret": false}]),
+        "the call's value is recorded by name and origin, never its value"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_call_inputs_value_wins_over_the_servers() {
+    let server = Server::start(echo).await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut session = Session::spawn(
+        SendArgs {
+            file: Some(write_document(dir.path(), &server.url)),
+            inputs: vec![server_literal("token", "server-value")],
+            ..SendArgs::default()
+        },
+        None,
+    );
+    session.send(&call(
+        1,
+        "send_request",
+        json!({"path": "Users/List", "inputs": {"token": "call-value"}}),
+    ));
+    let messages = session.answers(1).await;
+    session.finish().await;
+    assert_eq!(
+        server.requests()[0].header("authorization"),
+        Some("Bearer call-value")
+    );
+    let result = &by_id(&messages, 1)["result"]["structuredContent"];
+    assert_eq!(
+        result["inputs"],
+        json!([{"variable": "token", "from": "send_request inputs", "secret": false}]),
+        "the name is listed once, as the call's"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn call_inputs_must_be_an_object_of_strings() {
+    let server = Server::start(echo).await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut session = Session::start(write_document(dir.path(), &server.url), false);
+    session.send(&call(
+        1,
+        "send_request",
+        json!({"path": "Users/List", "inputs": "token=x"}),
+    ));
+    session.send(&call(
+        2,
+        "send_request",
+        json!({"path": "Users/List", "inputs": {"token": 42}}),
+    ));
+    let messages = session.answers(2).await;
+    session.finish().await;
+    assert_eq!(by_id(&messages, 1)["error"]["code"], -32602);
+    assert_eq!(
+        by_id(&messages, 2)["error"]["message"],
+        "inputs.token must be a string"
+    );
+    assert!(server.requests().is_empty(), "nothing was sent");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_call_cannot_override_a_secret() {
+    let server = Server::start(echo).await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut session = Session::start(write_document(dir.path(), &server.url), true);
+    session.send(&call(
+        1,
+        "send_request",
+        json!({"path": "Users/List", "inputs": {"token": "a-literal"}}),
+    ));
+    let messages = session.answers(1).await;
+    session.finish().await;
+    let result = &by_id(&messages, 1)["result"];
+    assert_eq!(result["isError"], true);
+    assert_eq!(
+        result["content"][0]["text"],
+        "inputs.token would override the server's --secret token; secrets stay with --secret"
+    );
+    assert!(server.requests().is_empty(), "nothing was sent");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

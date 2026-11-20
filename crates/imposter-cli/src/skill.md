@@ -54,20 +54,22 @@ may a folder's when it holds one collection.
 
 ## Changing what is sent
 
-A run sends the request exactly as the user saved it. There is no flag for a different
-body, header or query parameter, and there is meant to be none: the command line runs
-saved requests, it does not build new ones (use curl for a one-off request the user never
-saved). The only values a run takes are the `{{variables}}` the request already uses,
-filled per run:
+A run sends the request exactly as the user saved it, except for the `{{variables}}` it
+uses, which you fill per run:
 
 ```sh
-ORDER_ID=7654 imposter send "Shop API / Orders / Get order" --input order_id=ORDER_ID
+imposter send "Shop API / Orders / Get order" --var order_id=7654
 ```
 
-`--input` (and `--secret`) name a *process variable*, never a literal value, so values
-stay off the command line and out of shell history; a missing or empty one stops the run
-before anything is sent. `show` lists every variable a request uses and where it is
-defined, so read it before concluding a value cannot be passed.
+`--var` takes the literal value; a leading `@` reads it from a file (`--var
+body=@query.json`, relative to the working directory, the whole file, no trimming; `@@`
+is a literal `@`). That is the way to send a body that changes every run — write it to a
+temporary file and pass the file — instead of asking the user to predefine every value. A
+`--var` value is not secret: it stays in the command line, the shell history and the
+result. `--input` (and `--secret`) instead name a *process variable*, so a value stays off
+the command line; a missing or empty one stops the run before anything is sent. `show`
+lists every variable a request uses and where it is defined, so read it before concluding
+a value cannot be passed.
 
 If the value you need is written into the request itself — a literal id in the URL, a
 field in the body, a fixed header — do not edit the collections folder's files to change
@@ -76,8 +78,9 @@ an edit changes what the app sends. Instead propose the parameter as a small dif
 can review, replacing only the literal that varies with a variable (`"price": 9.99` →
 `"price": {{price}}` — a placeholder outside a string stands for a whole value, so the
 JSON stays valid), and say which scope should define it. The user applies it in the app or
-commits the diff; the next run takes the value from `--input`. The same applies when a
-request has no variable for what must vary: propose one, never work around the request.
+commits the diff; the next run takes the value from `--var` or `--input`. The same applies
+when a request has no variable for what must vary: propose one, never work around the
+request.
 
 ## Running several requests
 
@@ -103,7 +106,10 @@ profile run uses the stored secrets of the environment named with `--env`.
 Without the profile (a `--project` or `--file` run, CI), ask the user which process variable holds a
 secret and pass it by name: `--secret token=API_TOKEN` fills `{{secret:token}}` (and the
 variable `token`) from the process variable `API_TOKEN` and removes its value from the
-output. Use `--input` for values that are not secret. Only the variables named this way are
+output. Never pass a secret through `--var`: it fills plain variables only, never a
+`{{secret:name}}`, and a literal stays in the shell history and the result. Use `--input`
+or `--var` for values that are not secret. Only the variables named with `--input` or
+`--secret` are
 read; a missing one stops the run before anything is sent. When a login returns a token,
 propose a capture with `"secret": true`, so the token is stored as a secret, never as a
 variable.

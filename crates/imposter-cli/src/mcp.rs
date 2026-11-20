@@ -1,8 +1,9 @@
 //! An experimental MCP server over stdio (`imposter mcp`), a spike that exercises the
 //! single-request path an agent would use: list the requests of one file and send one of
-//! them. It is not a general HTTP client: the file, the environment and the inputs come
-//! only from the command line the user wrote, so the agent can choose which request runs
-//! but nothing else. Messages are newline-delimited JSON-RPC 2.0 on stdin and stdout, as
+//! them. It is not a general HTTP client: the file and the environment come from the
+//! command line the user wrote, and the inputs come from it too, except the literal values
+//! a `send_request` call passes for one call, which can never override the user's secrets.
+//! Messages are newline-delimited JSON-RPC 2.0 on stdin and stdout, as
 //! MCP's stdio transport specifies; diagnostics go to stderr, and no port is opened.
 
 use std::collections::VecDeque;
@@ -15,7 +16,7 @@ use serde_json::{Value, json};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_util::sync::CancellationToken;
 
-use crate::send::{SendArgs, send};
+use crate::send::{InputArg, InputSource, SendArgs, send};
 
 /// The protocol versions this spike answers in; the newest is offered when a client asks
 /// for one it does not know.
@@ -41,7 +42,14 @@ fn tools() -> Value {
             "description": "Send one request from the collection file, with the environment and inputs the user chose when starting the server, and return its checked, redacted result. A response with no checks verifies nothing.",
             "inputSchema": {
                 "type": "object",
-                "properties": {"path": {"type": "string", "description": "The request's path of names, as list_requests gives it."}},
+                "properties": {
+                    "path": {"type": "string", "description": "The request's path of names, as list_requests gives it."},
+                    "inputs": {
+                        "type": "object",
+                        "description": "Literal values for this call's variables, merged over the server's inputs (the call's value wins, never over the server's secrets). Strings only. Never secrets: a literal appears in the result. A leading @ reads the file it names from the server's working directory.",
+                        "additionalProperties": {"type": "string"}
+                    }
+                },
                 "required": ["path"],
                 "additionalProperties": false
             },
@@ -72,10 +80,11 @@ fn text_result(text: &str, structured: Option<Value>, is_error: bool) -> Value {
 enum Incoming {
     /// Answer at once.
     Answer(Value),
-    /// Send the request at `path`, then answer `id`.
+    /// Send the request at `path` with the call's literal inputs, then answer `id`.
     Send {
         id: Value,
         path: String,
+        inputs: Vec<InputArg>,
     },
     /// List the requests, then answer `id`.
     List(Value),
@@ -175,9 +184,13 @@ fn parse(line: &str) -> Incoming {
             match params.get("name").and_then(Value::as_str) {
                 Some("list_requests") => Incoming::List(id),
                 Some("send_request") => match arguments.get("path").and_then(Value::as_str) {
-                    Some(path) => Incoming::Send {
-                        id,
-                        path: path.to_owned(),
+                    Some(path) => match call_inputs(&arguments) {
+                        Ok(inputs) => Incoming::Send {
+                            id,
+                            path: path.to_owned(),
+                            inputs,
+                        },
+                        Err(message) => Incoming::Answer(error(&id, INVALID_PARAMS, &message)),
                     },
                     None => {
                         Incoming::Answer(error(&id, INVALID_PARAMS, "send_request needs a path"))
@@ -197,6 +210,32 @@ fn parse(line: &str) -> Incoming {
             &format!("Method not found: {other}"),
         )),
     }
+}
+
+/// A `send_request` call's `inputs`: an object of name: value strings, each a literal
+/// input for this one call.
+fn call_inputs(arguments: &Value) -> Result<Vec<InputArg>, String> {
+    let Some(inputs) = arguments.get("inputs") else {
+        return Ok(Vec::new());
+    };
+    let Some(object) = inputs.as_object() else {
+        return Err("send_request inputs must be an object of name: value strings".to_owned());
+    };
+    object
+        .iter()
+        .map(|(name, value)| {
+            let Some(value) = value.as_str() else {
+                return Err(format!("inputs.{name} must be a string"));
+            };
+            Ok(InputArg {
+                variable: name.clone(),
+                from: InputSource::Literal {
+                    value: value.to_owned(),
+                    origin: "send_request inputs",
+                },
+            })
+        })
+        .collect()
 }
 
 fn write(out: &mut dyn Write, message: &Value) -> std::io::Result<()> {
@@ -233,11 +272,35 @@ pub async fn serve(
             Incoming::Answer(message) => write(out, &message)?,
             Incoming::List(id) => write(out, &list(&id, args, var).await)?,
             Incoming::Nothing | Incoming::Cancel(_) => {}
-            Incoming::Send { id, path } => {
+            Incoming::Send { id, path, inputs } => {
+                // A call's literal must never demote the user's secret to an unredacted
+                // value: that name stays the server's --secret or is refused.
+                let blocked = inputs.iter().find(|input| {
+                    args.inputs.iter().any(|server| {
+                        server.variable == input.variable
+                            && matches!(server.from, InputSource::ProcessVar { secret: true, .. })
+                    })
+                });
+                if let Some(input) = blocked {
+                    let message = format!(
+                        "inputs.{} would override the server's --secret {}; secrets stay with --secret",
+                        input.variable, input.variable
+                    );
+                    write(out, &reply(&id, text_result(&message, None, true)))?;
+                    continue;
+                }
                 let cancel = CancellationToken::new();
+                let mut merged: Vec<InputArg> = args
+                    .inputs
+                    .iter()
+                    .filter(|server| !inputs.iter().any(|call| call.variable == server.variable))
+                    .cloned()
+                    .collect();
+                merged.extend(inputs);
                 let call = SendArgs {
                     request: path,
                     out: None,
+                    inputs: merged,
                     ..args.clone()
                 };
                 let running = send(&call, var, cancel.clone());
