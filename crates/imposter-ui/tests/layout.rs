@@ -564,18 +564,20 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     let rows = std::mem::replace(
         &mut app.harness.state_mut().state.variables.rows,
         vec![
-            imposter_ui::vars::Row::with_saved(
+            imposter_ui::vars::VariableRow::from_stored(
                 "user_id",
-                "42",
+                Some("42".into()),
                 vec!["77".into(), long_value, "91".into()],
+                Some(imposter_app::store::scopes::CaptureSlot {
+                    value: "from response".into(),
+                    active: false,
+                }),
             ),
-            imposter_ui::vars::Row::new("locale", "en"),
+            imposter_ui::vars::VariableRow::from_stored("locale", Some("en".into()), vec![], None),
         ],
     );
     check(app, "variable chips");
-    let chip = "Variable 1 saved value 1: 77";
-    app.harness.get_by_label(chip).hover();
-    check(app, "variable chip remove button");
+    let chip = "Variable 1 latest capture: from response";
     app.harness.get_by_label(chip).click_secondary();
     check(app, "variable chip menu");
     app.harness.get_by_label("Remove from list");

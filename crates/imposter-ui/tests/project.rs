@@ -346,15 +346,21 @@ fn the_variables_screen_reloads_or_asks() {
     settle(&mut app.harness);
     change_on_disk(&app, "globals.yaml", "region: eu", "region: us");
     reload(&mut app);
-    assert_eq!(app.harness.state().state.variables.rows[0].value, "us");
+    assert_eq!(
+        app.harness.state().state.variables.rows[0].current(),
+        Some("us")
+    );
 
-    type_into(&mut app.harness, "Variable 1 value", "-mine");
+    type_into(&mut app.harness, "Add value to variable 1", "us-mine");
     change_on_disk(&app, "globals.yaml", "region: us", "region: ap");
     reload(&mut app);
     app.harness
         .get_by_label_contains("These variables changed on disk");
-    assert_eq!(app.harness.state().state.variables.rows[0].value, "us-mine");
+    assert_eq!(app.harness.state().state.variables.rows[0].draft, "us-mine");
     click_button(&mut app.harness, "Reload the variables from the file");
     settle(&mut app.harness);
-    assert_eq!(app.harness.state().state.variables.rows[0].value, "ap");
+    assert_eq!(
+        app.harness.state().state.variables.rows[0].current(),
+        Some("ap")
+    );
 }

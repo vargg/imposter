@@ -83,11 +83,11 @@ fn globals_are_edited_and_saved_on_the_variables_screen() {
     open_screen(&mut app);
     assert_eq!(app.harness.state().state.screen, Screen::Variables);
 
-    type_into(&mut app.harness, "Variable 1 value", "-new");
+    type_into(&mut app.harness, "Add value to variable 1", "old-new");
     assert_eq!(save_state(&app.harness, "Save variables"), "Unsaved");
     click(&mut app.harness, "Add Variable");
     type_into(&mut app.harness, "Variable 2 name", "token");
-    type_into(&mut app.harness, "Variable 2 value", "t");
+    type_into(&mut app.harness, "Add value to variable 2", "t");
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
 
@@ -135,7 +135,7 @@ fn switching_scope_with_unsaved_rows_asks_and_discard_keeps_the_stored_values() 
         collection(store, "API");
     });
     open_screen(&mut app);
-    type_into(&mut app.harness, "Variable 1 value", "2");
+    type_into(&mut app.harness, "Add value to variable 1", "12");
 
     click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Collection · API");
@@ -167,7 +167,7 @@ fn saving_from_the_guard_stores_then_switches() {
         collection(store, "API");
     });
     open_screen(&mut app);
-    type_into(&mut app.harness, "Variable 1 value", "2");
+    type_into(&mut app.harness, "Add value to variable 1", "12");
 
     click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Collection · API");
@@ -448,7 +448,7 @@ fn closing_with_unsaved_variables_asks_and_cancel_stays_open() {
             .unwrap();
     });
     open_screen(&mut app);
-    type_into(&mut app.harness, "Variable 1 value", "x");
+    type_into(&mut app.harness, "Add value to variable 1", "1x");
 
     app.harness.state_mut().request_close();
     settle(&mut app.harness);

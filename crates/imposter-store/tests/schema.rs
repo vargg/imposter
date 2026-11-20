@@ -26,6 +26,7 @@ const RELEASED: &[u64] = &[
     0xabac_add4_5a5a_e2ea,
     0xb2ff_cb31_597d_904c,
     0x725c_6fe9_de55_ac9b,
+    0x332a_363c_371d_7c75,
 ];
 
 #[test]
@@ -55,6 +56,42 @@ fn a_new_database_is_fully_migrated_without_a_backup() {
         (0, MIGRATIONS.len())
     );
     assert_eq!(store.migrated().backup, None);
+}
+
+#[test]
+fn adding_capture_slots_preserves_version_ten_local_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("imposter.db");
+    let old = Store::open_with(&path, &MIGRATIONS[..10]).unwrap();
+    old.call_blocking(|db| {
+        db.execute(
+            "INSERT INTO local_scopes (scope, variables, saved_values) VALUES (?1, ?2, ?3)",
+            rusqlite::params![
+                "existing-scope",
+                r#"{"region":"eu"}"#,
+                r#"{"region":["eu","us"]}"#
+            ],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    old.close().unwrap();
+
+    let upgraded = Store::open(&path).unwrap();
+    assert_eq!(upgraded.migrated().from, 10);
+    assert_eq!(
+        upgraded.migrated().backup,
+        Some(dir.path().join("imposter.db.bak-10"))
+    );
+    let (values, saved, captures): (String, String, String) = upgraded.call_blocking(|db| {
+        Ok(db.query_row(
+            "SELECT variables, saved_values, latest_captures FROM local_scopes WHERE scope = 'existing-scope'",
+            [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?)
+    }).unwrap();
+    assert_eq!(values, r#"{"region":"eu"}"#);
+    assert_eq!(saved, r#"{"region":["eu","us"]}"#);
+    assert_eq!(captures, "{}");
 }
 
 #[test]

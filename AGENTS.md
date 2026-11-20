@@ -961,16 +961,19 @@ numbers, so both are excluded. Each logical change is its own commit.
   out. Rejected: linked rows switched together (Paw's environment domains; the
   user swaps values independently), a send-time prompt (Insomnia; keeps nothing), and one
   environment per value (Postman; multiplies environments).
-  On the Variables screen, saved values appear as wrapping chips below the value field.
-  Enter and the + button pin the field's text. Selecting a chip sets the field, with a
-  filled chip for the current value and a dashed chip when that value is unpinned. The
-  chip menu offers Copy value and Remove from list. Hover or keyboard focus reveals a
-  separate two-click ×, which stays visible while it has focus so keyboard and screen
-  reader users can reach it. Its reserved space keeps the target and surrounding chips
-  in place. A dropdown would hide the alternatives again. Chips inside the field would
-  require custom text editing, including selection, IME and accessibility. A remove
-  target inside the chip would compete with selection. The strip gives the current and
-  saved values one place on screen, with pinning available from the field.
+  Variables renders one wrapping list per row, including a single legacy scalar, with a
+  filled selected chip and a short native Add value field after the chips. Enter adds and
+  selects the draft. Save accepts pending drafts too. Typing alone leaves the selection
+  in place. Why: the editable current field created a separate path to an active value,
+  and the far-right add control and reserved remove spaces broke up the rows. Right-click,
+  Shift+F10 and the accessibility action open the same chip menu. It copies or removes
+  a value, with the last value removed through whole-row deletion.
+  Capture and `vars.set` replace one SQLite slot per variable and activate it for request
+  chaining. It stays available after selecting another chip or restarting. Keep in list
+  adds it to the ordinary list and preserves the effective selection. A value already in
+  the list appears once. Saving the scope keeps the latest slot local, and refuses a stale
+  edit if a concurrent capture changed it. Why: rapidly changing request IDs should
+  remain available without growing a history or being written into shared files by Save.
 - **History search uses the sidebar's filter language** (`imposter_app::filter`, with `status:`,
   `env:` and `via:` added for History: `404`, `4xx`, `failed`, `cancelled`; `via:cli` or
   `via:app`). Words match the request

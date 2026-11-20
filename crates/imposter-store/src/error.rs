@@ -13,6 +13,8 @@ pub enum Conflict {
     EnvironmentName,
     #[error("Names must not be empty")]
     EmptyName,
+    #[error("A capture changed while you were editing. Reload the variables before saving")]
+    CapturesChanged,
 }
 
 #[derive(Debug, thiserror::Error)]

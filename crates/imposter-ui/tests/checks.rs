@@ -321,7 +321,7 @@ fn captures_wait_for_unsaved_variables_and_refresh_a_clean_screen() {
     // Unsaved edits to the globals: the captured value is not written.
     click(&mut app.harness, "Variables");
     settle(&mut app.harness);
-    type_into(&mut app.harness, "Variable 1 value", "0");
+    type_into(&mut app.harness, "Add value to variable 1", "0");
     click(&mut app.harness, "Requests");
     send(app);
     assert_eq!(globals(app)["user_id"], "1");
@@ -338,10 +338,9 @@ fn captures_wait_for_unsaved_variables_and_refresh_a_clean_screen() {
     let screen = &app.harness.state().state.variables;
     assert!(!screen.dirty());
     click(&mut app.harness, "Variables");
+    app.harness.get_by_label("Variable 1 latest capture: 7");
     assert_eq!(
-        text_input(&app.harness, "Variable 1 value")
-            .value()
-            .as_deref(),
+        app.harness.state().state.variables.rows[0].current(),
         Some("7")
     );
 }

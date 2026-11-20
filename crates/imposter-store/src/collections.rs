@@ -121,7 +121,7 @@ fn to_request(ids: &Ids, row: &RequestRow) -> Request {
 }
 
 fn to_collection(db: &Tx<'_>, ids: &Ids, row: &CollectionRow) -> Result<Collection, StoreError> {
-    let (local, _) = crate::scopes::local(db, &row.uid)?;
+    let local = crate::scopes::local(db, &row.uid)?;
     let mut variables = row.variables.clone();
     for (name, value) in local {
         variables.insert(name, value);

@@ -66,8 +66,8 @@ Protect these. The milestones run on them.
   authorization code with PKCE through the system browser). A cookie jar and OAuth
   tokens kept per project and environment, the jar visible and clearable. Per-request
   settings. TLS, proxies, and client certificates matched to an exact host.
-- Variables in global, collection and environment scopes, with saved-value chips, generated
-  values and environment colours. Secrets as references, `{{secret:name}}`, kept per
+- Variables in global, collection and environment scopes, with value chips, a latest capture
+  slot, generated values and environment colours. Secrets as references, `{{secret:name}}`, kept per
   environment and globally apart from variables, never exported or kept in History, and
   filled by `--secret` on the command line.
 - History, search, restore, and the request as it was sent.

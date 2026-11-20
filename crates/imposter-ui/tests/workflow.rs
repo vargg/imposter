@@ -450,7 +450,11 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
     app.harness.get_by_label("Variable scope");
     click(&mut app.harness, "Add Variable");
     type_into(&mut app.harness, "Variable 1 name", "base_url");
-    type_into(&mut app.harness, "Variable 1 value", "http://localhost");
+    type_into(
+        &mut app.harness,
+        "Add value to variable 1",
+        "http://localhost",
+    );
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
     assert!(!app.harness.state().variables_dirty());

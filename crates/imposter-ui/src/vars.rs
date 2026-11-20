@@ -4,9 +4,10 @@
 use std::ops::Range;
 
 use imposter_app::core::generate;
-use imposter_app::core::model::{SavedValues, Variables};
+use imposter_app::core::model::Variables;
 pub use imposter_app::core::variables::Scope;
 use imposter_app::core::variables::{Definition, Snapshot, Source};
+use imposter_app::store::scopes::{CaptureSlot, CaptureSlots, EditableScope};
 
 /// A `{{name}}` token as the editors mark it: no braces or newline inside, not empty
 /// (`\{\{([^{}\n]+)\}\}`, stricter than resolution, so half-typed text is not marked).
@@ -190,98 +191,285 @@ fn join_and(items: &[String]) -> String {
     }
 }
 
-/// One editable variable. `key` identifies the row's widgets while rows above it are added,
-/// removed or the layout shifts, so typing keeps its focus.
+fn next_row_key() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// An editable secret, with stable widget identity across row moves.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row {
     pub key: u64,
     pub name: String,
     pub value: String,
-    /// Values saved to swap the current one with, in the order saved.
-    pub saved: Vec<String>,
 }
 
 impl Row {
     pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Self {
-            key: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            key: next_row_key(),
             name: name.into(),
             value: value.into(),
-            saved: Vec::new(),
         }
-    }
-
-    pub fn with_saved(
-        name: impl Into<String>,
-        value: impl Into<String>,
-        saved: Vec<String>,
-    ) -> Self {
-        Self {
-            saved,
-            ..Self::new(name, value)
-        }
-    }
-
-    /// Keep the current value for later, returning whether it was added.
-    pub fn save_current(&mut self) -> bool {
-        let value = self.value.clone();
-        self.add_saved(value)
-    }
-
-    /// Keep `value` for later without touching the current value. Returns whether it was
-    /// new; empty and already kept values are not.
-    pub fn add_saved(&mut self, value: String) -> bool {
-        if value.is_empty() || self.saved.contains(&value) {
-            return false;
-        }
-        self.saved.push(value);
-        true
     }
 }
 
-/// A named row as the scope stores it: name, current value and saved values.
-pub type Entry = (String, String, Vec<String>);
+pub type SecretEntry = (String, String);
 
-/// Rows with a name, in order: what the scope holds.
-pub fn entries(rows: &[Row]) -> Vec<Entry> {
+pub fn secret_entries(rows: &[Row]) -> Vec<SecretEntry> {
     rows.iter()
-        .filter(|r| !r.name.is_empty())
-        .map(|r| (r.name.clone(), r.value.clone(), r.saved.clone()))
+        .filter(|row| !row.name.is_empty())
+        .map(|row| (row.name.clone(), row.value.clone()))
         .collect()
 }
 
-pub fn rows(variables: &Variables, saved: &SavedValues) -> Vec<Row> {
-    variables
-        .iter()
-        .map(|(name, value)| Row::with_saved(name.clone(), value.clone(), saved.values(name)))
-        .collect()
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Choice {
+    Ordinary(usize),
+    Capture,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Ordinary {
+    values: Vec<String>,
+    selected: usize,
+}
+
+/// A variable's ordinary choices, its latest capture, and a separate input draft.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariableRow {
+    pub key: u64,
+    pub name: String,
+    pub draft: String,
+    ordinary: Option<Ordinary>,
+    capture: Option<CaptureSlot>,
+}
+
+impl VariableRow {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            key: next_row_key(),
+            name: name.into(),
+            draft: String::new(),
+            ordinary: None,
+            capture: None,
+        }
+    }
+
+    pub fn from_stored(
+        name: impl Into<String>,
+        current: Option<String>,
+        mut values: Vec<String>,
+        capture: Option<CaptureSlot>,
+    ) -> Self {
+        let ordinary = current.map(|current| {
+            let selected = values
+                .iter()
+                .position(|v| *v == current)
+                .unwrap_or_else(|| {
+                    // Legacy scalars may be absent from the list of alternatives.
+                    values.insert(0, current);
+                    0
+                });
+            Ordinary { values, selected }
+        });
+        Self {
+            ordinary,
+            capture,
+            ..Self::new(name)
+        }
+    }
+
+    pub fn blank(&self) -> bool {
+        self.name.is_empty() && self.draft.is_empty() && self.current().is_none()
+    }
+
+    pub fn values(&self) -> &[String] {
+        self.ordinary
+            .as_ref()
+            .map_or(&[], |ordinary| &ordinary.values)
+    }
+
+    /// Equal values share one chip even if they arrived by different routes.
+    pub fn distinct_capture(&self) -> Option<&str> {
+        let capture = self.capture.as_ref()?;
+        (!self.values().contains(&capture.value)).then_some(capture.value.as_str())
+    }
+
+    pub fn current(&self) -> Option<&str> {
+        if let Some(capture) = &self.capture
+            && capture.active
+        {
+            return Some(&capture.value);
+        }
+        self.ordinary
+            .as_ref()
+            .map(|ordinary| ordinary.values[ordinary.selected].as_str())
+    }
+
+    pub fn select(&mut self, choice: Choice) {
+        if let Some(capture) = &mut self.capture {
+            capture.active = choice == Choice::Capture;
+        }
+        if let Choice::Ordinary(index) = choice
+            && let Some(ordinary) = &mut self.ordinary
+        {
+            ordinary.selected = index;
+        }
+    }
+
+    fn keep(&mut self, value: String) -> usize {
+        let ordinary = self.ordinary.get_or_insert_with(|| Ordinary {
+            values: Vec::new(),
+            selected: 0,
+        });
+        ordinary
+            .values
+            .iter()
+            .position(|v| *v == value)
+            .unwrap_or_else(|| {
+                let index = ordinary.values.len();
+                ordinary.values.push(value);
+                index
+            })
+    }
+
+    pub fn add_draft(&mut self) {
+        let value = std::mem::take(&mut self.draft);
+        let index = self.keep(value);
+        self.select(Choice::Ordinary(index));
+    }
+
+    pub fn keep_capture(&mut self) {
+        if let Some(capture) = &self.capture {
+            let active = capture.active;
+            let index = self.keep(capture.value.clone());
+            if active {
+                self.select(Choice::Ordinary(index));
+            }
+        }
+    }
+
+    pub fn can_remove(&self) -> bool {
+        self.values().len() + usize::from(self.distinct_capture().is_some()) > 1
+    }
+
+    pub fn remove(&mut self, choice: Choice) {
+        if !self.can_remove() {
+            return;
+        }
+        match choice {
+            Choice::Capture => {
+                if self.capture.take().is_some_and(|capture| capture.active)
+                    && let Some(ordinary) = &mut self.ordinary
+                {
+                    ordinary.selected = ordinary.values.len() - 1;
+                }
+            }
+            Choice::Ordinary(index) => {
+                let was_active = self.current() == Some(self.values()[index].as_str());
+                let Some(ordinary) = &mut self.ordinary else {
+                    return;
+                };
+                ordinary.values.remove(index);
+                if ordinary.values.is_empty() {
+                    self.ordinary = None;
+                    self.select(Choice::Capture);
+                } else {
+                    let selected = if was_active {
+                        index.min(ordinary.values.len() - 1)
+                    } else {
+                        ordinary
+                            .selected
+                            .saturating_sub(usize::from(index < ordinary.selected))
+                            .min(ordinary.values.len() - 1)
+                    };
+                    ordinary.selected = selected;
+                    if was_active {
+                        // The capture follows the ordinary chips in display order.
+                        if index >= self.values().len() && self.distinct_capture().is_some() {
+                            self.select(Choice::Capture);
+                        } else {
+                            self.select(Choice::Ordinary(selected));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn variable_rows(scope: EditableScope) -> Vec<VariableRow> {
+    let EditableScope {
+        variables,
+        saved,
+        mut captures,
+    } = scope;
+    let mut rows: Vec<_> = variables
+        .into_iter()
+        .map(|(name, current)| {
+            let list = saved.values(&name);
+            let capture = captures.shift_remove(&name);
+            VariableRow::from_stored(name, Some(current), list, capture)
+        })
+        .collect();
+    rows.extend(
+        captures
+            .into_iter()
+            .map(|(name, capture)| VariableRow::from_stored(name, None, Vec::new(), Some(capture))),
+    );
+    rows
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("Variable names must be unique within a scope (\"{0}\" repeats)")]
-pub struct DuplicateName(pub String);
-
-/// The rows as the scope stores them; names must be unique.
-pub fn to_scope(rows: &[Row]) -> Result<(Variables, SavedValues), DuplicateName> {
-    let mut variables = Variables::new();
-    let mut saved = SavedValues::default();
-    for (name, value, values) in entries(rows) {
-        if variables.contains_key(&name) {
-            return Err(DuplicateName(name));
-        }
-        saved.set(&name, values);
-        variables.insert(name, value);
-    }
-    Ok((variables, saved))
+pub enum VariableError {
+    #[error("Variable names must be unique within a scope (\\\"{0}\\\" repeats)")]
+    DuplicateName(String),
+    #[error("Name the variable before saving its values")]
+    UnnamedValues,
 }
 
+pub fn capture_slots(rows: &[VariableRow]) -> CaptureSlots {
+    rows.iter()
+        .filter_map(|row| {
+            row.capture
+                .clone()
+                .map(|capture| (row.name.clone(), capture))
+        })
+        .collect()
+}
+
+/// Save and Enter use the same draft commit. The caller supplies a copy until validation succeeds.
+pub fn to_scope(rows: &mut [VariableRow]) -> Result<EditableScope, VariableError> {
+    let mut scope = EditableScope::default();
+    for row in rows.iter_mut().filter(|row| !row.blank()) {
+        if row.name.is_empty() {
+            return Err(VariableError::UnnamedValues);
+        }
+        if scope.variables.contains_key(&row.name) || scope.captures.contains_key(&row.name) {
+            return Err(VariableError::DuplicateName(row.name.clone()));
+        }
+        if !row.draft.is_empty() || row.current().is_none() {
+            row.add_draft();
+        }
+        if let Some(ordinary) = &row.ordinary {
+            scope
+                .variables
+                .insert(row.name.clone(), ordinary.values[ordinary.selected].clone());
+            scope.saved.set(&row.name, ordinary.values.clone());
+        }
+        if let Some(capture) = &row.capture {
+            scope.captures.insert(row.name.clone(), capture.clone());
+        }
+    }
+    Ok(scope)
+}
 /// The secret rows as their scope stores them: names unique and valid, values long enough
 /// to remove from output safely (`redact::MIN_SECRET`).
 pub fn to_secrets(rows: &[Row]) -> Result<Variables, String> {
     let min = imposter_app::core::redact::MIN_SECRET;
     let mut secrets = Variables::new();
-    for (name, value, _) in entries(rows) {
+    for (name, value) in secret_entries(rows) {
         if name.contains(['{', '}', '\n']) {
             return Err(format!("Secret \"{name}\": names cannot contain braces"));
         }
@@ -303,6 +491,7 @@ pub fn to_secrets(rows: &[Row]) -> Result<Variables, String> {
 #[cfg(test)]
 mod tests {
     use imposter_app::core::ids::{CollectionId, EnvironmentId};
+    use imposter_app::core::model::SavedValues;
     use imposter_app::core::variables::{ActiveEnvironment, CollectionScope, VariableContext};
 
     use super::*;
@@ -467,27 +656,42 @@ mod tests {
     }
 
     #[test]
-    fn scope_rows_round_trip_and_reject_duplicates() {
-        let variables: Variables = [("a".into(), "1".into()), ("b".into(), String::new())]
-            .into_iter()
-            .collect();
-        let mut saved = SavedValues::default();
-        saved.set("a", ["1".to_owned(), "9".to_owned()]);
-        let mut edited = rows(&variables, &saved);
-        assert_eq!(edited[0].saved, ["1", "9"]);
-        edited.push(Row::new("", ""));
-        assert_eq!(to_scope(&edited).unwrap(), (variables, saved));
-        edited.push(Row::new("a", "2"));
-        assert_eq!(to_scope(&edited), Err(DuplicateName("a".into())));
+    fn legacy_scalars_become_chips_and_saved_order_is_preserved() {
+        let mut scope = EditableScope::default();
+        scope.variables.insert("a".to_owned(), "1".to_owned());
+        scope.variables.insert("b".to_owned(), String::new());
+        scope.saved.set("a", ["9".into(), "1".into()]);
+        let mut rows = variable_rows(scope);
+        assert_eq!(rows[0].values(), ["9", "1"]);
+        assert_eq!(rows[0].current(), Some("1"));
+        assert_eq!(rows[1].values(), [""]);
+        rows.push(VariableRow::new(""));
+        let saved = to_scope(&mut rows).unwrap();
+        assert_eq!(saved.saved.values("a"), ["9", "1"]);
+        assert_eq!(saved.saved.values("b"), [""]);
+        rows.push(VariableRow::new("a"));
+        assert_eq!(
+            to_scope(&mut rows),
+            Err(VariableError::DuplicateName("a".into()))
+        );
     }
 
     #[test]
-    fn saving_the_current_value_keeps_each_value_once() {
-        let mut row = Row::new("id", "42");
-        row.save_current();
-        row.value = "77".into();
-        row.save_current();
-        row.save_current();
-        assert_eq!(row.saved, ["42", "77"]);
+    fn removing_the_active_capture_selects_the_last_ordinary_choice() {
+        let mut row = VariableRow::from_stored(
+            "trace",
+            Some("1".into()),
+            vec!["1".into(), "2".into()],
+            Some(CaptureSlot {
+                value: "3".into(),
+                active: true,
+            }),
+        );
+        row.remove(Choice::Capture);
+        assert_eq!(row.current(), Some("2"));
+        assert!(row.distinct_capture().is_none());
+        row.remove(Choice::Ordinary(1));
+        assert_eq!(row.current(), Some("1"));
+        assert!(!row.can_remove());
     }
 }

@@ -617,7 +617,7 @@ fn an_unsaved_screen_does_not_move_the_tabs_after_it() {
             .rect()
     };
     let before = history(&app);
-    type_into(&mut app.harness, "Variable 1 value", "2");
+    type_into(&mut app.harness, "Add value to variable 1", "2");
     assert!(app.harness.state().state.variables.dirty());
     assert_eq!(history(&app), before);
 }

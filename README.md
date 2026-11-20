@@ -75,11 +75,13 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   scope's requests (Global: those sent without an environment), masked like secrets, with
   where and until when each is sent. Remove one, or **Clear cookies…**; both ask first.
   Cookies are kept only on this computer.
-- Saved values appear as chips below the field in Variables. Press Enter or click + to pin
-  the current value. Click a chip to use it, or right-click to copy or remove it. A dashed
-  chip shows an unpinned current value. You can also switch values from the placeholder's
-  inspector. Each environment keeps its own list. Native exports carry saved values with
-  their variables. Postman exports carry the current value only.
+- In Variables, each row shows its values as chips. Type in **Add value**, then press
+  Enter to add and select it or Save to add it while saving the scope. Click a chip to
+  select it. Right-click or press Shift+F10 on a focused chip to copy or remove it.
+  The filled chip marks the selection. Each capture or script update replaces one
+  **Latest capture** chip on this device and selects it for the next request. Use
+  **Keep in list** to keep that value alongside the ordinary choices. Native exports carry
+  saved values with their variables. Postman exports carry the current value only.
 
 **Responses**
 - Status, time, size and content type at a glance.

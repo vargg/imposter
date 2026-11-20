@@ -1421,57 +1421,24 @@ pub const REMOVE_ARMED_SECONDS: f64 = 3.0;
 /// A remove target has the same width in both densities.
 pub(crate) const REMOVE_WIDTH: f32 = 24.0;
 
-type ArmedRemove = (f64, Option<egui::Pos2>);
-
 /// A × button that removes only on a second click: the first arms it (red, "Click again to
 /// remove …"). It disarms after [`REMOVE_ARMED_SECONDS`] or once the pointer is somewhere
 /// else outside it. Returns whether to remove now.
 pub fn remove_button(ui: &mut Ui, id: egui::Id, what: &str, height: f32) -> bool {
-    two_click(ui, id, what, height, None).1
-}
-
-/// Keep a revealed target present while keyboard focus moves from its item onto it.
-pub(crate) fn revealed_remove_button(
-    ui: &mut Ui,
-    id: egui::Id,
-    what: &str,
-    height: f32,
-    reveal: bool,
-) -> bool {
-    let focus_key = id.with("remove focus");
-    let focus: Option<egui::Id> = ui.data(|d| d.get_temp(focus_key));
-    if reveal || focus.is_some_and(|focus| ui.memory(|m| m.has_focus(focus))) {
-        let (button, removed) = two_click(ui, id, what, height, None);
-        ui.data_mut(|d| d.insert_temp(focus_key, button.id));
-        removed
-    } else {
-        if focus.is_some() {
-            ui.data_mut(|d| {
-                d.remove::<egui::Id>(focus_key);
-                d.remove::<ArmedRemove>(id);
-            });
-        }
-        false
-    }
+    two_click(ui, id, what, height, None)
 }
 
 /// [`remove_button`] with words ("Delete route") instead of ×, in red text, for removing a
 /// whole thing rather than a row.
 pub fn delete_button(ui: &mut Ui, id: egui::Id, what: &str, text: &str) -> bool {
     let height = ui.spacing().interact_size.y;
-    two_click(ui, id, what, height, Some(text)).1
+    two_click(ui, id, what, height, Some(text))
 }
 
-fn two_click(
-    ui: &mut Ui,
-    id: egui::Id,
-    what: &str,
-    height: f32,
-    text: Option<&str>,
-) -> (egui::Response, bool) {
+fn two_click(ui: &mut Ui, id: egui::Id, what: &str, height: f32, text: Option<&str>) -> bool {
     let (now, pointer) = ui.input(|i| (i.time, i.pointer.latest_pos()));
     // When it was armed, and where the pointer was then.
-    let armed_at: Option<ArmedRemove> = ui.data(|d| d.get_temp(id));
+    let armed_at: Option<(f64, Option<egui::Pos2>)> = ui.data(|d| d.get_temp(id));
     let armed = armed_at.is_some_and(|(at, _)| now - at < REMOVE_ARMED_SECONDS);
     let response = match text {
         None => {
@@ -1506,16 +1473,16 @@ fn two_click(
     };
     name(&response, &label);
     let response = response.on_hover_text(&label);
-    let disarm = |ui: &mut Ui| ui.data_mut(|d| d.remove_temp::<ArmedRemove>(id));
+    let disarm = |ui: &mut Ui| ui.data_mut(|d| d.remove_temp::<(f64, Option<egui::Pos2>)>(id));
     if response.clicked() {
         if armed {
             disarm(ui);
-            return (response, true);
+            return true;
         }
         ui.data_mut(|d| d.insert_temp(id, (now, pointer)));
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_secs_f64(REMOVE_ARMED_SECONDS));
-        return (response, false);
+        return false;
     }
     if let Some((at, origin)) = armed_at {
         let away = pointer.is_some_and(|p| !response.rect.contains(p) && Some(p) != origin);
@@ -1527,7 +1494,7 @@ fn two_click(
                 .request_repaint_after(std::time::Duration::from_secs_f64(left));
         }
     }
-    (response, false)
+    false
 }
 
 /// One editable row list: enabled, name, value, remove; then Add and Clear all.

@@ -460,7 +460,7 @@ fn main() {
         tour.settle();
         tour.shot("3-03-variables");
         tour.harness
-            .get_by_label_contains("saved value 2: 77")
+            .get_by_label_contains("value 2: 77")
             .click_secondary();
         tour.settle();
         tour.shot("3-04-saved-values");
@@ -482,7 +482,7 @@ fn main() {
         tour.shot("3-06-new-environment");
         tour.harness.key_press(egui::Key::Escape);
         tour.settle();
-        tour.type_into("Variable 2 value", "-edited");
+        tour.type_into("Add value to variable 2", "en-edited");
         tour.shot("3-07-unsaved-variables");
         tour.click("Revert unsaved changes");
         tour.settle();

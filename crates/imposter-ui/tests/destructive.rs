@@ -123,7 +123,7 @@ fn variables_ask_before_they_are_cleared_reverted_or_deleted() {
     asked_and_escaped(app, "Remove all 2 variables from the Dev environment?");
     assert_eq!(app.harness.state().state.variables.rows.len(), 2);
 
-    type_into(&mut app.harness, "Variable 1 value", "-edited");
+    type_into(&mut app.harness, "Add value to variable 1", "-edited");
     click(&mut app.harness, "Revert unsaved changes");
     asked_and_escaped(app, "Discard the unsaved changes to the Dev environment");
     assert!(

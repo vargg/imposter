@@ -229,3 +229,90 @@ fn captured_values_replace_current_ones_and_keep_saved_values() {
         .call_blocking(|db| scopes::set_current(db, Scope::Environment(EnvironmentId(999)), &[]));
     assert!(matches!(gone, Err(StoreError::NotFound(_))));
 }
+
+#[test]
+fn a_latest_capture_survives_reopening_and_a_manual_selection() {
+    let (dir, store) = store();
+    store
+        .call_blocking(|db| {
+            scopes::write(
+                db,
+                Scope::Global,
+                &vars(&[("id", "manual")]),
+                &SavedValues::default(),
+            )?;
+            for value in ["first", "second"] {
+                scopes::set_current(db, Scope::Global, &[("id".into(), value.into())])?;
+            }
+            assert_eq!(scopes::read(db, Scope::Global)?.0["id"], "second");
+            scopes::choose_value(db, Scope::Global, "id", "manual")
+        })
+        .unwrap();
+    store.close().unwrap();
+
+    let store = Store::open(&dir.path().join("imposter.db")).unwrap();
+    store
+        .call_blocking(|db| {
+            let editor = scopes::editable(db, Scope::Global)?;
+            assert_eq!(editor.variables["id"], "manual");
+            assert_eq!(
+                editor.captures["id"],
+                scopes::CaptureSlot {
+                    value: "second".into(),
+                    active: false
+                }
+            );
+            assert_eq!(scopes::read(db, Scope::Global)?.0["id"], "manual");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn saving_a_scope_keeps_active_captures_local_and_rejects_stale_slots() {
+    let (dir, store) = store();
+    let old = store
+        .call_blocking(|db| {
+            scopes::write(
+                db,
+                Scope::Global,
+                &vars(&[("id", "manual")]),
+                &SavedValues::default(),
+            )?;
+            scopes::set_current(
+                db,
+                Scope::Global,
+                &[
+                    ("id".into(), "captured".into()),
+                    ("new".into(), "only-captured".into()),
+                ],
+            )?;
+            let editor = scopes::editable(db, Scope::Global)?;
+            let baseline = editor.captures.clone();
+            scopes::write_editor(db, Scope::Global, editor, &baseline)?;
+            assert_eq!(
+                scopes::read(db, Scope::Global)?.0,
+                vars(&[("id", "captured"), ("new", "only-captured")])
+            );
+            scopes::set_current(db, Scope::Global, &[("id".into(), "newer".into())])?;
+            Ok(baseline)
+        })
+        .unwrap();
+    let shared = std::fs::read_to_string(dir.path().join("collections/globals.yaml")).unwrap();
+    assert!(shared.contains("manual"));
+    assert!(!shared.contains("captured"));
+
+    let error = store
+        .call_blocking(move |db| {
+            scopes::write_editor(db, Scope::Global, scopes::EditableScope::default(), &old)
+        })
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        StoreError::Conflict(imposter_store::Conflict::CapturesChanged)
+    ));
+    assert_eq!(
+        store.call_blocking(environments::globals).unwrap()["id"],
+        "newer"
+    );
+}

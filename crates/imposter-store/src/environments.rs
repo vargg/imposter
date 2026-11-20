@@ -41,7 +41,7 @@ fn to_environment(
     state: &State,
     row: &EnvironmentRow,
 ) -> Result<Environment, StoreError> {
-    let (local, _) = scopes::local(db, &row.uid)?;
+    let local = scopes::local(db, &row.uid)?;
     let mut variables = row.variables.clone();
     for (name, value) in local {
         variables.insert(name, value);

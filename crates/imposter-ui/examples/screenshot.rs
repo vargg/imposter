@@ -251,7 +251,7 @@ fn main() {
             .save(out.join(format!("{label}-variables.png")))
             .unwrap();
         harness
-            .get_by_label_contains("saved value 2: 77")
+            .get_by_label_contains("value 2: 77")
             .click_secondary();
         settle(&mut harness);
         harness
