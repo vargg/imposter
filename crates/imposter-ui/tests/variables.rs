@@ -85,8 +85,7 @@ fn globals_are_edited_and_saved_on_the_variables_screen() {
 
     type_into(&mut app.harness, "Add value to variable 1", "old-new");
     assert_eq!(save_state(&app.harness, "Save variables"), "Unsaved");
-    click(&mut app.harness, "Add Variable");
-    type_into(&mut app.harness, "Variable 2 name", "token");
+    type_into(&mut app.harness, "New variable name", "token");
     type_into(&mut app.harness, "Add value to variable 2", "t");
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
@@ -109,8 +108,7 @@ fn duplicate_names_are_refused_and_nothing_is_saved() {
             .unwrap();
     });
     open_screen(&mut app);
-    click(&mut app.harness, "Add Variable");
-    type_into(&mut app.harness, "Variable 2 name", "a");
+    type_into(&mut app.harness, "New variable name", "a");
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
 
@@ -534,10 +532,11 @@ fn a_new_variable_keeps_focus_while_its_name_is_typed() {
             .unwrap();
     });
     open_screen(&mut app);
-    click(&mut app.harness, "Add Variable");
-    type_into(&mut app.harness, "Variable 2 name", "t");
+    type_into(&mut app.harness, "New variable name", "t");
     assert_eq!(save_state(&app.harness, "Save variables"), "Unsaved");
 
+    assert!(support::text_input(&app.harness, "Variable 2 name").is_focused());
+    support::text_input(&app.harness, "New variable name");
     // Keep typing without clicking the field again.
     app.harness.event(egui::Event::Text("oken".into()));
     app.harness.run_steps(2);
@@ -706,7 +705,7 @@ fn clear_all_is_in_the_menu_and_asks_before_removing() {
     open_screen(&mut app);
     assert!(
         app.harness.query_by_label("Clear All").is_none(),
-        "not beside Add Variable"
+        "the table has no clear action"
     );
     click(&mut app.harness, "Variable actions");
     assert!(

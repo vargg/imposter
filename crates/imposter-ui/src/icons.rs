@@ -49,6 +49,7 @@ pub enum Icon {
     Refresh,
     Settings,
     Trash,
+    Paperclip,
     Info,
     Check,
     Warning,
@@ -69,7 +70,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Self; 43] = [
+    pub const ALL: [Self; 44] = [
         Self::Sidebar,
         Self::Columns,
         Self::Rows,
@@ -96,6 +97,7 @@ impl Icon {
         Self::Refresh,
         Self::Settings,
         Self::Trash,
+        Self::Paperclip,
         Self::Info,
         Self::Check,
         Self::Warning,
@@ -144,6 +146,7 @@ impl Icon {
             Self::Refresh => '\u{e036}',      // arrow-clockwise
             Self::Settings => '\u{e272}',     // gear-six
             Self::Trash => '\u{e4a6}',        // trash
+            Self::Paperclip => '\u{e39a}',    // paperclip
             Self::Info => '\u{e2ce}',         // info
             Self::Check => '\u{e182}',        // check
             Self::Warning => '\u{e4e0}',      // warning

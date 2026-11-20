@@ -55,6 +55,11 @@ fn color(harness: &Harness<'_>, icon: Icon) -> Color32 {
 }
 
 #[test]
+fn paperclip_matches_phosphor_regular_css() {
+    assert_eq!(Icon::Paperclip.glyph(), '\u{e39a}');
+}
+
+#[test]
 fn glyph_buttons_keep_their_names_size_alignment_and_state_colors() {
     for choice in [ThemeChoice::Dark, ThemeChoice::Light] {
         for density in [Density::Compact, Density::Comfortable] {

@@ -215,8 +215,7 @@ fn enter_adds_or_selects_a_value_and_escape_clears_the_draft() {
         app.harness.state().state.variables.rows[1].current(),
         Some("")
     );
-    click(&mut app.harness, "Add Variable");
-    support::type_into(&mut app.harness, "Variable 3 name", "blank");
+    support::type_into(&mut app.harness, "New variable name", "blank");
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
     app.harness.get_by_label("Variable 3 value 1: Empty value");

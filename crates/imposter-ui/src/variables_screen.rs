@@ -8,8 +8,9 @@ use crate::icons::{self, Icon};
 use crate::theme::{Tone, palette};
 use crate::vars::{self, Choice, Scope};
 use crate::widgets::{
-    REMOVE_WIDTH, SaveStatus, SaveWord, Variant, button, env_option_text, env_text, name,
-    remove_button, save_controls, saved_label, screen_toolbar, tone_text,
+    REMOVE_WIDTH, SaveStatus, SaveWord, Variant, append_row, blank_cell, button, env_option_text,
+    env_text, name, remove_button, save_controls, saved_label, screen_toolbar, table_text,
+    tone_text,
 };
 use imposter_app::core::model::EnvColor;
 
@@ -233,6 +234,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            crate::widgets::scroll_view_bounds(ui);
             ui.label(usage);
             ui.add(egui::Label::new(tone_text(precedence, Tone::Muted)).wrap());
             ui.add_space(crate::theme::spacing().sm);
@@ -259,11 +261,20 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 state.variables.rows.remove(index);
                 edited = true;
             }
-            ui.horizontal(|ui| {
-                if button(ui, Variant::Secondary, None, "Add Variable").clicked() {
-                    state.variables.rows.push(vars::VariableRow::new(""));
-                }
+            let id = ui.make_persistent_id(("new variable", current));
+            let mut row = ui.data_mut(|data| {
+                data.get_temp_mut_or_insert_with(id, || vars::VariableRow::new(""))
+                    .clone()
             });
+            ui.horizontal(|ui| {
+                variable_name(ui, &mut row, "New variable name", name_width);
+                blank_cell(ui, value_width);
+                blank_cell(ui, REMOVE_WIDTH);
+            });
+            if !row.name.is_empty() {
+                ui.data_mut(|data| data.remove::<vars::VariableRow>(id));
+                edited |= append_row(ui, &mut state.variables.rows, row);
+            }
             if imposter_app::core::variables::SecretScope::of_scope(current).is_some() {
                 edited |= secrets_section(
                     ui,
@@ -304,13 +315,7 @@ fn variable_row(
     highlight: Option<&str>,
 ) -> (bool, bool) {
     ui.horizontal_top(|ui| {
-        let field = ui.add_sized(
-            [name_width, height],
-            egui::TextEdit::singleline(&mut row.name)
-                .id(egui::Id::unique(("variable name", row.key)))
-                .hint_text("name"),
-        );
-        name(&field, &format!("Variable {number} name"));
+        let field = variable_name(ui, row, &format!("Variable {number} name"), name_width);
         if highlight == Some(row.name.as_str()) {
             field.scroll_to_me(Some(Align::Center));
             field.request_focus();
@@ -329,6 +334,18 @@ fn variable_row(
         (field.changed() || values.inner, removed)
     })
     .inner
+}
+
+fn variable_name(ui: &mut Ui, row: &mut vars::VariableRow, label: &str, width: f32) -> Response {
+    table_text(
+        ui,
+        &mut row.name,
+        egui::Id::unique(("variable name", row.key)),
+        label,
+        width,
+        "name",
+        false,
+    )
 }
 
 /// The scope's secrets under its variables: values masked, each with an eye to show it for
@@ -352,22 +369,22 @@ fn secrets_section(
     ui.add_space(4.0);
     let eye = icons::size() + ui.spacing().item_spacing.x;
     let value_width = (value_width - eye).max(120.0);
-    if !rows.is_empty() {
-        ui.horizontal(|ui| {
-            crate::widgets::heading_cell(ui, name_width, "Secret name");
-            crate::widgets::heading_cell(ui, value_width, "Value");
-        });
-    }
+    ui.horizontal(|ui| {
+        crate::widgets::heading_cell(ui, name_width, "Secret name");
+        crate::widgets::heading_cell(ui, value_width, "Value");
+    });
     let mut remove = None;
     for (index, row) in rows.iter_mut().enumerate() {
         ui.horizontal(|ui| {
-            let field = ui.add_sized(
-                [name_width, height],
-                egui::TextEdit::singleline(&mut row.name)
-                    .id_salt(("secret", row.key, "name"))
-                    .hint_text("name"),
+            let field = table_text(
+                ui,
+                &mut row.name,
+                egui::Id::unique(("secret", row.key, "name")),
+                &format!("Secret {} name", index + 1),
+                name_width,
+                "name",
+                false,
             );
-            name(&field, &format!("Secret {} name", index + 1));
             if highlight.and_then(imposter_app::core::variables::secret_name)
                 == Some(row.name.as_str())
             {
@@ -377,14 +394,15 @@ fn secrets_section(
             // Shown or not is remembered for the session only, never stored.
             let shown_id = ui.make_persistent_id(("secret shown", row.key));
             let mut shown: bool = ui.data(|d| d.get_temp(shown_id)).unwrap_or(false);
-            let value = ui.add_sized(
-                [value_width, height],
-                egui::TextEdit::singleline(&mut row.value)
-                    .id_salt(("secret", row.key, "value"))
-                    .password(!shown)
-                    .hint_text("value"),
+            let value = table_text(
+                ui,
+                &mut row.value,
+                egui::Id::unique(("secret", row.key, "value")),
+                &format!("Secret {} value", index + 1),
+                value_width,
+                "value",
+                !shown,
             );
-            name(&value, &format!("Secret {} value", index + 1));
             let (icon, action) = if shown {
                 (Icon::EyeOff, format!("Hide secret {}", index + 1))
             } else {
@@ -406,8 +424,36 @@ fn secrets_section(
         rows.remove(index);
         edited = true;
     }
-    if ui.button("Add Secret").clicked() {
-        rows.push(vars::Row::new("", ""));
+    let id = ui.make_persistent_id("new secret");
+    let mut row = ui.data_mut(|data| {
+        data.get_temp_mut_or_insert_with(id, || vars::Row::new("", ""))
+            .clone()
+    });
+    ui.horizontal(|ui| {
+        table_text(
+            ui,
+            &mut row.name,
+            egui::Id::unique(("secret", row.key, "name")),
+            "New secret name",
+            name_width,
+            "name",
+            false,
+        );
+        table_text(
+            ui,
+            &mut row.value,
+            egui::Id::unique(("secret", row.key, "value")),
+            "New secret value",
+            value_width,
+            "value",
+            true,
+        );
+        blank_cell(ui, icons::size());
+        blank_cell(ui, REMOVE_WIDTH);
+    });
+    if !row.name.is_empty() || !row.value.is_empty() {
+        ui.data_mut(|data| data.remove::<vars::Row>(id));
+        edited |= append_row(ui, rows, row);
     }
     edited
 }

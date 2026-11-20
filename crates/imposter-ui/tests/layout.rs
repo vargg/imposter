@@ -9,8 +9,9 @@ mod support;
 use egui::Rect;
 use egui::accesskit::Role;
 use egui_kittest::kittest::{NodeT, Queryable};
+use imposter_app::core::model::{BodyType, FormItem, ParamItem};
 use imposter_testkit::{Server, response};
-use imposter_ui::app::{Action, Appearance, Screen};
+use imposter_ui::app::{Action, Appearance, EditorTab, Screen};
 use imposter_ui::layout::MIN_WINDOW;
 use imposter_ui::theme::{self, Density, ThemeChoice};
 use support::{click, click_button, collection, request, settle, start_with, type_into};
@@ -33,6 +34,21 @@ const ROLES: [Role; 5] = [
     Role::MultilineTextInput,
 ];
 
+/// Preserve each control's full width so clipping can't mask horizontal overflow.
+fn visible_vertical_bounds(node: &egui_kittest::Node<'_>) -> Rect {
+    let mut rect = node.rect();
+    let mut ancestor = node.parent();
+    while let Some(parent) = ancestor {
+        if parent.accesskit_node().role() == Role::ScrollView {
+            let clip = parent.rect();
+            rect.min.y = rect.min.y.max(clip.min.y);
+            rect.max.y = rect.max.y.min(clip.max.y);
+        }
+        ancestor = parent.parent();
+    }
+    rect
+}
+
 /// Every operable control that shows in the window, by role and label. Controls that cross
 /// the header's bottom or the status bar's top are partly scrolled out of their pane: egui
 /// clips them, but AccessKit reports their whole rectangle, so they are left out.
@@ -51,7 +67,7 @@ fn controls(app: &support::App) -> Vec<(Role, String, Rect)> {
         .flat_map(|role| {
             app.harness.query_all_by_role(*role).map(move |node| {
                 let label = node.accesskit_node().label().unwrap_or_default();
-                (*role, label, node.rect())
+                (*role, label, visible_vertical_bounds(&node))
             })
         })
         .filter(|(_, _, rect)| rect.intersects(window) && rect.area() > 0.0)
@@ -80,7 +96,7 @@ fn labels(app: &support::App) -> Vec<(Role, String, Rect)> {
         .map(|node| {
             let ak = node.accesskit_node();
             let text = ak.label().or_else(|| ak.value()).unwrap_or_default();
-            (Role::Label, text, node.rect())
+            (Role::Label, text, visible_vertical_bounds(&node))
         })
         .filter(|(_, _, rect)| {
             rect.intersects(window)
@@ -261,6 +277,65 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, SEND);
     settle(&mut app.harness);
     check(app, "response");
+    // Table composers and the inline confirmation need to fit the narrow request pane.
+    for (tab, title) in [
+        (EditorTab::Params, "query composer"),
+        (EditorTab::Cookies, "request cookies composer"),
+        (EditorTab::Headers, "request headers composer"),
+    ] {
+        app.harness.state_mut().state.editor.as_mut().unwrap().tab = tab;
+        check(app, title);
+    }
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .headers = vec![ParamItem::new("Accept", "application/json")];
+    check(app, "request headers with clear button");
+    click(&mut app.harness, "Clear all");
+    check(app, "clear table confirmation");
+    click(&mut app.harness, "Keep");
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .headers
+        .clear();
+    let original = {
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.tab = EditorTab::Body;
+        std::mem::replace(&mut pane.editor.body_type, BodyType::Urlencoded)
+    };
+    check(app, "form field composer");
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .body_type = BodyType::Multipart;
+    check(app, "multipart field composer");
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .multipart = vec![FormItem::file("upload", "report.txt")];
+    check(app, "multipart metadata and header actions");
+    {
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.editor.multipart.clear();
+        pane.editor.body_type = original;
+    }
     // Both panes have a Headers tab.
     app.harness.state_mut().state.response.tab = imposter_ui::app::ResponseTab::Headers;
     check(app, "response headers");
@@ -310,6 +385,13 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     check(app, "event stream");
     click(&mut app.harness, "GET Broken");
     settle(&mut app.harness);
+    for (tab, title) in [
+        (EditorTab::Tests, "empty tests tab"),
+        (EditorTab::Captures, "empty captures tab"),
+    ] {
+        app.harness.state_mut().state.editor.as_mut().unwrap().tab = tab;
+        check(app, title);
+    }
     // The Tests tab: checks with and without a path, one without an expected value, and a
     // capture, in whatever layout the pane's width calls for.
     {
@@ -334,11 +416,10 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
                 ..Capture::new("session_token", Selector::Header("Set-Cookie".into()))
             },
         ];
-        pane.tab = imposter_ui::app::EditorTab::Tests;
+        pane.tab = EditorTab::Tests;
     }
     check(app, "tests tab");
-    app.harness.state_mut().state.editor.as_mut().unwrap().tab =
-        imposter_ui::app::EditorTab::Captures;
+    app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Captures;
     check(app, "captures tab");
     // Scripts: two editors, one with a compile error under it; then a send whose
     // after-response script fails a test, logs and leaves its error in the Tests tab.
@@ -346,7 +427,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
         pane.editor.scripts.before = "request.set_header(\"X-Trace\", uuid());".into();
         pane.editor.scripts.after = "let broken = ;".into();
-        pane.tab = imposter_ui::app::EditorTab::Scripts;
+        pane.tab = EditorTab::Scripts;
     }
     check(app, "scripts tab");
     // Collection scripts listed above the request's, and their dialog.
@@ -407,7 +488,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     // The request's settings: one row each, with a reset icon on an override.
     {
         let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
-        pane.tab = imposter_ui::app::EditorTab::Settings;
+        pane.tab = EditorTab::Settings;
         pane.editor.options.timeout.inherit = false;
         pane.editor.options.timeout.value = "5".into();
         pane.editor.options.verify_ssl.inherit = false;
@@ -450,7 +531,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         pane.editor.auth.kind = Some(kind);
         // The longest place, so its picker is measured at its widest.
         pane.editor.auth.key_in = imposter_app::core::model::ApiKeyIn::Query;
-        pane.tab = imposter_ui::app::EditorTab::Auth;
+        pane.tab = EditorTab::Auth;
         check(app, &format!("auth {kind:?}"));
     }
     {
@@ -466,7 +547,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         // The screens after this send the request: a key without a name could not go.
         let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
         pane.editor.auth.kind = None;
-        pane.tab = imposter_ui::app::EditorTab::Body;
+        pane.tab = EditorTab::Body;
     }
     // A custom method being typed takes the method picker's place in the request bar.
     click(&mut app.harness, "HTTP method");
@@ -485,7 +566,31 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         support::open_screen(&mut app.harness, screen);
         settle(&mut app.harness);
         check(app, screen);
+        if screen == "Settings" {
+            app.harness
+                .get_by_label("Add host certificate")
+                .scroll_to_me();
+            check(app, "host certificates header");
+            app.harness
+                .state_mut()
+                .state
+                .settings_screen
+                .form
+                .host_identities
+                .push(imposter_app::core::settings::HostIdentity::default());
+            check(app, "host certificate row");
+            app.harness
+                .state_mut()
+                .state
+                .settings_screen
+                .form
+                .host_identities
+                .clear();
+        }
     }
+    let routes = std::mem::take(&mut app.harness.state_mut().state.mocks.form.routes);
+    check(app, "empty mock routes");
+    app.harness.state_mut().state.mocks.form.routes = routes;
     // Mocks with a scripted route and a request log holding an error and printed lines.
     support::open_screen(&mut app.harness, "Mocks");
     settle(&mut app.harness);

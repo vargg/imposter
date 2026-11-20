@@ -42,7 +42,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   - **Overlap:** no two buttons may overlap, and no text label may run into a button
     (a long "500 Internal Server Error" into the Runs menu). This is checked only without a dialog open,
     since a dialog is a layer above.
-  - **Clipping:** egui does not tell AccessKit about clipping, so controls crossing the
+  - **Clipping:** the Variables and Settings scroll regions report their visible bounds
+    to AccessKit. The lint uses those bounds for vertical clipping and keeps the full
+    control widths for overflow checks. For other regions, controls crossing the
     header's bottom or the status bar's top count as scrolled out, as does anything below
     the status bar's top other than its own controls.
   - **Upkeep:** new screens and states are added to its walk.
@@ -199,9 +201,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   Refresh, Newer and Older (chevrons), the find bar's Next and Previous, Close (×),
   Browse (a folder) and Save are Phosphor Regular icon buttons (`icons.rs`),
   each named for screen readers and tests and with its words in the hover text. Menu items
-  stay text, and so do actions that start a flow (Restore as draft, Retry, Add check,
-  "+ Environment"), whose words say more than a glyph could. Why: the same action was an
-  icon in one place and a word in another ("Copy as curl" in the request bar and in
+  stay text, including Add check in the JSON viewer. Actions such as Restore as draft,
+  Retry and "+ Environment" keep their labels, whose words say more than a glyph could.
+  Why: the same action was an icon in one place and a word in another ("Copy as curl" in the request bar and in
   History, the inspector's "Copy value"; the user's note), and text buttons crowded the
   toolbars. The hand-painted set did not scale; gaps forced text buttons. Phosphor provides
   a consistent set of glyphs centred at 16 pt in the existing square targets, keeping the
@@ -431,6 +433,25 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   `imposter-ui/tests/request_bar.rs` and the layout lint's custom-method state.
 
 - **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests, Captures, Scripts.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks and Captures the variables it sets from a response, each tab counting its own rows ("Set variable" from a JSON row opens Captures). Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document; checks and captures in one tab under two headings made captures hard to find (user's note). The response keeps one Tests tab for check results and capture writes, both results of the run. Enforced by `imposter-ui/tests/editing.rs`.
+
+- **Editable key/value tables end with an empty composer.** Its muted name and value
+  hints line up with the existing fields. Typing in either field creates one row and
+  keeps focus and the cursor in that field, with a fresh composer below. Variables start
+  with the name and reveal their value chips and composer when the row is created.
+  A secret can start with its value and requires a name before Save.
+  The trailing row is never data. It cannot make the form dirty, be counted, or reach a
+  save, send, export or curl command. Real rows remain until removed, even if edited
+  back to empty. Where a table supports Clear all, its trash icon sits over the remove
+  column and opens the inline confirmation. Multipart adds text fields through its
+  composer and files through a paperclip in the header. In a narrow pane the real row's
+  type, content type and filename move to a second line to keep the main fields and
+  header actions in view.
+- **Tables of typed rows use one Plus icon at the right of the section header.**
+  Checks, captures, mock routes and host client certificates use the action name for
+  accessibility and hover. Existing empty-state messages stay visible.
+  The old left-aligned buttons beneath tables varied in width and made screens look
+  scattered and unfinished. Typing where the next row goes follows the way Postman,
+  Yaak and spreadsheets handle entry.
 
 - **The body editor fills its pane**, above a one-line footer ("Valid JSON" or the parse
   error with its line, then Format), and is never shorter than about four lines. It
@@ -687,8 +708,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   and color, deleting and "Clear all variables…" are in its "⋯" menu, and clearing asks
   in a dialog with the count. In environment lists, names without a color keep the dot's room,
   so all start in line. Why: the screen did not say which scope wins, nor whether the
-  environment shown is the one sends use, and "Clear All" sat beside "Add Variable" (the
-  review's #37, #39; Phase 5 review Q22, Q25).
+  environment shown is the one sends use. The menu keeps scope-wide clearing apart
+  from row editing (the review's #37, #39; Phase 5 review Q22, Q25).
 
 - **Settings save only on Save Settings**, against a baseline: undoing an edit is not a change. Settings the screen does not
   show are kept. Closing asks about unsaved settings after the request and variables guards.

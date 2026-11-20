@@ -4,7 +4,8 @@
 
 mod support;
 
-use egui_kittest::kittest::Queryable;
+use egui::accesskit::Role;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::model::{ApiKeyIn, AuthKind, BodyType, FormKind, RequestAuth};
 use imposter_app::store::collections;
 use imposter_ui::app::EditorTab;
@@ -95,7 +96,6 @@ fn bearer_tokens_are_saved() {
 
 #[test]
 fn api_keys_are_chosen_placed_and_saved() {
-    use egui::accesskit::Role;
     let mut app = opened();
     tab(&mut app, EditorTab::Auth);
     app.harness
@@ -127,7 +127,6 @@ fn api_keys_are_chosen_placed_and_saved() {
 
 #[test]
 fn oauth2_client_credentials_are_entered_and_saved() {
-    use egui::accesskit::Role;
     let mut app = opened();
     tab(&mut app, EditorTab::Auth);
     app.harness
@@ -170,7 +169,6 @@ fn oauth2_client_credentials_are_entered_and_saved() {
 
 #[test]
 fn the_authorization_code_grant_asks_where_to_sign_in() {
-    use egui::accesskit::Role;
     let mut app = opened();
     tab(&mut app, EditorTab::Auth);
     app.harness
@@ -203,7 +201,6 @@ fn the_authorization_code_grant_asks_where_to_sign_in() {
 
 #[test]
 fn secrets_are_masked_until_shown_and_fields_share_a_column() {
-    use egui::accesskit::Role;
     let mut app = opened();
     tab(&mut app, EditorTab::Auth);
     app.harness
@@ -243,15 +240,108 @@ fn secrets_are_masked_until_shown_and_fields_share_a_column() {
 }
 
 #[test]
+fn header_composer_keeps_focus_and_stays_out_of_the_saved_request() {
+    let mut app = opened();
+    tab(&mut app, EditorTab::Headers);
+    let headers = |app: &support::App| {
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .headers
+            .clone()
+    };
+    assert_eq!(support::save_state(&app.harness, "Save request"), "Saved");
+    assert!(
+        app.harness
+            .get_by_label("Save request")
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert_eq!(headers(&app), []);
+    assert_eq!(app.harness.query_all_by_role(Role::CheckBox).count(), 0);
+    assert!(
+        app.harness
+            .query_by_label_contains("Remove Headers row")
+            .is_none()
+    );
+    assert!(app.harness.query_by_label("Clear all").is_none());
+
+    support::text_input(&app.harness, "Headers new row name").click();
+    app.harness.run_steps(2);
+    app.harness.event(egui::Event::Text("a".into()));
+    app.harness.step();
+    assert_eq!(headers(&app).len(), 1);
+    assert!(support::text_input(&app.harness, "Headers row 1 name").is_focused());
+    let next = support::text_input(&app.harness, "Headers new row name");
+    assert_eq!(next.accesskit_node().value().as_deref(), Some(""));
+    assert!(!next.is_focused());
+    app.harness.event(egui::Event::Text("b".into()));
+    app.harness.step();
+
+    assert_eq!(headers(&app).len(), 1);
+    assert_eq!(headers(&app)[0].name, "ab");
+    assert_eq!(app.harness.query_all_by_role(Role::CheckBox).count(), 1);
+    app.harness
+        .get_by_role_and_label(Role::CheckBox, "Headers row 1 enabled");
+    app.harness.get_by_label("Remove Headers row 1");
+    assert!(app.harness.query_by_label("Remove Headers row 2").is_none());
+    assert_eq!(
+        support::text_input(&app.harness, "Headers row 1 name")
+            .rect()
+            .x_range(),
+        support::text_input(&app.harness, "Headers new row name")
+            .rect()
+            .x_range()
+    );
+    click(&mut app.harness, "Save request");
+    assert_eq!(saved(&mut app).template.headers, headers(&app));
+
+    support::text_input(&app.harness, "Headers row 1 name").click();
+    app.harness.run_steps(2);
+    app.harness
+        .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    app.harness.key_press(egui::Key::Backspace);
+    app.harness.run_steps(2);
+    assert_eq!(headers(&app).len(), 1);
+    assert_eq!(headers(&app)[0].name, "");
+    app.harness.get_by_label("Remove Headers row 1");
+}
+
+#[test]
+fn tab_moves_from_the_empty_name_to_the_value_and_either_field_can_create_a_row() {
+    let mut app = opened();
+    tab(&mut app, EditorTab::Headers);
+    support::text_input(&app.harness, "Headers new row name").click();
+    app.harness.run_steps(2);
+    app.harness.key_press(egui::Key::Tab);
+    app.harness.run_steps(2);
+    assert!(support::text_input(&app.harness, "Headers new row value").is_focused());
+    app.harness.event(egui::Event::Text("v".into()));
+    app.harness.step();
+    assert!(support::text_input(&app.harness, "Headers row 1 value").is_focused());
+    app.harness.event(egui::Event::Text("1".into()));
+    app.harness.step();
+    type_into(&mut app.harness, "Headers row 1 name", "X-Test");
+    click(&mut app.harness, "Save request");
+    let headers = saved(&mut app).template.headers;
+    assert_eq!(
+        headers,
+        [imposter_app::core::model::ParamItem::new("X-Test", "v1")]
+    );
+}
+
+#[test]
 fn header_rows_can_be_added_edited_disabled_and_cleared() {
     let mut app = opened();
     tab(&mut app, EditorTab::Headers);
 
-    click(&mut app.harness, "Add header");
-    type_into(&mut app.harness, "Headers row 1 name", "X-Trace");
+    type_into(&mut app.harness, "Headers new row name", "X-Trace");
     type_into(&mut app.harness, "Headers row 1 value", "on");
-    click(&mut app.harness, "Add header");
-    type_into(&mut app.harness, "Headers row 2 name", "X-Off");
+    type_into(&mut app.harness, "Headers new row name", "X-Off");
     click(&mut app.harness, "Headers row 2 enabled");
     let headers = saved(&mut app).template.headers;
     assert_eq!(headers.len(), 2);
@@ -276,18 +366,25 @@ fn header_rows_can_be_added_edited_disabled_and_cleared() {
     assert_eq!(rows(&app), 1);
     assert_eq!(saved(&mut app).template.headers.len(), 1);
 
+    support::assert_icon_button(&app.harness, "Clear all");
+    click(&mut app.harness, "Clear all");
+    app.harness.get_by_label("Remove all rows?");
+    click(&mut app.harness, "Keep");
+    assert_eq!(rows(&app), 1);
     click(&mut app.harness, "Clear all");
     app.harness.get_by_label("Remove all rows?");
     click(&mut app.harness, "Remove all");
     assert_eq!(saved(&mut app).template.headers, []);
+    support::text_input(&app.harness, "Headers new row name");
+    support::text_input(&app.harness, "Headers new row value");
+    assert!(app.harness.query_by_label("Clear all").is_none());
 }
 
 #[test]
 fn query_rows_rewrite_the_url() {
     let mut app = opened();
     tab(&mut app, EditorTab::Params);
-    click(&mut app.harness, "Add query");
-    type_into(&mut app.harness, "Query row 1 name", "q");
+    type_into(&mut app.harness, "Query new row name", "q");
     type_into(&mut app.harness, "Query row 1 value", "a b");
 
     assert_eq!(
@@ -317,31 +414,27 @@ fn multipart_fields_and_binary_paths_are_saved() {
         .editor
         .body_type = BodyType::Multipart;
     app.harness.run_steps(2);
-    click(&mut app.harness, "Add field");
-    type_into(&mut app.harness, "Multipart row 1 name", "upload");
+    type_into(&mut app.harness, "New multipart field name", "upload");
     type_into(&mut app.harness, "Multipart row 1 value", "/tmp/file.bin");
     type_into(
         &mut app.harness,
         "Multipart row 1 content type",
         "application/octet-stream",
     );
-    app.harness
-        .state_mut()
-        .state
-        .editor
-        .as_mut()
-        .unwrap()
-        .editor
-        .multipart[0]
-        .kind = FormKind::File;
-    app.harness
-        .state_mut()
-        .state
-        .actions
-        .push(imposter_ui::app::Action::Edited {
-            url: false,
-            params: false,
-        });
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .multipart[0]
+            .kind,
+        FormKind::Text
+    );
+    click(&mut app.harness, "Multipart row 1 type");
+    click(&mut app.harness, "file");
     let fields = saved(&mut app).template.multipart_fields().unwrap();
     assert_eq!(fields.len(), 1);
     assert_eq!(
@@ -349,6 +442,18 @@ fn multipart_fields_and_binary_paths_are_saved() {
         ("upload", FormKind::File)
     );
     assert_eq!(fields[0].content_type, "application/octet-stream");
+
+    support::assert_icon_button(&app.harness, "Add file field");
+    app.harness
+        .state_mut()
+        .script_file_dialogs([Some("picked.bin".into())]);
+    click(&mut app.harness, "Add file field");
+    settle(&mut app.harness);
+    let fields = saved(&mut app).template.multipart_fields().unwrap();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[1].kind, FormKind::File);
+    assert_eq!(fields[1].value, "picked.bin");
+    support::text_input(&app.harness, "New multipart field value");
 
     app.harness
         .state_mut()

@@ -432,7 +432,8 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
         "Settings",
         // Request tabs that do not fit are under More (tests/fit.rs).
         "More request tabs",
-        "Add query",
+        "Query new row name",
+        "Query new row value",
     ] {
         assert!(
             viewport.contains_rect(app.harness.get_by_label(label).rect()),
@@ -450,8 +451,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
     support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     app.harness.get_by_label("Variable scope");
-    click(&mut app.harness, "Add Variable");
-    type_into(&mut app.harness, "Variable 1 name", "base_url");
+    type_into(&mut app.harness, "New variable name", "base_url");
     type_into(
         &mut app.harness,
         "Add value to variable 1",

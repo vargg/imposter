@@ -117,6 +117,57 @@ fn stored(app: &support::App) -> (Variables, Variables) {
 }
 
 #[test]
+fn variable_and_secret_composers_stay_out_of_the_saved_scope() {
+    let mut app = start_with(|_| {});
+    app.harness.set_size(egui::vec2(1000.0, 700.0));
+    support::open_screen(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    assert_eq!(support::save_state(&app.harness, "Save variables"), "Saved");
+    assert!(!app.harness.state().state.variables.dirty());
+    assert_eq!(app.harness.state().state.variables.rows, []);
+    assert_eq!(app.harness.state().state.variables.secrets, []);
+    support::text_input(&app.harness, "New variable name");
+    support::text_input(&app.harness, "New secret name");
+    assert!(app.harness.query_by_label("Remove variable 1").is_none());
+    assert!(app.harness.query_by_label("Remove secret 1").is_none());
+
+    type_into(&mut app.harness, "New secret value", "dev-");
+    assert!(app.harness.state().state.variables.dirty());
+    assert!(support::text_input(&app.harness, "Secret 1 value").is_focused());
+    app.harness.event(egui::Event::Text("token-1234".into()));
+    app.harness.step();
+    click(&mut app.harness, "Save variables");
+    app.harness
+        .get_by_label_contains("Name the secret before saving its value");
+    type_into(&mut app.harness, "Secret 1 name", "token");
+    type_into(&mut app.harness, "New variable name", "host");
+    type_into(&mut app.harness, "Add value to variable 1", "example.test");
+    click(&mut app.harness, "Save variables");
+    settle(&mut app.harness);
+
+    assert!(!app.harness.state().state.variables.dirty());
+    let (values, secrets) = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| {
+            Ok((
+                environments::globals(db)?,
+                secrets::read(db, SecretScope::Global)?,
+            ))
+        })
+        .unwrap();
+    assert_eq!(values.len(), 1);
+    assert_eq!(values["host"], "example.test");
+    assert_eq!(secrets.len(), 1);
+    assert_eq!(secrets["token"], TOKEN);
+    assert_eq!(app.harness.state().state.variables.rows.len(), 1);
+    assert_eq!(app.harness.state().state.variables.secrets.len(), 1);
+    support::text_input(&app.harness, "New variable name");
+    support::text_input(&app.harness, "New secret value");
+}
+
+#[test]
 fn a_secret_is_defined_from_a_blocked_send_masked_and_sent() {
     let mut f = fixture();
     click(&mut f.app.harness, "GET Use");

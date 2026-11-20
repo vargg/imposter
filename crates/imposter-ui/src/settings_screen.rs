@@ -292,6 +292,7 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            crate::widgets::scroll_view_bounds(ui);
             // At most FORM_WIDTH, never wider than the window: `set_max_width` would widen.
             ui.set_max_width(ui.available_width().min(FORM_WIDTH));
             // Appearance applies at once and is remembered apart from Save: it is how this
@@ -433,16 +434,16 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                         text(ui, &mut form.password, "", true)
                     });
                 });
-                section(ui, "Host client certificates", |ui| {
-                    ui.label("");
-                    ui.add(
-                        egui::Label::new(help_text(
-                            "Used instead of the client certificate above for one host and port.",
-                        ))
-                        .wrap(),
-                    );
-                    ui.end_row();
-                });
+                ui.add_space(crate::theme::spacing().md);
+                if crate::widgets::add_row_header(
+                    ui,
+                    "Host client certificates",
+                    "Add host certificate",
+                    Some("Used instead of the client certificate above for one host and port."),
+                ) {
+                    form.host_identities.push(HostIdentity::default());
+                    edited = true;
+                }
                 let mut remove = None;
                 for (index, identity) in form.host_identities.iter_mut().enumerate() {
                     ui.push_id(index, |ui| {
@@ -488,11 +489,6 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                 }
                 if let Some(index) = remove {
                     form.host_identities.remove(index);
-                    edited = true;
-                }
-                ui.add_space(6.0);
-                if ui.button("Add host certificate").clicked() {
-                    form.host_identities.push(HostIdentity::default());
                     edited = true;
                 }
                 section(ui, "History", |ui| {

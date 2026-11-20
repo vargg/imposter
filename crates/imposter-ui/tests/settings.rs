@@ -190,7 +190,18 @@ fn host_certificates_save_only_on_save_and_validate_duplicates() {
     app.harness.set_size(egui::vec2(1200.0, 1500.0));
     app.harness.run_steps(2);
     open_settings(&mut app);
+    support::assert_icon_button(&app.harness, "Add host certificate");
     click(&mut app.harness, "Add host certificate");
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .settings_screen
+            .form
+            .host_identities
+            .len(),
+        1
+    );
     type_into(&mut app.harness, "Host certificate 1 Host", "Example.COM");
     type_into(
         &mut app.harness,

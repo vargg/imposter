@@ -100,10 +100,6 @@ pub fn script_problems(config: &MockConfig) -> Vec<RouteProblem> {
         .collect()
 }
 
-fn text(ui: &mut Ui, label: &str, value: &mut String, width: f32) -> bool {
-    checked_text(ui, label, value, width, false)
-}
-
 /// A field outlined in the error color while `invalid`.
 fn checked_text(ui: &mut Ui, label: &str, value: &mut String, width: f32, invalid: bool) -> bool {
     ui.scope(|ui| {
@@ -322,10 +318,16 @@ fn server_state(ui: &mut Ui, screen: &MockScreen) {
 /// problem is marked. Returns whether anything changed.
 fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bool {
     let mut edited = false;
+    if widgets::add_row_header(ui, "Routes", "Add mock route", None) {
+        screen.form.routes.push(MockRoute::default());
+        screen.selected = Some(screen.form.routes.len() - 1);
+        screen.custom_method = None;
+        edited = true;
+    }
     let height = crate::theme::spacing().row;
     // The log takes the lower half while it has something to show.
     let list_height = if screen.log.is_empty() {
-        ui.available_height() - 40.0
+        ui.available_height()
     } else {
         (ui.available_height() * 0.45).max(3.0 * height)
     };
@@ -410,14 +412,6 @@ fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bo
                 });
             }
         });
-    let add = ui.button("+ Add route");
-    widgets::name(&add, "Add mock route");
-    if add.clicked() {
-        screen.form.routes.push(MockRoute::default());
-        screen.selected = Some(screen.form.routes.len() - 1);
-        screen.custom_method = None;
-        edited = true;
-    }
     if !screen.log.is_empty() {
         ui.add_space(8.0);
         request_log(ui, screen);
@@ -555,48 +549,8 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
             });
             problem_lines(ui, problems, index, RouteField::Status);
             ui.add_space(8.0);
-            ui.label(egui::RichText::new("Response headers").font(crate::theme::semibold(13.0)));
-            let mut remove_header = None;
-            ui.push_id(("mock headers", index), |ui| {
-                for (row, header) in route.headers.iter_mut().enumerate() {
-                    ui.push_id(row, |ui| {
-                        ui.horizontal(|ui| {
-                            let response = widgets::checkbox(ui, &mut header.is_enabled, "");
-                            widgets::name(&response, &format!("Mock header {} enabled", row + 1));
-                            edited |= response.changed();
-                            edited |= text(
-                                ui,
-                                &format!("Mock header {} name", row + 1),
-                                &mut header.name,
-                                160.0_f32.min(ui.available_width() * 0.35),
-                            );
-                            edited |= text(
-                                ui,
-                                &format!("Mock header {} value", row + 1),
-                                &mut header.value,
-                                (ui.available_width() - 40.0).max(80.0),
-                            );
-                            if widgets::remove_button(
-                                ui,
-                                ui.scope_id().with("remove"),
-                                &format!("mock header {}", row + 1),
-                                24.0,
-                            ) {
-                                remove_header = Some(row);
-                            }
-                        });
-                        problem_lines(ui, problems, index, RouteField::Header(row));
-                    });
-                }
-            });
-            if let Some(row) = remove_header {
-                route.headers.remove(row);
-                edited = true;
-            }
-            if ui.button("Add mock header").clicked() {
-                route.headers.push(ParamItem::new("", ""));
-                edited = true;
-            }
+            ui.label(crate::theme::section("Response headers"));
+            edited |= response_headers(ui, &mut route.headers, index, problems);
             ui.add_space(8.0);
             ui.label(egui::RichText::new("Response body").font(crate::theme::semibold(13.0)));
             let response = ui.add(
@@ -624,6 +578,87 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
         screen.form.routes.remove(index);
         screen.selected = None;
         edited = true;
+    }
+    edited
+}
+
+fn response_headers(
+    ui: &mut Ui,
+    rows: &mut Vec<ParamItem>,
+    route: usize,
+    problems: &[RouteProblem],
+) -> bool {
+    use crate::widgets::{ENABLED_WIDTH, blank_cell, heading_cell};
+    let widths = widgets::key_value_widths(ui, 0.0);
+    let height = crate::theme::spacing().control;
+    let mut edited = false;
+    let mut remove = None;
+    ui.horizontal(|ui| {
+        blank_cell(ui, ENABLED_WIDTH);
+        heading_cell(ui, widths[0], "Name");
+        heading_cell(ui, widths[1], "Value");
+    });
+    for (index, header) in rows.iter_mut().enumerate() {
+        ui.horizontal(|ui| {
+            let enabled = widgets::checkbox(ui, &mut header.is_enabled, "");
+            widgets::name(&enabled, &format!("Mock header {} enabled", index + 1));
+            edited |= enabled.changed();
+            edited |= header_fields(
+                ui,
+                header,
+                (route, index),
+                widths,
+                &format!("Mock header {}", index + 1),
+            );
+            if widgets::remove_button(
+                ui,
+                egui::Id::unique(("remove mock header", route, index)),
+                &format!("mock header {}", index + 1),
+                height,
+            ) {
+                remove = Some(index);
+            }
+        });
+        problem_lines(ui, problems, route, RouteField::Header(index));
+    }
+    let mut row = ParamItem::new("", "");
+    ui.horizontal(|ui| {
+        blank_cell(ui, ENABLED_WIDTH);
+        header_fields(ui, &mut row, (route, rows.len()), widths, "New mock header");
+        blank_cell(ui, crate::icons::size());
+    });
+    if !row.name.is_empty() || !row.value.is_empty() {
+        edited |= widgets::append_row(ui, rows, row);
+    }
+    if let Some(index) = remove {
+        rows.remove(index);
+        edited = true;
+    }
+    edited
+}
+
+fn header_fields(
+    ui: &mut Ui,
+    row: &mut ParamItem,
+    index: (usize, usize),
+    widths: [f32; 2],
+    label: &str,
+) -> bool {
+    let mut edited = false;
+    for ((column, text), width) in [("name", &mut row.name), ("value", &mut row.value)]
+        .into_iter()
+        .zip(widths)
+    {
+        edited |= widgets::table_text(
+            ui,
+            text,
+            egui::Id::unique(("mock header", index, column)),
+            &format!("{label} {column}"),
+            width,
+            column,
+            false,
+        )
+        .changed();
     }
     edited
 }

@@ -218,7 +218,7 @@ pub type SecretEntry = (String, String);
 
 pub fn secret_entries(rows: &[Row]) -> Vec<SecretEntry> {
     rows.iter()
-        .filter(|row| !row.name.is_empty())
+        .filter(|row| !row.name.is_empty() || !row.value.is_empty())
         .map(|row| (row.name.clone(), row.value.clone()))
         .collect()
 }
@@ -470,6 +470,9 @@ pub fn to_secrets(rows: &[Row]) -> Result<Variables, String> {
     let min = imposter_app::core::redact::MIN_SECRET;
     let mut secrets = Variables::new();
     for (name, value) in secret_entries(rows) {
+        if name.is_empty() {
+            return Err("Name the secret before saving its value".to_owned());
+        }
         if name.contains(['{', '}', '\n']) {
             return Err(format!("Secret \"{name}\": names cannot contain braces"));
         }

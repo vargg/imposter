@@ -50,6 +50,24 @@ pub fn screen_toolbar(
     );
 }
 
+/// A section title and its single add action share a row.
+pub(crate) fn add_row_header(ui: &mut Ui, title: &str, action: &str, hint: Option<&str>) -> bool {
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let add = icons::button(ui, Icon::Plus, action, false).clicked();
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                let title = ui.label(crate::theme::section(title));
+                if let Some(hint) = hint {
+                    title.on_hover_text(hint);
+                }
+            });
+            add
+        })
+        .inner
+    })
+    .inner
+}
+
 /// Requests supplies its breadcrumb in place of the standard page title.
 pub(crate) fn toolbar_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
     let spacing = crate::theme::spacing();
@@ -90,6 +108,15 @@ pub(crate) fn region_bounds(ui: &Ui, rect: egui::Rect) {
             x1: rect.right().into(),
             y1: rect.bottom().into(),
         });
+    });
+}
+
+/// Scroll areas otherwise report unbounded content under fixed toolbars.
+pub(crate) fn scroll_view_bounds(ui: &Ui) {
+    region_bounds(ui, ui.clip_rect());
+    ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
+        node.set_role(egui::Role::ScrollView);
+        node.set_clips_children();
     });
 }
 
@@ -1944,7 +1971,74 @@ fn two_click(ui: &mut Ui, id: egui::Id, what: &str, height: f32, text: Option<&s
     false
 }
 
-/// One editable row list: enabled, name, value, remove; then Add and Clear all.
+pub(crate) const ENABLED_WIDTH: f32 = 24.0;
+
+pub(crate) fn blank_cell(ui: &mut Ui, width: f32) {
+    ui.allocate_space(egui::vec2(width, crate::theme::spacing().control));
+}
+
+pub(crate) fn key_value_widths(ui: &Ui, extra: f32) -> [f32; 2] {
+    let gap = ui.spacing().item_spacing.x;
+    let available = ui.available_width() - ENABLED_WIDTH - icons::size() - 3.0 * gap - extra;
+    let name = (available * 0.35).min(280.0);
+    [name, available - name]
+}
+
+pub(crate) fn table_text(
+    ui: &mut Ui,
+    text: &mut String,
+    id: egui::Id,
+    label: &str,
+    width: f32,
+    hint: &str,
+    password: bool,
+) -> egui::Response {
+    let response = ui.add_sized(
+        [width, crate::theme::spacing().control],
+        egui::TextEdit::singleline(text)
+            .id(id)
+            .hint_text(hint)
+            .password(password)
+            .align(egui::Align2::LEFT_CENTER),
+    );
+    name(&response, label);
+    response
+}
+
+/// Redraw after promotion so the edited row gets its controls and the next composer
+/// appears in the same frame. Both passes use the same field IDs and cursor state.
+pub(crate) fn append_row<T>(ui: &Ui, rows: &mut Vec<T>, row: T) -> bool {
+    rows.push(row);
+    ui.request_discard("a table row was created");
+    ui.ctx().request_repaint();
+    true
+}
+
+fn var_pair(
+    ui: &mut Ui,
+    fields: [&mut String; 2],
+    widths: [f32; 2],
+    row: &str,
+    composer: Option<&str>,
+    vars: &mut VarUi,
+) -> bool {
+    let mut changed = false;
+    for ((text, width), column) in fields.into_iter().zip(widths).zip(["name", "value"]) {
+        let label = format!("{row} {column}");
+        let response = if let Some(composer) = composer {
+            // The widget ID comes from the real row label even while the composer is empty.
+            let response = var_edit_hinted(ui, text, &label, width, false, vars, column);
+            name(&response, &format!("{composer} {column}"));
+            response
+        } else {
+            var_edit(ui, text, &label, width, false, vars)
+        };
+        changed |= response.changed();
+    }
+    changed
+}
+
+/// One editable row list: enabled, name, value, remove, and an empty composer.
 pub fn rows_table(
     ui: &mut Ui,
     id: &str,
@@ -1954,81 +2048,87 @@ pub fn rows_table(
 ) -> bool {
     let mut changed = false;
     let mut remove = None;
-    let height = ui.spacing().interact_size.y;
-    let spacing = ui.spacing().item_spacing.x;
-    let available = ui.available_width() - 2.0 * 24.0 - 3.0 * spacing;
-    let name_width = (available * 0.35).clamp(110.0, 280.0);
-    let value_width = (available - name_width).max(120.0);
+    let height = crate::theme::spacing().control;
+    let widths = key_value_widths(ui, 0.0);
     ui.horizontal(|ui| {
-        ui.add_space(24.0 + spacing);
-        heading_cell(ui, name_width, "Name");
-        heading_cell(ui, value_width, "Value");
+        blank_cell(ui, ENABLED_WIDTH);
+        heading_cell(ui, widths[0], "Name");
+        heading_cell(ui, widths[1], "Value");
+        clear_table_button(ui, !rows.is_empty(), confirm_clear);
     });
+    changed |= confirm_clear_table(ui, rows, confirm_clear);
     for (index, row) in rows.iter_mut().enumerate() {
+        let label = format!("{id} row {}", index + 1);
         ui.horizontal(|ui| {
             let enabled = checkbox(ui, &mut row.is_enabled, "");
-            name(&enabled, &format!("{id} row {} enabled", index + 1));
+            name(&enabled, &format!("{label} enabled"));
             changed |= enabled.changed();
-            changed |= var_edit(
+            changed |= var_pair(
                 ui,
-                &mut row.name,
-                &format!("{id} row {} name", index + 1),
-                name_width,
-                false,
+                [&mut row.name, &mut row.value],
+                widths,
+                &label,
+                None,
                 vars,
-            )
-            .changed();
-            changed |= var_edit(
-                ui,
-                &mut row.value,
-                &format!("{id} row {} value", index + 1),
-                value_width,
-                false,
-                vars,
-            )
-            .changed();
-            let what = format!("{id} row {}", index + 1);
-            if remove_button(ui, egui::Id::unique(("remove", id, index)), &what, height) {
+            );
+            if remove_button(ui, egui::Id::unique(("remove", id, index)), &label, height) {
                 remove = Some(index);
             }
         });
+    }
+    let mut row = ParamItem::new("", "");
+    ui.horizontal(|ui| {
+        blank_cell(ui, ENABLED_WIDTH);
+        var_pair(
+            ui,
+            [&mut row.name, &mut row.value],
+            widths,
+            &format!("{id} row {}", rows.len() + 1),
+            Some(&format!("{id} new row")),
+            vars,
+        );
+        blank_cell(ui, icons::size());
+    });
+    if !row.name.is_empty() || !row.value.is_empty() {
+        changed |= append_row(ui, rows, row);
     }
     if let Some(index) = remove {
         rows.remove(index);
         changed = true;
     }
-    ui.horizontal(|ui| {
-        if ui
-            .button(format!("Add {}", id.to_lowercase().trim_end_matches('s')))
-            .clicked()
-        {
-            rows.push(ParamItem::new("", ""));
-        }
-        changed |= clear_all(ui, rows, confirm_clear);
-    });
     changed
 }
 
-/// "Clear all" asks once inline before removing every row.
-fn clear_all<T>(ui: &mut Ui, rows: &mut Vec<T>, confirm: &mut bool) -> bool {
+fn clear_table_button(ui: &mut Ui, populated: bool, confirm: &mut bool) {
+    if !populated || *confirm {
+        blank_cell(ui, icons::size());
+    } else if icons::button_with_hint(ui, Icon::Trash, "Clear all", "Remove all rows…", false)
+        .clicked()
+    {
+        *confirm = true;
+    }
+}
+
+fn confirm_clear_table<T>(ui: &mut Ui, rows: &mut Vec<T>, confirm: &mut bool) -> bool {
     if rows.is_empty() {
         *confirm = false;
+    }
+    if !*confirm {
         return false;
     }
-    if *confirm {
+    ui.horizontal_wrapped(|ui| {
         ui.label(tone_text("Remove all rows?", Tone::Warning));
-        if ui.button("Remove all").clicked() {
+        if button(ui, Variant::Danger, None, "Remove all").clicked() {
             rows.clear();
             *confirm = false;
             return true;
         }
-        if ui.button("Keep").clicked() {
+        if button(ui, Variant::Secondary, None, "Keep").clicked() {
             *confirm = false;
         }
-    } else if ui.button("Clear all").clicked() {
-        *confirm = true;
-    }
-    false
+        false
+    })
+    .inner
 }
 
 /// What a click on "Choose file…" asks the app to do.
@@ -2050,97 +2150,148 @@ pub fn multipart_table(
 ) -> bool {
     let mut changed = false;
     let mut remove = None;
-    let height = ui.spacing().interact_size.y;
-    let spacing = ui.spacing().item_spacing.x;
-    let fixed = [24.0, 110.0, 70.0, 120.0, 110.0, 24.0];
-    let value_width = (ui.available_width() - fixed.iter().sum::<f32>() - 6.0 * spacing).max(140.0);
-    let widths = [
-        fixed[0],
-        fixed[1],
-        value_width,
-        fixed[2],
-        fixed[3],
-        fixed[4],
-        fixed[5],
-    ];
+    let height = crate::theme::spacing().control;
+    let gap = ui.spacing().item_spacing.x;
+    let wide = ui.available_width() >= 560.0;
+    // Keep the primary fields and header actions in view in the split request pane.
+    let metadata = if wide {
+        [80.0, 112.0, 96.0]
+    } else {
+        let rest = ui.available_width() - ENABLED_WIDTH - 3.0 * gap - 76.0;
+        [76.0, rest * 0.5, rest * 0.5]
+    };
+    let extra = icons::size()
+        + gap
+        + if wide {
+            metadata.iter().sum::<f32>() + 3.0 * gap
+        } else {
+            0.0
+        };
+    let widths = key_value_widths(ui, extra);
     ui.horizontal(|ui| {
-        for (heading, width) in [
-            "",
-            "Name",
-            "Value / path",
-            "Type",
-            "Content type",
-            "Filename",
-            "",
-        ]
-        .into_iter()
-        .zip(widths)
-        {
-            heading_cell(ui, width, heading);
+        blank_cell(ui, ENABLED_WIDTH);
+        heading_cell(ui, widths[0], "Name");
+        heading_cell(ui, widths[1], if wide { "Value / path" } else { "Value" });
+        if wide {
+            for (width, heading) in metadata
+                .into_iter()
+                .zip(["Type", "Content type", "Filename"])
+            {
+                heading_cell(ui, width, heading);
+            }
         }
+        if icons::button_with_hint(
+            ui,
+            Icon::Paperclip,
+            "Add file field",
+            "Add a file field…",
+            false,
+        )
+        .clicked()
+        {
+            *pick = Some(FileRequest::MultipartNew);
+        }
+        clear_table_button(ui, !rows.is_empty(), confirm_clear);
     });
+    changed |= confirm_clear_table(ui, rows, confirm_clear);
     for (index, row) in rows.iter_mut().enumerate() {
-        let label = |part: &str| format!("Multipart row {} {part}", index + 1);
+        let label = format!("Multipart row {}", index + 1);
         ui.horizontal(|ui| {
             let enabled = checkbox(ui, &mut row.is_enabled, "");
-            name(&enabled, &label("enabled"));
+            name(&enabled, &format!("{label} enabled"));
             changed |= enabled.changed();
-            changed |=
-                var_edit(ui, &mut row.name, &label("name"), widths[1], false, vars).changed();
-            changed |=
-                var_edit(ui, &mut row.value, &label("value"), widths[2], false, vars).changed();
-            combo(("multipart kind", index))
-                .width(widths[3] - 8.0)
-                .selected_text(if row.kind == FormKind::File {
-                    "file"
-                } else {
-                    "text"
-                })
-                .show_ui(ui, |ui| {
-                    changed |= ui
-                        .selectable_value(&mut row.kind, FormKind::Text, "text")
-                        .changed();
-                    changed |= ui
-                        .selectable_value(&mut row.kind, FormKind::File, "file")
-                        .changed();
-                });
-            changed |= var_edit(
+            changed |= var_pair(
                 ui,
-                &mut row.content_type,
-                &label("content type"),
-                widths[4],
-                false,
+                [&mut row.name, &mut row.value],
+                widths,
+                &label,
+                None,
                 vars,
-            )
-            .changed();
-            changed |= var_edit(
-                ui,
-                &mut row.filename,
-                &label("filename"),
-                widths[5],
-                false,
-                vars,
-            )
-            .changed();
+            );
+            if wide {
+                changed |= multipart_metadata(ui, row, &label, metadata, vars);
+            }
+            blank_cell(ui, icons::size());
             let what = format!("multipart field {}", index + 1);
             if remove_button(ui, egui::Id::unique(("remove field", index)), &what, height) {
                 remove = Some(index);
             }
         });
+        if !wide {
+            ui.horizontal(|ui| {
+                blank_cell(ui, ENABLED_WIDTH);
+                changed |= multipart_metadata(ui, row, &label, metadata, vars);
+            });
+        }
+    }
+    let mut row = FormItem::text("", "");
+    ui.horizontal(|ui| {
+        blank_cell(ui, ENABLED_WIDTH);
+        var_pair(
+            ui,
+            [&mut row.name, &mut row.value],
+            widths,
+            &format!("Multipart row {}", rows.len() + 1),
+            Some("New multipart field"),
+            vars,
+        );
+        if wide {
+            for width in metadata {
+                blank_cell(ui, width);
+            }
+        }
+        blank_cell(ui, icons::size());
+        blank_cell(ui, icons::size());
+    });
+    if !row.name.is_empty() || !row.value.is_empty() {
+        changed |= append_row(ui, rows, row);
     }
     if let Some(index) = remove {
         rows.remove(index);
         changed = true;
     }
-    ui.horizontal_wrapped(|ui| {
-        if ui.button("Add field").clicked() {
-            rows.push(FormItem::text("", ""));
-        }
-        if ui.button("Add file…").clicked() {
-            *pick = Some(FileRequest::MultipartNew);
-        }
-        changed |= clear_all(ui, rows, confirm_clear);
-    });
+    changed
+}
+
+fn multipart_metadata(
+    ui: &mut Ui,
+    row: &mut FormItem,
+    label: &str,
+    [kind, content_type, filename]: [f32; 3],
+    vars: &mut VarUi,
+) -> bool {
+    let mut changed = false;
+    let choice = combo((label, "type"))
+        .width(kind)
+        .selected_text(if row.kind == FormKind::File {
+            "file"
+        } else {
+            "text"
+        })
+        .show_ui(ui, |ui| {
+            changed |= ui
+                .selectable_value(&mut row.kind, FormKind::Text, "text")
+                .changed();
+            changed |= ui
+                .selectable_value(&mut row.kind, FormKind::File, "file")
+                .changed();
+        });
+    name(&choice.response, &format!("{label} type"));
+    for (text, width, hint) in [
+        (&mut row.content_type, content_type, "content type"),
+        (&mut row.filename, filename, "filename"),
+    ] {
+        changed |= var_edit_hinted(
+            ui,
+            text,
+            &format!("{label} {hint}"),
+            width,
+            false,
+            vars,
+            hint,
+        )
+        .changed();
+    }
     changed
 }
 

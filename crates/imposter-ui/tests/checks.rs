@@ -106,7 +106,20 @@ fn checks_are_edited_saved_and_run_after_each_response() {
         app.harness.query_by_label("Add capture").is_none(),
         "captures have their own tab"
     );
+    support::assert_icon_button(&app.harness, "Add check");
     click(&mut app.harness, "Add check");
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .checks
+            .len(),
+        1
+    );
     click(&mut app.harness, "Add check");
     choose(app, "Check 2 source", "JSON path");
     replace(app, "Check 2 JSON path", "$.id");
@@ -232,7 +245,20 @@ fn captures_set_variables_that_the_next_send_uses() {
     let mut fixture = opened(Vec::new());
     let app = &mut fixture.app;
     open_tab(&mut app.harness, "Captures");
+    support::assert_icon_button(&app.harness, "Add capture");
     click(&mut app.harness, "Add capture");
+    assert_eq!(
+        app.harness
+            .state()
+            .state
+            .editor
+            .as_ref()
+            .unwrap()
+            .editor
+            .captures
+            .len(),
+        1
+    );
     type_into(&mut app.harness, "Capture 1 variable", "user_id");
     replace(app, "Capture 1 JSON path", "$.id");
     click(&mut app.harness, "Add capture");

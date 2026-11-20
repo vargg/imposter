@@ -249,6 +249,10 @@ pub fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> b
             rest,
         ),
     };
+    if widgets::add_row_header(ui, "Checks", "Add check", None) {
+        checks.push(new_check());
+        changed = true;
+    }
     if checks.is_empty() {
         ui.label(tone_text(
             "Checks run after every response: status, headers, JSON paths, duration or size.",
@@ -343,10 +347,6 @@ pub fn checks_table(ui: &mut Ui, checks: &mut Vec<Check>, vars: &mut VarUi) -> b
     }
     if let Some(index) = remove {
         checks.remove(index);
-        changed = true;
-    }
-    if ui.button("Add check").clicked() {
-        checks.push(new_check());
         changed = true;
     }
     changed
@@ -469,6 +469,10 @@ pub fn captures_table(
         ),
         Lines::Stacked => (width - checkbox - lock - REMOVE - 3.0 * spacing, rest, rest),
     };
+    if widgets::add_row_header(ui, "Captures", "Add capture", None) {
+        captures.push(Capture::new("", Selector::Json("$.".into())));
+        changed = true;
+    }
     if captures.is_empty() {
         ui.label(tone_text(
             "Values taken from each response go into variables: the scope that defines the \
@@ -578,10 +582,6 @@ pub fn captures_table(
     }
     if let Some(index) = remove {
         captures.remove(index);
-        changed = true;
-    }
-    if ui.button("Add capture").clicked() {
-        captures.push(Capture::new("", Selector::Json("$.".into())));
         changed = true;
     }
     changed

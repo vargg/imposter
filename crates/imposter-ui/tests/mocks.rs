@@ -227,7 +227,12 @@ fn occupied_ports_report_an_error_and_mock_controls_fit_the_minimum_window() {
 #[test]
 fn route_editing_validation_two_click_removal_and_save_shortcut() {
     let mut app = opened(0);
+    support::assert_icon_button(&app.harness, "Add mock route");
+    support::text_input(&app.harness, "New mock header name");
+    support::text_input(&app.harness, "New mock header value");
+    assert!(!app.harness.state().state.mocks.dirty());
     click(&mut app.harness, "Add mock route");
+    assert_eq!(app.harness.state().state.mocks.form.routes.len(), 2);
     click(&mut app.harness, "Save mocks");
     settle(&mut app.harness);
     app.harness.get_by_label("Save failed");
@@ -243,8 +248,7 @@ fn route_editing_validation_two_click_removal_and_save_shortcut() {
     );
     type_into(&mut app.harness, "Mock path", "new");
     type_into(&mut app.harness, "Mock response body", "response");
-    click(&mut app.harness, "Add mock header");
-    type_into(&mut app.harness, "Mock header 1 name", "X-Mock");
+    type_into(&mut app.harness, "New mock header name", "X-Mock");
     type_into(&mut app.harness, "Mock header 1 value", "yes");
     app.harness
         .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::S);
@@ -259,7 +263,10 @@ fn route_editing_validation_two_click_removal_and_save_shortcut() {
         .unwrap()
         .unwrap();
     assert_eq!(saved.routes[1].path, "/new");
-    assert_eq!(saved.routes[1].headers[0].value, "yes");
+    assert_eq!(
+        saved.routes[1].headers,
+        [imposter_app::core::model::ParamItem::new("X-Mock", "yes")]
+    );
     click(&mut app.harness, "Remove mock header 1");
     assert_eq!(
         app.harness.state().state.mocks.form.routes[1].headers.len(),
