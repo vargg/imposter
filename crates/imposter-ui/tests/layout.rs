@@ -15,9 +15,67 @@ use imposter_ui::app::{Action, Appearance, EditorTab, Screen};
 use imposter_ui::editor::OPTION_GROUPS;
 use imposter_ui::layout::MIN_WINDOW;
 use imposter_ui::theme::{self, Density, ThemeChoice};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use support::{click, click_button, collection, request, settle, start_with, type_into};
+
 use tokio::io::AsyncWriteExt as _;
 use tokio::sync::watch;
+
+/// An event-stream endpoint that answers each connection once the walk asks for an event.
+/// Every connection has its own task, so one the app dropped early cannot block later ones.
+struct StreamServer {
+    url: String,
+    send_event: watch::Sender<bool>,
+    accepted: Arc<AtomicUsize>,
+    answered: Arc<AtomicUsize>,
+}
+
+impl StreamServer {
+    fn start(runtime: &tokio::runtime::Runtime) -> Self {
+        let listener = runtime
+            .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+            .unwrap();
+        let url = format!("http://{}/stream", listener.local_addr().unwrap());
+        let (send_event, event_requested) = watch::channel(false);
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let answered = Arc::new(AtomicUsize::new(0));
+        let (accepted_count, answered_count) = (accepted.clone(), answered.clone());
+        runtime.spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                accepted_count.fetch_add(1, Ordering::SeqCst);
+                let mut requested = event_requested.clone();
+                let answered = answered_count.clone();
+                tokio::spawn(async move {
+                    if requested.wait_for(|ready| *ready).await.is_err() {
+                        return;
+                    }
+                    let head = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n";
+                    if socket.write_all(head).await.is_ok()
+                        && socket.write_all(b"data: ready\n\n").await.is_ok()
+                    {
+                        answered.fetch_add(1, Ordering::SeqCst);
+                    }
+                    let _ = requested.wait_for(|ready| !*ready).await;
+                });
+            }
+        });
+        Self {
+            url,
+            send_event,
+            accepted,
+            answered,
+        }
+    }
+
+    fn counts(&self) -> String {
+        format!(
+            "stream server: {} connections accepted, {} answered",
+            self.accepted.load(Ordering::SeqCst),
+            self.answered.load(Ordering::SeqCst)
+        )
+    }
+}
 
 /// The status bar's own controls.
 const STATUS_BAR: [&str; 6] = [
@@ -320,12 +378,7 @@ const LONG_ENVIRONMENT: &str =
     "A very long environment name for sample requests with a scope that has to truncate";
 
 /// Walk the screens and dialogs, collecting problems at each stop.
-fn walk(
-    app: &mut support::App,
-    label: &str,
-    stream_url: &str,
-    send_event: &watch::Sender<bool>,
-) -> Vec<String> {
+fn walk(app: &mut support::App, label: &str, stream: &StreamServer) -> Vec<String> {
     let mut found = Vec::new();
     let mut check = |app: &mut support::App, state: &str| {
         app.harness.run_steps(3);
@@ -349,7 +402,7 @@ fn walk(
     click(&mut app.harness, "GET Users");
     settle(&mut app.harness);
     check(app, "empty response");
-    walk_send_controls(app, stream_url, send_event, &mut check);
+    walk_send_controls(app, stream, &mut check);
     click(&mut app.harness, "More request tabs");
     check(app, "request More menu");
     click(&mut app.harness, "Docs");
@@ -1106,8 +1159,7 @@ fn walk_body_outline(
 
 fn walk_send_controls(
     app: &mut support::App,
-    stream_url: &str,
-    send_event: &watch::Sender<bool>,
+    stream: &StreamServer,
     check: &mut impl FnMut(&mut support::App, &str),
 ) {
     let send = app.harness.get_by_role_and_label(Role::Button, SEND).rect();
@@ -1132,14 +1184,14 @@ fn walk_send_controls(
         .unwrap()
         .name = original_name;
     let editor = &mut state.editor.as_mut().unwrap().editor;
-    let original_url = std::mem::replace(&mut editor.url, stream_url.into());
+    let original_url = std::mem::replace(&mut editor.url, stream.url.clone());
     let original_response = std::mem::take(&mut state.response);
     app.harness.run_steps(2);
     click(&mut app.harness, SEND);
     app.harness.get_by_role_and_label(Role::Button, "Cancel");
     check(app, "Cancel while waiting for a response");
 
-    send_event.send_replace(true);
+    stream.send_event.send_replace(true);
     // Do not wait_idle here: the stream keeps a background read running until Stop.
     // llvm-cov and busy CI runners need more than a few seconds for the first event.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
@@ -1148,17 +1200,36 @@ fn walk_send_controls(
         .query_by_role_and_label(Role::Button, "Stop")
         .is_none()
     {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "no stream event arrived"
-        );
+        if std::time::Instant::now() >= deadline {
+            let shown = ["Send", "Cancel"]
+                .into_iter()
+                .filter(|label| {
+                    app.harness
+                        .query_by_role_and_label(Role::Button, label)
+                        .is_some()
+                })
+                .collect::<Vec<_>>();
+            let response = &app.harness.state().state.response;
+            panic!(
+                "no stream event arrived; {}; the bar shows {shown:?}, pending {}, \
+                 {} live events, response {:?}, notice {:?}",
+                stream.counts(),
+                response.pending,
+                response.live_events.len(),
+                response
+                    .response
+                    .as_ref()
+                    .map(|r| (r.status, r.stream.is_some())),
+                response.notice,
+            );
+        }
         app.harness.run_steps(2);
         std::thread::yield_now();
     }
     check(app, "Stop while receiving events");
     click_button(&mut app.harness, "Stop");
     settle(&mut app.harness);
-    send_event.send_replace(false);
+    stream.send_event.send_replace(false);
     let state = &mut app.harness.state_mut().state;
     state.editor.as_mut().unwrap().editor.url = original_url;
     state.response = original_response;
@@ -1393,24 +1464,7 @@ fn resized_lists_leave_room_for_their_content_at_the_minimum_window() {
 #[test]
 fn no_control_runs_past_the_window_or_overlaps_another() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let listener = runtime
-        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
-        .unwrap();
-    let stream_url = format!("http://{}/stream", listener.local_addr().unwrap());
-    let (send_event, mut event_requested) = watch::channel(false);
-    runtime.spawn(async move {
-        loop {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            event_requested.wait_for(|ready| *ready).await.unwrap();
-            socket
-                .write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\ndata: ready\n\n",
-                )
-                .await
-                .unwrap();
-            event_requested.wait_for(|ready| !*ready).await.unwrap();
-        }
-    });
+    let stream = StreamServer::start(&runtime);
     let server = runtime.block_on(Server::start(|_, received| {
         if received.request_line.contains("/broken") {
             return response("500 Internal Server Error", &[], b"oops");
@@ -1505,7 +1559,7 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
                     &first_start,
                     &format!("{label} first start"),
                 ));
-                problems.extend(walk(&mut app, &label, &stream_url, &send_event));
+                problems.extend(walk(&mut app, &label, &stream));
             }
         }
     }
