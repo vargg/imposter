@@ -46,7 +46,13 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   A stream cut at the response limit, timed out or stopped never passes.
 - Per-request settings that override the application defaults: timeout, redirects,
   certificate verification, cookies, the cookie jar, proxy, CA bundle, client certificate
-  and key, and response size limit.
+  and key, and response size limit. In **More → Settings**, choose **Default**, **On** or
+  **Off** for on/off overrides. Hover over **Default** to see the application setting.
+  Text fields show the inherited value until you enter an override, which you can clear
+  with the reset icon.
+- **More → Docs** edits the request description that saves and exports with it.
+- Right-click a request and choose **Duplicate** to create and open a saved sibling copy.
+  An open request copies its current edits; navigation still resolves unsaved changes.
 - Autosave, or explicit save. Unsaved changes are never lost silently: switching requests,
   restoring from history and closing all ask first.
 
@@ -216,6 +222,33 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 
 ![History: executions, and the request as it was sent](docs/images/history.png)
 
+**Mocks**
+- Open **Mocks** in the left rail to configure a local HTTP server on `127.0.0.1`. Use the
+  **Port** field to choose a port (8080 by default, `auto` at 0). Use the Plus in the
+  **Routes** header to add a route by exact method and encoded path. The body highlights
+  JSON. Query strings and request bodies do not affect matching, and unmatched requests
+  return 404. Save before pressing **Start**. The running URL and its copy icon are in the
+  toolbar. Save running configuration edits, then use **Stop** and **Start** to apply them.
+  Configuration persists across sessions. The server starts on demand and stops when
+  Imposter closes.
+- A mock answers locally from the routes and scripts you define. A passing check against
+  that answer does **not verify the live API**.
+- A route can also have a response script (Rhai, as request scripts are) that starts from
+  its status, headers and body and changes them from the request: echo it, answer 400 when
+  a field is missing, fail the first call and succeed after, or wait before answering.
+  `state` keeps values between requests until the server stops:
+
+```rhai
+state.calls = (state.calls ?? 0) + 1;
+if state.calls == 1 { response.status = 503; }
+response.send_json(#{ calls: state.calls, item: request.json().item });
+```
+
+- Scripts read request bodies up to 1 MiB, run one at a time for at most a second, and a
+  failing one answers 500 with its line. A route whose script does not compile keeps the
+  server from starting. While it runs, "Answered requests" lists what came in and what went
+  out, with script errors and printed lines (never bodies).
+
 **Import and export**
 - Native `.imposter.json` (`"format": "imposter"`) carries request checks, captures, saved
   variable values and environment colors. Exports use **version 4** when a capture stores
@@ -270,6 +303,13 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Dark, light or system theme, and Compact or Comfortable density (Settings → Appearance).
   Every control has an accessible name for screen readers; text colors meet WCAG AA
   contrast in both themes, and control edges 3:1.
+- Application **Settings** opens from the rail (or Cmd/Ctrl+,). Categories sit in a list on
+  the left; amber dots mark edited ones, and **Save settings** saves across all of them.
+  Hover an info icon for help.
+- **Settings → TLS → Host client certificates** assigns a client certificate, optional key
+  and password to an exact HTTPS host and port (default 443). Request overrides take
+  priority. Redirects select credentials again for their destination. Copy as curl uses the
+  initial identity and cannot reproduce identity switching across redirects.
 
 ## Not supported
 
@@ -530,7 +570,8 @@ logs credentials, tokens, or request and response bodies.
 
 The interface is set in [Inter](https://rsms.me/inter/) and data in
 [JetBrains Mono](https://www.jetbrains.com/lp/mono/), both under the SIL Open Font License 1.1;
-the licenses ship in `crates/imposter-ui/assets/fonts` and inside every package.
+icons use [Phosphor](https://phosphoricons.com/) (MIT). The licenses ship in
+`crates/imposter-ui/assets/fonts` and inside every package.
 
 ## Development
 
@@ -577,9 +618,11 @@ which an architecture test enforces:
 | `imposter-core` | Domain types and rules: variables, settings, URLs, request preparation, curl, checks. No IO. |
 | `imposter-http` | HTTP transport: TLS (rustls), redirects, Digest auth, streamed uploads, cancellation. |
 | `imposter-store` | SQLite persistence on its own thread, with migrations and backups. |
+| `imposter-script` | Rhai scripts for requests and mock routes. |
 | `imposter-transfer` | Native (`.imposter.json`), Postman v2.1 and OpenAPI 3 conversion and validation. |
-| `imposter-app` | Services the UI calls: execution, saving, history, import and export. |
+| `imposter-app` | Services the UI and CLI call: execution, saving, history, import and export. |
 | `imposter-ui` | The egui interface. |
+| `imposter-cli` | Command-line and MCP entry points. |
 | `imposter` | The binary. |
 | `imposter-testkit` | Loopback servers and certificates for tests. |
 
@@ -593,34 +636,3 @@ Further reading:
 
 `cargo run -p imposter-ui --example screenshot -- <dir>` renders the app with sample data to
 PNG files, without a display.
-
-In **More → Settings**, choose **Default**, **On** or **Off** for on/off overrides.
-Hover over **Default** to see the application setting. Text fields show the inherited
-value until you enter an override, which you can clear with the reset icon.
-Use **More → Docs** to edit the request description that saves and exports with it.
-
-Right-click a request and choose **Duplicate** to create and open a saved sibling copy.
-An open request copies its current edits; navigation still resolves unsaved changes.
-
-**Settings → TLS → Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.
-
-Open **Mocks** in the left rail to configure a local HTTP server on `127.0.0.1`. Use the
-**Port** field to choose a port (8080 by default, `auto` at 0). Use the Plus in the **Routes**
-header to add a route by exact method and encoded path. The body highlights
-JSON. Query strings and request bodies do not affect matching, and unmatched requests return
-404. Save before pressing **Start**. The running URL and its copy icon are in the toolbar.
-Save running configuration edits, then use **Stop** and **Start** to apply them. Configuration
-persists across sessions. The server starts on demand and stops when Imposter closes.
-
-A mock answers locally from the routes and scripts you define. A passing check against
-that answer does **not verify the live API**.
-
-A route can also have a response script (Rhai, as request scripts are) that starts from its status, headers and body and changes them from the request: echo it, answer 400 when a field is missing, fail the first call and succeed after, or wait before answering. `state` keeps values between requests until the server stops:
-
-```rhai
-state.calls = (state.calls ?? 0) + 1;
-if state.calls == 1 { response.status = 503; }
-response.send_json(#{ calls: state.calls, item: request.json().item });
-```
-
-Scripts read request bodies up to 1 MiB, run one at a time for at most a second, and a failing one answers 500 with its line. A route whose script does not compile keeps the server from starting. While it runs, "Answered requests" lists what came in and what went out, with script errors and printed lines (never bodies).
