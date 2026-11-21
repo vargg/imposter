@@ -729,7 +729,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     destination off. It opens the Variables or Secrets tab for the target scope and
     focuses the new unsaved row. The secondary "Open Variables" button opens the
     screen without adding a row. The headline's tooltip explains the options without
-    another line of help. Nothing is written until Save.
+    another line of help. The new row follows the Variables save rules.
 
   Why: the review found raw `os error 61` text clipped at the pane edge, and an empty-state
   invitation shown right under "Request failed".
@@ -741,17 +741,23 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   the newest snapshot per request, failures kept for retry or explicit discard. The UI runs
   the writes through the bridge.
 
-- **Every navigation that replaces the editor goes through one guard**: clean → proceed; saved
-  request with autosave on → save first (failure asks Retry/Discard/Cancel); otherwise ask
-  Save/Discard/Cancel. For an unsaved draft the guard asks "Keep this draft?" and names the collection
-  Save adds it to (Save as new request / Discard / Stay), because "Save changes to …" read as
-  overwriting the request the draft came from. Closing uses the same guard after background work drained, then writes
-  UI state (layout, last selection, window) and closes; any failure keeps the window open.
+- **Every navigation that replaces the editor goes through one guard.** A clean editor
+  proceeds. With autosave on, a saved request, Variables scope or Mocks configuration saves
+  before navigation or closing. Invalid edits and failed saves open the editor's guard.
+  With autosave off, the guard asks Save/Discard/Cancel on transitions that replace edits
+  or close the window. An unsaved request draft always asks "Keep this draft?" and names
+  the collection Save adds it to (Save as new request / Discard / Stay), because "Save
+  changes to …" read as overwriting the request the draft came from. Closing drains
+  background work before the guards, then writes UI state (layout, last selection, window)
+  and closes. A failure keeps the window open.
 
-- **Every screen saves the same way:** a disk icon at the top right, with its state in a word
-  when the icon cannot show it
-  (`widgets::save_controls`); Variables adds a revert icon. The header logo is the app icon
-  drawing, like the window and Dock icon.
+- **Every screen saves the same way.** A disk icon at the top right shows a word when the
+  icon alone cannot communicate its state (`widgets::save_controls`). Variables and Mocks
+  also offer Revert. Settings → General has one **Automatically save changes** option for
+  requests, variables and mocks. Each editor waits half a second after its latest edit and
+  uses its save validation. Why: the user asked for autosave in Variables and Mocks, and
+  one setting makes the save behavior consistent across editors. The header logo is the
+  app icon drawing, like the window and Dock icon.
 
 - **Save states are one word** (`widgets::SaveWord`: "Saving…", "Save failed", "Invalid
   fields", "Loading…", "Not loaded") beside the Save icon, colored by tone, in the request
@@ -835,9 +841,12 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   Folder or environment color dot. Uncolored environments keep the slot empty, and a
   check marks the active environment. The Environments heading has a Plus button.
   A row's hover menu, right-click or Shift+F10 opens "Edit name and color…" and
-  "Delete environment…". The Variables guard still covers
-  scope changes, reloads, environment management, "Open definition" and closing. Closing
-  resolves the request guard first, then the Variables guard, then writes UI state.
+  "Delete environment…". The Variables guard covers scope changes, reloads, environment
+  management, "Open definition" and closing. With autosave on, leaving the screen or
+  switching scope saves pending edits before continuing. Invalid rows and failed writes
+  keep their edits and use the existing guard. If the scope changed on disk, autosave waits
+  while the user decides whether to reload or keep their edits. Closing resolves the
+  request guard, then Variables, Settings and Mocks before writing UI state.
   - The toolbar shows **Variables**, **Secrets** and **Cookies** for Global and environments.
     Collections show only Variables. Save and Revert stay at the right with the scope-wide
     menu. "Share values" is Global only. The menu keeps "Clear all variables…" apart from

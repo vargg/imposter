@@ -5,7 +5,7 @@ use imposter_app::core::mock::{MockConfig, MockRoute, RouteField, RouteProblem};
 use imposter_app::core::model::ParamItem;
 use imposter_app::runtime::TaskId;
 
-use crate::app::{Action, State};
+use crate::app::{Action, SaveTransition, ScreenNavigation, State};
 use crate::icons::{self, Icon};
 use crate::layout::MOCK_LIST_WIDTH;
 use crate::theme::{self, Tone, palette};
@@ -19,9 +19,10 @@ pub enum MockAction {
     Edited,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) enum Transition {
     Reload,
+    Screen(ScreenNavigation),
     Close,
 }
 
@@ -46,7 +47,8 @@ pub struct MockScreen {
     pub(crate) baseline: Option<MockConfig>,
     pub(crate) saving: bool,
     pub(crate) loading: bool,
-    pub(crate) pending: Option<Transition>,
+    pub(crate) pending: Option<SaveTransition<Transition>>,
+    pub(crate) autosave_due: Option<f64>,
     pub error: Option<String>,
     pub notice: Option<String>,
     pub run: Option<Run>,

@@ -11,12 +11,19 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::mock::{MockConfig, MockRoute};
 use imposter_app::core::model::ParamItem;
 use imposter_app::store::kv::{self, Table};
-use imposter_ui::app::CloseState;
+use imposter_ui::app::{CloseState, Screen};
 use imposter_ui::theme::{self, Tone};
-use support::{click, click_button, settle, start_with, text_input, type_into};
+use support::{
+    advance_time, click, click_button, manual_save, settle, start_with, text_input, type_into,
+};
 
 fn opened(port: u16) -> support::App {
+    open_with_port(port, |_| {})
+}
+
+fn open_with_port(port: u16, prepare: impl FnOnce(&imposter_app::store::Store)) -> support::App {
     let mut app = start_with(|store| {
+        prepare(store);
         store
             .call_blocking(move |db| {
                 kv::set(
@@ -37,6 +44,22 @@ fn opened(port: u16) -> support::App {
     support::open_screen(&mut app.harness, "Mocks");
     settle(&mut app.harness);
     app
+}
+
+fn stored_mocks(app: &support::App) -> MockConfig {
+    app.harness
+        .state()
+        .store()
+        .call_blocking(|db| kv::get(db, Table::Settings, "mock_server"))
+        .unwrap()
+        .unwrap()
+}
+
+fn fail_mock_saves(app: &support::App) {
+    app.harness.state().store().call_blocking(|db| {
+        db.execute_batch("CREATE TRIGGER fail_mock BEFORE INSERT ON settings WHEN NEW.key = 'mock_server' BEGIN SELECT RAISE(FAIL, 'injected save failure'); END;")?;
+        Ok(())
+    }).unwrap();
 }
 
 fn wait_for(app: &mut support::App, ready: impl Fn(&imposter_ui::app::ImposterApp) -> bool) {
@@ -90,8 +113,97 @@ fn start(app: &mut support::App) {
 }
 
 #[test]
-fn saved_edits_apply_only_after_restart_and_close_stops_the_listener() {
+fn route_edits_autosave_after_the_last_edit() {
     let mut app = opened(0);
+    advance_time(&mut app.harness, 0.0);
+    type_into(&mut app.harness, "Mock path", "health");
+    advance_time(&mut app.harness, 0.4);
+    type_into(&mut app.harness, "Mock response body", "-edited");
+    advance_time(&mut app.harness, 0.2);
+    settle(&mut app.harness);
+    assert_eq!(stored_mocks(&app).routes[0].path, "/");
+    assert!(app.harness.query_by_label("Unsaved").is_none());
+
+    advance_time(&mut app.harness, 0.4);
+    settle(&mut app.harness);
+    let saved = stored_mocks(&app);
+    assert_eq!(saved.routes[0].path, "/health");
+    assert_eq!(saved.routes[0].body, "first-edited");
+    assert_eq!(support::save_state(&app.harness, "Save mocks"), "Saved");
+}
+
+#[test]
+fn invalid_mock_route_edits_stay_unsaved_and_guard_navigation() {
+    let mut app = opened(0);
+    advance_time(&mut app.harness, 0.0);
+    click(&mut app.harness, "Add mock route");
+    advance_time(&mut app.harness, 0.6);
+    settle(&mut app.harness);
+    assert_eq!(stored_mocks(&app).routes.len(), 1);
+    app.harness.get_by_label("Save failed");
+    app.harness.get_by_label_contains("already answers");
+
+    support::open_screen(&mut app.harness, "Requests");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Unsaved mocks");
+    click(&mut app.harness, "Cancel");
+    assert_eq!(app.harness.state().state.screen, Screen::Mocks);
+}
+
+#[test]
+fn failed_autosave_keeps_mock_edits_and_allows_retry_before_leaving() {
+    let mut app = opened(0);
+    advance_time(&mut app.harness, 0.0);
+    type_into(&mut app.harness, "Mock response body", "-edited");
+    fail_mock_saves(&app);
+
+    support::open_screen(&mut app.harness, "Requests");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Unsaved mocks");
+    assert_eq!(app.harness.state().state.screen, Screen::Mocks);
+    assert_eq!(stored_mocks(&app).routes[0].body, "first");
+    assert_eq!(
+        support::save_state(&app.harness, "Save mocks"),
+        "Save failed"
+    );
+
+    app.harness
+        .state()
+        .store()
+        .call_blocking(|db| {
+            db.execute_batch("DROP TRIGGER fail_mock")?;
+            Ok(())
+        })
+        .unwrap();
+    click(&mut app.harness, "Save");
+    settle(&mut app.harness);
+    assert_eq!(app.harness.state().state.screen, Screen::Requests);
+    assert_eq!(stored_mocks(&app).routes[0].body, "first-edited");
+}
+
+#[test]
+fn closing_with_pending_mock_edits_saves_without_a_dialog() {
+    let mut app = opened(0);
+    advance_time(&mut app.harness, 0.0);
+    type_into(&mut app.harness, "Mock response body", "-edited");
+    assert_eq!(stored_mocks(&app).routes[0].body, "first");
+
+    app.harness
+        .input_mut()
+        .viewports
+        .get_mut(&egui::ViewportId::ROOT)
+        .unwrap()
+        .events
+        .push(egui::ViewportEvent::Close);
+    settle(&mut app.harness);
+    assert_eq!(app.harness.state().close_state(), CloseState::Ready);
+    assert!(app.harness.query_by_label("Unsaved mocks").is_none());
+    assert_eq!(stored_mocks(&app).routes[0].body, "first-edited");
+}
+
+#[test]
+fn saved_edits_apply_only_after_restart_and_close_stops_the_listener() {
+    let mut app = open_with_port(0, manual_save);
     assert!(
         app.harness.state().state.mocks.run.is_none(),
         "never starts automatically"
@@ -127,7 +239,7 @@ fn saved_edits_apply_only_after_restart_and_close_stops_the_listener() {
 
 #[test]
 fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
-    let mut app = opened(0);
+    let mut app = open_with_port(0, manual_save);
     click(&mut app.harness, "Mock route 1");
     click_button(&mut app.harness, "Body");
     type_into(&mut app.harness, "Mock response body", "-kept");
@@ -166,10 +278,7 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
     app.harness.get_by_label("Unsaved mocks");
     click(&mut app.harness, "Cancel");
     assert!(app.harness.state().state.mocks.dirty());
-    app.harness.state().store().call_blocking(|db| {
-        db.execute_batch("CREATE TRIGGER fail_mock BEFORE INSERT ON settings WHEN NEW.key = 'mock_server' BEGIN SELECT RAISE(FAIL, 'injected save failure'); END;")?;
-        Ok(())
-    }).unwrap();
+    fail_mock_saves(&app);
     app.harness.state_mut().request_close();
     settle(&mut app.harness);
     app.harness.get_by_label("Unsaved mocks");
@@ -233,7 +342,7 @@ fn occupied_ports_report_an_error_and_mock_controls_fit_the_minimum_window() {
 
 #[test]
 fn route_editing_validation_two_click_removal_and_save_shortcut() {
-    let mut app = opened(0);
+    let mut app = open_with_port(0, manual_save);
     support::assert_icon_button(&app.harness, "Add mock route");
     click_button(&mut app.harness, "Headers");
     text_input(&app.harness, "New mock header name");
@@ -767,6 +876,7 @@ fn a_route_script_compiles_or_keeps_the_server_from_starting() {
         described(&app).as_deref(),
         Some("Status 200, answered by its script")
     );
+    advance_time(&mut app.harness, 0.0);
     text_input(&app.harness, "Mock response script").click();
     app.harness.run_steps(1);
     app.harness
@@ -782,6 +892,13 @@ fn a_route_script_compiles_or_keeps_the_server_from_starting() {
             .contains("Mock script, line 1, column 9")
     );
     assert_tab_mark(&app, "Script", "●", Tone::Error);
+    advance_time(&mut app.harness, 0.6);
+    settle(&mut app.harness);
+    assert_eq!(
+        stored_mocks(&app).routes[0].script,
+        "response.status = 201;"
+    );
+    app.harness.get_by_label("Save failed");
     click(&mut app.harness, "Save mocks");
     settle(&mut app.harness);
     assert!(

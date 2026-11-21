@@ -377,8 +377,8 @@ fn draw_category(state: &mut State, ui: &mut Ui, category: Category) {
                     Category::General => toggle(
                         ui,
                         &mut form.autosave,
-                        "Automatically save request changes",
-                        "Otherwise Save, or Cmd/Ctrl+S, keeps them.",
+                        "Automatically save changes",
+                        "Automatically saves changes to requests, variables and mocks. You can also use Save or Cmd/Ctrl+S.",
                     ),
                     Category::Network => network(ui, form),
                     Category::Tls => {

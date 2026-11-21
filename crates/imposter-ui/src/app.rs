@@ -689,8 +689,18 @@ pub enum VariablesAction {
     ShareGlobals(bool),
 }
 
+#[derive(Debug)]
+pub(crate) enum ScreenNavigation {
+    Show(Screen),
+    OpenRequest(CollectionId, RequestId),
+    Load(crate::load_screen::Target),
+    Run(crate::run_screen::RunTarget),
+    OpenResult,
+    VariablesScope(Scope),
+}
+
 /// Changes that replace the Variables screen's rows go through its own guard.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 enum VarTransition {
     Scope(Scope),
     NewEnvironment,
@@ -702,7 +712,14 @@ enum VarTransition {
     /// Open `scope` with a new row for `name`, unless it already has one.
     Define(Scope, String),
     ShareGlobals(bool),
+    Screen(ScreenNavigation),
     Close,
+}
+
+#[derive(Debug)]
+pub(crate) enum SaveTransition<T> {
+    Automatic(T),
+    Manual(T),
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
@@ -736,8 +753,9 @@ pub struct VariablesScreen {
     pub cookies: Vec<StoredCookie>,
     /// The cookie whose removal is being confirmed.
     removing_cookie: Option<StoredCookie>,
-    pending: Option<VarTransition>,
+    pending: Option<SaveTransition<VarTransition>>,
     saving: Option<VariableSave>,
+    autosave_due: Option<f64>,
 }
 
 #[derive(Debug)]
@@ -3112,15 +3130,43 @@ impl ImposterApp {
     }
 
     fn autosave_tick(&mut self, ctx: &egui::Context) {
-        let Some(due) = self.state.autosave_due else {
-            return;
-        };
         let now = ctx.input(|i| i.time);
-        if now >= due {
-            self.state.autosave_due = None;
+        if Self::autosave_ready(ctx, now, &mut self.state.autosave_due) {
             self.pump_saves(None);
+        }
+    }
+
+    fn autosave_editors_tick(&mut self, ctx: &egui::Context, now: f64) {
+        // A confirmation may discard the draft. An in-flight write wakes the UI on reply,
+        // so a newer edit can keep its deadline without polling the store.
+        if self.state.close != CloseState::Open || self.state.dialog.is_some() {
+            return;
+        }
+        let variables = &mut self.state.variables;
+        if !self.state.variables_changed_on_disk
+            && !variables.is_saving()
+            && Self::autosave_ready(ctx, now, &mut variables.autosave_due)
+            && variables.dirty()
+        {
+            self.save_variables();
+        }
+        let mocks = &mut self.state.mocks;
+        if !mocks.saving && Self::autosave_ready(ctx, now, &mut mocks.autosave_due) && mocks.dirty()
+        {
+            self.save_mocks(true);
+        }
+    }
+
+    fn autosave_ready(ctx: &egui::Context, now: f64, deadline: &mut Option<f64>) -> bool {
+        let Some(due) = *deadline else {
+            return false;
+        };
+        if now >= due {
+            *deadline = None;
+            true
         } else {
             ctx.request_repaint_after(Duration::from_secs_f64(due - now));
+            false
         }
     }
 
@@ -3392,7 +3438,7 @@ impl ImposterApp {
         });
     }
 
-    fn confirmed(&mut self, purpose: ConfirmPurpose) {
+    fn confirmed(&mut self, purpose: ConfirmPurpose, now: f64) {
         match purpose {
             ConfirmPurpose::DeleteCollection(id) => {
                 if self.state.editor.as_ref().is_some_and(|p| {
@@ -3472,7 +3518,7 @@ impl ImposterApp {
                 if screen.scope == scope {
                     screen.rows.clear();
                     screen.secrets.clear();
-                    screen.status = None;
+                    self.variables_edited(now);
                 }
             }
             ConfirmPurpose::RemoveCookie(scope) => {
@@ -3591,13 +3637,7 @@ impl ImposterApp {
                 collection,
                 request,
             } => {
-                self.state.screen = Screen::Requests;
-                if self.state.editor.as_ref().and_then(|p| p.editor.id()) != Some(request) {
-                    self.navigate(Navigation::OpenIn {
-                        collection,
-                        request,
-                    });
-                }
+                self.navigate_screen(ScreenNavigation::OpenRequest(collection, request));
             }
             Action::PasteCurl(command) => self.paste_curl(&command, now),
             Action::FormatBody => {
@@ -3658,36 +3698,25 @@ impl ImposterApp {
             Action::Save => match self.state.screen {
                 Screen::Variables => self.save_variables(),
                 Screen::Settings => self.save_settings(),
-                Screen::Mocks => self.save_mocks(),
+                Screen::Mocks => self.save_mocks(false),
                 Screen::Requests if self.state.guard.is_none() => self.save_current(),
                 Screen::Requests | Screen::History | Screen::Load | Screen::Run => {}
             },
-            Action::Mock(action) => self.mock_action(action),
+            Action::Mock(action) => self.mock_action(action, now),
             Action::Load(action) => self.load_action(action, now),
             Action::LoadRequest(id) => {
                 if let Some(target) = crate::load_screen::Target::from_tree(&self.state, id) {
                     self.handle(Action::LoadTarget(target), now);
                 }
             }
-            Action::LoadTarget(target) => {
-                if self.state.load.run.is_none() {
-                    self.state.load.target = Some(target);
-                    self.state.load.error = None;
-                }
-                self.state.screen = Screen::Load;
-            }
+            Action::LoadTarget(target) => self.navigate_screen(ScreenNavigation::Load(target)),
             Action::Run(action) => self.run_action(action),
             Action::RunFolder(folder) => {
                 if let Some(target) = crate::run_screen::RunTarget::from_tree(&self.state, folder) {
                     self.handle(Action::RunTarget(target), now);
                 }
             }
-            Action::RunTarget(target) => {
-                if self.state.run.run.is_none() {
-                    self.state.run.target = Some(target);
-                }
-                self.state.screen = Screen::Run;
-            }
+            Action::RunTarget(target) => self.navigate_screen(ScreenNavigation::Run(target)),
             Action::SettingsEdited => self.state.settings_screen.refresh_status(),
             Action::CheckPath(path) => {
                 self.state.settings_screen.paths.insert(path.clone(), None);
@@ -3732,41 +3761,17 @@ impl ImposterApp {
             Action::ShowRun(id) => self.show_run(id),
             Action::ResponseTool(kind, tool) => self.pane(kind).pending_tool = Some(tool),
             Action::Edited { url, params } => self.edited(url, params, now),
-            Action::Screen(screen) => {
-                self.state.screen = screen;
-                if screen == Screen::Mocks && !self.state.mocks.loaded() {
-                    self.load_mocks();
-                }
-                if screen == Screen::History && !self.state.history.loaded {
-                    self.load_history();
-                }
-                if screen == Screen::Variables && !self.state.variables.loaded {
-                    let scope = self.state.variables.scope;
-                    self.load_variables(scope);
-                }
-                if screen == Screen::Settings {
-                    // Files may have come or gone since the paths were last checked.
-                    self.state.settings_screen.paths.clear();
-                }
-                if screen == Screen::Settings && !self.state.settings_screen.is_loaded() {
-                    self.load_settings();
-                }
-            }
+            Action::Screen(screen) => self.navigate_screen(ScreenNavigation::Show(screen)),
             Action::SetEnvironment(id) => self.set_environment(id),
             Action::ManageEnvironments => {
                 let scope = self
                     .state
                     .active_environment
                     .map_or(Scope::Global, Scope::Environment);
-                self.handle(Action::OpenVariablesScope(scope), now);
+                self.navigate_screen(ScreenNavigation::VariablesScope(scope));
             }
             Action::OpenVariablesScope(scope) => {
-                if self.state.variables.scope == scope && self.state.variables.loaded {
-                    // Opening the same scope keeps its unsaved edits.
-                    self.state.screen = Screen::Variables;
-                } else {
-                    self.variables_navigate(VarTransition::Open(scope));
-                }
+                self.navigate_screen(ScreenNavigation::VariablesScope(scope));
             }
             Action::OpenDefinition(scope, name) => {
                 self.variables_navigate(VarTransition::OpenDefinition(scope, name));
@@ -3775,12 +3780,99 @@ impl ImposterApp {
                 self.variables_navigate(VarTransition::Define(scope, name));
             }
             Action::ChooseValue { scope, name, value } => self.choose_value(scope, name, value),
-            Action::Variables(action) => self.variables_action(action),
+            Action::Variables(action) => self.variables_action(action, now),
             Action::History(action) => self.history_action(action),
         }
     }
 
-    fn dialog_outcome(&mut self, outcome: Outcome) {
+    fn navigate_screen(&mut self, next: ScreenNavigation) {
+        let screen = match &next {
+            ScreenNavigation::Show(screen) => *screen,
+            ScreenNavigation::OpenRequest(..) => Screen::Requests,
+            ScreenNavigation::Load(_) => Screen::Load,
+            ScreenNavigation::Run(_) => Screen::Run,
+            ScreenNavigation::OpenResult => Screen::History,
+            ScreenNavigation::VariablesScope(_) => Screen::Variables,
+        };
+        if self.state.settings.autosave && screen != self.state.screen {
+            match self.state.screen {
+                Screen::Variables => return self.variables_navigate(VarTransition::Screen(next)),
+                Screen::Mocks => {
+                    return self.mocks_transition(crate::mock_screen::Transition::Screen(next));
+                }
+                _ => {}
+            }
+        }
+        self.perform_screen_navigation(next);
+    }
+
+    fn perform_screen_navigation(&mut self, next: ScreenNavigation) {
+        match next {
+            ScreenNavigation::Show(screen) => self.show_screen(screen),
+            ScreenNavigation::OpenRequest(collection, request) => {
+                self.show_screen(Screen::Requests);
+                if self.state.editor.as_ref().and_then(|p| p.editor.id()) != Some(request) {
+                    self.navigate(Navigation::OpenIn {
+                        collection,
+                        request,
+                    });
+                }
+            }
+            ScreenNavigation::Load(target) => {
+                if self.state.load.run.is_none() {
+                    self.state.load.target = Some(target);
+                    self.state.load.error = None;
+                }
+                self.show_screen(Screen::Load);
+            }
+            ScreenNavigation::Run(target) => {
+                if self.state.run.run.is_none() {
+                    self.state.run.target = Some(target);
+                }
+                self.show_screen(Screen::Run);
+            }
+            ScreenNavigation::OpenResult => {
+                self.show_screen(Screen::History);
+                self.pick(
+                    FileDialog::Open {
+                        title: "Open result file",
+                        filter: Some(("Imposter results", &["json"])),
+                    },
+                    |paths| Message::ResultPicked(paths.into_iter().next()),
+                );
+            }
+            ScreenNavigation::VariablesScope(scope) => {
+                if self.state.variables.scope == scope && self.state.variables.loaded {
+                    // Opening the same scope keeps its unsaved edits.
+                    self.show_screen(Screen::Variables);
+                } else {
+                    self.variables_navigate(VarTransition::Open(scope));
+                }
+            }
+        }
+    }
+
+    fn show_screen(&mut self, screen: Screen) {
+        self.state.screen = screen;
+        if screen == Screen::Mocks && !self.state.mocks.loaded() {
+            self.load_mocks();
+        }
+        if screen == Screen::History && !self.state.history.loaded {
+            self.load_history();
+        }
+        if screen == Screen::Variables && !self.state.variables.loaded {
+            self.load_variables(self.state.variables.scope);
+        }
+        if screen == Screen::Settings {
+            // Files may have come or gone since the paths were last checked.
+            self.state.settings_screen.paths.clear();
+            if !self.state.settings_screen.is_loaded() {
+                self.load_settings();
+            }
+        }
+    }
+
+    fn dialog_outcome(&mut self, outcome: Outcome, now: f64) {
         match outcome {
             Outcome::Open => {}
             Outcome::Closed => {
@@ -3809,7 +3901,7 @@ impl ImposterApp {
             }
             Outcome::Confirmed(purpose) => {
                 self.state.dialog = None;
-                self.confirmed(purpose);
+                self.confirmed(purpose, now);
             }
             Outcome::Guard(choice) => {
                 self.state.dialog = None;
@@ -4159,6 +4251,8 @@ impl ImposterApp {
     }
 
     fn load_variables(&mut self, scope: Scope) {
+        self.state.variables_changed_on_disk = false;
+        self.state.variables.autosave_due = None;
         self.state.variables.scope = scope;
         self.state.variables.loaded = false;
         self.task(
@@ -4246,6 +4340,11 @@ impl ImposterApp {
                         _ => {}
                     }
                     screen.highlight = Some(name);
+                    if screen.dirty() {
+                        self.state
+                            .actions
+                            .push(Action::Variables(VariablesAction::Edited));
+                    }
                 }
             }
             Err(error) => {
@@ -4258,14 +4357,23 @@ impl ImposterApp {
         }
     }
 
-    /// Run `transition` now if the Variables screen has no unsaved rows, otherwise ask first.
     fn variables_navigate(&mut self, transition: VarTransition) {
-        if self.state.variables.dirty() {
-            self.state.variables.pending = Some(transition);
-            self.state.dialog = Some(Dialog::VariablesGuard);
-        } else {
+        let screen = &mut self.state.variables;
+        let automatic = self.state.settings.autosave;
+        let needs_save = screen.dirty() || (automatic && screen.is_saving());
+        if !needs_save {
             self.variables_perform(transition);
+        } else if automatic && (screen.is_saving() || !self.state.variables_changed_on_disk) {
+            screen.pending = Some(SaveTransition::Automatic(transition));
+            self.save_variables();
+        } else {
+            self.variables_ask(transition);
         }
+    }
+
+    fn variables_ask(&mut self, transition: VarTransition) {
+        self.state.variables.pending = Some(SaveTransition::Manual(transition));
+        self.state.dialog = Some(Dialog::VariablesGuard);
     }
 
     fn variables_perform(&mut self, transition: VarTransition) {
@@ -4316,6 +4424,7 @@ impl ImposterApp {
                 },
                 |result| Message::GlobalsShared(result.map_err(failure)),
             ),
+            VarTransition::Screen(next) => self.perform_screen_navigation(next),
             VarTransition::Close => self.settings_close(),
         }
     }
@@ -4346,12 +4455,12 @@ impl ImposterApp {
     }
 
     fn variables_choice(&mut self, choice: GuardChoice) {
-        let Some(transition) = self.state.variables.pending.take() else {
+        let Some(SaveTransition::Manual(transition)) = self.state.variables.pending.take() else {
             return;
         };
         match choice {
             GuardChoice::Save => {
-                self.state.variables.pending = Some(transition);
+                self.state.variables.pending = Some(SaveTransition::Manual(transition));
                 self.save_variables();
             }
             GuardChoice::Discard => {
@@ -4359,7 +4468,7 @@ impl ImposterApp {
                 self.variables_perform(transition);
             }
             GuardChoice::Cancel => {
-                if transition == VarTransition::Close {
+                if matches!(transition, VarTransition::Close) {
                     self.state.close = CloseState::Open;
                 }
             }
@@ -4368,6 +4477,7 @@ impl ImposterApp {
 
     fn revert_variables(&mut self) {
         let screen = &mut self.state.variables;
+        screen.autosave_due = None;
         screen.rows.clone_from(&screen.baseline);
         screen.secrets = screen
             .secret_baseline
@@ -4489,6 +4599,7 @@ impl ImposterApp {
         if !screen.loaded || screen.is_saving() {
             return;
         }
+        screen.autosave_due = None;
         let mut rows = screen.rows.clone();
         let checked = vars::to_scope(&mut rows)
             .map_err(|e| e.to_string())
@@ -4497,10 +4608,8 @@ impl ImposterApp {
             Ok(checked) => checked,
             Err(error) => {
                 screen.status = Some(SaveWord::Invalid);
-                if screen.pending.take() == Some(VarTransition::Close) {
-                    self.state.close = CloseState::Open;
-                }
                 self.request_status(&error, Tone::Error);
+                self.variables_save_failed();
                 return;
             }
         };
@@ -4543,25 +4652,44 @@ impl ImposterApp {
                     screen.secret_baseline = saved.secrets;
                     screen.status = None;
                 }
-                if let Some(transition) = screen.pending.take() {
-                    self.variables_perform(transition);
+                match screen.pending.take() {
+                    Some(SaveTransition::Automatic(next)) => self.variables_navigate(next),
+                    Some(SaveTransition::Manual(next)) if self.state.settings.autosave => {
+                        self.variables_navigate(next);
+                    }
+                    Some(SaveTransition::Manual(next)) => self.variables_perform(next),
+                    None => {}
                 }
                 self.load_snapshot();
             }
             Err(error) => {
                 screen.status = Some(SaveWord::Failed);
-                if screen.pending.take() == Some(VarTransition::Close) {
-                    self.state.close = CloseState::Open;
-                }
                 self.request_status(
                     &format!("Variables not saved, changes kept: {error}"),
                     Tone::Error,
                 );
+                self.variables_save_failed();
             }
         }
     }
 
-    fn variables_action(&mut self, action: VariablesAction) {
+    fn variables_save_failed(&mut self) {
+        match self.state.variables.pending.take() {
+            Some(SaveTransition::Automatic(next)) => self.variables_ask(next),
+            Some(SaveTransition::Manual(VarTransition::Close)) => {
+                self.state.close = CloseState::Open;
+            }
+            _ => {}
+        }
+    }
+
+    fn variables_edited(&mut self, now: f64) {
+        let screen = &mut self.state.variables;
+        screen.status = None;
+        screen.autosave_due = self.state.settings.autosave.then_some(now + AUTOSAVE_DELAY);
+    }
+
+    fn variables_action(&mut self, action: VariablesAction, now: f64) {
         match action {
             VariablesAction::SelectScope(scope) => {
                 if scope != self.state.variables.scope || !self.state.variables.loaded {
@@ -4587,9 +4715,7 @@ impl ImposterApp {
                     ));
                 }
             }
-            VariablesAction::Edited => {
-                self.state.variables.status = None;
-            }
+            VariablesAction::Edited => self.variables_edited(now),
             VariablesAction::NewEnvironment => {
                 self.variables_navigate(VarTransition::NewEnvironment);
             }
@@ -4707,6 +4833,8 @@ impl ImposterApp {
                 screen.status = None;
                 if !settings.autosave {
                     self.state.autosave_due = None;
+                    self.state.variables.autosave_due = None;
+                    self.state.mocks.autosave_due = None;
                 }
                 self.state.settings = settings;
                 // Retention may have dropped runs.
@@ -4763,6 +4891,7 @@ impl ImposterApp {
         if self.state.mocks.loading || self.state.mocks.saving {
             return;
         }
+        self.state.mocks.autosave_due = None;
         self.state.mocks.loading = true;
         let db = self.db.clone();
         self.bridge.spawn(move |_| async move {
@@ -4783,15 +4912,23 @@ impl ImposterApp {
         }
     }
 
-    fn save_mocks(&mut self) {
+    fn save_mocks(&mut self, automatic: bool) {
         let screen = &mut self.state.mocks;
         if !screen.loaded() || screen.saving {
             return;
         }
+        screen.autosave_due = None;
         let config = screen.form.clone();
-        if let Err(error) = config.validate() {
-            screen.error = Some(error.to_string());
-            self.mocks_cancel_transition();
+        let problem = config.validate().err().map(failure).or_else(|| {
+            if automatic {
+                imposter_app::mock::script_problem(&config).map(failure)
+            } else {
+                None
+            }
+        });
+        if let Some(problem) = problem {
+            screen.error = Some(problem);
+            self.mocks_save_failed();
             return;
         }
         screen.saving = true;
@@ -4817,20 +4954,26 @@ impl ImposterApp {
                 screen.baseline = Some(config);
                 screen.error = None;
                 if let Some(next) = screen.pending.take() {
-                    self.mocks_transition(next);
+                    self.mocks_transition(match next {
+                        SaveTransition::Automatic(next) | SaveTransition::Manual(next) => next,
+                    });
                 }
             }
             Err(error) => {
                 screen.error = Some(error);
-                self.mocks_cancel_transition();
+                self.mocks_save_failed();
             }
         }
     }
 
-    fn mock_action(&mut self, action: crate::mock_screen::MockAction) {
+    fn mock_action(&mut self, action: crate::mock_screen::MockAction, now: f64) {
         use crate::mock_screen::MockAction;
         match action {
-            MockAction::Edited => self.state.mocks.error = None,
+            MockAction::Edited => {
+                let screen = &mut self.state.mocks;
+                screen.error = None;
+                screen.autosave_due = self.state.settings.autosave.then_some(now + AUTOSAVE_DELAY);
+            }
             MockAction::Reload => self.mocks_transition(crate::mock_screen::Transition::Reload),
             MockAction::Stop => {
                 if let Some(run) = &mut self.state.mocks.run {
@@ -5177,36 +5320,61 @@ impl ImposterApp {
     }
 
     fn mocks_transition(&mut self, next: crate::mock_screen::Transition) {
-        if self.state.mocks.dirty() {
-            self.state.mocks.pending = Some(next);
-            self.state.dialog = Some(Dialog::MocksGuard);
-        } else {
+        use crate::mock_screen::Transition;
+        let screen = &mut self.state.mocks;
+        let automatic = self.state.settings.autosave && !matches!(next, Transition::Reload);
+        let needs_save = screen.dirty() || (automatic && screen.saving);
+        if !needs_save {
             match next {
-                crate::mock_screen::Transition::Reload => self.load_mocks(),
-                crate::mock_screen::Transition::Close => self.finish_close(),
+                Transition::Reload => self.load_mocks(),
+                Transition::Screen(next) => self.perform_screen_navigation(next),
+                Transition::Close => self.finish_close(),
             }
+        } else if automatic {
+            screen.pending = Some(SaveTransition::Automatic(next));
+            self.save_mocks(true);
+        } else {
+            self.mocks_ask(next);
         }
     }
 
-    fn mocks_cancel_transition(&mut self) {
-        if self.state.mocks.pending.take() == Some(crate::mock_screen::Transition::Close) {
-            self.state.close = CloseState::Open;
+    fn mocks_ask(&mut self, next: crate::mock_screen::Transition) {
+        self.state.mocks.pending = Some(SaveTransition::Manual(next));
+        self.state.dialog = Some(Dialog::MocksGuard);
+    }
+
+    fn mocks_save_failed(&mut self) {
+        match self.state.mocks.pending.take() {
+            Some(SaveTransition::Automatic(next)) => self.mocks_ask(next),
+            Some(SaveTransition::Manual(crate::mock_screen::Transition::Close)) => {
+                self.state.close = CloseState::Open;
+            }
+            _ => {}
         }
     }
 
     fn mocks_choice(&mut self, choice: GuardChoice) {
+        let Some(SaveTransition::Manual(next)) = self.state.mocks.pending.take() else {
+            return;
+        };
         match choice {
-            GuardChoice::Save => self.save_mocks(),
-            GuardChoice::Cancel => self.mocks_cancel_transition(),
+            GuardChoice::Save => {
+                self.state.mocks.pending = Some(SaveTransition::Manual(next));
+                self.save_mocks(false);
+            }
+            GuardChoice::Cancel => {
+                if matches!(next, crate::mock_screen::Transition::Close) {
+                    self.state.close = CloseState::Open;
+                }
+            }
             GuardChoice::Discard => {
                 let screen = &mut self.state.mocks;
                 if let Some(base) = &screen.baseline {
                     screen.form = base.clone();
                 }
                 screen.error = None;
-                if let Some(next) = screen.pending.take() {
-                    self.mocks_transition(next);
-                }
+                screen.autosave_due = None;
+                self.mocks_transition(next);
             }
         }
     }
@@ -5372,18 +5540,7 @@ impl ImposterApp {
                 self.state.dialog = Some(Dialog::clear_history(executions));
             }
             HistoryAction::OpenResult => {
-                // From the palette: show where the result will appear.
-                self.state.screen = Screen::History;
-                if !self.state.history.loaded {
-                    self.load_history();
-                }
-                self.pick(
-                    FileDialog::Open {
-                        title: "Open result file",
-                        filter: Some(("Imposter results", &["json"])),
-                    },
-                    |paths| Message::ResultPicked(paths.into_iter().next()),
-                );
+                self.navigate_screen(ScreenNavigation::OpenResult);
             }
             HistoryAction::CloseResult => {
                 let history = &mut self.state.history;
@@ -5409,7 +5566,7 @@ impl ImposterApp {
         if self.state.close != CloseState::Open {
             return;
         }
-        self.mock_action(crate::mock_screen::MockAction::Stop);
+        self.mock_action(crate::mock_screen::MockAction::Stop, 0.0);
         self.load_action(crate::load_screen::LoadAction::Stop, 0.0);
         self.run_action(crate::run_screen::RunAction::Stop);
         self.state.close = CloseState::Draining;
@@ -5597,8 +5754,10 @@ impl eframe::App for ImposterApp {
         self.start_filters();
         if let Some(dialog) = &mut self.state.dialog {
             let outcome = dialog.show(ui.ctx());
-            self.dialog_outcome(outcome);
+            self.dialog_outcome(outcome, now);
         }
+        // Handle this frame's edits before committing a draft whose deadline just passed.
+        self.autosave_editors_tick(ui.ctx(), now);
         if let Some(text) = self.state.clipboard.take() {
             ui.ctx().copy_text(text);
         }

@@ -53,8 +53,11 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - **More → Docs** edits the request description that saves and exports with it.
 - Right-click a request and choose **Duplicate** to create and open a saved sibling copy.
   An open request copies its current edits; navigation still resolves unsaved changes.
-- Autosave, or explicit save. Unsaved changes are never lost silently: switching requests,
-  restoring from history and closing all ask first.
+- **Settings → General → Automatically save changes** is on by default and covers
+  requests, variables and mocks. Valid edits save half a second after you stop editing,
+  or sooner when navigation would replace the editor. If the changes are invalid or
+  saving fails, the editor keeps your edits and asks what to do before continuing.
+  You can also use **Save** or Cmd/Ctrl+S.
 
 **Variables**
 - `{{name}}` placeholders in the URL, headers, body, auth and settings.
@@ -230,8 +233,9 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   JSON. **Headers** counts headers in use, and **Script** shows a dot when set. A red badge
   marks a tab with a problem. Mocks remembers your tab when you switch routes during a session.
   Query strings and request bodies do not affect matching, and unmatched requests
-  return 404. Save before pressing **Start**. The running URL and its copy icon are in the
-  toolbar. Save running configuration edits, then use **Stop** and **Start** to apply them.
+  return 404. **Start** is available once the configuration is saved and valid. The
+  running URL and its copy icon are in the toolbar. After configuration edits save, use
+  **Stop** and **Start** to apply them to a running server.
   Configuration persists across sessions. The server starts on demand and stops when
   Imposter closes.
 - A mock answers locally from the routes and scripts you define. A passing check against
@@ -388,7 +392,7 @@ Cmd on macOS, Ctrl elsewhere. Shortcuts do nothing while a dialog is open.
 | Ctrl+Tab | Back to the previous request; hold Ctrl and press Tab to go further |
 | Ctrl+Shift+Tab | Step through recent requests from the oldest |
 | Cmd/Ctrl+Enter, Cmd/Ctrl+R | Send (or cancel the running request) |
-| Cmd/Ctrl+S | Save the current screen: request, variables or settings |
+| Cmd/Ctrl+S | Save the current screen (request, variables, mocks or settings) |
 | Cmd/Ctrl+N | New request (a new collection when there is none) |
 | Cmd/Ctrl+D | Duplicate the open request |
 | F2, Ctrl+Shift+R | Rename the open request |

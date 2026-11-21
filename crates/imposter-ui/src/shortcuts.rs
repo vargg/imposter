@@ -138,7 +138,7 @@ pub const ALL: &[Shortcut] = &[
     Shortcut {
         keys: &[SAVE],
         command: Command::Save,
-        description: "Save the current screen: request, variables or settings",
+        description: "Save the current screen (request, variables, mocks or settings)",
         group: Group::Edit,
     },
     Shortcut {

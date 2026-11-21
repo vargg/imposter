@@ -153,7 +153,7 @@ fn each_tab_shows_only_its_table_and_collections_offer_only_variables() {
 
 #[test]
 fn variable_and_secret_composers_stay_out_of_the_saved_scope() {
-    let mut app = start_with(|_| {});
+    let mut app = start_with(support::manual_save);
     app.harness.set_size(egui::vec2(1000.0, 700.0));
     support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
@@ -309,6 +309,7 @@ fn the_lock_stores_a_capture_as_a_secret_and_never_shows_it() {
     f.app.harness.get_by_label_contains("set secret:token");
 
     // With unsaved edits to Dev's page, a capture into it waits rather than racing them.
+    support::disable_autosave(&mut f.app.harness);
     support::open_screen(&mut f.app.harness, "Variables");
     settle(&mut f.app.harness);
     click(&mut f.app.harness, "Environment · Dev");

@@ -7,8 +7,9 @@ use std::time::Duration;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
+use imposter_app::core::settings::AppSettings;
 use imposter_app::paths::open_store;
-use imposter_app::store::Store;
+use imposter_app::store::{Store, kv};
 use imposter_ui::app::ImposterApp;
 use tempfile::TempDir;
 
@@ -41,6 +42,39 @@ pub fn start_with(prepare: impl FnOnce(&Store)) -> App {
     }
     let harness = harness_at(dir.path(), egui::vec2(1400.0, 900.0));
     App { dir, harness }
+}
+
+pub fn manual_save(store: &Store) {
+    store
+        .call_blocking(|db| {
+            kv::set_app_settings(
+                db,
+                &AppSettings {
+                    autosave: false,
+                    ..AppSettings::default()
+                },
+            )
+        })
+        .unwrap();
+}
+
+/// Freeze the clock until the next advance so click helpers cannot consume the debounce.
+pub fn advance_time(harness: &mut Harness<'_, ImposterApp>, seconds: f64) {
+    let now = harness.ctx.input(|input| input.time);
+    harness.input_mut().time = Some(now + seconds);
+    harness.step();
+}
+
+pub fn disable_autosave(harness: &mut Harness<'_, ImposterApp>) {
+    open_screen(harness, "Settings");
+    settle(harness);
+    open_settings_category(harness, "General");
+    harness
+        .get_by_role_and_label(egui::Role::CheckBox, "Automatically save changes")
+        .click();
+    harness.run_steps(2);
+    click(harness, "Save settings");
+    settle(harness);
 }
 
 /// Run frames until background work is done and its results are applied.

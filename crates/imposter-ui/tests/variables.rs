@@ -15,7 +15,8 @@ use imposter_ui::app::{CloseState, EditorTab, Screen};
 use imposter_ui::icons::Icon;
 use imposter_ui::vars::Scope;
 use support::{
-    click, click_button, collection, request, save_state, settle, start_with, type_into,
+    advance_time, click, click_button, collection, manual_save, request, save_state, settle,
+    start_with, type_into,
 };
 
 fn vars(pairs: &[(&str, &str)]) -> Variables {
@@ -204,6 +205,7 @@ fn the_environment_picker_changes_what_a_request_sends() {
 #[test]
 fn globals_are_edited_and_saved_on_the_variables_screen() {
     let mut app = start_with(|store| {
+        manual_save(store);
         store
             .call_blocking(|db| environments::set_globals(db, &vars(&[("host", "old")])))
             .unwrap();
@@ -228,9 +230,106 @@ fn globals_are_edited_and_saved_on_the_variables_screen() {
     assert_eq!(stored, vars(&[("host", "old-new"), ("token", "t")]));
 }
 
+fn globals_with_collection() -> support::App {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1")])))
+            .unwrap();
+        collection(store, "API");
+    });
+    open_screen(&mut app);
+    advance_time(&mut app.harness, 0.0);
+    app
+}
+
+fn stored_globals(app: &support::App) -> Variables {
+    app.harness
+        .state()
+        .store()
+        .call_blocking(environments::globals)
+        .unwrap()
+}
+
+#[test]
+fn global_edits_autosave_after_the_last_edit() {
+    let mut app = globals_with_collection();
+    type_into(&mut app.harness, "Add value to variable 1", "12");
+    advance_time(&mut app.harness, 0.4);
+    type_into(&mut app.harness, "New variable name", "token");
+    advance_time(&mut app.harness, 0.2);
+    settle(&mut app.harness);
+    assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
+    assert!(app.harness.query_by_label("Unsaved").is_none());
+
+    advance_time(&mut app.harness, 0.4);
+    settle(&mut app.harness);
+    assert_eq!(stored_globals(&app), vars(&[("a", "12"), ("token", "")]));
+    assert_eq!(save_state(&app.harness, "Save variables"), "Saved");
+}
+
+#[test]
+fn entering_a_value_at_the_autosave_deadline_keeps_it_selected() {
+    let mut app = globals_with_collection();
+    type_into(&mut app.harness, "Add value to variable 1", "12");
+    app.harness.key_press(egui::Key::Enter);
+    advance_time(&mut app.harness, imposter_ui::app::AUTOSAVE_DELAY);
+    advance_time(&mut app.harness, imposter_ui::app::AUTOSAVE_DELAY);
+    settle(&mut app.harness);
+
+    assert_eq!(stored_globals(&app), vars(&[("a", "12")]));
+    assert!(
+        app.harness
+            .query_by_label("Variable 1 value 3: Empty value")
+            .is_none()
+    );
+}
+
+#[test]
+fn invalid_global_edits_stay_unsaved_and_guard_navigation() {
+    let mut app = globals_with_collection();
+    type_into(&mut app.harness, "New variable name", "a");
+    advance_time(&mut app.harness, 0.6);
+    settle(&mut app.harness);
+    assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
+    app.harness
+        .get_by_label_contains("Variable names must be unique");
+    assert_eq!(save_state(&app.harness, "Save variables"), "Invalid fields");
+
+    support::open_screen(&mut app.harness, "Requests");
+    settle(&mut app.harness);
+    app.harness
+        .get_by_label("Save variable changes before continuing?");
+    click(&mut app.harness, "Cancel");
+    assert_eq!(app.harness.state().state.screen, Screen::Variables);
+}
+
+#[test]
+fn leaving_variables_and_switching_scope_save_pending_edits() {
+    let mut app = globals_with_collection();
+    type_into(&mut app.harness, "Add value to variable 1", "12");
+    assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
+    support::open_screen(&mut app.harness, "Requests");
+    settle(&mut app.harness);
+    assert_eq!(app.harness.state().state.screen, Screen::Requests);
+    assert!(app.harness.query_by_label("Unsaved variables").is_none());
+    assert_eq!(stored_globals(&app), vars(&[("a", "12")]));
+
+    open_screen(&mut app);
+    type_into(&mut app.harness, "New variable name", "token");
+    click(&mut app.harness, "Collection · API");
+    settle(&mut app.harness);
+    assert!(matches!(
+        app.harness.state().state.variables.scope,
+        Scope::Collection(_)
+    ));
+    assert!(app.harness.query_by_label("Unsaved variables").is_none());
+    assert_eq!(stored_globals(&app), vars(&[("a", "12"), ("token", "")]));
+}
+
 #[test]
 fn duplicate_names_are_refused_and_nothing_is_saved() {
     let mut app = start_with(|store| {
+        manual_save(store);
         store
             .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1")])))
             .unwrap();
@@ -255,6 +354,7 @@ fn duplicate_names_are_refused_and_nothing_is_saved() {
 #[test]
 fn switching_scope_with_unsaved_rows_asks_and_discard_keeps_the_stored_values() {
     let mut app = start_with(|store| {
+        manual_save(store);
         store
             .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1")])))
             .unwrap();
@@ -287,6 +387,7 @@ fn switching_scope_with_unsaved_rows_asks_and_discard_keeps_the_stored_values() 
 #[test]
 fn saving_from_the_guard_stores_then_switches() {
     let mut app = start_with(|store| {
+        manual_save(store);
         store
             .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1")])))
             .unwrap();
@@ -631,6 +732,7 @@ fn in_a_body_the_inspector_and_suggestions_open_under_the_token_line() {
 #[test]
 fn closing_with_unsaved_variables_asks_and_cancel_stays_open() {
     let mut app = start_with(|store| {
+        manual_save(store);
         store
             .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1")])))
             .unwrap();
@@ -717,6 +819,7 @@ fn clicking_inside_a_finished_token_does_not_suggest() {
 #[test]
 fn a_new_variable_keeps_focus_while_its_name_is_typed() {
     let mut app = start_with(|store| {
+        manual_save(store);
         store
             .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1")])))
             .unwrap();
@@ -1179,6 +1282,7 @@ fn with_scopes() -> support::App {
 #[test]
 fn clear_all_is_in_the_menu_and_asks_before_removing() {
     let mut app = start_with(|store| {
+        manual_save(store);
         store
             .call_blocking(|db| environments::set_globals(db, &vars(&[("a", "1"), ("b", "2")])))
             .unwrap();

@@ -364,6 +364,7 @@ fn captures_wait_for_unsaved_variables_and_refresh_a_clean_screen() {
         vec![Capture::new("user_id", Selector::Json("$.id".into()))],
     );
     let app = &mut fixture.app;
+    support::disable_autosave(&mut app.harness);
     app.harness
         .state()
         .store()

@@ -200,6 +200,7 @@ fn the_rail_tooltips_name_the_destination_and_its_shortcut() {
 #[test]
 fn variables_and_settings_keep_unsaved_markers_on_other_screens() {
     let mut app = start_with(|store| {
+        support::manual_save(store);
         store
             .call_blocking(|db| {
                 environments::set_globals(
@@ -243,6 +244,7 @@ fn variables_and_settings_keep_unsaved_markers_on_other_screens() {
 #[test]
 fn mocks_can_show_activity_and_unsaved_changes_at_the_same_time() {
     let mut app = start_with(|store| {
+        support::manual_save(store);
         store
             .call_blocking(|db| {
                 kv::set(

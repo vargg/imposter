@@ -61,8 +61,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing SQLite
       "… (your edits)" (`ops::copy_beside`), so nothing is lost; "Keep mine" lets the
       next save write over the file on purpose. A request deleted on disk closes when
       clean, or offers "Keep as draft" and "Close".
-    - The Variables screen reloads a changed scope when clean, or shows the same kind of
-      banner (Reload, Keep mine).
+    - The Variables screen reloads a changed scope when clean. With pending edits it
+      shows a banner (Reload, Keep mine) and holds autosave while the user decides.
     - A folder that does not read keeps the tree and says why on the status line, and
       says so again once it reads.
     Pinned by `imposter-ui/tests/project.rs` (driven by `reload_folder`, not the

@@ -1407,6 +1407,7 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
             for density in [Density::Compact, Density::Comfortable] {
                 let url = url.clone();
                 let mut app = start_with(move |store| {
+                    support::manual_save(store);
                     store
                         .call_blocking(|db| {
                             use imposter_app::store::environments as env;

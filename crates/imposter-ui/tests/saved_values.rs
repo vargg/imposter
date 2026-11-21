@@ -78,6 +78,7 @@ fn disabled(app: &support::App, label: &str) -> bool {
 
 fn variables_app() -> support::App {
     let mut app = with_saved_user("http://h".into());
+    support::disable_autosave(&mut app.harness);
     support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
     app

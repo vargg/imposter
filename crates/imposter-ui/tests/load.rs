@@ -294,6 +294,8 @@ fn both_running_tools_remain_reachable_with_unsaved_mocks_and_a_long_result() {
     use std::time::Instant;
 
     let mut f = fixture(Duration::from_secs(60), false);
+    support::disable_autosave(&mut f.app.harness);
+    support::open_screen(&mut f.app.harness, "Requests");
     f.app
         .harness
         .state()

@@ -184,6 +184,8 @@ fn runs(app: &support::App) -> u64 {
 fn an_undefined_variable_can_be_defined_from_the_response_pane() {
     let mut fixture = fixture();
     let app = &mut fixture.app;
+    support::disable_autosave(&mut app.harness);
+    support::open_screen(&mut app.harness, "Requests");
     open_and_send(app, "GET Ping");
     open_and_send(app, "GET Broken");
     assert!(

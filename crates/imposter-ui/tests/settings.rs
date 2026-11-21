@@ -14,7 +14,7 @@ use imposter_app::store::{executions, kv};
 use imposter_ui::app::{Action, CloseState};
 use support::{click, open_settings_category, save_state, settle, start, start_with, type_into};
 
-const AUTOSAVE: &str = "Automatically save request changes";
+const AUTOSAVE: &str = "Automatically save changes";
 
 fn switch<'a>(app: &'a support::App, label: &'a str) -> egui_kittest::Node<'a> {
     app.harness.get_by_role_and_label(Role::CheckBox, label)
@@ -130,6 +130,10 @@ fn edits_are_unsaved_until_saved_and_saving_applies_them() {
     open_settings_category(&mut app.harness, "Network");
     type_into(&mut app.harness, "Proxy server", "http://proxy:8080");
     open_settings_category(&mut app.harness, "General");
+    support::assert_help(
+        &app.harness,
+        "Automatically saves changes to requests, variables and mocks. You can also use Save or Cmd/Ctrl+S.",
+    );
     assert_eq!(
         switch(&app, AUTOSAVE).accesskit_node().toggled(),
         Some(egui::accesskit::Toggled::True)
