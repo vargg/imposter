@@ -261,7 +261,7 @@ fn a_colored_environment_fills_the_picker_and_send_hints_name_the_environment() 
     let mut app = with_environments(true);
     let red = env_color(EnvColor::Red);
     let tint = red.gamma_multiply(imposter_ui::widgets::PILL_TINT);
-    // The picker: its name in the color on its tint, after a stripe in the full color.
+    // The picker: its name and dot in the color on its tint, with no stripe on its edge.
     assert_eq!(painted_in(&app, red), ["● Prod"]);
     let picker = app.harness.get_by_label("Environment").rect();
     assert!(
@@ -271,10 +271,10 @@ fn a_colored_environment_fills_the_picker_and_send_hints_name_the_environment() 
         "the picker is on the tint"
     );
     assert!(
-        filled(&app, red).iter().any(|stripe| stripe.width() <= 3.0
-            && (stripe.left() - picker.left()).abs() < 1.0
-            && (stripe.height() - picker.height()).abs() < 1.0),
-        "a stripe on the picker's left edge"
+        !filled(&app, red)
+            .iter()
+            .any(|stripe| stripe.intersects(picker)),
+        "no stripe: the tint, name and dot already show the color"
     );
     let prod_geometry = send_geometry(&app);
     assert!((96.0..=96.5).contains(&prod_geometry.0.width()));

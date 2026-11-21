@@ -140,8 +140,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing SQLite
     never changes it by itself. On the Variables screen, "⋯ → Edit name and color…".
   - **Showing:** the header's picker names the active environment on screen. A
     colored one fills it with its color's tint, its name semibold in that color after a
-    "●" and a 3-point stripe of the full color on its left edge. Without a color the
-    picker is plain. The idle button always reads "Send". Its hover text ("Send with Prod"
+    "●". Without a color the picker is plain. A stripe of the full color on its left
+    edge was dropped: the tint, the name's color and the dot already said it (user's note). The idle button always reads "Send". Its hover text ("Send with Prod"
     with the shortcut hint) and accessible description ("Sends with the Prod environment")
     name the active environment with or without a color. The picker's options and the
     palette's environment rows have the dot. Every shade is ≥4.5:1 on every background

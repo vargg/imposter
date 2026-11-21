@@ -1372,7 +1372,7 @@ fn environment_picker(state: &mut State, ui: &mut Ui) {
     let active = state.active_environment;
     let color = active_environment(state).and_then(|e| e.color);
     // A colored environment fills the picker with its tint, its name semibold in its color
-    // after a stripe: the target of every send, readable at a glance and not by hue alone.
+    // after a dot: the target of every send, readable at a glance and not by hue alone.
     let selected = active_environment(state).map_or_else(
         || widgets::env_text(GLOBAL, None, font.clone(), text),
         |e| match e.color {
@@ -1432,20 +1432,6 @@ fn environment_picker(state: &mut State, ui: &mut Ui) {
                 })
         })
         .inner;
-    if let Some(color) = color {
-        let rect = combo.response.rect;
-        let stripe = Rect::from_min_size(rect.min, vec2(3.0, rect.height()));
-        ui.painter().rect_filled(
-            stripe,
-            egui::CornerRadius {
-                nw: 2,
-                sw: 2,
-                ne: 0,
-                se: 0,
-            },
-            crate::theme::env_color(color),
-        );
-    }
     name(&combo.response, "Environment");
     let hint = active_environment(state).map_or_else(
         || {
