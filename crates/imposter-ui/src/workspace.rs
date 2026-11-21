@@ -2746,12 +2746,20 @@ fn runs_menu(ui: &mut Ui, response_state: &crate::app::ResponsePane, actions: &m
         );
     let button = widgets::menu_text_button(ui, RUNS, "Recorded runs").on_hover_text(hint);
     egui::Popup::menu(&button).show(|ui| {
-        for run in &response_state.runs {
-            if widgets::option(ui, Some(run.id) == shown, run_label(run)).clicked() {
-                actions.push(Action::ShowRun(run.id));
-                ui.close();
-            }
-        }
+        // Up to 50 runs are kept; an unbounded menu ran off the window.
+        let height =
+            (12.0 * crate::theme::spacing().row).min(0.6 * ui.ctx().content_rect().height());
+        egui::ScrollArea::vertical()
+            .id_salt("recorded runs")
+            .max_height(height)
+            .show(ui, |ui| {
+                for run in &response_state.runs {
+                    if widgets::option(ui, Some(run.id) == shown, run_label(run)).clicked() {
+                        actions.push(Action::ShowRun(run.id));
+                        ui.close();
+                    }
+                }
+            });
     });
 }
 

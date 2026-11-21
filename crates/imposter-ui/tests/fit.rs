@@ -224,6 +224,58 @@ fn the_status_and_runs_share_one_row_and_an_earlier_run_can_be_shown() {
     assert!(app.harness.query_by_label("404 Not Found").is_none());
 }
 
+#[test]
+fn a_long_runs_menu_scrolls_inside_the_window() {
+    use imposter_app::core::execution::{ExecutionRecord, Response, Timestamp, Via};
+    use imposter_app::core::settings::AppSettings;
+    use imposter_app::store::executions;
+
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        let saved = request(store, api.id, "Items", "http://example.test/items");
+        store
+            .call_blocking(move |db| {
+                for i in 0..50 {
+                    let record = ExecutionRecord {
+                        timestamp: Timestamp(1_700_000_000_000 + i * 1000),
+                        request_id: saved.id,
+                        template: saved.clone(),
+                        resolved: saved.clone(),
+                        settings: AppSettings::default(),
+                        environment_id: None,
+                        environment: "Global".into(),
+                        response: Response {
+                            status: 200,
+                            ..Response::default()
+                        },
+                        via: Via::App,
+                    };
+                    executions::record(db, &record, 1000, u64::MAX)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+    });
+    app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
+    click(&mut app.harness, "GET Items");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Recorded runs");
+    let window = app.harness.ctx.content_rect();
+    let popups: Vec<egui::Rect> = app.harness.ctx.memory(|memory| {
+        memory
+            .areas()
+            .visible_layer_ids()
+            .into_iter()
+            .filter(|layer| layer.order == egui::Order::Foreground)
+            .filter_map(|layer| memory.area_rect(layer.id))
+            .collect()
+    });
+    assert!(!popups.is_empty(), "the menu is open");
+    for popup in popups {
+        assert!(window.contains_rect(popup), "{popup:?} fits in {window:?}");
+    }
+}
+
 /// The top of the stacked split's handle, found by its resize cursor along `x`.
 fn handle_top(app: &mut support::App, x: f32) -> f32 {
     let mut y = 100.0;
