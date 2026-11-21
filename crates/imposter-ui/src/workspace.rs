@@ -5,7 +5,9 @@ use egui::{Align, Layout, Rect, RichText, Sense, Ui, UiBuilder, vec2};
 use imposter_app::core::ids::FolderId;
 use imposter_app::core::model::BodyType;
 
-use crate::app::{Action, EditorTab, ImposterApp, ResponseTab, Screen, State, TokenAction};
+use crate::app::{
+    Action, BodyOutline, EditorTab, ImposterApp, ResponseTab, Screen, State, TokenAction,
+};
 use crate::dialogs::{Dialog, NamePurpose};
 use crate::editor::BODY_CHOICES;
 use crate::history_screen::HistoryViewer;
@@ -2167,7 +2169,38 @@ fn body_tab(
     actions: &mut Vec<Action>,
 ) {
     let editor = &mut pane.editor;
-    let mut edited = body_header(ui, &mut editor.body_type, &editor.body_text, actions);
+    let outline = &mut pane.body_outline;
+    let was_open = outline.open;
+    let (mut edited, toggle_focused) = body_header(
+        ui,
+        &mut editor.body_type,
+        &editor.body_text,
+        outline,
+        actions,
+    );
+    let resume_editing = was_open && (!outline.open || outline_edit_key(ui, toggle_focused));
+    if resume_editing {
+        outline.open = false;
+        outline.view = widgets::ViewerState::new();
+    }
+    if outline.open
+        && let Some(json) = &outline.json
+        && let (Ok(text), Some(structure)) = (&json.formatted, &json.outline)
+    {
+        widgets::code_viewer(
+            ui,
+            "request body outline",
+            &mut outline.view,
+            text,
+            Language::Json,
+            Some(widgets::Folding {
+                outline: structure,
+                folded: &mut outline.folds,
+                add_check: false,
+            }),
+        );
+        return;
+    }
     let mut pick = None;
     edited |= match editor.body_type {
         BodyType::None => {
@@ -2181,6 +2214,7 @@ fn body_tab(
                 &mut editor.body_text,
                 editor.body_type == BodyType::Json,
                 vars,
+                resume_editing,
             )
         }
         BodyType::Urlencoded | BodyType::FormData | BodyType::Multipart => {
@@ -2239,20 +2273,89 @@ fn body_tab(
     }
 }
 
+fn outline_edit_key(ui: &Ui, toggle_focused: bool) -> bool {
+    if egui::Popup::is_any_open(ui.ctx()) {
+        return false;
+    }
+    let area = ui.available_rect_before_wrap();
+    let in_outline = match ui.memory(egui::Memory::focused) {
+        Some(id) => {
+            // Find and fields outside this view keep their own typing and Enter behavior.
+            egui::TextEdit::load_state(ui.ctx(), id).is_none()
+                && ui
+                    .ctx()
+                    .read_response(id)
+                    .is_some_and(|r| area.contains(r.rect.center()))
+        }
+        None => ui.rect_contains_pointer(area),
+    };
+    if !toggle_focused && !in_outline {
+        return false;
+    }
+    ui.input_mut(|input| {
+        let enter = input.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
+        let mut text = false;
+        input.events.retain(|event| {
+            let typed = matches!(
+                event,
+                egui::Event::Text(value) | egui::Event::Ime(egui::ImeEvent::Commit(value))
+                    if !value.is_empty()
+            );
+            text |= typed;
+            !typed
+        });
+        enter || text
+    })
+}
+
+fn body_outline_tools(
+    ui: &mut Ui,
+    outline: &viewer::Outline,
+    folds: &mut std::collections::BTreeSet<usize>,
+    view: &mut widgets::ViewerState,
+    can_format: bool,
+    actions: &mut Vec<Action>,
+) {
+    if icons::button(ui, Icon::Search, "Find in request body", false).clicked() {
+        view.open_find();
+    }
+    icons::menu(ui, Icon::More, "More outline tools", |ui| {
+        if widgets::option(ui, false, "Collapse all").clicked() {
+            *folds = outline.collapse_all();
+            ui.close();
+        }
+        if widgets::option(ui, false, "Expand all").clicked() {
+            folds.clear();
+            ui.close();
+        }
+        if ui
+            .add_enabled_ui(can_format, |ui| widgets::option(ui, false, "Format body"))
+            .inner
+            .clicked()
+        {
+            actions.push(Action::FormatBody);
+            ui.close();
+        }
+    });
+}
+
 fn body_header(
     ui: &mut Ui,
     body_type: &mut BodyType,
     text: &str,
+    outline: &mut BodyOutline,
     actions: &mut Vec<Action>,
-) -> bool {
-    let json = (*body_type == BodyType::Json && !text.trim().is_empty())
-        .then(|| viewer::check_json_template(text));
+) -> (bool, bool) {
+    let mut toggle_focused = false;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = crate::theme::spacing().xs;
         // Keep the picker steady as the JSON status appears or changes during editing.
-        let reserve = widgets::text_width(ui, crate::theme::meta("Valid JSON"))
-            + icons::size()
-            + 2.0 * ui.spacing().item_spacing.x;
+        let gap = ui.spacing().item_spacing.x;
+        let reserve = if outline.open {
+            3.0 * (icons::size() + gap)
+        } else {
+            widgets::text_width(ui, crate::theme::meta("Valid JSON")) + icons::size() + 2.0 * gap
+        };
         let previous = *body_type;
         if !widgets::compact_segments(ui, "Body type", body_type, &BODY_CHOICES, reserve) {
             let selected = BODY_CHOICES
@@ -2271,12 +2374,50 @@ fn body_header(
             });
             name(&picker, "Body type");
         }
-        if *body_type == BodyType::Json
-            && let Some(result) = json
-        {
+        outline.sync(*body_type, text);
+        if let Some(json) = &outline.json {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let enabled = result.is_ok()
-                    && viewer::format_json_body(text).is_some_and(|formatted| formatted != text);
+                let available = json.outline.is_some();
+                let hint = if !available {
+                    "Outline needs valid JSON"
+                } else if outline.open {
+                    "Return to the body editor"
+                } else {
+                    "Show foldable JSON outline"
+                };
+                let toggle = ui
+                    .add_enabled_ui(available, |ui| {
+                        icons::button_with_hint(ui, Icon::Variables, "Outline", hint, outline.open)
+                    })
+                    .inner;
+                if toggle.clicked() {
+                    outline.open = !outline.open;
+                    if outline.open {
+                        toggle.request_focus();
+                    }
+                }
+                toggle_focused = toggle.has_focus();
+                let enabled = json
+                    .formatted
+                    .as_ref()
+                    .is_ok_and(|formatted| formatted != text);
+                // A second toolbar would leave too little room for Find in a short stacked pane.
+                if outline.open
+                    && let Some(structure) = &json.outline
+                {
+                    body_outline_tools(
+                        ui,
+                        structure,
+                        &mut outline.folds,
+                        &mut outline.view,
+                        enabled,
+                        actions,
+                    );
+                    return;
+                }
+                if text.trim().is_empty() {
+                    return;
+                }
                 let hint = if enabled {
                     crate::shortcuts::hint(
                         ui.ctx(),
@@ -2294,8 +2435,8 @@ fn body_header(
                 if format.clicked() {
                     actions.push(Action::FormatBody);
                 }
-                let (status, hover) = match result {
-                    Ok(()) => (crate::theme::meta("Valid JSON").color(palette().ok), None),
+                let (status, hover) = match &json.formatted {
+                    Ok(_) => (crate::theme::meta("Valid JSON").color(palette().ok), None),
                     Err(error) => {
                         let full = error.to_string();
                         let location =
@@ -2316,7 +2457,7 @@ fn body_header(
                 }
             });
         }
-        *body_type != previous
+        (*body_type != previous, toggle_focused)
     })
     .inner
 }

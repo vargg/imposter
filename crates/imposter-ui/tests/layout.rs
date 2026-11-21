@@ -366,10 +366,14 @@ fn walk(
             .editor;
         (
             std::mem::replace(&mut editor.body_type, BodyType::Json),
-            std::mem::replace(&mut editor.body_text, r#"{"id":1}"#.into()),
+            std::mem::replace(&mut editor.body_text, r#"{"nested":{"id":1}}"#.into()),
         )
     };
     check(app, "valid JSON body header");
+    walk_body_outline(app, "side-by-side", &mut check);
+    click(&mut app.harness, "Stack request and response");
+    walk_body_outline(app, "stacked", &mut check);
+    click(&mut app.harness, "Put request and response side by side");
     app.harness
         .state_mut()
         .state
@@ -1078,6 +1082,26 @@ fn walk(
     app.harness.state_mut().state.screen = Screen::Requests;
     walk_modals(app, &mut check);
     found
+}
+
+fn walk_body_outline(
+    app: &mut support::App,
+    orientation: &str,
+    check: &mut impl FnMut(&mut support::App, &str),
+) {
+    click(&mut app.harness, "Outline");
+    app.harness.get_by_label("Fold $.nested");
+    check(app, &format!("{orientation} request body outline"));
+    click(&mut app.harness, "More outline tools");
+    check(app, &format!("{orientation} request body outline tools"));
+    click(&mut app.harness, "Expand all");
+    click(&mut app.harness, "Find in request body");
+    support::text_input(&app.harness, "Find in request body outline").type_text("id");
+    check(
+        app,
+        &format!("{orientation} request body outline with Find"),
+    );
+    click(&mut app.harness, "Outline");
 }
 
 fn walk_send_controls(

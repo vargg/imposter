@@ -22,6 +22,8 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Any method, custom methods included; query parameters kept in sync with the URL.
 - Headers, cookies, and bodies as JSON, plain text, URL-encoded form, multipart (text fields
   and file uploads) or a binary file. Uploads are streamed from disk.
+- **Outline** shows a read-only, searchable view of a JSON request body with collapsible
+  objects and arrays.
 - Type into the empty trailing row to add a query parameter, header, cookie or form field.
 - Authentication: Basic, Bearer, Digest (MD5, SHA-256, SHA-512, `-sess`), an API key in
   a header or the query, and OAuth 2.0: client credentials (the token is fetched when you

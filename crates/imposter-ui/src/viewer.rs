@@ -231,6 +231,28 @@ pub fn format_json_body(text: &str) -> Option<String> {
     Some(reindent(text))
 }
 
+pub(crate) struct RequestJson {
+    pub source: String,
+    pub formatted: Result<String, serde_json::Error>,
+    pub outline: Option<Outline>,
+}
+
+impl RequestJson {
+    pub fn new(text: &str) -> Self {
+        let formatted = check_json_template(text).map(|()| reindent(text));
+        // Template validation accepts bare placeholders, which have no JSON structure.
+        let outline = formatted.as_ref().ok().and_then(|text| {
+            serde_json::from_str::<serde::de::IgnoredAny>(text).ok()?;
+            Outline::build(text)
+        });
+        Self {
+            source: text.to_owned(),
+            formatted,
+            outline,
+        }
+    }
+}
+
 fn reindent(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + text.len() / 2);
     let mut depth = 0_usize;

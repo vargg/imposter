@@ -35,8 +35,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **The layout lint gates every screen** (`imposter-ui/tests/layout.rs`).
   - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
     walks the screens, each Variables tab and scope type, every Settings category, the
-    request Settings and Scripts tabs in both pane orientations, response tools and filters,
-    the collapsed and filtered request tree, long environment names, Cancel and Stop,
+    request Settings and Scripts tabs and the JSON body Outline in both pane orientations,
+    response tools and filters, the collapsed and filtered request tree, long environment names, Cancel and Stop,
     blocked sends and capture warnings, each Mocks response tab, mock script and server
     states, Load metrics, Run progress and results, the unified History tabs, and the dialogs.
     It compares each request setting caption's bounds with its full text width.
@@ -541,9 +541,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **The Body tab has a single header**. The named Body type group uses None, JSON, Text,
   Form, Multipart and File as segment labels so the choices fit a typical split pane.
   Each segment gives its full name on hover and in its accessible description. Narrower
-  panes use the Body type combo with full names. JSON status and the Format body icon
-  are aligned at the right. Parse errors retain their error color and line number, and their hover
-  text gives the full error when the label truncates. Moving the tools into the header
+  panes use the Body type combo with full names. While editing, JSON status, Format body
+  and Outline are aligned at the right. Parse errors retain their error color and line
+  number, and their hover text gives the full error when the label truncates. Moving the tools into the header
   puts them next to the type they act on and leaves the editor all the space below it,
   never shorter than about four lines (a fixed ten rows left most of a large pane empty,
   the review's #20). The editor scrolls its own text within that space. Sizing against the pane's clip
@@ -580,6 +580,18 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   costs about 4 ms at 64 KiB, 24 ms at 256 KiB and 130 ms at 1 MiB
   (plain), and highlighting adds about 30%. Larger bodies stay editable but slow; a custom
   virtualized editor would be needed to fix that and is out of scope.
+
+- **JSON request bodies have a read-only Outline.** The Body header toggle shows a
+  formatted view with the response viewer's fold markers. Find and More outline tools
+  share the Body header so Find has room in a short stacked pane. The menu offers
+  Collapse all, Expand all and Format body. Placeholders inside strings are shown as typed.
+  Incomplete JSON and bare placeholders disable the toggle with “Outline needs valid JSON”.
+  Toggling it off, typing, or pressing Enter in the view returns focus to the editor
+  with its text intact.
+  The open request keeps its toggle and folds for the session. Changing body text resets
+  the folds, and switching to another body type turns Outline off. Why: egui’s `TextEdit`
+  cannot hide lines. Replacing folded text with placeholders breaks undo, cursor positions
+  and `{{var}}` editing, and a custom editor is out of scope.
 
 - **Variables in the editor:** fields mark `{{name}}` tokens with the highlight pattern
   `\{\{([^{}\n]+)\}\}` (stricter than the resolution pattern, so half-typed text is not marked): defined names and

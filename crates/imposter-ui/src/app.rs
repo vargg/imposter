@@ -5,7 +5,7 @@
 //! drained at the start of each frame. Results carry the selection generation they were
 //! started under, so a late result never replaces another request's state.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -13,7 +13,7 @@ use std::time::Duration;
 use egui::ViewportCommand;
 use imposter_app::core::execution::{ExecutionRecord, Outcome as ExchangeOutcome, Response};
 use imposter_app::core::ids::{CollectionId, EnvironmentId, ExecutionId, FolderId, RequestId};
-use imposter_app::core::model::{EnvColor, FormItem, OAuth2, Request, Variables};
+use imposter_app::core::model::{BodyType, EnvColor, FormItem, OAuth2, Request, Variables};
 use imposter_app::core::run_report::Step as ReportStep;
 use imposter_app::core::run_result::RunResult;
 use imposter_app::core::settings::AppSettings;
@@ -882,6 +882,29 @@ pub struct EditorPane {
     /// "Clear all" confirmations per table: queries, headers, cookies, form, multipart.
     pub confirm_clear: [bool; 5],
     pub token: TokenView,
+    pub(crate) body_outline: BodyOutline,
+}
+
+#[derive(Default)]
+pub(crate) struct BodyOutline {
+    pub(crate) open: bool,
+    pub(crate) folds: BTreeSet<usize>,
+    pub(crate) view: ViewerState,
+    pub(crate) json: Option<crate::viewer::RequestJson>,
+}
+
+impl BodyOutline {
+    pub(crate) fn sync(&mut self, kind: BodyType, text: &str) {
+        if kind != BodyType::Json {
+            *self = Self::default();
+        } else if self.json.as_ref().is_none_or(|json| json.source != text) {
+            let json = crate::viewer::RequestJson::new(text);
+            self.open &= json.outline.is_some();
+            self.folds.clear();
+            self.view = ViewerState::new();
+            self.json = Some(json);
+        }
+    }
 }
 
 /// What the Auth tab knows of the open request's OAuth 2.0 token.
@@ -918,6 +941,7 @@ impl EditorPane {
             custom_method: None,
             confirm_clear: [false; 5],
             token: TokenView::default(),
+            body_outline: BodyOutline::default(),
         }
     }
 }
@@ -1306,6 +1330,7 @@ pub struct State {
     pub tree: Option<TreeView>,
     pub selected: Option<NodeId>,
     pub editor: Option<EditorPane>,
+    body_outlines: BTreeMap<RequestId, BodyOutline>,
     pub saver: Saver,
     pub response: ResponsePane,
     pub layout: WorkspaceLayout,
@@ -1397,6 +1422,7 @@ impl ImposterApp {
                 tree: None,
                 selected: None,
                 editor: None,
+                body_outlines: BTreeMap::new(),
                 saver: Saver::default(),
                 response: ResponsePane::default(),
                 layout: WorkspaceLayout::default(),
@@ -2357,7 +2383,6 @@ impl ImposterApp {
 
     /// Show `request` as its file says now, on the same tab, keeping the response shown.
     fn reload_editor(&mut self, request: &Request) {
-        let tab = self.state.editor.as_ref().map(|p| p.tab);
         if let Some(id) = request.id {
             self.state.saver.forget(id);
         }
@@ -2366,8 +2391,9 @@ impl ImposterApp {
             self.state.saver.remember(&normalized);
         }
         let mut pane = EditorPane::new(editor);
-        if let Some(tab) = tab {
-            pane.tab = tab;
+        if let Some(previous) = self.state.editor.take() {
+            pane.tab = previous.tab;
+            pane.body_outline = previous.body_outline;
         }
         self.state.editor = Some(pane);
         self.state.disk_change = None;
@@ -2550,7 +2576,12 @@ impl ImposterApp {
         }
         self.state.selected = editor.id().map(NodeId::Request);
         let id = editor.id();
-        self.state.editor = Some(EditorPane::new(editor));
+        self.retain_body_outline();
+        let mut pane = EditorPane::new(editor);
+        if let Some(outline) = id.and_then(|id| self.state.body_outlines.remove(&id)) {
+            pane.body_outline = outline;
+        }
+        self.state.editor = Some(pane);
         self.state.response.clear();
         self.state.inspect = None;
         self.load_snapshot();
@@ -2564,6 +2595,17 @@ impl ImposterApp {
         }
     }
 
+    fn retain_body_outline(&mut self) {
+        if let Some(pane) = &mut self.state.editor
+            && let Some(id) = pane.editor.id()
+            && (pane.body_outline.open || !pane.body_outline.folds.is_empty())
+        {
+            self.state
+                .body_outlines
+                .insert(id, std::mem::take(&mut pane.body_outline));
+        }
+    }
+
     fn write_recent(&self) {
         let recent = serde_json::to_value(&self.state.recent).unwrap_or(Value::Null);
         self.write_ui_state(RECENT_KEY, recent);
@@ -2573,6 +2615,7 @@ impl ImposterApp {
         if let Some(id) = self.state.editor.as_ref().and_then(|pane| pane.editor.id()) {
             self.state.saver.forget(id);
         }
+        self.retain_body_outline();
         self.state.editor = None;
         self.state.selected = None;
         self.state.generation += 1;
@@ -2815,7 +2858,7 @@ impl ImposterApp {
     }
 
     fn discard_editor_changes(&mut self) {
-        let Some(pane) = &self.state.editor else {
+        let Some(pane) = &mut self.state.editor else {
             return;
         };
         if let Some(id) = pane.editor.id() {
@@ -2824,6 +2867,7 @@ impl ImposterApp {
                 let tab = pane.tab;
                 let mut fresh = EditorPane::new(Editor::load(&baseline));
                 fresh.tab = tab;
+                fresh.body_outline = std::mem::take(&mut pane.body_outline);
                 self.state.editor = Some(fresh);
             }
         } else {
@@ -3643,7 +3687,7 @@ impl ImposterApp {
             Action::FormatBody => {
                 let formatted = self.state.editor.as_mut().and_then(|pane| {
                     let editor = &mut pane.editor;
-                    let json = editor.body_type == imposter_app::core::model::BodyType::Json;
+                    let json = editor.body_type == BodyType::Json;
                     let formatted = crate::viewer::format_json_body(&editor.body_text)
                         .filter(|f| json && *f != editor.body_text)?;
                     editor.body_text = formatted;

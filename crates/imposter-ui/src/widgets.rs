@@ -3314,7 +3314,13 @@ pub fn method_picker(ui: &mut Ui, method: &mut String, custom: &mut Option<Strin
 }
 
 /// Fill the pane below the header with an independently scrolling text editor.
-pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi) -> bool {
+pub fn body_editor(
+    ui: &mut Ui,
+    text: &mut String,
+    json: bool,
+    vars: &mut VarUi,
+    focus: bool,
+) -> bool {
     let was_empty = text.trim().is_empty();
     let width = ui.available_width();
     let fill = ui.available_height();
@@ -3337,6 +3343,9 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
                 vars,
                 Some((Some(json), "Enter request body (JSON, XML, etc.)")),
             );
+            if focus {
+                field.request_focus();
+            }
             if text.len() > HIGHLIGHT_LIMIT {
                 field = field.on_hover_text("Large body: highlighting is off");
             }
@@ -3955,10 +3964,15 @@ pub fn code_viewer(
     }
     if state.find_open {
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = crate::theme::spacing().xs;
+            let gap = ui.spacing().item_spacing.x;
+            let available = ui.available_width() - 3.0 * (icons::size() + gap);
+            let status_width = text_width(ui, RichText::new("Match 1 of 1"));
+            let width = (available - status_width - gap).clamp(72.0, 220.0);
             let field = ui.add(
                 egui::TextEdit::singleline(&mut state.query)
                     .hint_text("Find in displayed text")
-                    .desired_width(220.0),
+                    .desired_width(width),
             );
             name(&field, &format!("Find in {id}"));
             if state.focus_find {
@@ -3982,7 +3996,7 @@ pub fn code_viewer(
             if icons::button(ui, Icon::Close, "Close", false).clicked() {
                 state.find_open = false;
             }
-            ui.label(state.match_status());
+            ui.add(egui::Label::new(state.match_status()).truncate());
         });
     }
 
