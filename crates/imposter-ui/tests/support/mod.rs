@@ -140,6 +140,10 @@ pub fn click_button(harness: &mut Harness<'_, ImposterApp>, label: &str) {
 
 /// Focus a field by its accessible name and type into it.
 pub fn type_into(harness: &mut Harness<'_, ImposterApp>, label: &str, text: &str) {
+    // Rows below the fold of a tall Settings category must be scrolled into view first;
+    // otherwise the click misses and the following keystrokes land nowhere.
+    text_input(harness, label).scroll_to_me();
+    harness.run_steps(12);
     text_input(harness, label).click();
     harness.run_steps(1);
     text_input(harness, label).type_text(text);

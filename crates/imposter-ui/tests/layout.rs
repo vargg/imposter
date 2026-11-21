@@ -1097,7 +1097,9 @@ fn walk_send_controls(
     check(app, "Cancel while waiting for a response");
 
     send_event.send_replace(true);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    // Do not wait_idle here: the stream keeps a background read running until Stop.
+    // llvm-cov and busy CI runners need more than a few seconds for the first event.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while app
         .harness
         .query_by_role_and_label(Role::Button, "Stop")
@@ -1107,7 +1109,7 @@ fn walk_send_controls(
             std::time::Instant::now() < deadline,
             "no stream event arrived"
         );
-        app.harness.run_steps(1);
+        app.harness.run_steps(2);
         std::thread::yield_now();
     }
     check(app, "Stop while receiving events");
