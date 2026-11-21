@@ -331,6 +331,13 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     selected tab leaves no room) and has a dot when a hidden tab holds something.
     Menu items keep their badges, and the More tooltip and accessible description name
     the tabs with content, for example "More tabs: Tests: 2 checks".
+  - **Outer scripts are visible where they apply.** A folder that has scripts shows a muted
+    script glyph at the end of its row, and the collection picker shows it before the
+    collection's name; their hover and accessible description say what runs ("Runs a
+    script before sending"). A request's Scripts tab has a muted dot when only its
+    collection or folders run scripts ("Folder \"Users\" scripts also run"). Why: scripts
+    set in a dialog left no trace, so they were easy to forget while they changed every
+    send. Checked by `imposter-ui/tests/scripts.rs`.
   - **Viewer tools:** Find and Copy stay on the tab row when they fit, with Save body…
     alongside them when there is room. "More tools" (⋯) holds Collapse all, Expand all,
     Wrap and Filter with JSONPath, plus any of the three main actions that need to

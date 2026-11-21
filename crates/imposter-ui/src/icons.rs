@@ -69,10 +69,12 @@ pub enum Icon {
     Cookie,
     Globe,
     Appearance,
+    /// Angle brackets: a collection or folder runs scripts.
+    Script,
 }
 
 impl Icon {
-    pub const ALL: [Self; 46] = [
+    pub const ALL: [Self; 47] = [
         Self::Sidebar,
         Self::Columns,
         Self::Rows,
@@ -119,6 +121,7 @@ impl Icon {
         Self::Cookie,
         Self::Globe,
         Self::Appearance,
+        Self::Script,
     ];
 
     /// Codepoints from `@phosphor-icons/web` 2.1.2, `src/regular/style.css`.
@@ -170,6 +173,7 @@ impl Icon {
             Self::Cookie => '\u{e6ca}',       // cookie
             Self::Globe => '\u{e288}',        // globe
             Self::Appearance => '\u{e164}',   // circle-half
+            Self::Script => '\u{e1bc}',       // code
         }
     }
 }

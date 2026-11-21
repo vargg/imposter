@@ -84,6 +84,33 @@ pub struct Outer {
     pub scripts: Scripts,
 }
 
+/// What a collection's or folder's scripts do to the requests inside, in a sentence; empty
+/// when it has none.
+pub fn runs(scripts: &Scripts) -> &'static str {
+    match (
+        scripts.before.trim().is_empty(),
+        scripts.after.trim().is_empty(),
+    ) {
+        (false, false) => "Runs scripts before sending and after each response",
+        (false, true) => "Runs a script before sending",
+        (true, false) => "Runs a script after each response",
+        (true, true) => "",
+    }
+}
+
+/// The Scripts tab's badge description when outer levels run scripts: "Collection \"API\"
+/// and Folder \"Users\" scripts also run".
+pub fn also_run(outer: &[Outer]) -> Option<String> {
+    let owners: Vec<&str> = outer.iter().map(|level| level.owner.as_str()).collect();
+    let (last, rest) = owners.split_last()?;
+    let joined = if rest.is_empty() {
+        (*last).to_owned()
+    } else {
+        format!("{} and {last}", rest.join(", "))
+    };
+    Some(format!("{joined} scripts also run"))
+}
+
 pub fn draw(
     ui: &mut Ui,
     scripts: &mut Scripts,
@@ -333,4 +360,42 @@ fn insert_at_cursor(ui: &Ui, id: egui::Id, text: &mut String, code: &str) {
             egui::text::CCursor::new(after),
         )));
     state.store(ctx, id);
+}
+
+#[cfg(test)]
+mod tests {
+    use imposter_app::core::ids::FolderId;
+
+    use super::*;
+    use crate::dialogs::ScriptTarget;
+
+    fn folder(name: &str) -> Outer {
+        Outer {
+            owner: format!("Folder \"{name}\""),
+            target: ScriptTarget::Folder(FolderId(1)),
+            scripts: Scripts {
+                before: "let a = 1;".into(),
+                ..Scripts::default()
+            },
+        }
+    }
+
+    #[test]
+    fn also_run_names_every_outer_level_in_order() {
+        assert_eq!(also_run(&[]), None);
+        assert_eq!(
+            also_run(&[folder("A"), folder("B"), folder("C")]).as_deref(),
+            Some("Folder \"A\", Folder \"B\" and Folder \"C\" scripts also run")
+        );
+    }
+
+    #[test]
+    fn whitespace_is_no_script() {
+        let scripts = Scripts {
+            before: " \n".into(),
+            after: "test(\"ok\", true);".into(),
+        };
+        assert_eq!(runs(&scripts), "Runs a script after each response");
+        assert_eq!(runs(&Scripts::default()), "");
+    }
 }

@@ -266,19 +266,44 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
         .iter()
         .find(|c| Some(c.id) == state.collection)
         .map(|c| (c.id, c.name.clone()));
+    let runs = state
+        .collections
+        .iter()
+        .find(|c| Some(c.id) == state.collection)
+        .map_or("", |c| crate::scripts_tab::runs(&c.scripts));
     ui.horizontal(|ui| {
         let picker_width =
             ui.available_width() - 2.0 * (icons::size() + ui.spacing().item_spacing.x);
         ui.add_enabled_ui(!state.collections.is_empty(), |ui| {
             ui.set_width(picker_width);
+            let title = current
+                .as_ref()
+                .map_or("Select a collection", |(_, name)| name.as_str());
+            // Before the name, so truncating a long one never hides it.
+            let mut selected = egui::text::LayoutJob::default();
+            if !runs.is_empty() {
+                for part in [
+                    icons::glyph_text(Icon::Script, 14.0).color(palette().text_muted),
+                    RichText::new(" "),
+                ] {
+                    part.append_to(
+                        &mut selected,
+                        ui.style(),
+                        egui::FontSelection::Default,
+                        Align::Center,
+                    );
+                }
+            }
+            RichText::new(title).append_to(
+                &mut selected,
+                ui.style(),
+                egui::FontSelection::Default,
+                Align::Center,
+            );
             let picker = widgets::combo("collection")
                 .width(picker_width)
                 .truncate()
-                .selected_text(
-                    current
-                        .as_ref()
-                        .map_or("Select a collection", |(_, name)| name.as_str()),
-                )
+                .selected_text(selected)
                 .show_ui(ui, |ui| {
                     for collection in &state.collections {
                         if widgets::option(
@@ -293,6 +318,14 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                     }
                 });
             name(&picker.response, "Collection");
+            if !runs.is_empty() {
+                ui.ctx().accesskit_node_builder(picker.response.id, |node| {
+                    node.set_description(runs);
+                });
+                picker
+                    .response
+                    .on_hover_text(format!("{title}\n{runs}, for every request in it"));
+            }
         });
         new_menu(state, ui);
         if let Some((id, collection_name)) = current {
@@ -958,14 +991,19 @@ fn nodes(
                         view.name_indent,
                         true,
                     );
-                    let response = widgets::tree_option(ui, selected == Some(id), text);
+                    let runs = crate::scripts_tab::runs(&folder.scripts);
+                    let mark = (!runs.is_empty())
+                        .then(|| icons::glyph_text(Icon::Script, 14.0).color(palette().text_muted));
+                    let response = widgets::tree_option_with(ui, selected == Some(id), text, mark);
                     name(&response, &format!("Folder {}", folder.name));
-                    if !folder.scripts.is_empty() {
+                    if runs.is_empty() {
+                        response.on_hover_text(&folder.name)
+                    } else {
                         ui.ctx().accesskit_node_builder(response.id, |node| {
-                            node.set_description("Has scripts");
+                            node.set_description(runs);
                         });
+                        response.on_hover_text(format!("{}\n{runs}", folder.name))
                     }
-                    response.on_hover_text(&folder.name)
                 });
                 collapsing.show_body_unindented(ui, |ui| {
                     nodes(ui, children, Some(folder.id), inner, actions);
@@ -1687,6 +1725,27 @@ fn editor_badge(editor: &crate::editor::Editor, tab: EditorTab) -> Option<widget
     }
 }
 
+/// The request's own scripts are a green dot; its collection's or folders' alone a muted
+/// one, so a request they run around never looks as if nothing runs.
+fn scripts_badge(
+    editor: &crate::editor::Editor,
+    outer: &[crate::scripts_tab::Outer],
+) -> Option<widgets::TabBadge> {
+    let also = crate::scripts_tab::also_run(outer);
+    match (editor_badge(editor, EditorTab::Scripts), also) {
+        (Some(own), Some(also)) => Some(widgets::TabBadge {
+            description: format!("{}; {also}", own.description),
+            ..own
+        }),
+        (None, Some(also)) => Some(widgets::TabBadge {
+            mark: widgets::Mark::Dot,
+            tone: Tone::Muted,
+            description: also,
+        }),
+        (own, None) => own,
+    }
+}
+
 /// The request pane with no request open: what to do next, as buttons. On first run
 /// that is a collection to create, import or start from curl.
 fn empty_request_pane(state: &mut State, ui: &mut Ui) {
@@ -1981,7 +2040,12 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         .into_iter()
         .chain(EditorTab::MORE)
         .map(|(tab, label)| {
-            let spec = widgets::TabSpec::new(tab, label).badge(editor_badge(&pane.editor, tab));
+            let badge = if tab == EditorTab::Scripts {
+                scripts_badge(&pane.editor, &outer)
+            } else {
+                editor_badge(&pane.editor, tab)
+            };
+            let spec = widgets::TabSpec::new(tab, label).badge(badge);
             if tab == EditorTab::Settings {
                 // Screen readers need distinct names for this tab and the Settings destination.
                 spec.named("Request settings")

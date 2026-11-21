@@ -337,7 +337,25 @@ fn a_folders_scripts_are_edited_in_a_dialog_and_run_around_its_requests() {
     let row = f.app.harness.get_by_label("Folder Users");
     assert_eq!(
         row.accesskit_node().description().as_deref(),
-        Some("Has scripts")
+        Some("Runs a script before sending")
+    );
+    let row = row.rect();
+    let glyph = imposter_ui::icons::Icon::Script.glyph().to_string();
+    assert!(
+        f.app.harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Text(text)
+                if row.contains(text.pos) && text.galley.job.text == glyph)
+        }),
+        "the folder's row marks its scripts"
+    );
+    let more = f
+        .app
+        .harness
+        .get_by_role_and_label(Role::Button, "More request tabs");
+    assert_eq!(
+        more.accesskit_node().description().as_deref(),
+        Some("More tabs: Scripts: Folder \"Users\" scripts also run"),
+        "the request's own Scripts tab is empty, but says what runs around it"
     );
 
     open_scripts(&mut f.app);
@@ -376,6 +394,21 @@ fn the_collection_menu_edits_its_scripts_and_cancel_keeps_nothing() {
     assert_eq!(
         stored_scripts(&f.app).0.after,
         "test(\"from the collection\", true);"
+    );
+    let picker = f.app.harness.get_by_label("Collection");
+    assert_eq!(
+        picker.accesskit_node().description().as_deref(),
+        Some("Runs a script after each response"),
+        "the collection picker says its scripts run"
+    );
+    let picker = picker.rect();
+    let glyph = imposter_ui::icons::Icon::Script.glyph().to_string();
+    assert!(
+        f.app.harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Text(text)
+                if picker.contains(text.pos) && text.galley.job.text.starts_with(&glyph))
+        }),
+        "the picker marks them before the name"
     );
     open_scripts(&mut f.app);
     click(&mut f.app.harness, "Open the scripts of Collection \"API\"");

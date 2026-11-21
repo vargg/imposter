@@ -1225,9 +1225,24 @@ pub fn option<'a>(ui: &mut Ui, selected: bool, atoms: impl egui::IntoAtoms<'a>) 
 
 /// A draggable tree choice fills its row and truncates its caption in place.
 pub(crate) fn tree_option(ui: &mut Ui, selected: bool, text: LayoutJob) -> egui::Response {
+    tree_option_with(ui, selected, text, None)
+}
+
+/// [`tree_option`] with `trailing` at the row's right end, where a long name never covers it.
+pub(crate) fn tree_option_with(
+    ui: &mut Ui,
+    selected: bool,
+    text: LayoutJob,
+    trailing: Option<RichText>,
+) -> egui::Response {
+    let size = [ui.available_width(), crate::theme::spacing().row];
+    let button = match trailing {
+        Some(trailing) => egui::Button::selectable(selected, (text, egui::Atom::grow(), trailing)),
+        None => egui::Button::selectable(selected, (text, egui::Atom::grow())),
+    };
     ui.add_sized(
-        [ui.available_width(), crate::theme::spacing().row],
-        egui::Button::selectable(selected, (text, egui::Atom::grow()))
+        size,
+        button
             .stroke(egui::Stroke::NONE)
             .truncate()
             .sense(egui::Sense::click_and_drag()),
