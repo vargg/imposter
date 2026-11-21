@@ -404,24 +404,23 @@ fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bo
                         egui::TextFormat::simple(mono, fade(palette().text)),
                     );
                     let status = if broken {
-                        ("  ⚠".to_owned(), palette().error)
-                    } else if route.is_scripted() {
-                        (format!("  {} · script", route.status), palette().text_muted)
+                        egui::RichText::new("  ⚠").color(palette().error)
                     } else {
-                        (format!("  {}", route.status), palette().text_muted)
+                        egui::RichText::new(format!("  {}", route.status))
+                            .color(palette().text_muted)
                     };
+                    let mut content =
+                        egui::Atoms::new((job, egui::Atom::grow(), status.font(body)));
+                    if route.is_scripted() && !broken {
+                        content.push_right(
+                            icons::glyph_text(Icon::Script, 14.0).color(palette().text_muted),
+                        );
+                    }
                     let row = ui.add_sized(
                         [ui.available_width(), height],
-                        egui::Button::selectable(
-                            selected,
-                            (
-                                job,
-                                egui::Atom::grow(),
-                                egui::RichText::new(status.0).font(body).color(status.1),
-                            ),
-                        )
-                        .stroke(egui::Stroke::NONE)
-                        .truncate(),
+                        egui::Button::selectable(selected, content)
+                            .stroke(egui::Stroke::NONE)
+                            .truncate(),
                     );
                     if selected {
                         widgets::selection_bar(ui, row.rect);

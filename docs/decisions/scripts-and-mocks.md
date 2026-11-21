@@ -147,8 +147,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing Rhai r
   - The route's **Script** tab uses the request script editor (`scripts_tab::script_editor`)
     with mock examples. An enabled route whose script does not compile is a
     `RouteField::Script` problem (`mock_screen::script_problems`):
-    ⚠ in the list, Start disabled naming it. Scripted routes say "· script" after their
-    status, and screen readers hear "Status 200, answered by its script". "Answered
+    ⚠ in the list, Start disabled naming it. Scripted routes show the `</>` script mark
+    after their status, the same mark as a collection or folder with scripts in the request
+    tree (a "· script" word was one more way to say it), and screen readers hear
+    "Status 200, answered by its script". "Answered
     requests" under the routes (newest first, the last 100, cleared on Start) shows each
     request with its time, status in its tone, a script's error and printed lines; it is
     not called "Requests", which names the header's tab. Why: without it a script's errors

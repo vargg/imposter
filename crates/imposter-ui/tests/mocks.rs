@@ -881,6 +881,24 @@ fn a_route_script_compiles_or_keeps_the_server_from_starting() {
         described(&app).as_deref(),
         Some("Status 200, answered by its script")
     );
+    // The same mark as a collection or folder with scripts in the request tree.
+    let row = app.harness.get_by_label("Mock route 1").rect();
+    let glyph = imposter_ui::icons::Icon::Script.glyph().to_string();
+    let painted: Vec<String> = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) if row.contains(text.pos) => Some(text.galley.job.text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(painted.contains(&glyph), "{painted:?}");
+    assert!(
+        !painted.iter().any(|text| text.contains("script")),
+        "{painted:?}"
+    );
     advance_time(&mut app.harness, 0.0);
     text_input(&app.harness, "Mock response script").click();
     app.harness.run_steps(1);
