@@ -143,6 +143,23 @@ fn a_running_send_shows_its_time() {
 }
 
 #[test]
+fn sending_again_counts_in_the_status_line_without_moving_the_body() {
+    let mut fixture = fixture();
+    let app = &mut fixture.app;
+    open_and_send(app, "GET Slow");
+    let body = app.harness.get_by_label("ok").rect();
+
+    click(&mut app.harness, "Send");
+    app.harness.run_steps(3);
+    let status = app.harness.get_by_label_contains("Sending… ").rect();
+    assert!(status.bottom() <= body.top(), "{status:?} above {body:?}");
+    assert_eq!(app.harness.get_by_label("ok").rect(), body, "while sending");
+    settle(&mut app.harness);
+    assert!(app.harness.query_by_label_contains("Sending… ").is_none());
+    assert_eq!(app.harness.get_by_label("ok").rect(), body, "after sending");
+}
+
+#[test]
 fn the_status_bar_leaves_the_environment_to_the_picker_and_send() {
     let fixture = fixture();
     assert!(

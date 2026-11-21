@@ -3165,8 +3165,12 @@ impl ImposterApp {
         });
         self.state.response.blocked = None;
         self.state.response.pending = true;
-        // The pane says "Sending…" with the elapsed time while it runs.
-        self.state.response.notice = None;
+        // The status line says "Sending…" with the elapsed time while it runs; the shown
+        // response keeps its notice so the body does not move, but an error is answered.
+        self.state
+            .response
+            .notice
+            .take_if(|(_, tone)| *tone == Tone::Error);
     }
 
     fn executed(&mut self, generation: u64, mut result: Result<Box<Executed>, NotSent>) {

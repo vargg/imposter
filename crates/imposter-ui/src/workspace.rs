@@ -2285,6 +2285,7 @@ fn body_header(
 
 fn response_pane(state: &mut State, ui: &mut Ui) {
     let now = ui.input(|i| i.time);
+    let mut sending_over = None;
     if let Some(seconds) = state.sending_for(now) {
         // A stream shows its events as they come, in place of the waiting message.
         if !state.response.live_events.is_empty() {
@@ -2315,8 +2316,9 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
             });
             return;
         }
-        state.response.notice =
-            Some((format!("{sending} · showing the previous run"), Tone::Muted));
+        // In the status line, in place of the earlier status: a line of its own above the
+        // body pushed the body down and back when the send ended.
+        sending_over = Some(sending);
     }
     if let Some(blocked) = state.response.blocked.clone() {
         // Only why nothing went out: an earlier response here would read as this send's.
@@ -2355,7 +2357,20 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
                 widgets::action_width_with_icon(ui, label, Some(Icon::Warning))
                     + ui.spacing().item_spacing.x
             });
-            if let Some(response) = &response_state.response
+            if let Some(sending) = &sending_over {
+                ui.add(egui::Spinner::new().size(14.0));
+                let width = (ui.available_width() - runs - warning_width).max(0.0);
+                ui.allocate_ui(vec2(width, ui.available_height()), |ui| {
+                    ui.add(
+                        egui::Label::new(tone_text(
+                            format!("{sending} · showing the previous run"),
+                            Tone::Muted,
+                        ))
+                        .truncate(),
+                    )
+                    .on_hover_text("Cancel stops the send");
+                });
+            } else if let Some(response) = &response_state.response
                 && status_line(ui, response, runs + warning_width, None)
             {
                 response_state.tab = ResponseTab::Tests;

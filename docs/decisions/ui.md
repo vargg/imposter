@@ -363,7 +363,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     cancelled", `viewer::outcome_summary`), never internal type names.
   - **During a send** the response pane shows "Sending… n s" with a spinner, and the bar
     does only while that pane is out of sight (another screen): both at once said it twice.
-    The pane never invites a send while one runs.
+    The pane never invites a send while one runs. Over a previous response the counter
+    takes the response's status line ("Sending… 2 s · showing the previous run"), never
+    a row of its own: a notice line above the body pushed it down and pulled it back up
+    when the send ended. Checked by `imposter-ui/tests/status.rs`.
   - **Merging:** a failed check makes the result read "· n checks failed", and a capture
     written right after a send is added to that result (" · set token") rather than
     replacing it.
