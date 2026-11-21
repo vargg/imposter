@@ -270,7 +270,10 @@ fn path(
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
     widgets::list_toolbar(ui, |ui| draw_toolbar(state, ui));
-    widgets::list_column(ui, "Settings categories", |ui| categories(state, ui));
+    state.layout.list_width =
+        widgets::list_column(ui, "Settings categories", state.layout.list_width, |ui| {
+            categories(state, ui);
+        });
     egui::CentralPanel::default()
         .frame(workspace::screen_frame())
         .show(ui, |ui| {

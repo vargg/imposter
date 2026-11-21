@@ -83,6 +83,37 @@ pub fn open_screen(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     click_button(harness, label);
 }
 
+pub fn drag_horizontally(harness: &mut Harness<'_, ImposterApp>, start: egui::Pos2, by: f32) {
+    harness.hover_at(start);
+    harness.run_steps(1);
+    harness.drag_at(start);
+    harness.run_steps(1);
+    for step in 1..=10_u8 {
+        harness.hover_at(start + egui::vec2(by * f32::from(step) / 10.0, 0.0));
+        harness.run_steps(1);
+    }
+    harness.drop_at(start + egui::vec2(by, 0.0));
+    harness.run_steps(2);
+}
+
+pub fn assert_split_grip(harness: &Harness<'_, ImposterApp>, edge: egui::Pos2) {
+    let splitter = harness
+        .get_by_role_and_label(egui::accesskit::Role::Splitter, "Resize panel")
+        .rect();
+    assert!((splitter.center().x - edge.x).abs() <= 1.0);
+    let palette = imposter_ui::theme::palette();
+    assert!(
+        harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Rect(shape)
+            if shape.rect.center().distance(splitter.center()) <= 1.0
+                && (shape.rect.width() - 3.0).abs() < f32::EPSILON
+                && (shape.rect.height() - imposter_ui::widgets::GRIP_LENGTH).abs() < f32::EPSILON
+                && (shape.fill == palette.field_border || shape.fill == palette.text_muted))
+        }),
+        "missing visible grip at {splitter:?}"
+    );
+}
+
 pub fn open_settings_category(harness: &mut Harness<'_, ImposterApp>, category: &str) {
     click_button(harness, &format!("{category} settings"));
 }

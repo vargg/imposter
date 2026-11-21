@@ -487,6 +487,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   `imposter-ui/tests/editing.rs` and the store's `placing_*` tests.
 
 - **Request names stay on one line with ellipsis and full text on hover; breadcrumbs reveal their full path on hover.** Why: long names must not expand a sidebar row or hide their identity. Accessible names remain complete. Enforced by `imposter-ui/tests/editing.rs`. `{{variables}}` in a name are drawn in the accent, as in the editor, and the sidebar's edge has a grip like the splits', since it can be dragged wider (184–400 points, limited by the space the panes need) and nothing said so (the review's #59).
+  The Variables and Settings navigation columns and the Mocks route list use the same grip.
 
 
 ### Request Bar & Editors
@@ -817,14 +818,17 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
 ### Screens (Variables, Settings, Mocks, Load, Run, History)
 
-- **Variables and Settings share a flat navigation column** with its own scroll and a
-  1-point divider. Both columns begin against the rail below the screen toolbar, share
-  the workspace background, and adapt from 144 to 192 points. Rows have a left-aligned
+- **Variables and Settings share a flat, resizable navigation column** with its own
+  scroll and a 1-point divider with a grip. Both columns begin against the rail below the
+  screen toolbar and share the workspace background. The default adapts from 144 to 192
+  points until the user resizes it; either screen then sets the shared width (144–320
+  points, `WorkspaceLayout::list_width`), restored at startup. Rows have a left-aligned
   icon slot and caption, full-width hover and selected fills, and an accent bar on the
   selected row. Trailing markers leave the caption's left edge fixed. Truncated names
   show in full on hover. The owner's tour review found the centered Settings labels
-  and inset panel inconsistent with the Variables list. `imposter-ui/tests/variables.rs`
-  checks the shared placement and the alignment of the painted captions.
+  and inset panel inconsistent with the Variables list; the user could resize the
+  Requests sidebar but not these lists. `imposter-ui/tests/variables.rs` checks the
+  shared placement, caption alignment, resizing and restoration.
 
 - **The Variables screen edits one scope at a time** (Global, an environment, a collection),
   independently of the active execution environment. The icon slot holds a Globe,
@@ -880,6 +884,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   address has a green dot and a copy icon when running. Starting, stopping, stopped,
   validation errors and the restart notice remain visible. The single state gives the
   address room beside the port and removes the repeated state from the status bar.
+  - Drag the route list's divider grip to resize it from 200 to 480 points. The list
+    defaults to 260 points and keeps its preferred width across restarts. The window can
+    constrain the list so the route editor always has at least 372 points, the space it
+    had at 720×480 before the list could be resized. The grip lets users widen the list
+    to read more of the route paths.
   - The editor puts the two-click Delete route trash icon beside the route title.
     Method and path share one row, then Enabled and Status share another. This keeps the
     route's structure visible without putting another text button above the fields.

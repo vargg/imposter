@@ -300,6 +300,9 @@ response.send_json(#{ calls: state.calls, item: request.json().item });
   `url:users` and `-word`.
 - Side-by-side or stacked request and response, switched from the Requests toolbar. Collections
   sidebar can be hidden. Splitter positions, window size and the last selection are restored.
+- Drag the divider grips to resize the Variables scope list, Settings category list, or Mocks
+  route list. Variables and Settings share a width, and the app remembers both list widths
+  across restarts.
 - Dark, light or system theme, Compact or Comfortable density, and how much of a response
   body the viewer shows (Settings → Appearance).
   Every control has an accessible name for screen readers; text colors meet WCAG AA

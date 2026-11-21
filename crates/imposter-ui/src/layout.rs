@@ -32,6 +32,9 @@ pub struct WorkspaceLayout {
     pub orientation: Orientation,
     pub sidebar_visible: bool,
     pub sidebar_width: f32,
+    /// Variables and Settings follow the window width until the column is resized.
+    pub list_width: Option<f32>,
+    pub mock_list_width: f32,
     /// Request share of the width when side by side.
     pub side_ratio: f32,
     /// Request share of the height when stacked.
@@ -47,6 +50,8 @@ impl Default for WorkspaceLayout {
             orientation: Orientation::SideBySide,
             sidebar_visible: true,
             sidebar_width: 240.0,
+            list_width: None,
+            mock_list_width: 260.0,
             side_ratio: 0.5,
             stack_ratio: 0.45,
             history_ratio: 0.5,
@@ -55,6 +60,8 @@ impl Default for WorkspaceLayout {
 }
 
 pub const SIDEBAR_WIDTH: (f32, f32) = (184.0, 400.0);
+pub(crate) const LIST_WIDTH: (f32, f32) = (144.0, 320.0);
+pub(crate) const MOCK_LIST_WIDTH: (f32, f32) = (200.0, 480.0);
 pub const RATIO: (f32, f32) = (0.15, 0.85);
 
 /// The least a request or response pane gets beside the other: room for the tab row and
@@ -86,15 +93,14 @@ impl WorkspaceLayout {
         if object.get("version").is_some_and(|v| v.as_u64() != Some(1)) {
             return default;
         }
-        let number = |key: &str, fallback: f32, (low, high): (f32, f32)| {
+        let number = |key: &str, (low, high): (f32, f32)| {
             #[allow(clippy::cast_possible_truncation)]
             // layout values are small screen sizes and ratios
-            let value = object
+            object
                 .get(key)
                 .and_then(Value::as_f64)
                 .filter(|v| v.is_finite())
-                .map_or(fallback, |v| v as f32);
-            value.clamp(low, high)
+                .map(|v| (v as f32).clamp(low, high))
         };
         Self {
             version: 1,
@@ -114,10 +120,14 @@ impl WorkspaceLayout {
                 .get("sidebar_visible")
                 .and_then(Value::as_bool)
                 .unwrap_or(true),
-            sidebar_width: number("sidebar_width", default.sidebar_width, SIDEBAR_WIDTH).round(),
-            side_ratio: number("side_ratio", default.side_ratio, RATIO),
-            stack_ratio: number("stack_ratio", default.stack_ratio, RATIO),
-            history_ratio: number("history_ratio", default.history_ratio, RATIO),
+            sidebar_width: number("sidebar_width", SIDEBAR_WIDTH)
+                .map_or(default.sidebar_width, f32::round),
+            list_width: number("list_width", LIST_WIDTH).map(f32::round),
+            mock_list_width: number("mock_list_width", MOCK_LIST_WIDTH)
+                .map_or(default.mock_list_width, f32::round),
+            side_ratio: number("side_ratio", RATIO).unwrap_or(default.side_ratio),
+            stack_ratio: number("stack_ratio", RATIO).unwrap_or(default.stack_ratio),
+            history_ratio: number("history_ratio", RATIO).unwrap_or(default.history_ratio),
         }
     }
 
@@ -169,6 +179,20 @@ mod tests {
         assert!((layout.side_ratio - 0.15).abs() < f32::EPSILON);
         assert!((layout.stack_ratio - 0.6).abs() < f32::EPSILON);
         assert!((layout.history_ratio - 0.5).abs() < f32::EPSILON);
+        assert_eq!(layout.list_width, None);
+        assert_eq!(layout.mock_list_width, 260.0);
+
+        let layout = WorkspaceLayout::from_stored(&json!({
+            "list_width": 100, "mock_list_width": 600
+        }));
+        assert_eq!(layout.list_width, Some(144.0));
+        assert_eq!(layout.mock_list_width, 480.0);
+
+        let layout = WorkspaceLayout::from_stored(&json!({
+            "list_width": "invalid", "mock_list_width": "invalid"
+        }));
+        assert_eq!(layout.list_width, None);
+        assert_eq!(layout.mock_list_width, 260.0);
     }
 
     #[test]
@@ -208,6 +232,8 @@ mod tests {
             orientation: Orientation::Stacked,
             sidebar_visible: false,
             side_ratio: 0.3,
+            list_width: Some(276.0),
+            mock_list_width: 350.0,
             ..WorkspaceLayout::default()
         };
         assert_eq!(WorkspaceLayout::from_stored(&layout.to_stored()), layout);

@@ -1305,6 +1305,62 @@ fn walk_modals(app: &mut support::App, check: &mut impl FnMut(&mut support::App,
 }
 
 #[test]
+fn resized_lists_leave_room_for_their_content_at_the_minimum_window() {
+    use imposter_app::core::mock::{MockConfig, MockRoute};
+    use imposter_app::store::kv::{self, Table};
+
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                kv::set(
+                    db,
+                    Table::Settings,
+                    "mock_server",
+                    &MockConfig {
+                        port: 0,
+                        routes: vec![MockRoute::default()],
+                    },
+                )
+            })
+            .unwrap();
+    });
+    for screen in ["Variables", "Mocks"] {
+        support::open_screen(&mut app.harness, screen);
+        settle(&mut app.harness);
+        let edge = app.harness.get_by_role(Role::Splitter).rect().center();
+        support::drag_horizontally(&mut app.harness, edge, 500.0);
+    }
+    app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
+    let mut found = Vec::new();
+    for theme in [ThemeChoice::Dark, ThemeChoice::Light] {
+        for density in [Density::Compact, Density::Comfortable] {
+            appearance(&mut app, theme, density);
+            for screen in ["Variables", "Settings", "Mocks"] {
+                support::open_screen(&mut app.harness, screen);
+                settle(&mut app.harness);
+                let label = format!("resized {screen} {theme:?} {density:?}");
+                found.extend(problems(&app, &label));
+                if screen == "Settings" {
+                    for category in [
+                        "Appearance",
+                        "Collections",
+                        "General",
+                        "Network",
+                        "TLS",
+                        "History",
+                        "Command line",
+                    ] {
+                        support::open_settings_category(&mut app.harness, category);
+                        found.extend(problems(&app, &format!("{label} {category}")));
+                    }
+                }
+            }
+        }
+    }
+    assert!(found.is_empty(), "\n{}", found.join("\n"));
+}
+
+#[test]
 fn no_control_runs_past_the_window_or_overlaps_another() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let listener = runtime

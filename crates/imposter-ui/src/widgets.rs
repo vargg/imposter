@@ -1,6 +1,8 @@
 //! Reusable widgets. Each returns whether the user changed anything, so the caller decides
 //! what an edit means (dirty state, autosave, URL sync).
 
+use std::ops::RangeInclusive;
+
 use egui::text::LayoutJob;
 use egui::{Color32, FontId, RichText, TextFormat, Ui};
 use imposter_app::core::model::{
@@ -1262,28 +1264,65 @@ pub(crate) fn list_toolbar<T>(ui: &mut Ui, draw: impl FnOnce(&mut Ui) -> T) -> T
         .inner
 }
 
-/// The Variables and Settings lists share the workspace background and the panel divider.
-pub(crate) fn list_column(ui: &mut Ui, label: &'static str, draw: impl FnOnce(&mut Ui)) {
-    let width = (ui.available_width() * 0.22).clamp(144.0, 192.0).round();
-    egui::Panel::left(label)
-        .frame(egui::Frame::new())
-        .resizable(false)
-        .exact_size(width)
-        .show(ui, |ui| {
-            let area = ui.max_rect();
-            let group = egui::UiBuilder::new()
-                .accessibility_role(egui::Role::Group)
-                .accessibility_label(label);
-            ui.scope_builder(group, |ui| {
-                region_bounds(ui, area);
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        scroll_view_bounds(ui);
-                        draw(ui);
-                    });
-            });
+/// The Variables and Settings lists share the workspace background and preferred width.
+pub(crate) fn list_column(
+    ui: &mut Ui,
+    label: &'static str,
+    preferred: Option<f32>,
+    draw: impl FnOnce(&mut Ui),
+) -> Option<f32> {
+    let (min, max) = crate::layout::LIST_WIDTH;
+    let width =
+        preferred.unwrap_or_else(|| (ui.available_width() * 0.22).clamp(min, 192.0).round());
+    resizable_list_panel(ui, label, egui::Frame::new(), width, min..=max, |ui| {
+        let area = ui.max_rect();
+        let group = egui::UiBuilder::new()
+            .accessibility_role(egui::Role::Group)
+            .accessibility_label(label);
+        ui.scope_builder(group, |ui| {
+            region_bounds(ui, area);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    scroll_view_bounds(ui);
+                    draw(ui);
+                });
         });
+    })
+    .or(preferred)
+}
+
+pub(crate) fn resizable_list_panel(
+    ui: &mut Ui,
+    id: &'static str,
+    frame: egui::Frame,
+    width: f32,
+    range: RangeInclusive<f32>,
+    draw: impl FnOnce(&mut Ui),
+) -> Option<f32> {
+    // The caller owns the preference, so a panel's cache cannot hide a resize on
+    // another screen or keep a width imposed by a narrow window.
+    ui.ctx().data_mut(|data| {
+        data.remove::<egui::panel::PanelState>(ui.make_persistent_id(id));
+    });
+    let panel = egui::Panel::left(id)
+        .frame(frame)
+        .resizable(true)
+        .default_size(width)
+        .size_range(range)
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            draw(ui);
+        });
+    let edge = panel.response.rect;
+    let center = edge.right_center();
+    let near = ui
+        .ctx()
+        .pointer_hover_pos()
+        .is_some_and(|pos| (pos.x - center.x).abs() < 6.0 && edge.y_range().contains(pos.y));
+    paint_split_grip(ui, center, true, near);
+    let resized = edge.width().round();
+    ((resized - width).abs() >= 1.0).then_some(resized)
 }
 
 #[derive(Clone, Copy)]
@@ -1529,6 +1568,10 @@ pub fn split_grip(ui: &Ui, handle: egui::Rect, vertical_split: bool, active: boo
         ui.painter()
             .hline(handle.x_range(), handle.center().y, edge);
     }
+    paint_split_grip(ui, handle.center(), vertical_split, active);
+}
+
+fn paint_split_grip(ui: &Ui, center: egui::Pos2, vertical_split: bool, active: bool) {
     let color = if active {
         palette().text_muted
     } else {
@@ -1539,11 +1582,8 @@ pub fn split_grip(ui: &Ui, handle: egui::Rect, vertical_split: bool, active: boo
     } else {
         egui::vec2(GRIP_LENGTH, 3.0)
     };
-    ui.painter().rect_filled(
-        egui::Rect::from_center_size(handle.center(), size),
-        2.0,
-        color,
-    );
+    ui.painter()
+        .rect_filled(egui::Rect::from_center_size(center, size), 2.0, color);
 }
 
 /// The length of a split's grip.

@@ -94,9 +94,10 @@ pub fn explanation(state: &State, scope: Scope) -> (String, &'static str) {
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut actions = Vec::new();
     let highlight = widgets::list_toolbar(ui, |ui| scope_toolbar(state, ui, &mut actions));
-    widgets::list_column(ui, "Variable scopes", |ui| {
-        scope_list(state, ui, &mut actions);
-    });
+    state.layout.list_width =
+        widgets::list_column(ui, "Variable scopes", state.layout.list_width, |ui| {
+            scope_list(state, ui, &mut actions);
+        });
     egui::CentralPanel::default()
         .frame(workspace::screen_frame())
         .show(ui, |ui| {

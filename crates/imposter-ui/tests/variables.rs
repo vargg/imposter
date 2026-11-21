@@ -1058,6 +1058,67 @@ fn scope_names_and_settings_categories_align_in_matching_columns() {
 }
 
 #[test]
+fn the_variables_column_resizes_with_settings_and_keeps_its_width_after_restart() {
+    let mut app = with_scopes();
+    let wide = egui::vec2(1400.0, 900.0);
+    let small = egui::Vec2::from(imposter_ui::layout::MIN_WINDOW);
+    let column = |app: &support::App, name| {
+        app.harness
+            .get_by_role_and_label(egui::accesskit::Role::Group, name)
+            .rect()
+    };
+    let scopes = |app: &support::App| column(app, "Variable scopes");
+    let categories = |app: &support::App| column(app, "Settings categories");
+
+    open_screen(&mut app);
+    let before = scopes(&app);
+    assert!((before.width() - 191.0).abs() <= 1.0);
+    app.harness.set_size(small);
+    app.harness.run_steps(2);
+    let narrow = scopes(&app);
+    assert!(narrow.width() < before.width() - 30.0);
+    app.harness.set_size(wide);
+    app.harness.run_steps(2);
+    assert_eq!(scopes(&app).x_range(), before.x_range());
+
+    support::drag_horizontally(&mut app.harness, before.right_center(), 72.0);
+    let wider = scopes(&app);
+    assert!(
+        wider.width() > before.width() + 60.0,
+        "{before:?} -> {wider:?}"
+    );
+    support::assert_split_grip(&app.harness, wider.right_center());
+    let global = list_label_left(&app, "Global", "Global");
+    support::open_screen(&mut app.harness, "Settings");
+    settle(&mut app.harness);
+    assert_eq!(categories(&app).x_range(), wider.x_range());
+    support::assert_split_grip(&app.harness, wider.right_center());
+    let appearance = list_label_left(&app, "Appearance settings", "Appearance");
+    assert!((appearance - global).abs() <= 1.0);
+
+    support::drag_horizontally(&mut app.harness, wider.right_center(), -180.0);
+    let minimum = categories(&app);
+    assert!((minimum.width() - 144.0).abs() <= 1.0, "{minimum:?}");
+    open_screen(&mut app);
+    assert_eq!(scopes(&app).x_range(), minimum.x_range());
+    let edge = scopes(&app).right_center();
+    support::drag_horizontally(&mut app.harness, edge, 480.0);
+    let maximum = scopes(&app);
+    assert!((maximum.width() - 320.0).abs() <= 1.0, "{maximum:?}");
+
+    app.harness.state_mut().request_close();
+    settle(&mut app.harness);
+    assert_eq!(app.harness.state().close_state(), CloseState::Ready);
+    drop(app.harness);
+    app.harness = support::harness_at(app.dir.path(), small);
+    open_screen(&mut app);
+    assert_eq!(scopes(&app).x_range(), maximum.x_range());
+    support::open_screen(&mut app.harness, "Settings");
+    settle(&mut app.harness);
+    assert_eq!(categories(&app).x_range(), maximum.x_range());
+}
+
+#[test]
 fn scope_guidance_is_in_the_tooltip_and_inactivity_stays_visible() {
     let mut app = with_scopes();
     let usage = "Used by every request. Saved to globals.yaml in the collections folder.";

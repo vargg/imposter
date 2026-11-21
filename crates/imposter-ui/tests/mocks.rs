@@ -448,6 +448,68 @@ fn routes_are_a_list_beside_the_selected_routes_editor() {
         .get_by_label("Add a route to answer requests with a fixed response.");
 }
 
+#[test]
+fn the_mock_route_list_resizes_and_keeps_its_width_after_restart() {
+    let mut app = opened(0);
+    let wide = egui::vec2(1400.0, 900.0);
+    let small = egui::Vec2::from(imposter_ui::layout::MIN_WINDOW);
+    let editor = |app: &support::App| support::text_input(&app.harness, "Mock path").rect();
+    let grip = |app: &support::App| {
+        let row = app.harness.get_by_label("Mock route 1").rect();
+        egui::pos2(row.right() + 6.0, 300.0)
+    };
+    app.harness.set_size(small);
+    app.harness.run_steps(2);
+    let narrow = editor(&app);
+    app.harness.set_size(wide);
+    app.harness.run_steps(2);
+    let before = editor(&app);
+
+    let edge = grip(&app);
+    support::drag_horizontally(&mut app.harness, edge, 80.0);
+    let wider = editor(&app);
+    assert!(
+        wider.left() > before.left() + 60.0,
+        "{before:?} -> {wider:?}"
+    );
+    let edge = grip(&app);
+    support::assert_split_grip(&app.harness, edge);
+    support::drag_horizontally(&mut app.harness, edge, -280.0);
+    let minimum = editor(&app);
+    assert!(
+        (before.left() - minimum.left() - 60.0).abs() <= 1.0,
+        "{minimum:?}"
+    );
+    let edge = grip(&app);
+    support::drag_horizontally(&mut app.harness, edge, 540.0);
+    let maximum = editor(&app);
+    assert!(
+        (maximum.left() - before.left() - 220.0).abs() <= 1.0,
+        "{maximum:?}"
+    );
+
+    app.harness.set_size(small);
+    app.harness.run_steps(2);
+    assert_eq!(
+        editor(&app),
+        narrow,
+        "the editor keeps its room at 720 points"
+    );
+    app.harness.set_size(wide);
+    app.harness.run_steps(2);
+    assert_eq!(editor(&app), maximum, "the preferred width returns");
+    app.harness.set_size(small);
+    app.harness.run_steps(2);
+    app.harness.state_mut().request_close();
+    settle(&mut app.harness);
+    assert_eq!(app.harness.state().close_state(), CloseState::Ready);
+    drop(app.harness);
+    app.harness = support::harness_at(app.dir.path(), wide);
+    support::open_screen(&mut app.harness, "Mocks");
+    settle(&mut app.harness);
+    assert_eq!(editor(&app), maximum);
+}
+
 fn opened_with(routes: Vec<MockRoute>) -> support::App {
     let mut app = start_with(move |store| {
         store

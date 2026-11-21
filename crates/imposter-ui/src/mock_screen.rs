@@ -7,6 +7,7 @@ use imposter_app::runtime::TaskId;
 
 use crate::app::{Action, State};
 use crate::icons::{self, Icon};
+use crate::layout::MOCK_LIST_WIDTH;
 use crate::theme::{self, Tone, palette};
 use crate::widgets::{self, SaveStatus, SaveWord, Variant};
 
@@ -133,8 +134,9 @@ fn problem_lines(ui: &mut Ui, problems: &[RouteProblem], route: usize, field: Ro
     }
 }
 
-/// The routes list's width beside the selected route's editor.
-const LIST_WIDTH: f32 = 260.0;
+// The original split leaves this much room for the editor at the minimum window width.
+const MIN_EDITOR_WIDTH: f32 = 372.0;
+const HALF_DIVIDER: i8 = 6;
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let screen = &mut state.mocks;
@@ -175,21 +177,31 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     let loaded = screen.loaded() && !screen.loading;
     ui.add_enabled_ui(loaded, |ui| {
         let area = ui.available_rect_before_wrap();
-        let list_width = LIST_WIDTH.min(area.width() * 0.4);
-        let list = egui::Rect::from_min_size(area.min, egui::vec2(list_width, area.height()));
-        let editor =
-            egui::Rect::from_min_max(egui::pos2(list.right() + 12.0, area.top()), area.max);
-        ui.scope_builder(
-            egui::UiBuilder::new().max_rect(list).id_salt("mock routes"),
+        let (min, max) = MOCK_LIST_WIDTH;
+        let inset = f32::from(HALF_DIVIDER);
+        let max_width = (area.width() - 2.0 * inset - MIN_EDITOR_WIDTH)
+            .floor()
+            .clamp(min, max);
+        let width = state.layout.mock_list_width.min(max_width);
+        let frame = egui::Frame::new().inner_margin(egui::Margin {
+            // The panel's separator already reserves one point of the gutter.
+            right: HALF_DIVIDER - 1,
+            ..egui::Margin::ZERO
+        });
+        if let Some(resized) = widgets::resizable_list_panel(
+            ui,
+            "mock routes",
+            frame,
+            width + inset,
+            min + inset..=max_width + inset,
             |ui| {
                 edited |= routes(ui, screen, &problems);
             },
-        );
-        ui.painter().vline(
-            list.right() + 6.0,
-            area.y_range(),
-            egui::Stroke::new(1.0, palette().border),
-        );
+        ) {
+            state.layout.mock_list_width = resized - inset;
+        }
+        let mut editor = ui.available_rect_before_wrap();
+        editor.min.x += inset;
         ui.scope_builder(
             egui::UiBuilder::new()
                 .max_rect(editor)
