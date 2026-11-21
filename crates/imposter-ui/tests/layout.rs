@@ -822,6 +822,9 @@ fn walk(
                 .push(imposter_app::core::mock::MockRoute::default());
         }
         mocks.form.routes[0].body = "{\"calls\": 1}".into();
+        mocks.form.routes[0].headers = (1..=16)
+            .map(|index| ParamItem::new(format!("X-Mock-{index}"), "value"))
+            .collect();
         mocks.form.routes[0].script =
             "state.calls = (state.calls ?? 0) + 1;\nresponse.send_json(#{ calls: state.calls });"
                 .into();
@@ -838,7 +841,10 @@ fn walk(
             });
         }
     }
-    check(app, "Mocks with a script and a log");
+    for tab in ["Body", "Headers", "Script"] {
+        click_button(&mut app.harness, tab);
+        check(app, &format!("Mocks {tab} tab with a script and a log"));
+    }
     app.harness.state_mut().state.mocks.form.routes[0].script = "let bad = ;".into();
     app.harness
         .get_by_label("Response script (optional)")

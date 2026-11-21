@@ -781,6 +781,24 @@ pub struct TabBadge {
     pub description: String,
 }
 
+impl TabBadge {
+    pub(crate) fn count(count: usize) -> Option<Self> {
+        (count > 0).then(|| Self {
+            mark: Mark::Count(count),
+            tone: Tone::Muted,
+            description: format!("{count} in use"),
+        })
+    }
+
+    pub(crate) fn set() -> Self {
+        Self {
+            mark: Mark::Dot,
+            tone: Tone::Ok,
+            description: "Set".to_owned(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mark {
     Count(usize),
@@ -3361,6 +3379,7 @@ pub(crate) fn plain_body_editor(
     egui::ScrollArea::vertical()
         .id_salt(label)
         .max_height(height)
+        .min_scrolled_height(height)
         .auto_shrink([false, false])
         .show(ui, |ui| {
             scroll_view_bounds(ui);

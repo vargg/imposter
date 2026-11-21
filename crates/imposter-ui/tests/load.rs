@@ -345,6 +345,7 @@ fn both_running_tools_remain_reachable_with_unsaved_mocks_and_a_long_result() {
         .unwrap();
     let mock_label = format!("Mocks :{}", address.rsplit(':').next().unwrap());
     click(&mut f.app.harness, "Mock route 1");
+    click_button(&mut f.app.harness, "Body");
     support::type_into(&mut f.app.harness, "Mock response body", "unsaved body");
     support::open_screen(&mut f.app.harness, "Load");
     set_plan(&mut f.app, "1000", "2");

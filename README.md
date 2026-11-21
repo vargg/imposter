@@ -225,8 +225,11 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 **Mocks**
 - Open **Mocks** in the left rail to configure a local HTTP server on `127.0.0.1`. Use the
   **Port** field to choose a port (8080 by default, `auto` at 0). Use the Plus in the
-  **Routes** header to add a route by exact method and encoded path. The body highlights
-  JSON. Query strings and request bodies do not affect matching, and unmatched requests
+  **Routes** header to add a route by exact method and encoded path. Edit the response in
+  the **Body**, **Headers**, and **Script** tabs. **Body** opens by default and highlights
+  JSON. **Headers** counts headers in use, and **Script** shows a dot when set. A red badge
+  marks a tab with a problem. Mocks remembers your tab when you switch routes during a session.
+  Query strings and request bodies do not affect matching, and unmatched requests
   return 404. Save before pressing **Start**. The running URL and its copy icon are in the
   toolbar. Save running configuration edits, then use **Stop** and **Start** to apply them.
   Configuration persists across sessions. The server starts on demand and stops when

@@ -1680,15 +1680,6 @@ fn pane(ui: &mut Ui, area: Rect, label: &str, content: impl FnOnce(&mut Ui)) {
     content(&mut content_ui);
 }
 
-/// "3" in `tone`, or nothing for none.
-fn count_badge(count: usize, tone: Tone) -> Option<widgets::TabBadge> {
-    (count > 0).then(|| widgets::TabBadge {
-        mark: widgets::Mark::Count(count),
-        tone,
-        description: format!("{count} in use"),
-    })
-}
-
 /// A request tab's badge: rows in use, or a dot when it holds something. It describes the
 /// request, not its last response, so the Tests count is never red.
 fn editor_badge(editor: &crate::editor::Editor, tab: EditorTab) -> Option<widgets::TabBadge> {
@@ -1702,13 +1693,9 @@ fn editor_badge(editor: &crate::editor::Editor, tab: EditorTab) -> Option<widget
                 format!("{count} checks")
             },
         }),
-        crate::editor::Badge::Count(count) => count_badge(count, Tone::Muted),
+        crate::editor::Badge::Count(count) => widgets::TabBadge::count(count),
         // Green, as API clients mark a tab that holds something.
-        crate::editor::Badge::Dot => Some(widgets::TabBadge {
-            mark: widgets::Mark::Dot,
-            tone: Tone::Ok,
-            description: "Set".to_owned(),
-        }),
+        crate::editor::Badge::Dot => Some(widgets::TabBadge::set()),
     }
 }
 
@@ -2996,13 +2983,13 @@ fn response_content(
         let received = usize::try_from(stream.received()).unwrap_or(usize::MAX);
         tabs.push(
             widgets::TabSpec::new(ResponseTab::Events, "Events")
-                .badge(count_badge(received, Tone::Muted)),
+                .badge(widgets::TabBadge::count(received)),
         );
     }
     tabs.extend([
         widgets::TabSpec::new(ResponseTab::Body, "Body"),
         widgets::TabSpec::new(ResponseTab::Headers, "Headers")
-            .badge(count_badge(headers_count, Tone::Muted)),
+            .badge(widgets::TabBadge::count(headers_count)),
     ]);
     if history.is_some()
         || !results.is_empty()
@@ -3020,7 +3007,7 @@ fn response_content(
             })
         } else {
             let tests = script.map_or(0, |s| s.tests.len());
-            count_badge(results.len() + captured.len() + tests, Tone::Muted)
+            widgets::TabBadge::count(results.len() + captured.len() + tests)
         };
         // The request's Tests tab has the same text.
         tabs.push(

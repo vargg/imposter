@@ -37,9 +37,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     walks the screens, each Variables tab and scope type, every Settings category, the
     request Settings and Scripts tabs in both pane orientations, response tools and filters,
     the collapsed and filtered request tree, long environment names, Cancel and Stop,
-    blocked sends and capture warnings, Mocks lifecycle and script states, Load metrics, Run
-    progress and results, the unified History tabs, and the dialogs. It compares each
-    request setting caption's bounds with its full text width.
+    blocked sends and capture warnings, each Mocks response tab, mock script and server
+    states, Load metrics, Run progress and results, the unified History tabs, and the dialogs.
+    It compares each request setting caption's bounds with its full text width.
   - **Widths:** visible controls and outlined frames stay inside the window. The lint
     checks frames in the painted shapes and checks controls against the accessible bounds of
     the flat request and response panes. The window bounds alone missed the Auth tab's eye
@@ -570,10 +570,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   check glyph and "Compiles". An error shows its location and full text on hover when
   clipped. Script reference sits in the request tab row with an info glyph. The request
   and collection or folder dialog editors share the remaining height evenly, with their
-  own scrolling. The mock response script uses the same header and fills the space
-  left in the route form, with a minimum height for editing in short windows. Stacked
-  help, example buttons and status lines made the forms hard to scan. The headers keep
-  feedback near the code and give the space below to editing.
+  own scrolling. The mock response script uses the same header and fills its tab, with
+  a minimum height for editing in short windows. Stacked help, example buttons and status
+  lines made the forms hard to scan. The headers keep feedback near the code and give
+  the space below to editing.
 
 - **The egui `TextEdit` highlights `{{var}}` and JSON up to 64 KiB.** Above that limit
   the editor's tooltip explains that highlighting is off. Per interactive frame the editor
@@ -892,11 +892,20 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   - The editor puts the two-click Delete route trash icon beside the route title.
     Method and path share one row, then Enabled and Status share another. This keeps the
     route's structure visible without putting another text button above the fields.
-  - The body shares the remaining height with the script. Both editors scroll within the
-    route form and keep a useful minimum height in short windows. JSON bodies use the
-    request body's lexer and 64 KiB highlighting limit, selected by the Content-Type
-    header or an opening object or array. The script editor shares the request script
-    header pattern with its compile status, example menu and help tooltip.
+  - Body, Headers and Script use the request editor's tab strip below the route fields.
+    Body opens by default, and Mocks keeps the selected tab across routes for the session.
+    Each tab fills the remaining height. The body and script editors keep their own
+    scrolling and a useful minimum height in short windows. Long header tables scroll
+    below the tabs. Adding or removing response headers used to push down and shrink both
+    editors in the stacked form.
+  - Headers counts enabled rows with a nonblank name, and Script shows a dot when set.
+    Like the failure badges elsewhere in the request workspace, a response tab with a
+    problem shows its badge in the error color. Its accessible description gives the first
+    problem, and the tab still shows the details beside the field or in the script's compile
+    status. This keeps validation visible while the affected tab is hidden.
+  - JSON bodies use the request body's lexer and 64 KiB highlighting limit, selected by the
+    Content-Type header or an opening object or array. The script editor shares the request
+    script header pattern with its compile status, example menu and help tooltip.
 
 - **Load puts configuration and results in adjacent panes from 900 points of content
   width.** The configuration is 320 points wide beside the results and stacks above them

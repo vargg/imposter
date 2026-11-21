@@ -424,7 +424,7 @@ pub enum Badge {
     Dot,
 }
 
-fn in_use(rows: &[ParamItem]) -> usize {
+pub(crate) fn in_use(rows: &[ParamItem]) -> usize {
     rows.iter()
         .filter(|row| row.is_enabled && !row.name.trim().is_empty())
         .count()

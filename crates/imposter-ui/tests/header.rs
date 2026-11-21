@@ -278,6 +278,7 @@ fn mocks_can_show_activity_and_unsaved_changes_at_the_same_time() {
         std::thread::yield_now();
     }
     click(&mut app.harness, "Mock route 1");
+    support::click_button(&mut app.harness, "Body");
     type_into(&mut app.harness, "Mock response body", "unsaved");
     open_screen(&mut app.harness, "Requests");
     assert_markers(

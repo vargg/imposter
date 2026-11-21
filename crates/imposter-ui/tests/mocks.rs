@@ -9,9 +9,11 @@ use std::time::{Duration, Instant};
 
 use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::mock::{MockConfig, MockRoute};
+use imposter_app::core::model::ParamItem;
 use imposter_app::store::kv::{self, Table};
 use imposter_ui::app::CloseState;
-use support::{click, settle, start_with, type_into};
+use imposter_ui::theme::{self, Tone};
+use support::{click, click_button, settle, start_with, text_input, type_into};
 
 fn opened(port: u16) -> support::App {
     let mut app = start_with(|store| {
@@ -104,6 +106,7 @@ fn saved_edits_apply_only_after_restart_and_close_stops_the_listener() {
     support::open_screen(&mut app.harness, "Requests");
     click(&mut app.harness, &global);
     click(&mut app.harness, "Mock route 1");
+    click_button(&mut app.harness, "Body");
     type_into(&mut app.harness, "Mock response body", "-edited");
     click(&mut app.harness, "Save mocks");
     wait_for(&mut app, |app| !app.state.mocks.dirty());
@@ -126,6 +129,7 @@ fn saved_edits_apply_only_after_restart_and_close_stops_the_listener() {
 fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
     let mut app = opened(0);
     click(&mut app.harness, "Mock route 1");
+    click_button(&mut app.harness, "Body");
     type_into(&mut app.harness, "Mock response body", "-kept");
     // The Mocks rail item reveals unsaved edits.
     let marked = |app: &support::App| {
@@ -151,7 +155,7 @@ fn reload_and_close_guard_unsaved_configuration_and_failed_saves() {
             _ => None,
         })
         .collect();
-    assert_eq!(dots, [imposter_ui::theme::palette().warning]);
+    assert_eq!(dots, [theme::palette().warning]);
     support::open_screen(&mut app.harness, "Requests");
     support::open_screen(&mut app.harness, "Mocks");
     assert_eq!(
@@ -231,8 +235,9 @@ fn occupied_ports_report_an_error_and_mock_controls_fit_the_minimum_window() {
 fn route_editing_validation_two_click_removal_and_save_shortcut() {
     let mut app = opened(0);
     support::assert_icon_button(&app.harness, "Add mock route");
-    support::text_input(&app.harness, "New mock header name");
-    support::text_input(&app.harness, "New mock header value");
+    click_button(&mut app.harness, "Headers");
+    text_input(&app.harness, "New mock header name");
+    text_input(&app.harness, "New mock header value");
     assert!(!app.harness.state().state.mocks.dirty());
     click(&mut app.harness, "Add mock route");
     assert_eq!(app.harness.state().state.mocks.form.routes.len(), 2);
@@ -250,7 +255,9 @@ fn route_editing_validation_two_click_removal_and_save_shortcut() {
             .contains("already answers")
     );
     type_into(&mut app.harness, "Mock path", "new");
+    click_button(&mut app.harness, "Body");
     type_into(&mut app.harness, "Mock response body", "response");
+    click_button(&mut app.harness, "Headers");
     type_into(&mut app.harness, "New mock header name", "X-Mock");
     type_into(&mut app.harness, "Mock header 1 value", "yes");
     app.harness
@@ -266,10 +273,7 @@ fn route_editing_validation_two_click_removal_and_save_shortcut() {
         .unwrap()
         .unwrap();
     assert_eq!(saved.routes[1].path, "/new");
-    assert_eq!(
-        saved.routes[1].headers,
-        [imposter_app::core::model::ParamItem::new("X-Mock", "yes")]
-    );
+    assert_eq!(saved.routes[1].headers, [ParamItem::new("X-Mock", "yes")]);
     click(&mut app.harness, "Remove mock header 1");
     assert_eq!(
         app.harness.state().state.mocks.form.routes[1].headers.len(),
@@ -413,7 +417,7 @@ fn routes_are_a_list_beside_the_selected_routes_editor() {
     let mut app = opened(0);
     let row = app.harness.get_by_label("Mock route 1").rect();
     // The first route is open without a click.
-    let path = support::text_input(&app.harness, "Mock path").rect();
+    let path = text_input(&app.harness, "Mock path").rect();
     assert!(path.left() > row.right(), "the editor is beside the list");
     // The method is picked from the list, as in the request bar.
     click(&mut app.harness, "HTTP method");
@@ -453,7 +457,7 @@ fn the_mock_route_list_resizes_and_keeps_its_width_after_restart() {
     let mut app = opened(0);
     let wide = egui::vec2(1400.0, 900.0);
     let small = egui::Vec2::from(imposter_ui::layout::MIN_WINDOW);
-    let editor = |app: &support::App| support::text_input(&app.harness, "Mock path").rect();
+    let editor = |app: &support::App| text_input(&app.harness, "Mock path").rect();
     let grip = |app: &support::App| {
         let row = app.harness.get_by_label("Mock route 1").rect();
         egui::pos2(row.right() + 6.0, 300.0)
@@ -500,6 +504,7 @@ fn the_mock_route_list_resizes_and_keeps_its_width_after_restart() {
     assert_eq!(editor(&app), maximum, "the preferred width returns");
     app.harness.set_size(small);
     app.harness.run_steps(2);
+    click_button(&mut app.harness, "Headers");
     app.harness.state_mut().request_close();
     settle(&mut app.harness);
     assert_eq!(app.harness.state().close_state(), CloseState::Ready);
@@ -508,6 +513,7 @@ fn the_mock_route_list_resizes_and_keeps_its_width_after_restart() {
     support::open_screen(&mut app.harness, "Mocks");
     settle(&mut app.harness);
     assert_eq!(editor(&app), maximum);
+    text_input(&app.harness, "Mock response body");
 }
 
 fn opened_with(routes: Vec<MockRoute>) -> support::App {
@@ -536,19 +542,194 @@ fn scripted(script: &str) -> MockRoute {
 }
 
 #[test]
-fn the_mock_body_uses_the_request_json_highlight_and_shares_the_editor_height() {
+fn adding_response_headers_does_not_move_or_resize_the_body() {
+    let mut app = opened(0);
+    let body = text_input(&app.harness, "Mock response body").rect();
+    click_button(&mut app.harness, "Script");
+    let script = text_input(&app.harness, "Mock response script").rect();
+    click_button(&mut app.harness, "Headers");
+    for name in ["X-First", "X-Second", "X-Third"] {
+        type_into(&mut app.harness, "New mock header name", name);
+    }
+    assert_eq!(
+        app.harness.state().state.mocks.form.routes[0].headers.len(),
+        3
+    );
+    click_button(&mut app.harness, "Body");
+    assert_eq!(
+        text_input(&app.harness, "Mock response body").rect(),
+        body,
+        "response headers must leave the body editor in place"
+    );
+    click_button(&mut app.harness, "Script");
+    assert_eq!(
+        text_input(&app.harness, "Mock response script").rect(),
+        script
+    );
+
+    click_button(&mut app.harness, "Headers");
+    click(&mut app.harness, "Remove mock header 2");
+    click(&mut app.harness, "Click again to remove mock header 2");
+    assert_eq!(
+        app.harness.state().state.mocks.form.routes[0].headers.len(),
+        2
+    );
+    click_button(&mut app.harness, "Script");
+    assert_eq!(
+        text_input(&app.harness, "Mock response script").rect(),
+        script
+    );
+    click_button(&mut app.harness, "Body");
+    assert_eq!(text_input(&app.harness, "Mock response body").rect(), body);
+}
+
+fn tab_description(app: &support::App, tab: &str) -> Option<String> {
+    app.harness
+        .get_by_role_and_label(egui::Role::Button, tab)
+        .accesskit_node()
+        .description()
+}
+
+fn assert_tab_mark(app: &support::App, tab: &str, mark: &str, tone: Tone) {
+    let text = format!("{tab}{mark}");
+    assert!(
+        app.harness.output().shapes.iter().any(|shape| {
+            matches!(&shape.shape, egui::Shape::Text(shape) if shape.galley.job.text == text
+            && shape.galley.job.sections.last().is_some_and(|section| {
+                section.format.color == theme::palette().tone(tone)
+            }))
+        }),
+        "expected {tab} to show {mark} in {tone:?}"
+    );
+}
+
+#[test]
+fn response_tabs_count_headers_in_use_and_mark_a_set_script() {
+    let mut app = opened(0);
+    assert_eq!(tab_description(&app, "Headers"), None);
+    assert_eq!(tab_description(&app, "Script"), None);
+    click_button(&mut app.harness, "Headers");
+    for name in ["X-First", "X-Second"] {
+        type_into(&mut app.harness, "New mock header name", name);
+    }
+    assert_eq!(
+        tab_description(&app, "Headers").as_deref(),
+        Some("2 in use")
+    );
+    assert_tab_mark(&app, "Headers", "2", Tone::Muted);
+    click(&mut app.harness, "Mock header 2 enabled");
+    assert_eq!(
+        tab_description(&app, "Headers").as_deref(),
+        Some("1 in use")
+    );
+    type_into(&mut app.harness, "New mock header value", "missing name");
+    assert_eq!(
+        tab_description(&app, "Headers").as_deref(),
+        Some("1 in use. Header names are one word without spaces")
+    );
+    click_button(&mut app.harness, "Script");
+    type_into(
+        &mut app.harness,
+        "Mock response script",
+        "response.status = 201;",
+    );
+    click_button(&mut app.harness, "Body");
+    assert_eq!(tab_description(&app, "Script").as_deref(), Some("Set"));
+    assert_tab_mark(&app, "Script", "●", Tone::Ok);
+    assert_tab_mark(&app, "Headers", "1", Tone::Error);
+}
+
+#[test]
+fn a_hidden_header_problem_marks_the_tab_and_stays_beside_the_field() {
+    let mut app = opened(0);
+    click_button(&mut app.harness, "Headers");
+    type_into(&mut app.harness, "New mock header value", "missing name");
+    let error = "Header names are one word without spaces";
+    app.harness.get_by_label(error);
+    click_button(&mut app.harness, "Body");
+    assert!(app.harness.query_by_label(error).is_none());
+    assert_eq!(tab_description(&app, "Headers").as_deref(), Some(error));
+    assert_tab_mark(&app, "Headers", "●", Tone::Error);
+    click(&mut app.harness, "Save mocks");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Save failed");
+    text_input(&app.harness, "Mock response body");
+    click_button(&mut app.harness, "Headers");
+    app.harness.get_by_label(error);
+    type_into(&mut app.harness, "Mock header 1 name", "X-Fixed");
+    assert!(app.harness.query_by_label(error).is_none());
+    assert_eq!(
+        tab_description(&app, "Headers").as_deref(),
+        Some("1 in use")
+    );
+}
+
+#[test]
+fn the_response_tab_stays_selected_when_switching_routes_and_screens() {
+    let mut app = opened_with(vec![
+        scripted("response.status = 201;"),
+        MockRoute {
+            path: "/other".into(),
+            ..scripted("response.status = 202;")
+        },
+    ]);
+    click_button(&mut app.harness, "Script");
+    click(&mut app.harness, "Mock route 2");
+    support::open_screen(&mut app.harness, "Requests");
+    support::open_screen(&mut app.harness, "Mocks");
+    assert_eq!(
+        text_input(&app.harness, "Mock response script")
+            .accesskit_node()
+            .value()
+            .as_deref(),
+        Some("response.status = 202;")
+    );
+    assert!(!app.harness.state().state.mocks.dirty());
+}
+
+#[test]
+fn long_response_headers_scroll_below_the_route_fields_and_tabs() {
+    let mut app = opened_with(vec![MockRoute {
+        headers: (1..=20)
+            .map(|index| ParamItem::new(format!("X-Header-{index}"), "value"))
+            .collect(),
+        ..MockRoute::default()
+    }]);
+    app.harness
+        .set_size(egui::Vec2::from(imposter_ui::layout::MIN_WINDOW));
+    app.harness.run_steps(2);
+    click_button(&mut app.harness, "Headers");
+    let tabs = app.harness.get_by_label("Headers").rect();
+    let path = text_input(&app.harness, "Mock path").rect();
+    let last = text_input(&app.harness, "Mock header 20 name");
+    let bottom = support::status_bar(&app).top();
+    assert!(last.rect().top() > bottom);
+    last.scroll_to_me();
+    app.harness.run_steps(12);
+    let last = text_input(&app.harness, "Mock header 20 name").rect();
+    assert!(
+        last.top() > tabs.bottom() && last.bottom() < bottom,
+        "{last:?}"
+    );
+    assert_eq!(app.harness.get_by_label("Headers").rect(), tabs);
+    assert_eq!(text_input(&app.harness, "Mock path").rect(), path);
+}
+
+#[test]
+fn the_mock_body_fills_its_tab_and_uses_the_request_json_highlighting() {
     let mut app = opened_with(vec![MockRoute {
         body: "{\"answer\": 42}".into(),
         ..MockRoute::default()
     }]);
-    let body = support::text_input(&app.harness, "Mock response body").rect();
-    let script = support::text_input(&app.harness, "Mock response script").rect();
+    let body = text_input(&app.harness, "Mock response body").rect();
+    let tabs = app.harness.get_by_label("Body").rect();
     assert!(
-        (body.height() - script.height()).abs() < 4.0,
-        "{body:?}, {script:?}"
+        (body.top() - tabs.bottom()).abs() < 24.0,
+        "{body:?}, {tabs:?}"
     );
+    assert!((support::status_bar(&app).top() - body.bottom()).abs() < 24.0);
     let has_number_color = |app: &support::App| {
-        let color = imposter_ui::theme::token_color(imposter_ui::highlight::Token::Number);
+        let color = theme::token_color(imposter_ui::highlight::Token::Number);
         app.harness.output().shapes.iter().any(|shape| {
             matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.text.starts_with("{\"answer\": 42}")
                 && text.galley.job.sections.iter().any(|section| section.format.color == color))
@@ -565,8 +746,9 @@ fn the_mock_body_uses_the_request_json_highlight_and_shares_the_editor_height() 
 #[test]
 fn a_route_script_compiles_or_keeps_the_server_from_starting() {
     let mut app = opened_with(vec![scripted("response.status = 201;")]);
-    let editor = support::text_input(&app.harness, "Mock response script").rect();
-    assert!(editor.height() > 4.0 * imposter_ui::theme::spacing().control);
+    click_button(&mut app.harness, "Script");
+    let editor = text_input(&app.harness, "Mock response script").rect();
+    assert!(editor.height() > 4.0 * theme::spacing().control);
     assert!((support::status_bar(&app).top() - editor.bottom()).abs() < 24.0);
     let status = app.harness.get_by_label("Compiles").rect();
     let examples = app
@@ -585,9 +767,27 @@ fn a_route_script_compiles_or_keeps_the_server_from_starting() {
         described(&app).as_deref(),
         Some("Status 200, answered by its script")
     );
-    app.harness.state_mut().state.mocks.form.routes[0].script = "let x = ;".into();
+    text_input(&app.harness, "Mock response script").click();
+    app.harness.run_steps(1);
+    app.harness
+        .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    app.harness.run_steps(1);
+    text_input(&app.harness, "Mock response script").type_text("let x = ;");
     app.harness.run_steps(3);
     app.harness.get_by_label_contains("Line 1, column 9");
+    click_button(&mut app.harness, "Body");
+    assert!(
+        tab_description(&app, "Script")
+            .unwrap()
+            .contains("Mock script, line 1, column 9")
+    );
+    assert_tab_mark(&app, "Script", "●", Tone::Error);
+    click(&mut app.harness, "Save mocks");
+    settle(&mut app.harness);
+    assert!(
+        !app.harness.state().state.mocks.dirty(),
+        "a broken script can be saved"
+    );
     let start = app.harness.get_by_label("Start mock server");
     assert!(
         start.accesskit_node().is_disabled(),

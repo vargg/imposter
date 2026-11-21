@@ -9,7 +9,7 @@ use crate::app::{Action, State};
 use crate::icons::{self, Icon};
 use crate::layout::MOCK_LIST_WIDTH;
 use crate::theme::{self, Tone, palette};
-use crate::widgets::{self, SaveStatus, SaveWord, Variant};
+use crate::widgets::{self, SaveStatus, SaveWord, TabBadge, TabSpec, Variant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MockAction {
@@ -32,6 +32,14 @@ pub struct Run {
     pub stopping: bool,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum ResponseTab {
+    #[default]
+    Body,
+    Headers,
+    Script,
+}
+
 #[derive(Default)]
 pub struct MockScreen {
     pub form: MockConfig,
@@ -44,6 +52,7 @@ pub struct MockScreen {
     pub run: Option<Run>,
     pub(crate) generation: u64,
     selected: Option<usize>,
+    tab: ResponseTab,
     /// A custom method being typed for the selected route.
     custom_method: Option<String>,
     /// Requests the running server answered, newest first; cleared on Start.
@@ -502,7 +511,6 @@ fn request_log(ui: &mut Ui, screen: &mut MockScreen) {
         });
 }
 
-/// The selected route: method and path, status, headers, body, and Delete route.
 fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bool {
     let mut edited = false;
     // The first route is open until another is chosen, so the editor is never idle.
@@ -579,39 +587,11 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
             });
             problem_lines(ui, problems, index, RouteField::Status);
             ui.add_space(8.0);
-            ui.label(theme::section("Response headers"));
-            edited |= response_headers(ui, &mut route.headers, index, problems);
-            ui.add_space(8.0);
-            ui.label(theme::section("Response body"));
-            let control = theme::spacing().control;
-            let gap = theme::spacing().sm;
-            // Measure from the form's start so scrolling cannot grow either editor.
-            let script_header = control + gap + 2.0 * ui.spacing().item_spacing.y;
-            let available = height - (ui.cursor().top() - top) - script_header;
-            let body_height = (available / 2.0).max(4.0 * control);
-            let script_height = (available - body_height).max(4.0 * control);
-            let json = route.body.trim_start().starts_with(['{', '['])
-                || route.headers.iter().any(|header| {
-                    header.is_enabled
-                        && header.name.eq_ignore_ascii_case("content-type")
-                        && crate::viewer::language(&header.value) == crate::viewer::Language::Json
-                });
-            edited |= widgets::plain_body_editor(
-                ui, &mut route.body, json, "Mock response body", body_height,
-            );
-            ui.add_space(gap);
-            ui.push_id(("mock script", index), |ui| {
-                edited |= crate::scripts_tab::script_editor(
-                    ui,
-                    imposter_app::script::Phase::Mock,
-                    "Response script (optional)",
-                    "Runs for each matched request; it starts from the status, headers and body above",
-                    "Mock response script",
-                    &mut route.script,
-                    script_height,
-                );
-            });
-            // The editor says why it does not compile; the list's ⚠ and Start say it too.
+            response_tabs(ui, route, &mut screen.tab, index, problems);
+            ui.separator();
+            // Both coordinates scroll together, so scrolling never grows the editor.
+            let remaining = height - (ui.cursor().top() - top);
+            edited |= response_editor(ui, route, screen.tab, index, problems, remaining);
         });
     if remove {
         screen.form.routes.remove(index);
@@ -619,6 +599,115 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
         edited = true;
     }
     edited
+}
+
+fn response_tabs(
+    ui: &mut Ui,
+    route: &MockRoute,
+    selected: &mut ResponseTab,
+    index: usize,
+    problems: &[RouteProblem],
+) {
+    let headers_problem = problems
+        .iter()
+        .find(|p| p.route == index && matches!(p.field, RouteField::Header(_)));
+    let script_problem = problems
+        .iter()
+        .find(|p| p.route == index && p.field == RouteField::Script);
+    let tabs = [
+        TabSpec::new(ResponseTab::Body, "Body"),
+        TabSpec::new(ResponseTab::Headers, "Headers").badge(response_badge(
+            TabBadge::count(crate::editor::in_use(&route.headers)),
+            headers_problem,
+        )),
+        TabSpec::new(ResponseTab::Script, "Script").badge(response_badge(
+            route.is_scripted().then(TabBadge::set),
+            script_problem,
+        )),
+    ];
+    ui.horizontal(|ui| {
+        widgets::tab_strip(
+            ui,
+            &tabs,
+            selected,
+            tabs.len(),
+            0.0,
+            "More mock response tabs",
+        );
+    });
+}
+
+fn response_badge(badge: Option<TabBadge>, problem: Option<&RouteProblem>) -> Option<TabBadge> {
+    let Some(problem) = problem else { return badge };
+    let (mark, description) = badge.map_or_else(
+        || (widgets::Mark::Dot, problem.reason.clone()),
+        |badge| {
+            (
+                badge.mark,
+                format!("{}. {}", badge.description, problem.reason),
+            )
+        },
+    );
+    Some(TabBadge {
+        mark,
+        tone: Tone::Error,
+        description,
+    })
+}
+
+fn response_editor(
+    ui: &mut Ui,
+    route: &mut MockRoute,
+    tab: ResponseTab,
+    index: usize,
+    problems: &[RouteProblem],
+    remaining: f32,
+) -> bool {
+    let control = theme::spacing().control;
+    match tab {
+        ResponseTab::Body => {
+            let json = route.body.trim_start().starts_with(['{', '['])
+                || route.headers.iter().any(|header| {
+                    header.is_enabled
+                        && header.name.eq_ignore_ascii_case("content-type")
+                        && crate::viewer::language(&header.value) == crate::viewer::Language::Json
+                });
+            widgets::plain_body_editor(
+                ui,
+                &mut route.body,
+                json,
+                "Mock response body",
+                remaining.max(4.0 * control),
+            )
+        }
+        ResponseTab::Headers => {
+            egui::ScrollArea::vertical()
+                .id_salt(("mock headers", index))
+                .max_height(remaining.max(0.0))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    widgets::scroll_view_bounds(ui);
+                    response_headers(ui, &mut route.headers, index, problems)
+                })
+                .inner
+        }
+        ResponseTab::Script => {
+            let editor_height =
+                (remaining - control - ui.spacing().item_spacing.y).max(4.0 * control);
+            ui.push_id(("mock script", index), |ui| {
+                crate::scripts_tab::script_editor(
+                    ui,
+                    imposter_app::script::Phase::Mock,
+                    "Response script (optional)",
+                    "Runs for each matched request; it starts from the response status, headers and body",
+                    "Mock response script",
+                    &mut route.script,
+                    editor_height,
+                )
+            })
+            .inner
+        }
+    }
 }
 
 fn response_headers(
