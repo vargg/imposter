@@ -3954,12 +3954,32 @@ pub fn code_viewer(
             // A row with a fold marker must stay exactly as tall as a plain row: the
             // scroll area places rows by a fixed height.
             ui.spacing_mut().interact_size.y = row_height;
+            // Whole lines are highlighted, so a wrapped row continuing a string stays a string.
+            let mut line_spans: Option<(usize, usize, Spans)> = None;
             for index in visible {
                 let row = &rows[index];
                 let range = &row.range;
                 let line = &text[range.clone()];
-                let mut job =
-                    spans_job(line, &highlight::line(language, line), &font, f32::INFINITY);
+                let (start, spans) = match &line_spans {
+                    Some((at, start, spans)) if *at == row.line => (*start, spans),
+                    _ => {
+                        let same = |other: &viewer::Row| other.line == row.line;
+                        let first = rows[..index]
+                            .iter()
+                            .rposition(|r| !same(r))
+                            .map_or(0, |i| i + 1);
+                        let last = rows[index..]
+                            .iter()
+                            .position(|r| !same(r))
+                            .map_or(rows.len(), |i| index + i);
+                        let whole = rows[first].range.start..rows[last - 1].range.end;
+                        let spans = highlight::line(language, &text[whole.clone()]);
+                        let (_, start, spans) = line_spans.insert((row.line, whole.start, spans));
+                        (*start, &*spans)
+                    }
+                };
+                let spans = highlight::slice(spans, range.start - start..range.end - start);
+                let mut job = spans_job(line, &spans, &font, f32::INFINITY);
                 let first = index == 0 || rows[index - 1].line != row.line;
                 let last = rows.get(index + 1).is_none_or(|next| next.line != row.line);
                 for found in &state.matches {

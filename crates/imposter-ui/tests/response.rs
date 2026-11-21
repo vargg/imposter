@@ -335,6 +335,42 @@ fn wrapped_lines_stop_short_of_the_row_actions() {
 }
 
 #[test]
+fn wrapped_rows_of_a_string_keep_the_string_color() {
+    let long: &'static str =
+        Box::leak(format!(r#"{{"note":"{}"}}"#, "word ".repeat(80)).into_boxed_str());
+    let mut fixture = sent("application/json", long);
+    let app = &mut fixture.app;
+    app.harness.run_steps(2);
+    let string = imposter_ui::theme::palette().syntax.string;
+    let continued: Vec<Vec<egui::Color32>> = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text)
+                if text.galley.job.text.starts_with("word")
+                    || text.galley.job.text.starts_with(" word") =>
+            {
+                Some(
+                    text.galley
+                        .job
+                        .sections
+                        .iter()
+                        .map(|s| s.format.color)
+                        .collect(),
+                )
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(continued.len() >= 2, "the string wraps: {continued:?}");
+    for colors in continued {
+        assert!(colors.iter().all(|c| *c == string), "{colors:?}");
+    }
+}
+
+#[test]
 fn a_jsonpath_filter_shows_matches_with_their_real_paths() {
     let mut fixture = sent("application/json", BODY);
     let app = &mut fixture.app;

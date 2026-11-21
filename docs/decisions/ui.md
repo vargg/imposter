@@ -639,6 +639,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   out (`ScrollArea::show_rows`, monospace, wrap by column count). Why: a 5 MiB read-only
   `TextEdit` costs about 730 ms per frame; virtualized rows cost about 0.1 ms, highlighted or
   not. Measured by `cargo run --release -p imposter-ui --example text_perf` (M-series Mac).
+  A row wrapped from a longer line takes its colors from the whole line, tokenized once
+  per frame (`highlight::slice`): tokenizing each row alone lost a string's color on its
+  continuation rows. Checked by `imposter-ui/tests/response.rs`.
 
 - **The preview stays at 256 KiB; the whole body is one click away.** When the preview is
   shorter than the body, the pane says so precisely ("Preview shows 256 KB of 584 KB", or

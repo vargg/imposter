@@ -28,6 +28,19 @@ pub fn line(language: Language, text: &str) -> Spans {
     }
 }
 
+/// The spans of a whole line that fall within `range` of it, counted from `range.start`: a
+/// wrapped row is colored as part of its line, so a string it continues stays a string.
+pub fn slice(spans: &Spans, range: Range<usize>) -> Spans {
+    spans
+        .iter()
+        .filter_map(|(span, token)| {
+            let start = span.start.max(range.start);
+            let end = span.end.min(range.end);
+            (start < end).then(|| (start - range.start..end - range.start, *token))
+        })
+        .collect()
+}
+
 fn push(spans: &mut Spans, range: Range<usize>, token: Token) {
     if range.is_empty() {
         return;
@@ -309,6 +322,22 @@ mod tests {
         assert!(found.contains(&("-1.5e3".into(), Token::Number)));
         assert!(found.contains(&("true".into(), Token::Keyword)));
         assert!(found.contains(&("null".into(), Token::Keyword)));
+    }
+
+    #[test]
+    fn a_slice_of_a_line_keeps_the_line_s_tokens() {
+        let text = r#"  "note": "a long value", "n": 1"#;
+        let spans = json(text);
+        let row = 13..25;
+        let sliced = slice(&spans, row.clone());
+        covers(&text[row.clone()], &sliced);
+        assert_eq!(
+            kinds(&text[row], &sliced),
+            [
+                ("long value\"".to_owned(), Token::String),
+                (",".to_owned(), Token::Punctuation)
+            ]
+        );
     }
 
     #[test]
