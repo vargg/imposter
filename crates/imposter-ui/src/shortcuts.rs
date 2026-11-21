@@ -34,7 +34,7 @@ pub const RENAME_ALT: KeyboardShortcut = key(CTRL_SHIFT, Key::R);
 pub const SETTINGS: KeyboardShortcut = key(Modifiers::COMMAND, Key::Comma);
 pub const SIDEBAR: KeyboardShortcut = key(Modifiers::COMMAND, Key::B);
 pub const SHORTCUTS: KeyboardShortcut = key(COMMAND_SHIFT, Key::Slash);
-pub const PALETTE: KeyboardShortcut = key(Modifiers::COMMAND, Key::K);
+pub const PALETTE: KeyboardShortcut = key(COMMAND_SHIFT, Key::P);
 pub const RECENT: KeyboardShortcut = key(Modifiers::COMMAND, Key::P);
 /// The real Ctrl key on every platform, as in editors and browsers.
 pub const SWITCH_BACK: KeyboardShortcut = key(Modifiers::CTRL, Key::Tab);

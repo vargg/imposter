@@ -411,8 +411,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   handler means a body editor cannot swallow Send and a dialog cannot be bypassed; one table
   means the help and the README cannot drift from the keys.
 
-- **The command palette (Cmd/Ctrl+K) searches actions, the requests of every collection and
-  environments** (`palette.rs`, from Yaak). Requests come from `collections::request_index`,
+- **The command palette (Cmd/Ctrl+Shift+P) searches actions, the requests of every
+  collection and environments** (`palette.rs`, from Yaak). Requests come from `collections::request_index`,
   read when the palette opens through the generated columns (no template is decoded); actions
   and environments are captured at open. Matching is an in-order fuzzy subsequence that
   rewards word starts, the very start and runs, over the best of all placements
@@ -427,12 +427,16 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   a column of one width (OPTIONS) with a gap before the name, so DELETE never runs into it; a request in another collection opens
   through `Navigation::OpenIn` (switch collection, then `restore`). The palette is pinned to
   the top: centred, it moved as its list shrank while typing, and clicks landed on the
-  backdrop.
+  backdrop. Cmd/Ctrl+Shift+P, not Cmd/Ctrl+K, because editors already teach Cmd/Ctrl+P
+  for files (here requests) and Cmd/Ctrl+Shift+P for commands; Cmd/Ctrl+K was dropped,
+  not kept as an alias, after the user asked why two keys opened nearly the same search.
 
 - **Recent requests: the last 20 opened saved requests, newest first, in `ui_state`
   (`recent_requests`)**, pruned when the request index shows one was deleted; an unreadable
-  list starts empty instead of failing startup. Cmd/Ctrl+P is the palette with requests only,
-  recent first. Ctrl+Tab (the real Ctrl key on every platform) is hold-and-release, as in
+  list starts empty instead of failing startup. Cmd/Ctrl+P finds requests only, recent first.
+  The palette comes before it in `shortcuts::ALL`, so Cmd/Ctrl+Shift+P is consumed first:
+  egui's matching ignores an extra Shift and would also take it for Cmd/Ctrl+P.
+  Ctrl+Tab (the real Ctrl key on every platform) is hold-and-release, as in
   editors: Tab steps while Ctrl is held, releasing Ctrl opens the selection, so a quick
   Ctrl+Tab goes back to the previous request; Shift starts from the oldest; Esc cancels. A
   release that comes before the index loads opens as soon as it arrives. Why: the

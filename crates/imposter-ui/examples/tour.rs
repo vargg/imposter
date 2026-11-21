@@ -751,7 +751,10 @@ fn main() {
         tour.settle();
         tour.shot("7-01-sidebar-filter");
         tour.click("Clear the filter");
-        tour.keys(egui::Modifiers::COMMAND, egui::Key::K);
+        tour.keys(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::P,
+        );
         tour.settle();
         tour.shot("7-02-palette");
         if let Some(field) = tour.harness.query_by_label("Command palette search") {

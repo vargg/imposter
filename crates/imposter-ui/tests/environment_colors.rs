@@ -410,8 +410,10 @@ fn the_picker_and_the_palette_mark_colored_environments() {
     app.harness.key_press(egui::Key::Escape);
     app.harness.run_steps(2);
 
-    app.harness
-        .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+    app.harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::P,
+    );
     app.harness.run_steps(2);
     support::text_input(&app.harness, "Command palette search").type_text("prod");
     app.harness.run_steps(2);

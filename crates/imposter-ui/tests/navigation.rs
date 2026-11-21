@@ -13,7 +13,8 @@ use imposter_ui::app::Screen;
 use support::{click, collection, request, save_state, settle, start_with, type_into};
 
 fn palette(app: &mut support::App, query: &str) {
-    app.harness.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    app.harness
+        .key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::P);
     settle(&mut app.harness);
     support::text_input(&app.harness, "Command palette search").type_text(query);
     app.harness.run_steps(2);

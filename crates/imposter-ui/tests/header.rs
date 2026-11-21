@@ -159,7 +159,8 @@ fn the_rail_works_from_the_keyboard_and_preserves_palette_actions() {
         ("Go to Load", Screen::Load),
         ("Go to Run", Screen::Run),
     ] {
-        app.harness.key_press_modifiers(Modifiers::COMMAND, Key::K);
+        app.harness
+            .key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::P);
         settle(&mut app.harness);
         type_into(&mut app.harness, "Command palette search", query);
         app.harness.key_press(Key::Enter);

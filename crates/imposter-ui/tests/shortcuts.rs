@@ -1,4 +1,4 @@
-//! Keyboard shortcuts: Send, Save, New and Find, and that dialogs block them.
+//! Keyboard shortcuts, including palette modes and how dialogs block shortcuts.
 #![cfg(test)]
 #![allow(clippy::disallowed_methods)] // drives the app from outside its event loop
 
@@ -239,6 +239,42 @@ fn with_open_request() -> support::App {
 }
 
 #[test]
+fn palette_shift_p_opens_the_command_palette() {
+    let mut app = start();
+    app.harness
+        .key_press_modifiers(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P);
+    settle(&mut app.harness);
+
+    app.harness.get_by_label("Command palette");
+    assert!(app.harness.query_by_label("Recent requests").is_none());
+    support::text_input(&app.harness, "Command palette search").type_text("Go to Settings");
+    app.harness.run_steps(2);
+    app.harness.get_by_label("Go to Settings");
+}
+
+#[test]
+fn palette_p_finds_requests_only() {
+    let mut app = with_open_request();
+    press(&mut app, Key::P);
+    settle(&mut app.harness);
+
+    app.harness.get_by_label("Recent requests");
+    app.harness.get_by_label("GET API › Get");
+    for label in ["Command palette", "Actions", "Environments"] {
+        assert!(app.harness.query_by_label(label).is_none(), "{label}");
+    }
+}
+
+#[test]
+fn palette_k_opens_no_dialog() {
+    let mut app = start();
+    press(&mut app, Key::K);
+    settle(&mut app.harness);
+
+    assert!(app.harness.state().state.dialog.is_none());
+}
+
+#[test]
 fn select_url_shortcut_lets_typing_replace_the_url() {
     let mut app = with_open_request();
     press(&mut app, Key::L);
@@ -386,6 +422,7 @@ fn sidebar_settings_and_the_shortcut_sheet() {
     assert_eq!(app.harness.query_all_by_label("or").count(), 2);
     // Keys as keyboards print them, one cap each; never egui's "Slash".
     app.harness.get_by_label("Ctrl Shift /");
+    app.harness.get_by_label("Ctrl Shift P");
     assert!(app.harness.query_by_label_contains("Slash").is_none());
     // The widest keys (two alternatives) do not push their description out of line.
     let send = app

@@ -294,7 +294,7 @@ response.send_json(#{ calls: state.calls, item: request.json().item });
   Settings at the bottom. Amber dots mark unsaved changes in Variables, Mocks and Settings.
   Running tools show a green dot, which turns muted while stopping. You can also click a
   running tool in the status bar to return to its screen.
-- Command palette (Cmd/Ctrl+K) over actions, the requests of every collection and
+- Command palette (Cmd/Ctrl+Shift+P) over actions, the requests of every collection and
   environments; recent requests with Cmd/Ctrl+P, and Ctrl+Tab back to the previous one.
 - Hover over the Requests sidebar's **Filter** for syntax such as `method:POST`,
   `url:users` and `-word`.
@@ -377,7 +377,7 @@ Cmd on macOS, Ctrl elsewhere. Shortcuts do nothing while a dialog is open.
 
 | Shortcut | Action |
 |---|---|
-| Cmd/Ctrl+K | Command palette: actions, requests and environments |
+| Cmd/Ctrl+Shift+P | Command palette: actions, requests and environments |
 | Cmd/Ctrl+P | Find a request, recent ones first |
 | Ctrl+Tab | Back to the previous request; hold Ctrl and press Tab to go further |
 | Ctrl+Shift+Tab | Step through recent requests from the oldest |

@@ -1042,9 +1042,11 @@ fn walk(
     click(&mut app.harness, "Close result");
     support::open_screen(&mut app.harness, "Requests");
     settle(&mut app.harness);
-    for (dialog, keys) in [("palette", egui::Key::K), ("recent", egui::Key::P)] {
-        app.harness
-            .key_press_modifiers(egui::Modifiers::COMMAND, keys);
+    for (dialog, modifiers) in [
+        ("palette", egui::Modifiers::COMMAND | egui::Modifiers::SHIFT),
+        ("recent", egui::Modifiers::COMMAND),
+    ] {
+        app.harness.key_press_modifiers(modifiers, egui::Key::P);
         app.harness.run_steps(3);
         check(app, dialog);
         app.harness.key_press(egui::Key::Escape);

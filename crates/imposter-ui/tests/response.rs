@@ -185,8 +185,10 @@ fn the_command_palette_reaches_the_viewer_tools() {
     let mut fixture = sent("application/json", BODY);
     let app = &mut fixture.app;
     let command = |app: &mut support::App, label: &str| {
-        app.harness
-            .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+        app.harness.key_press_modifiers(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::P,
+        );
         settle(&mut app.harness);
         text_input(&app.harness, "Command palette search").type_text(label);
         app.harness.run_steps(2);

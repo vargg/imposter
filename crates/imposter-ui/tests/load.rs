@@ -472,9 +472,10 @@ fn the_palette_load_tests_the_open_request() {
     let mut f = fixture(Duration::ZERO, false);
     click(&mut f.app.harness, "GET Ping");
     settle(&mut f.app.harness);
-    f.app
-        .harness
-        .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+    f.app.harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::P,
+    );
     settle(&mut f.app.harness);
     click(&mut f.app.harness, "Load Test This Request");
     settle(&mut f.app.harness);

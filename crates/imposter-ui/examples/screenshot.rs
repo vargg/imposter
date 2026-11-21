@@ -335,7 +335,10 @@ fn main() {
             .get_by_role_and_label(egui::accesskit::Role::Button, "History")
             .click();
         settle(&mut harness);
-        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+        harness.key_press_modifiers(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::P,
+        );
         settle(&mut harness);
         harness
             .get_by_label("Command palette search")

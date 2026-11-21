@@ -1,4 +1,4 @@
-//! The command palette (Cmd/Ctrl+K): one fuzzy-searched list of actions, the requests of
+//! The command palette (Cmd/Ctrl+Shift+P): one fuzzy-searched list of actions, the requests of
 //! every collection, and environments. What it offers is captured when it opens; the request
 //! index arrives from the database a moment later. Choosing returns an ordinary [`Action`].
 
