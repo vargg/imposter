@@ -493,6 +493,9 @@ impl Dialog {
             let close = title_row(ui, &self.title());
             let outcome = if let Self::Palette(palette) = self {
                 palette.show(ui, body_height)
+            } else if let Self::Scripts { owner, scripts, .. } = self {
+                crate::scripts_tab::script_pair(ui, scripts, Some(owner), body_height);
+                Footer::new("Save", Some(Outcome::Scripts)).show(ui, enter)
             } else {
                 scroll_body(ui, body_height, |ui| self.body(ui))
                     .map_or(Outcome::Open, |footer| footer.show(ui, enter))
@@ -655,25 +658,6 @@ impl Dialog {
                 script_reference(ui);
                 return None;
             }
-            Self::Scripts { owner, scripts, .. } => {
-                crate::scripts_tab::script_editor(
-                    ui,
-                    imposter_app::script::Phase::Before,
-                    "Before sending",
-                    "Runs on every request inside. Outer scripts run first, then the request's own.",
-                    &format!("{owner} before-sending script"),
-                    &mut scripts.before,
-                );
-                crate::scripts_tab::script_editor(
-                    ui,
-                    imposter_app::script::Phase::After,
-                    "After response",
-                    "Runs on every response. Its tests show with the request's.",
-                    &format!("{owner} after-response script"),
-                    &mut scripts.after,
-                );
-                Footer::new("Save", Some(Outcome::Scripts))
-            }
             Self::Companions { .. } => {
                 ui.label("Include Postman environment or global JSON files?");
                 Footer {
@@ -699,7 +683,7 @@ impl Dialog {
                 postman,
             } => export(ui, environments, globals, postman),
             Self::Curl { text } => curl(ui, text),
-            Self::Palette(_) => return None, // The palette scrolls its results below a fixed search field.
+            Self::Palette(_) | Self::Scripts { .. } => return None,
         })
     }
 }

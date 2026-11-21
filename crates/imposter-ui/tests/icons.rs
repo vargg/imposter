@@ -87,6 +87,24 @@ fn glyph_buttons_keep_their_names_size_alignment_and_state_colors() {
             }
             assert_eq!(color(&harness, Icon::Copy), palette.text_muted);
             assert_eq!(color(&harness, Icon::Wrap), palette.accent);
+            let toggle = harness.get_by_label("Wrap").rect();
+            let shapes = &harness.output().shapes;
+            assert!(
+                shapes.iter().any(|shape| {
+                    matches!(&shape.shape, Shape::LineSegment { points, stroke }
+                    if stroke.color == palette.selected_bar
+                    && (points[0].y - (toggle.bottom() - 2.0)).abs() < 0.1
+                    && points.iter().all(|point| toggle.contains(*point)))
+                }),
+                "selected icon has an underline"
+            );
+            assert!(
+                shapes.iter().all(|shape| {
+                    !matches!(&shape.shape, Shape::Rect(rect)
+                    if rect.rect.intersects(toggle) && rect.fill == palette.accent)
+                }),
+                "selected icon has no primary fill"
+            );
             assert_eq!(color(&harness, Icon::Save), palette.text);
             assert_eq!(
                 color(&harness, Icon::Revert),
@@ -342,7 +360,7 @@ fn real_app_toolbar_pixels_match_phosphor() {
         Icon::Settings,
         Icon::More,
         Icon::Save,
-        Icon::Filter,
+        Icon::Variables,
         Icon::Copy,
     ] {
         let index = Icon::ALL

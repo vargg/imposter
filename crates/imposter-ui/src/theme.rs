@@ -532,6 +532,19 @@ mod tests {
     }
 
     #[test]
+    fn icon_toggle_glyph_and_underline_contrast_on_neutral_fills() {
+        for (name, p) in BOTH {
+            for background in [p.background, p.surface, p.input, p.hover] {
+                assert!(contrast(p.accent, background) >= NON_TEXT, "{name} glyph");
+                assert!(
+                    contrast(p.selected_bar, background) >= NON_TEXT,
+                    "{name} underline"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn controls_kit_pairings_are_readable_in_both_palettes() {
         for (name, p) in BOTH {
             assert!(
@@ -539,6 +552,7 @@ mod tests {
                 "{name} selected segment"
             );
             assert!(contrast(p.on_accent, p.accent) >= AA, "{name} check glyph");
+            assert!(contrast(p.warning, p.input) >= AA, "{name} warning badge");
             assert!(contrast(p.error, p.input) >= AA, "{name} danger label");
             assert!(
                 contrast(p.on_accent, p.error) >= AA,

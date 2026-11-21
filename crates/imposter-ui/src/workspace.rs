@@ -13,7 +13,7 @@ use crate::layout::{Orientation, RAIL_WIDTH, SIDEBAR_WIDTH};
 use crate::theme::{Tone, method_color, palette};
 use crate::tree::{Node, NodeId, Place};
 use crate::viewer::{self, Language};
-use crate::widgets::{self, FileRequest, VarUi, name, tone_text};
+use crate::widgets::{self, FileRequest, VarUi, Variant, ViewerTool, ViewerTools, name, tone_text};
 
 const SEPARATOR: f32 = 12.0;
 const ENVIRONMENT_WIDTH: f32 = 200.0;
@@ -1245,7 +1245,7 @@ fn status_context(state: &mut State, ui: &mut Ui) {
 }
 
 fn activity_button(ui: &mut Ui, label: &str, hint: &str) -> egui::Response {
-    let button = widgets::button(ui, widgets::Variant::Ghost, None, &format!("● {label}"));
+    let button = widgets::button(ui, Variant::Ghost, None, &format!("● {label}"));
     name(&button, label);
     button
         .ctx
@@ -1733,9 +1733,9 @@ fn centered_message(
     let buttons = |ui: &mut Ui| {
         for (index, (label, action)) in offers.into_iter().enumerate() {
             let variant = if index == 0 {
-                widgets::Variant::Primary
+                Variant::Primary
             } else {
-                widgets::Variant::Secondary
+                Variant::Secondary
             };
             if widgets::button(ui, variant, None, label).clicked() {
                 chosen = Some(action);
@@ -1932,18 +1932,54 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         })
         .collect();
     ui.horizontal(|ui| {
+        const SCRIPT_REFERENCE: &str = "Script reference";
+        let reference = pane.tab == EditorTab::Scripts;
+        let with_caption = ui.available_width() >= 340.0;
+        let reserve = if !reference {
+            0.0
+        } else if with_caption {
+            widgets::action_width_with_icon(ui, SCRIPT_REFERENCE, Some(Icon::Info))
+        } else {
+            icons::size()
+        };
         widgets::tab_strip(
             ui,
             &tabs,
             &mut pane.tab,
             EditorTab::PRIMARY.len(),
-            0.0,
+            reserve
+                + if reference {
+                    ui.spacing().item_spacing.x
+                } else {
+                    0.0
+                },
             "More request tabs",
         );
+        if reference {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let button = if with_caption {
+                    widgets::button(ui, Variant::Ghost, Some(Icon::Info), SCRIPT_REFERENCE)
+                } else {
+                    icons::button(ui, Icon::Info, SCRIPT_REFERENCE, false)
+                };
+                if button.clicked() {
+                    actions.push(Action::Prompt(Dialog::ScriptReference));
+                }
+            });
+        }
     });
     ui.separator();
     if pane.tab == EditorTab::Body {
         body_tab(ui, pane, &mut vars, actions);
+        return;
+    }
+    if pane.tab == EditorTab::Scripts {
+        if crate::scripts_tab::draw(ui, &mut pane.editor.scripts, &outer, actions) {
+            actions.push(Action::Edited {
+                url: false,
+                params: false,
+            });
+        }
         return;
     }
     let mut edited = false;
@@ -2003,9 +2039,6 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
             EditorTab::Tests => {
                 edited = crate::checks::checks_table(ui, &mut pane.editor.checks, &mut vars);
             }
-            EditorTab::Scripts => {
-                edited = crate::scripts_tab::draw(ui, &mut pane.editor.scripts, &outer, actions);
-            }
             EditorTab::Captures => {
                 edited = crate::checks::captures_table(
                     ui,
@@ -2023,7 +2056,7 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                     &mut vars,
                 );
             }
-            EditorTab::Body => {}
+            EditorTab::Body | EditorTab::Scripts => {}
         });
     if edited || params {
         actions.push(Action::Edited { url: false, params });
@@ -2262,13 +2295,29 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
             } else {
                 widgets::menu_text_button_width(ui, RUNS)
             };
+            let not_set = response_state.captures_not_set.as_ref();
+            let label = not_set.map(|warning| format!("{} not set", warning.names.len()));
+            let warning_width = label.as_ref().map_or(0.0, |label| {
+                widgets::action_width_with_icon(ui, label, Some(Icon::Warning))
+                    + ui.spacing().item_spacing.x
+            });
             if let Some(response) = &response_state.response
-                && status_line(ui, response, runs)
+                && status_line(ui, response, runs + warning_width)
             {
                 response_state.tab = ResponseTab::Tests;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 runs_menu(ui, response_state, actions);
+                if let (Some(warning), Some(label)) = (not_set, label) {
+                    let badge = widgets::button(ui, Variant::Warning, Some(Icon::Warning), &label);
+                    let detail = warning.detail();
+                    badge.ctx.accesskit_node_builder(badge.id, |node| {
+                        node.set_description(detail.as_str());
+                    });
+                    if badge.on_hover_text(detail).clicked() {
+                        actions.push(Action::OpenVariablesScope(warning.scope));
+                    }
+                }
             });
         });
     }
@@ -2340,7 +2389,15 @@ fn blocked_card(
                 placeholder_list(&blocked.unresolved)
             ),
         };
-        ui.add(egui::Label::new(tone_text(headline, Tone::Error).strong()).wrap());
+        let error = ui.add(egui::Label::new(tone_text(headline, Tone::Error).strong()).wrap());
+        if !blocked.unresolved.is_empty() {
+            const HINT: &str =
+                "Nothing was sent. Define the variable, or fix the name in the request.";
+            error
+                .ctx
+                .accesskit_node_builder(error.id, |node| node.set_description(HINT));
+            error.on_hover_text(HINT);
+        }
         if blocked.sign_in {
             ui.add(
                 egui::Label::new(tone_text(
@@ -2349,8 +2406,7 @@ fn blocked_card(
                 ))
                 .wrap(),
             );
-            if ui
-                .button("Sign in")
+            if widgets::button(ui, Variant::Primary, None, "Sign in")
                 .on_hover_text("Sign in in the browser and keep the token it gives")
                 .clicked()
             {
@@ -2358,37 +2414,34 @@ fn blocked_card(
             }
         }
         if let Some(first) = blocked.unresolved.first() {
-            ui.add(
-                egui::Label::new(tone_text(
-                    "Nothing was sent. Define the variable, or fix the name in the request.",
-                    Tone::Muted,
-                ))
-                .wrap(),
-            );
-            ui.horizontal_wrapped(|ui| {
+            let place = if imposter_app::core::variables::secret_name(first).is_some() {
+                format!("{scope_name} secrets")
+            } else {
+                scope_name.to_owned()
+            };
+            let caption = format!("Define in {place}");
+            let full = format!("Define {{{{{first}}}}} in {place}");
+            let mut buttons = |ui: &mut Ui| {
                 // The headline names the variable; the button says where it goes, which a
                 // long name would cut off. Hover and screen readers get both.
-                // A secret is defined among the scope's secrets.
-                let place = if imposter_app::core::variables::secret_name(first).is_some() {
-                    format!("{scope_name} secrets")
-                } else {
-                    scope_name.to_owned()
-                };
-                let full = format!("Define {{{{{first}}}}} in {place}");
-                let define = ui
-                    .add(
-                        egui::Button::new(format!("Define in {place}"))
-                            .wrap_mode(egui::TextWrapMode::Truncate),
-                    )
+                let define = widgets::button(ui, Variant::Primary, None, &caption)
                     .on_hover_text(full.as_str());
                 name(&define, &full);
                 if define.clicked() {
                     act(BlockedAction::Define(first.clone()));
                 }
-                if ui.button("Open Variables").clicked() {
+                if widgets::button(ui, Variant::Secondary, None, "Open Variables").clicked() {
                     act(BlockedAction::OpenVariables);
                 }
-            });
+            };
+            let width = widgets::action_width(ui, &caption)
+                + widgets::action_width(ui, "Open Variables")
+                + ui.spacing().item_spacing.x;
+            if width <= ui.available_width() {
+                ui.horizontal(buttons);
+            } else {
+                buttons(ui);
+            }
         }
     });
 }
@@ -2592,6 +2645,7 @@ pub fn response_body(
     status: bool,
     live: bool,
 ) -> Option<PaneAction> {
+    let queued = response_state.pending_tool.take();
     if status
         && let Some(response) = &response_state.response
         && ui.horizontal(|ui| status_line(ui, response, 0.0)).inner
@@ -2631,7 +2685,7 @@ pub fn response_body(
             });
         });
     }
-    if save_body {
+    if save_body || (partial && queued == Some(ViewerTool::Save)) {
         return Some(PaneAction::SaveBody);
     }
     let filter_status = filter_status(&response_state.filter);
@@ -2696,46 +2750,46 @@ pub fn response_body(
             .as_ref()
             .is_some_and(|r| r.outcome == imposter_app::core::execution::Outcome::Response);
     let mut save_from_tools = false;
+    let raw_open = *headers_raw;
     let mut tools = |ui: &mut Ui, shown: ResponseTab| match shown {
         ResponseTab::Body => {
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if body_saved_here {
-                    save_from_tools = icons::button(ui, Icon::Save, "Save body…", false).clicked();
-                }
-                if !preview.binary {
-                    widgets::viewer_tools_with(
-                        ui,
-                        body_view,
-                        body,
-                        copy_body,
-                        outline.map(|outline| widgets::Folding {
-                            outline,
-                            folded: &mut *folds,
-                            add_check: false,
-                        }),
-                        filterable.then_some((filter.open, &mut toggle_filter)),
-                    );
-                }
-            });
+            let tools = ViewerTools {
+                copy: (!preview.binary).then_some(copy_body),
+                wrap: body_view.wrap,
+                filter_open: filterable.then_some(filter.open),
+                fold: outline.is_some(),
+                save: body_saved_here,
+            };
+            match tools.show(ui).or(queued) {
+                Some(ViewerTool::Save) => save_from_tools = true,
+                Some(ViewerTool::Filter) => toggle_filter = true,
+                Some(tool) => tool.apply(
+                    ui.ctx(),
+                    body_view,
+                    body,
+                    outline.map(|outline| widgets::Folding {
+                        outline,
+                        folded: &mut *folds,
+                        add_check: false,
+                    }),
+                ),
+                None => {}
+            }
         }
         // Raw sits at the right end, framed like a button: drawn after the tabs in their
         // style, it read as a fourth tab.
         ResponseTab::Headers => {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui
-                    .add(
-                        egui::Button::new(RAW)
-                            .selected(*headers_raw)
-                            .min_size(vec2(0.0, icons::size())),
-                    )
-                    .on_hover_text("Show the headers as text, with Find and Wrap")
-                    .clicked()
-                {
-                    *headers_raw = !*headers_raw;
-                }
+                widgets::toggle_button(ui, headers_raw, RAW)
+                    .on_hover_text("Show the headers as text, with Find and Wrap");
                 if *headers_raw {
                     widgets::viewer_tools(ui, headers_view, headers, copy_headers);
-                } else if icons::button(ui, Icon::Copy, copy_headers, false).clicked() {
+                    if let Some(tool) = queued {
+                        tool.apply(ui.ctx(), headers_view, headers, None);
+                    }
+                } else if icons::button(ui, Icon::Copy, copy_headers, false).clicked()
+                    || queued == Some(ViewerTool::Copy)
+                {
                     ui.ctx().copy_text(headers.clone());
                 }
             });
@@ -2744,6 +2798,9 @@ pub fn response_body(
         ResponseTab::Request => {
             if let Some(text) = sent.as_ref() {
                 widgets::viewer_tools(ui, sent_view, text, "Copy request");
+                if let Some(tool) = queued {
+                    tool.apply(ui.ctx(), sent_view, text, None);
+                }
             }
         }
     };
@@ -2797,15 +2854,25 @@ pub fn response_body(
         *tab = ResponseTab::Body;
     }
     ui.horizontal(|ui| {
-        // At least the tools' menu button stays on the row, and Raw beside the headers'.
+        // Leave room for More tools, Find and Copy, plus Raw when it switches the viewer.
         let gap = ui.spacing().item_spacing.x;
-        let mut reserve = icons::size() + gap;
-        if *tab == ResponseTab::Body && body_saved_here {
-            reserve += icons::size() + gap;
-        }
-        if *tab == ResponseTab::Headers {
-            reserve += widgets::button_width(ui, RichText::new(RAW)) + gap;
-        }
+        let slot = icons::size() + gap;
+        let reserve = match *tab {
+            ResponseTab::Body if !preview.binary => 3.0 * slot,
+            ResponseTab::Body => {
+                if body_saved_here {
+                    slot
+                } else {
+                    0.0
+                }
+            }
+            ResponseTab::Headers => {
+                let raw = widgets::action_width(ui, RAW) + gap;
+                raw + if raw_open { 2.0 * slot } else { slot }
+            }
+            ResponseTab::Request => 3.0 * slot,
+            ResponseTab::Tests | ResponseTab::Events => 0.0,
+        };
         widgets::tab_strip(ui, &tabs, tab, tabs.len(), reserve, "More response tabs");
         tools(ui, *tab);
     });
@@ -2916,14 +2983,13 @@ pub fn response_body(
             None
         }
     };
-    if close_filter {
-        filter.close();
-    } else if toggle_filter {
-        if filter.open {
+    if close_filter || toggle_filter {
+        if close_filter || filter.open {
             filter.close();
         } else {
             filter.open();
         }
+        ui.ctx().request_repaint();
     }
     action.map(PaneAction::Row)
 }

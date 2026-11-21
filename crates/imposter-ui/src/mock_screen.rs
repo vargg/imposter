@@ -505,9 +505,12 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
             .any(|p| p.route == index && p.field == field)
     };
     let mut remove = false;
+    let height = ui.available_height();
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            widgets::scroll_view_bounds(ui);
+            let top = ui.cursor().top();
             let route = &mut screen.form.routes[index];
             ui.horizontal(|ui| {
                 ui.label(
@@ -563,6 +566,10 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
             edited |= response.changed();
             ui.add_space(8.0);
             ui.push_id(("mock script", index), |ui| {
+                let control = crate::theme::spacing().control;
+                // Measure from the form's start so scrolling cannot grow the editor.
+                let header = control + ui.spacing().item_spacing.y;
+                let remaining = height - (ui.cursor().top() - top) - header;
                 edited |= crate::scripts_tab::script_editor(
                     ui,
                     imposter_app::script::Phase::Mock,
@@ -570,6 +577,7 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
                     "Runs for each matched request; it starts from the status, headers and body above",
                     "Mock response script",
                     &mut route.script,
+                    remaining.max(4.0 * control),
                 );
             });
             // The editor says why it does not compile; the list's ⚠ and Start say it too.

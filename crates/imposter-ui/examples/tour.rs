@@ -448,12 +448,10 @@ fn main() {
         tour.shot("2-05b-more-tabs");
         tour.harness.key_press(egui::Key::Escape);
         tour.settle();
-        if tour.harness.query_by_label("More tools").is_some() {
-            tour.click("More tools");
-            tour.shot("2-05c-more-tools");
-            tour.harness.key_press(egui::Key::Escape);
-            tour.settle();
-        }
+        tour.click("More tools");
+        tour.shot("2-05c-more-tools");
+        tour.harness.key_press(egui::Key::Escape);
+        tour.settle();
         tour.harness.state_mut().state.response.tab = ResponseTab::Headers;
         tour.settle();
         tour.shot("2-06-response-headers");
@@ -587,6 +585,10 @@ fn main() {
         tour.open_tab("Scripts");
         tour.settle();
         tour.shot("4-01c-scripts");
+        tour.click("Insert an example into the Before-sending script");
+        tour.shot("4-01c-script-examples");
+        tour.harness.key_press(egui::Key::Escape);
+        tour.settle();
         tour.send();
         tour.settle();
         tour.harness.state_mut().state.response.tab = ResponseTab::Tests;

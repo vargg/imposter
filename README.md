@@ -92,6 +92,8 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Status, time, size and content type at a glance.
 - JSON, XML and HTML highlighting, formatted JSON, find, wrap and copy. Large bodies stay
   responsive (the viewer only lays out what is visible; previews stop at 256 KiB).
+- **More tools** (⋯) holds Wrap, Collapse all, Expand all and Filter with JSONPath.
+  Find and Copy sit beside it, with Save body… when space allows.
 - Fold formatted JSON by object or array, or collapse everything below the top level.
   Hover a line and open its **⋯** menu, or right-click, to copy its JSONPath
   (`$.data.items[3].id`) or its value.
@@ -106,14 +108,15 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   or the size, compared with `=`, `≠`, `<`, `≤`, `>`, `≥`, contains, matches (a regular
   expression), exists or is of type. Expected values can use `{{variables}}`.
 - Results appear beside the response status (for example, `✓3 ✗1`) and in its Tests tab,
-  with what was read for each check, and stay with the run in History. A check that cannot
-  be decided says **Not checked** with the reason.
+  with a status icon and what was read for each check. They stay with the run in History.
+  An unchecked result shows the reason beside a warning icon.
 - Right-click a JSON value and choose Add check to check for it. OpenAPI import adds a status
   check for each operation's documented success.
 - Set variables from a response, for example a login's `token` from `$.access_token` or a
   created item's id: the value goes to the scope that defines the variable, or to the active
   environment, and the next request uses it. Right-click a JSON value and choose Set variable
-  to add one. Nothing is set while the Variables screen has unsaved changes to that scope.
+  to add one. If the scope has unsaved edits, the response shows a **not set** badge.
+  Hover for the affected names and click to open the scope in Variables.
 
 **Scripts**
 - Each request can have two [Rhai](https://rhai.rs) scripts, edited under **More → Scripts**. The
@@ -132,7 +135,8 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   (**Collection Scripts…**) or a folder's right-click menu (**Scripts…**). Before sending,
   the collection's run first, then each folder's from the outermost, then the request's;
   after the response, in the same order. A request's Scripts tab lists what else runs.
-- "Insert example…" adds a ready-made script; "Script reference" lists everything below.
+- Each script header shows the compile result and has a Plus button for **Insert example…**.
+  **Script reference** at the right of the request tab row lists everything below.
 
 | When | Use | What it does |
 |---|---|---|

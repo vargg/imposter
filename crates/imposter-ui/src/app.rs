@@ -426,6 +426,7 @@ pub enum Action {
         name: &'static str,
         cut: bool,
     },
+    ResponseTool(PaneKind, crate::widgets::ViewerTool),
     /// Append a check to the open request and show its Tests tab.
     AddCheck(imposter_app::core::check::Check),
     /// Append a capture to the open request and show its Tests tab.
@@ -458,6 +459,7 @@ pub enum Action {
     OpenDefinition(Scope, String),
     /// Open the Variables screen on a scope with a new row for an undefined name.
     DefineVariable(Scope, String),
+    OpenVariablesScope(Scope),
     /// The inspector's saved values: make `value` the current value of `name` in `scope`.
     ChooseValue {
         scope: Scope,
@@ -923,6 +925,8 @@ pub enum ResponseTab {
 pub struct ResponsePane {
     pub response: Option<Response>,
     pub notice: Option<(String, Tone)>,
+    pub(crate) captures_not_set: Option<CapturesNotSet>,
+    pub(crate) pending_tool: Option<crate::widgets::ViewerTool>,
     pub pending: bool,
     pub runs: Vec<ExecutionSummary>,
     pub shown_run: Option<ExecutionId>,
@@ -947,6 +951,21 @@ pub struct ResponsePane {
     pub live_events: Vec<imposter_app::core::sse::Event>,
     /// The event whose whole text is shown under the list.
     pub event_selected: Option<usize>,
+}
+
+/// Writes deferred because a scope has unsaved edits. Keep names only, including for secrets.
+pub(crate) struct CapturesNotSet {
+    pub scope: Scope,
+    pub names: Vec<String>,
+}
+
+impl CapturesNotSet {
+    pub fn detail(&self) -> String {
+        format!(
+            "Not set: {} — the Variables screen has unsaved changes to that scope",
+            self.names.join(", ")
+        )
+    }
 }
 
 /// The JSONPath filter of a response viewer. One run is in flight at a time; when it ends,
@@ -1012,6 +1031,8 @@ impl Default for ResponsePane {
         Self {
             response: None,
             notice: None,
+            captures_not_set: None,
+            pending_tool: None,
             pending: false,
             runs: Vec::new(),
             shown_run: None,
@@ -1038,6 +1059,8 @@ impl ResponsePane {
         let headers = crate::viewer::headers_text(&response);
         self.notice = Some((crate::viewer::notice(&response, &preview), Tone::Muted))
             .filter(|(n, _)| !n.is_empty());
+        self.captures_not_set = None;
+        self.pending_tool = None;
         self.preview = Some((preview, headers));
         if self.tab == ResponseTab::Tests
             && response.checks.is_empty()
@@ -3183,7 +3206,7 @@ impl ImposterApp {
         }
         if generation != self.state.generation {
             if let Some(kept) = kept {
-                self.status_for(&kept, Tone::Warning, 2.0 * STATUS_SECONDS);
+                self.status_for(&kept.detail(), Tone::Warning, 2.0 * STATUS_SECONDS);
             }
             return;
         }
@@ -3202,9 +3225,7 @@ impl ImposterApp {
                     crate::viewer::sent_request_of(&executed.sent, executed.attach_cookies)
                         .as_text(),
                 );
-                if let Some(kept) = kept {
-                    self.state.response.notice = Some((kept, Tone::Warning));
-                }
+                self.state.response.captures_not_set = kept;
                 if let Some(id) = self.state.editor.as_ref().and_then(|p| p.editor.id()) {
                     self.load_runs(id);
                 }
@@ -3659,6 +3680,7 @@ impl ImposterApp {
                 },
             ),
             Action::ShowRun(id) => self.show_run(id),
+            Action::ResponseTool(kind, tool) => self.pane(kind).pending_tool = Some(tool),
             Action::Edited { url, params } => self.edited(url, params, now),
             Action::Screen(screen) => {
                 self.state.screen = screen;
@@ -3686,8 +3708,11 @@ impl ImposterApp {
                     .state
                     .active_environment
                     .map_or(Scope::Global, Scope::Environment);
+                self.handle(Action::OpenVariablesScope(scope), now);
+            }
+            Action::OpenVariablesScope(scope) => {
                 if self.state.variables.scope == scope && self.state.variables.loaded {
-                    // Already there, unsaved edits included.
+                    // Opening the same scope keeps its unsaved edits.
                     self.state.screen = Screen::Variables;
                 } else {
                     self.variables_navigate(VarTransition::Open(scope));
@@ -4327,7 +4352,7 @@ impl ImposterApp {
     fn write_captures(
         &mut self,
         writes: Vec<imposter_app::core::capture::Write>,
-    ) -> Option<String> {
+    ) -> Option<CapturesNotSet> {
         let screen = &self.state.variables;
         let blocked = screen.dirty().then_some(screen.scope);
         let (kept, writes): (Vec<_>, Vec<_>) = writes
@@ -4355,16 +4380,15 @@ impl ImposterApp {
                 }
             });
         }
-        (!kept.is_empty()).then(|| {
-            let names: Vec<String> = kept
-                .iter()
-                .map(imposter_app::core::capture::Write::key)
-                .collect();
-            format!(
-                "Not set: {} — the Variables screen has unsaved changes to that scope",
-                names.join(", ")
-            )
-        })
+        blocked
+            .filter(|_| !kept.is_empty())
+            .map(|scope| CapturesNotSet {
+                scope,
+                names: kept
+                    .iter()
+                    .map(imposter_app::core::capture::Write::key)
+                    .collect(),
+            })
     }
 
     fn captures_written(

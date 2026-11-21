@@ -78,11 +78,11 @@ fn json_folds_by_container_and_all_at_once() {
     click(&mut app.harness, "Unfold $.data.items[0]");
     assert!(shows(app, "\"name\": \"seven\""));
 
-    click(&mut app.harness, "Collapse all");
+    support::viewer_tool(&mut app.harness, "Collapse all");
     assert!(!shows(app, "\"id\": 7"));
     assert!(shows(app, "\"total\": 2"), "the top level stays open");
     app.harness.get_by_label("Unfold $.data");
-    click(&mut app.harness, "Expand all");
+    support::viewer_tool(&mut app.harness, "Expand all");
     assert!(shows(app, "\"id\": 7"));
 }
 
@@ -113,8 +113,9 @@ fn the_tools_share_the_tab_row_and_the_rest_wait_under_more_tools() {
         .max_by(|a, b| a.left().total_cmp(&b.left()))
         .unwrap();
     let copy = app.harness.get_by_label("Copy body").rect();
+    let find = app.harness.get_by_label("Find").rect();
     let more = app.harness.get_by_label("More tools").rect();
-    for tool in [copy, more] {
+    for tool in [copy, find, more] {
         assert!(
             (tool.center().y - body.center().y).abs() < 1.0,
             "{tool:?} is on the tab row"
@@ -123,7 +124,7 @@ fn the_tools_share_the_tab_row_and_the_rest_wait_under_more_tools() {
     }
     assert!(
         app.harness.query_by_label("Collapse all").is_none(),
-        "fold buttons give way first"
+        "folding lives in More tools"
     );
     app.harness.get_by_label("Fold $.data");
     // Toggles in the menu are check boxes showing their state.
@@ -134,17 +135,40 @@ fn the_tools_share_the_tab_row_and_the_rest_wait_under_more_tools() {
     assert_eq!(wrap.accesskit_node().toggled(), Some(Toggled::True));
     click(&mut app.harness, "Wrap");
     assert!(!app.harness.state().state.response.body_view.wrap);
-    click(&mut app.harness, "More tools");
-    click(&mut app.harness, "Filter with JSONPath");
+    support::viewer_tool(&mut app.harness, "Filter with JSONPath");
     app.harness.run_steps(2);
     text_input(&app.harness, "Filter the response with JSONPath");
+    click(&mut app.harness, "More tools");
+    for (label, expected) in [
+        ("Wrap", Toggled::False),
+        ("Filter with JSONPath", Toggled::True),
+    ] {
+        let toggle = app
+            .harness
+            .get_by_role_and_label(egui::accesskit::Role::CheckBox, label);
+        assert_eq!(toggle.accesskit_node().toggled(), Some(expected));
+    }
+    click(&mut app.harness, "Filter with JSONPath");
+    assert!(
+        app.harness
+            .query_by_label("Filter the response with JSONPath")
+            .is_none()
+    );
+    assert!(app.harness.query_by_label("Save body…").is_none());
+    let saved = app.dir.path().join("overflow.json");
+    app.harness
+        .state_mut()
+        .script_file_dialogs([Some(saved.clone())]);
+    support::viewer_tool(&mut app.harness, "Save body…");
+    settle(&mut app.harness);
+    assert_eq!(std::fs::read_to_string(saved).unwrap(), BODY);
 }
 
 #[test]
 fn find_opens_the_folds_that_hide_a_match() {
     let mut fixture = sent("application/json", BODY);
     let app = &mut fixture.app;
-    click(&mut app.harness, "Collapse all");
+    support::viewer_tool(&mut app.harness, "Collapse all");
     assert!(!shows(app, "\"name\": \"eight\""));
     click(&mut app.harness, "Find");
     text_input(&app.harness, "Find in response body").type_text("eight");
@@ -154,6 +178,39 @@ fn find_opens_the_folds_that_hide_a_match() {
         !shows(app, "\"name\": \"seven\""),
         "other folds stay closed"
     );
+}
+
+#[test]
+fn the_command_palette_reaches_the_viewer_tools() {
+    let mut fixture = sent("application/json", BODY);
+    let app = &mut fixture.app;
+    let command = |app: &mut support::App, label: &str| {
+        app.harness
+            .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+        settle(&mut app.harness);
+        text_input(&app.harness, "Command palette search").type_text(label);
+        app.harness.run_steps(2);
+        app.harness.get_by_label(label);
+        app.harness.key_press(egui::Key::Enter);
+        settle(&mut app.harness);
+    };
+    command(app, "Collapse All Response Folds");
+    assert!(!shows(app, "\"id\": 7"));
+    command(app, "Expand All Response Folds");
+    assert!(shows(app, "\"id\": 7"));
+    let wrap = app.harness.state().state.response.body_view.wrap;
+    command(app, "Toggle Wrap in Response Viewer");
+    assert_eq!(app.harness.state().state.response.body_view.wrap, !wrap);
+    command(app, "Filter Response with JSONPath");
+    text_input(&app.harness, "Filter the response with JSONPath");
+    command(app, "Find in Response Viewer");
+    text_input(&app.harness, "Find in response body");
+    let saved = app.dir.path().join("palette.json");
+    app.harness
+        .state_mut()
+        .script_file_dialogs([Some(saved.clone())]);
+    command(app, "Save Response Body…");
+    assert_eq!(std::fs::read_to_string(saved).unwrap(), BODY);
 }
 
 #[test]
@@ -170,7 +227,7 @@ fn history_responses_can_be_folded_and_filtered() {
 
     click(&mut app.harness, "Fold $.data");
     assert!(!shows(app, "\"id\": 7"));
-    click(&mut app.harness, "Filter with JSONPath");
+    support::viewer_tool(&mut app.harness, "Filter with JSONPath");
     text_input(&app.harness, "Filter the response with JSONPath").type_text("$.total");
     app.harness.run_steps(1);
     settle(&mut app.harness);
@@ -282,7 +339,7 @@ fn a_jsonpath_filter_shows_matches_with_their_real_paths() {
     let mut fixture = sent("application/json", BODY);
     let app = &mut fixture.app;
 
-    click(&mut app.harness, "Filter with JSONPath");
+    support::viewer_tool(&mut app.harness, "Filter with JSONPath");
     text_input(&app.harness, "Filter the response with JSONPath").type_text("$..items[*].id");
     app.harness.run_steps(1);
     settle(&mut app.harness);
@@ -332,6 +389,7 @@ fn only_json_responses_offer_a_filter() {
     let mut fixture = sent("text/plain", "plain words");
     let app = &mut fixture.app;
     assert!(shows(app, "plain words"));
+    click(&mut app.harness, "More tools");
     assert!(app.harness.query_by_label("Filter with JSONPath").is_none());
     assert!(app.harness.query_by_label("Collapse all").is_none());
 }

@@ -465,7 +465,16 @@ fn scripted(script: &str) -> MockRoute {
 #[test]
 fn a_route_script_compiles_or_keeps_the_server_from_starting() {
     let mut app = opened_with(vec![scripted("response.status = 201;")]);
-    app.harness.get_by_label("Compiles");
+    let editor = support::text_input(&app.harness, "Mock response script").rect();
+    assert!(editor.height() > 4.0 * imposter_ui::theme::spacing().control);
+    assert!((support::status_bar(&app).top() - editor.bottom()).abs() < 24.0);
+    let status = app.harness.get_by_label("Compiles").rect();
+    let examples = app
+        .harness
+        .get_by_label("Insert an example into the Mock response script")
+        .rect();
+    assert!((status.center().y - examples.center().y).abs() < 1.0);
+    assert_eq!(app.harness.query_all_by_label("Compiles").count(), 1);
     let described = |app: &support::App| {
         app.harness
             .get_by_label("Mock route 1")

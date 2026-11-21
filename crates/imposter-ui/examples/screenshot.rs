@@ -177,7 +177,14 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-folded.png")))
             .unwrap();
-        open_from(&mut harness, "More tools", "Filter with JSONPath");
+        harness.get_by_label("More tools").click();
+        harness.run_steps(2);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-response-tools.png")))
+            .unwrap();
+        harness.get_by_label("Filter with JSONPath").click();
         settle(&mut harness);
         harness
             .get_by_label("Filter the response with JSONPath")

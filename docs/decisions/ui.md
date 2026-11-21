@@ -35,8 +35,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **The layout lint gates every screen** (`imposter-ui/tests/layout.rs`).
   - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
     walks the screens, each Variables tab and scope type, every Settings category, the
-    request Settings tab in both pane orientations, a sent response, a History run and
-    the dialogs. It compares each request setting caption's bounds with its full text width.
+    request Settings and Scripts tabs in both pane orientations, response tools and filters,
+    blocked sends and capture warnings, a History run and the dialogs. It compares each
+    request setting caption's bounds with its full text width.
   - **Widths:** visible controls and outlined frames stay inside the window. The lint
     checks frames in the painted shapes and checks controls against the accessible bounds of
     the flat request and response panes. The window bounds alone missed the Auth tab's eye
@@ -44,8 +45,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   - **Overlap:** no two buttons may overlap, and no text label may run into a button
     (a long "500 Internal Server Error" into the Runs menu). This is checked only without a dialog open,
     since a dialog is a layer above.
-  - **Clipping:** the Variables and Settings scroll regions report their visible bounds
-    to AccessKit. The lint uses those bounds for vertical clipping and keeps the full
+  - **Clipping:** the Variables, Settings, script editor and mock route form scroll regions
+    report their visible bounds to AccessKit. The lint uses those bounds for vertical clipping and keeps the full
     control widths for overflow checks. For other regions, controls crossing the
     header's bottom or the status bar's top count as scrolled out, as does anything below
     the status bar's top other than its own controls.
@@ -146,6 +147,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     in the tree, History and palette (`widgets::selection_bar`). Selected rows and menu
     options use a fill (`widgets::option`), since egui's selected button outline read as
     a hover left on.
+  - **Icon toggles** use an accent glyph and a short underline without accent fill.
+    The underline marks selection even when focus also colors a glyph. The filled
+    treatment made a chosen layout resemble a primary action. The theme and icon
+    tests check the contrast and the paint in both themes.
   - **Tabs** are frameless: muted text, or semibold accent text with an underline. Hover
     previews the underline in the muted color rather than drawing a button frame. They
     keep the button padding (a transparent frame; `frame(false)` drops the padding and ran
@@ -155,8 +160,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   review's #60). Checked in `theme.rs` tests.
 
 - **One controls kit defines action hierarchy** (`widgets::button`, `Variant`): Primary
-  uses accent fill and `on_accent` text; Secondary uses input fill and a `field_border`
-  edge; Ghost has no fill or edge at rest; Danger is neutral with red text. DangerPrimary
+  uses accent fill and `on_accent` text. Secondary uses input fill and a `field_border`
+  edge. Ghost has no fill or edge at rest. Warning badges use neutral input fill and
+  warning-colored text and glyphs. Danger is neutral with red text. DangerPrimary
   uses the error fill and `on_accent` text for a dialog's main destructive action. Disabled
   actions are neutral and readable. Buttons use the density's control height, 6 pt radius, 10 pt horizontal
   padding and an optional 16 pt Phosphor icon with a 6 pt gap. Labels are sentence case
@@ -308,9 +314,13 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     selected tab leaves no room) and has a dot when a hidden tab holds something.
     Menu items keep their badges, and the More tooltip and accessible description name
     the tabs with content, for example "More tabs: Tests: 2 checks".
-  - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
-    first, then Wrap, the filter, Find and Copy. In the menu, Wrap and the filter are
-    check boxes: a filled row for "on" read as the row under the pointer (Q11).
+  - **Viewer tools:** Find and Copy stay on the tab row when they fit, with Save body…
+    alongside them when there is room. "More tools" (⋯) holds Collapse all, Expand all,
+    Wrap and Filter with JSONPath, plus any of the three main actions that need to
+    overflow. Wrap and the filter are check items. A permanent home for view options
+    keeps the toolbar steady as the content and width change. The command palette
+    exposes the applicable response tools, and Cmd/Ctrl+F still finds in the viewer
+    under the pointer.
   - **The response's status** is one line whose parts show in order of importance while
     they fit what the row has left (measured as drawn: fitting them all up front
     overestimated and dropped the checks with room to spare): the
@@ -318,8 +328,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     screen readers hear "Checks: 3 passed, 1 failed"), "12 ms", "103 B", the content type.
     The pill's hover text has them all; earlier runs are under a "Runs" menu at its end.
     A transport failure has no pill, only its time. The error message below names it, and a pill
-    made "Couldn't connect" appear three times with the status bar (Q8). Check results
-    list failures first, on a red tint.
+    made "Couldn't connect" appear three times with the status bar (Q8). A warning badge
+    reserves room beside Runs when a capture or script write is blocked by unsaved variable
+    edits. It says "1 not set" (or the count), gives the affected names and reason on
+    hover, and opens the Variables scope through its existing guard. The summary keeps
+    the warning visible without adding a row or displacing a large body's preview notice.
 
   Why: at 720×480 the request tabs took three rows and the response header four before the
   body began (the review's #12, #13). Checked by `imposter-ui/tests/fit.rs`.
@@ -503,6 +516,16 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   minified body used to stay on one line, templated bodies were reported as invalid,
   and JSON typed by hand needed every closer and indent typed too.
 
+- **Script editors give each phase one header.** The title and an info tooltip sit at
+  the left. The example menu and compile status sit at the right. Success shows a
+  check glyph and "Compiles". An error shows its location and full text on hover when
+  clipped. Script reference sits in the request tab row with an info glyph. The request
+  and collection or folder dialog editors share the remaining height evenly, with their
+  own scrolling. The mock response script uses the same header and fills the space
+  left in the route form, with a minimum height for editing in short windows. Stacked
+  help, example buttons and status lines made the forms hard to scan. The headers keep
+  feedback near the code and give the space below to editing.
+
 - **The egui `TextEdit` highlights `{{var}}` and JSON up to 64 KiB.** Above that limit
   the editor's tooltip explains that highlighting is off. Per interactive frame the editor
   costs about 4 ms at 64 KiB, 24 ms at 256 KiB and 130 ms at 1 MiB
@@ -584,8 +607,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   still re-indented as far as it goes (`viewer::pretty_json_start`, when the parser only
   ran out of input), without folding, which needs the whole document: one minified line
   wrapped mid-token (#26).
-  Every response body can be saved as received: Save body… ends the Body tab's tools
-  (beside the notice instead when the preview is cut), named for its content type
+  Every response body can be saved as received. Save body… appears among the Body tab's
+  tools or beside the notice when the preview is cut. The file is named for its content type
   (`viewer::body_file_name`: `.png`, `.pdf`, `.bin` for unknown bytes). A binary body
   (`viewer::is_binary`: an image, audio, video, font, PDF, archive or
   `application/octet-stream` type, or a NUL byte in the first 8 KiB without a type that
@@ -593,6 +616,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   noise, with no Find, Wrap or Copy, since bytes copied as text are damaged. Text that is
   not UTF-8 is still text. Why: small binary bodies could not be saved at all, and showed
   as garbage (the user's note). Not done: showing images.
+
+- **The response's Tests tab starts each result with a Phosphor status glyph.** Passed
+  and Failed stay accessible by name, and failures still come first with a faint red
+  tint. Unchecked results keep their reason, and a Variables glyph marks capture rows.
+  The repeated status words made the list heavy and harder to scan.
 
 - **Response headers are a table by default** (`widgets::headers_table`): names muted,
   values selectable and wrapping at words, a copy button on the row under the pointer.
@@ -634,10 +662,12 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   - **A send that never went out** (`app::NotSent`): the reason replaces any earlier response,
     which would read as this send's. Undefined variables come as names
     (`ExecuteError::Unresolved`), so the pane offers "Define in <active environment or
-    Global>" under the headline that names `{{x}}` (its accessible name is the whole
-    "Define {{x}} in …", since a long name cut the destination off). That opens the
-    Variables or Secrets tab for the target scope and focuses the new unsaved row; nothing
-    is written until Save.
+    Global>" as the primary action under the headline that names `{{x}}`. Its
+    accessible name is the whole "Define {{x}} in …", since a long name cut the
+    destination off. It opens the Variables or Secrets tab for the target scope and
+    focuses the new unsaved row. The secondary "Open Variables" button opens the
+    screen without adding a row. The headline's tooltip explains the options without
+    another line of help. Nothing is written until Save.
 
   Why: the review found raw `os error 61` text clipped at the pane edge, and an empty-state
   invitation shown right under "Request failed".

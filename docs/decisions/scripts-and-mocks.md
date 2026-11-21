@@ -73,11 +73,12 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing Rhai r
   - **The Scripts tab** (`scripts_tab.rs`, after Captures, a dot when either is set) holds
     both scripts one under the other, not as sub-tabs (two levels of tabs were removed from
     History, the review's #46). Each editor is highlighted by a small hand-written Rhai
-    tokenizer (`highlight::rhai`), gets the body editor's typing aids (`widgets::Typing`),
-    says "Compiles" or the error with its line and column under it, and has "Insert
-    example…" for its phase; "Script reference" opens a sheet drawn from
+    tokenizer (`highlight::rhai`) and gets the body editor's typing aids (`widgets::Typing`).
+    The [shared script header](ui.md#request-bar--editors) holds compile status and
+    phase-specific examples. Script reference opens a sheet drawn from
     `imposter_script::API`, as is the README's table (a test keeps them equal). In a narrow
-    pane the rows wrap rather than widen the pane (found by the layout lint at 720 points).
+    pane a header's title is cut with its full text on hover rather than widening the pane
+    (found by the layout lint at 720 points).
   - **Collection and folder scripts are edited in a dialog** (`Dialog::Scripts`, from
     "Collection Scripts…" in the collection's "⋯" menu and "Scripts…" in a folder's), with
     the same two editors and Save; the request's Scripts tab lists the levels that also run

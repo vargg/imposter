@@ -427,6 +427,57 @@ fn request_item(request: &IndexedRequest) -> Item {
     }
 }
 
+fn response_actions(state: &State, mut action: impl FnMut(&str, Action)) {
+    use crate::app::{HistoryTab, PaneKind, ResponseTab};
+    use crate::widgets::ViewerTool;
+    use imposter_app::core::execution::Outcome;
+
+    let (kind, pane) = match state.screen {
+        Screen::Requests if state.editor.is_some() => (PaneKind::Request, &state.response),
+        Screen::History if state.history.tab == HistoryTab::Response => {
+            (PaneKind::History, &state.history.response)
+        }
+        Screen::Run if state.run.selected.is_some() => (PaneKind::Run, &state.run.pane),
+        _ => return,
+    };
+    let (Some(response), Some((preview, _))) = (&pane.response, &pane.preview) else {
+        return;
+    };
+    if pane.blocked.is_some() || response.outcome == Outcome::TransportError {
+        return;
+    }
+    let text = match pane.tab {
+        ResponseTab::Body => !preview.binary,
+        ResponseTab::Headers => pane.headers_raw,
+        ResponseTab::Request => pane.sent.is_some(),
+        _ => false,
+    };
+    let mut tool = |label, tool| action(label, Action::ResponseTool(kind, tool));
+    if text {
+        tool("Find in Response Viewer", ViewerTool::Find);
+        tool("Toggle Wrap in Response Viewer", ViewerTool::Wrap);
+    }
+    if text || pane.tab == ResponseTab::Headers {
+        tool("Copy from Response Viewer", ViewerTool::Copy);
+    }
+    if pane.tab == ResponseTab::Body {
+        if response.outcome == Outcome::Response {
+            tool("Save Response Body…", ViewerTool::Save);
+        }
+        if crate::viewer::is_json(response) {
+            tool("Filter Response with JSONPath", ViewerTool::Filter);
+        }
+        let foldable = match pane.filter.shown() {
+            Some(Ok(filtered)) => filtered.outline.is_some(),
+            _ => preview.outline.is_some(),
+        };
+        if foldable {
+            tool("Collapse All Response Folds", ViewerTool::Collapse);
+            tool("Expand All Response Folds", ViewerTool::Expand);
+        }
+    }
+}
+
 /// Actions and environments that apply now.
 fn fixed_items(state: &State) -> Vec<Item> {
     let mut items = Vec::new();
@@ -490,6 +541,7 @@ fn fixed_items(state: &State) -> Vec<Item> {
         action("Send Request", Some(&shortcuts::SEND), Action::Send);
         action("Save Request", Some(&shortcuts::SAVE), Action::Save);
     }
+    response_actions(state, |label, command| action(label, None, command));
     if state
         .editor
         .as_ref()

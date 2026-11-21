@@ -25,6 +25,7 @@ pub enum Variant {
     Primary,
     Secondary,
     Ghost,
+    Warning,
     Danger,
     DangerPrimary,
 }
@@ -128,15 +129,38 @@ pub(crate) fn scroll_view_bounds(ui: &Ui) {
 
 /// The untruncated width of an action without a glyph.
 pub(crate) fn action_width(ui: &Ui, label: &str) -> f32 {
+    action_width_with_icon(ui, label, None)
+}
+
+pub(crate) fn action_width_with_icon(ui: &Ui, label: &str, icon: Option<Icon>) -> f32 {
     (control_text(ui, crate::theme::body(label), f32::INFINITY)
         .size()
         .x
+        + icon.map_or(0.0, |_| 16.0 + ICON_GAP)
         + 2.0 * BUTTON_PAD)
         .max(24.0)
 }
 
 /// A fixed-height action with an optional leading icon, kept out of the text font.
 pub fn button(ui: &mut Ui, variant: Variant, icon: Option<Icon>, label: &str) -> egui::Response {
+    action_button(ui, variant, icon, label, None)
+}
+
+pub(crate) fn toggle_button(ui: &mut Ui, checked: &mut bool, label: &str) -> egui::Response {
+    let response = action_button(ui, Variant::Secondary, None, label, Some(*checked));
+    if response.clicked() {
+        *checked = !*checked;
+    }
+    response
+}
+
+fn action_button(
+    ui: &mut Ui,
+    variant: Variant,
+    icon: Option<Icon>,
+    label: &str,
+    selected: Option<bool>,
+) -> egui::Response {
     let icon_width = icon.map_or(0.0, |_| 16.0 + ICON_GAP);
     let galley = control_text(
         ui,
@@ -149,13 +173,18 @@ pub fn button(ui: &mut Ui, variant: Variant, icon: Option<Icon>, label: &str) ->
         crate::theme::spacing().control,
     );
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
+    response.widget_info(|| match selected {
+        Some(on) => egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), on, label),
+        None => egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label),
+    });
     let p = palette();
     let (fill, color, edge) = if ui.is_enabled() {
         match variant {
             Variant::Primary => (p.accent, p.on_accent, p.accent),
+            Variant::Secondary if selected == Some(true) => (p.selected, p.accent, p.field_border),
             Variant::Secondary => (p.input, p.text, p.field_border),
             Variant::Ghost => (Color32::TRANSPARENT, p.text_muted, Color32::TRANSPARENT),
+            Variant::Warning => (p.input, p.warning, Color32::TRANSPARENT),
             Variant::Danger => (p.input, p.error, p.field_border),
             Variant::DangerPrimary => (p.error, p.on_accent, p.error),
         }
@@ -661,6 +690,14 @@ pub fn name(response: &egui::Response, label: &str) {
 
 pub fn tone_text(text: impl Into<String>, tone: Tone) -> RichText {
     RichText::new(text.into()).color(palette().tone(tone))
+}
+
+pub(crate) fn status_glyph(ui: &mut Ui, icon: Icon, label: &str, tone: Tone) {
+    let response = ui.label(icons::glyph_text(icon, 14.0).color(palette().tone(tone)));
+    response.ctx.accesskit_node_builder(response.id, |node| {
+        node.set_value(label);
+    });
+    response.on_hover_text(label);
 }
 
 /// What a tab shows beside its name: "3", or a raised dot.
@@ -3319,13 +3356,21 @@ impl ViewerState {
     }
 }
 
-/// A viewer's tools at the right of a row: wrap, find and copy.
+/// A text viewer's common tools.
 pub fn viewer_tools(ui: &mut Ui, state: &mut ViewerState, text: &str, copy_label: &str) {
-    viewer_tools_with(ui, state, text, copy_label, None, None);
+    let tools = ViewerTools {
+        copy: Some(copy_label),
+        wrap: state.wrap,
+        ..ViewerTools::default()
+    };
+    if let Some(tool) = tools.show(ui) {
+        tool.apply(ui.ctx(), state, text, None);
+    }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Tool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewerTool {
+    Save,
     Copy,
     Find,
     Filter,
@@ -3334,103 +3379,91 @@ enum Tool {
     Expand,
 }
 
-/// The tools a viewer offers, right to left as drawn: the first are the last to move into
-/// the "More tools" menu. Fold buttons go first, since every line has its own marker.
-fn viewer_tool_list(filter: bool, folding: bool) -> Vec<Tool> {
-    let mut tools = vec![Tool::Copy, Tool::Find];
-    if filter {
-        tools.push(Tool::Filter);
-    }
-    tools.push(Tool::Wrap);
-    if folding {
-        tools.extend([Tool::Collapse, Tool::Expand]);
-    }
-    tools
-}
-
-/// How many of `count` tools show as icons in `available` points; the rest need a menu
-/// button, which takes a place too.
-fn tools_shown(count: usize, available: f32, slot: f32, gap: f32) -> usize {
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a small count ≥ 0
-    let fit = ((available + gap) / slot).floor().max(0.0) as usize;
-    if fit >= count {
-        count
-    } else {
-        fit.saturating_sub(1)
-    }
-}
-
-/// [`viewer_tools`] with fold buttons for `folding` and, for `filter` (whether the filter is
-/// open, and where to report a click), the JSONPath filter. Tools that do not fit the row
-/// move into a "More tools" menu.
-pub fn viewer_tools_with(
-    ui: &mut Ui,
-    state: &mut ViewerState,
-    text: &str,
-    copy_label: &str,
-    folding: Option<Folding<'_>>,
-    filter: Option<(bool, &mut bool)>,
-) {
-    let filter_open = filter.as_ref().is_some_and(|(open, _)| *open);
-    let tools = viewer_tool_list(filter.is_some(), folding.is_some());
-    let gap = ui.spacing().item_spacing.x;
-    let shown = tools_shown(tools.len(), ui.available_width(), icons::size() + gap, gap);
-    let describe = |tool: Tool| match tool {
-        Tool::Copy => (Icon::Copy, copy_label, false),
-        Tool::Find => (Icon::Search, "Find", false),
-        Tool::Filter => (Icon::Filter, "Filter with JSONPath", filter_open),
-        Tool::Wrap => (Icon::Wrap, "Wrap", state.wrap),
-        Tool::Collapse => (Icon::Collapse, "Collapse all", false),
-        Tool::Expand => (Icon::Expand, "Expand all", false),
-    };
-    let mut chosen = None;
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        for &tool in &tools[..shown] {
-            let (icon, label, selected) = describe(tool);
-            if icons::button(ui, icon, label, selected).clicked() {
-                chosen = Some(tool);
+impl ViewerTool {
+    pub fn apply(
+        self,
+        ctx: &egui::Context,
+        state: &mut ViewerState,
+        text: &str,
+        folding: Option<Folding<'_>>,
+    ) {
+        match self {
+            Self::Copy => ctx.copy_text(text.to_owned()),
+            Self::Find => state.open_find(),
+            Self::Wrap => state.wrap = !state.wrap,
+            Self::Collapse => {
+                if let Some(folding) = folding {
+                    *folding.folded = folding.outline.collapse_all();
+                }
             }
+            Self::Expand => {
+                if let Some(folding) = folding {
+                    folding.folded.clear();
+                }
+            }
+            Self::Save | Self::Filter => {}
         }
-        if shown < tools.len() {
+    }
+}
+
+/// Find and Copy stay in easy reach. Save joins them when it fits; view options
+/// always share the same menu so the toolbar doesn't grow with the document's features.
+#[derive(Default)]
+pub(crate) struct ViewerTools<'a> {
+    pub copy: Option<&'a str>,
+    pub wrap: bool,
+    pub filter_open: Option<bool>,
+    pub fold: bool,
+    pub save: bool,
+}
+
+impl ViewerTools<'_> {
+    pub fn show(&self, ui: &mut Ui) -> Option<ViewerTool> {
+        let text = self.copy.is_some();
+        let mut chosen = None;
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let gap = ui.spacing().item_spacing.x;
+            let save_visible =
+                self.save && (!text || ui.available_width() >= 4.0 * icons::size() + 3.0 * gap);
+            if save_visible && icons::button(ui, Icon::Save, "Save body…", false).clicked() {
+                chosen = Some(ViewerTool::Save);
+            }
+            let Some(copy) = self.copy else { return };
+            let find_visible = ui.available_width() >= 3.0 * icons::size() + 2.0 * gap;
+            let copy_visible = find_visible || ui.available_width() >= 2.0 * icons::size() + gap;
+            if copy_visible && icons::button(ui, Icon::Copy, copy, false).clicked() {
+                chosen = Some(ViewerTool::Copy);
+            }
+            if find_visible && icons::button(ui, Icon::Search, "Find", false).clicked() {
+                chosen = Some(ViewerTool::Find);
+            }
             icons::menu(ui, Icon::More, "More tools", |ui| {
-                for &tool in &tools[shown..] {
-                    let (_, label, selected) = describe(tool);
-                    // Wrap and the filter are on or off: a check box, since a filled row
-                    // read as the one under the pointer.
-                    let clicked = if matches!(tool, Tool::Wrap | Tool::Filter) {
-                        let mut on = selected;
-                        checkbox(ui, &mut on, label).clicked()
-                    } else {
-                        option(ui, false, label).clicked()
-                    };
-                    if clicked {
+                for (show, tool, label) in [
+                    (self.fold, ViewerTool::Collapse, "Collapse all"),
+                    (self.fold, ViewerTool::Expand, "Expand all"),
+                    (!find_visible, ViewerTool::Find, "Find"),
+                    (!copy_visible, ViewerTool::Copy, copy),
+                    (self.save && !save_visible, ViewerTool::Save, "Save body…"),
+                ] {
+                    if show && option(ui, false, label).clicked() {
+                        chosen = Some(tool);
+                        ui.close();
+                    }
+                }
+                for (tool, state, label) in [
+                    (ViewerTool::Wrap, Some(self.wrap), "Wrap"),
+                    (ViewerTool::Filter, self.filter_open, "Filter with JSONPath"),
+                ] {
+                    if let Some(mut checked) = state
+                        && checkbox(ui, &mut checked, label).changed()
+                    {
                         chosen = Some(tool);
                         ui.close();
                     }
                 }
             });
-        }
-    });
-    match chosen {
-        Some(Tool::Copy) => ui.ctx().copy_text(text.to_owned()),
-        Some(Tool::Find) => state.open_find(),
-        Some(Tool::Filter) => {
-            if let Some((_, clicked)) = filter {
-                *clicked = true;
-            }
-        }
-        Some(Tool::Wrap) => state.wrap = !state.wrap,
-        Some(Tool::Collapse) => {
-            if let Some(folding) = folding {
-                *folding.folded = folding.outline.collapse_all();
-            }
-        }
-        Some(Tool::Expand) => {
-            if let Some(folding) = folding {
-                folding.folded.clear();
-            }
-        }
-        None => {}
+        });
+        chosen
     }
 }
 

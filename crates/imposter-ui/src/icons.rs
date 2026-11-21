@@ -234,11 +234,12 @@ fn drawn(
 ) -> Response {
     let response = ui.add_sized(
         [size(), size()],
-        egui::Button::new("")
-            .selected(selected)
-            .frame_when_inactive(selected),
+        egui::Button::new("").frame_when_inactive(false),
     );
     crate::widgets::name(&response, label);
+    response.ctx.accesskit_node_builder(response.id, |node| {
+        node.set_toggled(selected.into());
+    });
     if ui.is_rect_visible(response.rect) {
         let color = if !ui.is_enabled() {
             palette().text_muted.gamma_multiply(0.45)
@@ -260,6 +261,14 @@ fn drawn(
             );
         ui.painter()
             .galley(response.rect.center() - galley.size() / 2.0, galley, color);
+        if selected && ui.is_enabled() {
+            let x = response.rect.center().x;
+            ui.painter().hline(
+                x - 6.0..=x + 6.0,
+                response.rect.bottom() - 2.0,
+                egui::Stroke::new(2.0, palette().selected_bar),
+            );
+        }
     }
     if ui.is_enabled() {
         response.on_hover_text(hint)

@@ -535,10 +535,11 @@ mod controls_kit {
         widgets::{self, Variant},
     };
 
-    const VARIANTS: [(Variant, &str); 5] = [
+    const VARIANTS: [(Variant, &str); 6] = [
         (Variant::Primary, "Create request"),
         (Variant::Secondary, "Save draft"),
         (Variant::Ghost, "Preview"),
+        (Variant::Warning, "1 not set"),
         (Variant::Danger, "Delete request"),
         (Variant::DangerPrimary, "Delete collection"),
     ];
@@ -613,6 +614,7 @@ mod controls_kit {
                         Variant::Ghost => {
                             (Color32::TRANSPARENT, p.text_muted, Color32::TRANSPARENT)
                         }
+                        Variant::Warning => (p.input, p.warning, Color32::TRANSPARENT),
                         Variant::Danger => (p.input, p.error, p.field_border),
                         Variant::DangerPrimary => (p.error, p.on_accent, p.error),
                     };

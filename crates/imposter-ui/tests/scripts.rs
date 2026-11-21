@@ -101,11 +101,63 @@ fn scripts_are_typed_saved_and_marked_on_their_tab() {
 }
 
 #[test]
+fn compile_state_shares_each_header_and_the_editors_share_the_pane() {
+    let mut f = fixture();
+    f.app.harness.set_size(egui::vec2(1500.0, 850.0));
+    open_scripts(&mut f.app);
+    set_scripts(&mut f.app, "let one = 1;", "let two = ;");
+    let harness = &f.app.harness;
+    let before = harness.get_by_label(BEFORE_EDITOR).rect();
+    let after = harness.get_by_label(AFTER_EDITOR).rect();
+    let pane = harness.get_by_label("Request pane").rect();
+    assert!((before.height() - after.height()).abs() < 1.0);
+    assert!(
+        after.bottom() >= pane.bottom() - 16.0,
+        "the editors fill the pane"
+    );
+    assert!(before.bottom() < after.top());
+    for (label, state, editor) in [
+        (BEFORE_EDITOR, harness.get_by_label("Compiles"), before),
+        (
+            AFTER_EDITOR,
+            harness.get_by_label_contains("Line 1, column"),
+            after,
+        ),
+    ] {
+        let example = harness
+            .get_by_label(&format!("Insert an example into the {label}"))
+            .rect();
+        assert!((state.rect().center().y - example.center().y).abs() < 1.0);
+        assert!(state.rect().bottom() <= editor.top());
+    }
+    assert_eq!(harness.query_all_by_label("Compiles").count(), 1);
+    let help = harness
+        .query_all_by_label("Help")
+        .filter_map(|node| node.accesskit_node().description())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        help.iter()
+            .filter(|description| description.contains("Rhai scripts."))
+            .count(),
+        2
+    );
+    assert!(harness.query_by_label_contains("Rhai scripts.").is_none());
+}
+
+#[test]
 fn a_compile_error_is_shown_with_its_line() {
     let mut f = fixture();
+    f.app
+        .harness
+        .set_size(egui::Vec2::from(imposter_ui::layout::MIN_WINDOW));
+    f.app.harness.run_steps(2);
     open_scripts(&mut f.app);
     set_scripts(&mut f.app, "", "let a = 1;\nlet b = ;");
-    f.app.harness.get_by_label_contains("Line 2, column 9:");
+    let error = f.app.harness.get_by_label_contains("Line 2, column 9:");
+    let full = error.value().unwrap();
+    error.hover();
+    f.app.harness.run_steps(4);
+    assert_eq!(f.app.harness.query_all_by_label(&full).count(), 2);
 }
 
 #[test]

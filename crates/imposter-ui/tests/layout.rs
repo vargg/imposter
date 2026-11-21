@@ -388,6 +388,11 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, SEND);
     settle(&mut app.harness);
     check(app, "response");
+    click(&mut app.harness, "More tools");
+    check(app, "response tools menu");
+    click(&mut app.harness, "Filter with JSONPath");
+    check(app, "response filter open");
+    support::viewer_tool(&mut app.harness, "Filter with JSONPath");
     // Table composers and the inline confirmation need to fit the narrow request pane.
     for (tab, title) in [
         (EditorTab::Params, "query composer"),
@@ -460,6 +465,40 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, SEND);
     settle(&mut app.harness);
     check(app, "error response");
+    click(&mut app.harness, "GET Unresolved");
+    settle(&mut app.harness);
+    click(&mut app.harness, SEND);
+    settle(&mut app.harness);
+    check(app, "blocked send with variable actions");
+    click(&mut app.harness, "GET Users");
+    settle(&mut app.harness);
+    support::open_screen(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Environment · Production EU");
+    settle(&mut app.harness);
+    type_into(&mut app.harness, "New variable name", "first_user");
+    support::open_screen(&mut app.harness, "Requests");
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .captures = vec![imposter_app::core::capture::Capture::new(
+        "first_user",
+        imposter_app::core::select::Selector::Json("$.users[0].id".into()),
+    )];
+    click(&mut app.harness, SEND);
+    settle(&mut app.harness);
+    check(app, "response with a capture warning badge");
+    app.harness.get_by_label("1 not set").hover();
+    check(app, "capture warning tooltip");
+    click(&mut app.harness, "1 not set");
+    click(&mut app.harness, "Revert unsaved changes");
+    click(&mut app.harness, "Discard changes");
+    settle(&mut app.harness);
+    support::open_screen(&mut app.harness, "Requests");
     // A binary body: described, with Save body… in the tools.
     click(&mut app.harness, "GET Logo");
     settle(&mut app.harness);
@@ -532,7 +571,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     check(app, "tests tab");
     app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Captures;
     check(app, "captures tab");
-    // Scripts: two editors, one with a compile error under it; then a send whose
+    // Scripts: two editors, one with a compile error in its header; then a send whose
     // after-response script fails a test, logs and leaves its error in the Tests tab.
     {
         let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
@@ -541,6 +580,16 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         pane.tab = EditorTab::Scripts;
     }
     check(app, "scripts tab");
+    click(
+        &mut app.harness,
+        "Insert an example into the Before-sending script",
+    );
+    check(app, "script examples menu");
+    app.harness.key_press(egui::Key::Escape);
+    app.harness.run_steps(2);
+    click(&mut app.harness, "Stack request and response");
+    check(app, "scripts tab in stacked panes");
+    click(&mut app.harness, "Put request and response side by side");
     // Collection scripts listed above the request's, and their dialog.
     {
         let state = &mut app.harness.state_mut().state;
@@ -750,6 +799,18 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         }
     }
     check(app, "Mocks with a script and a log");
+    app.harness.state_mut().state.mocks.form.routes[0].script = "let bad = ;".into();
+    app.harness
+        .get_by_label("Response script (optional)")
+        .scroll_to_me();
+    app.harness.run_steps(12);
+    check(app, "mock script compile error");
+    assert!(
+        app.harness
+            .ctx
+            .content_rect()
+            .contains_rect(app.harness.get_by_label_contains("Line 1, column").rect())
+    );
     app.harness.state_mut().state.mocks.log.clear();
     // Revert the script edit before starting, then dirty the running configuration.
     click(&mut app.harness, "Revert to saved mocks");
@@ -1125,6 +1186,12 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
                     request(store, api.id, "Health", "http://127.0.0.1:9/");
                     request(store, api.id, "Broken", &format!("{url}/broken"));
                     request(store, api.id, "Logo", &format!("{url}/logo"));
+                    request(
+                        store,
+                        api.id,
+                        "Unresolved",
+                        &format!("{url}/{{{{unknown}}}}"),
+                    );
                 });
                 app.harness.set_size(size);
                 appearance(&mut app, theme, density);

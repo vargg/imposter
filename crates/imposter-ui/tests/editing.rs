@@ -696,9 +696,9 @@ fn the_viewer_finds_text_in_the_response() {
         matches!(command, egui::OutputCommand::CopyText(text) if text == "alpha beta\nALPHA gamma\nalpha")
     }));
     let wrapped = app.harness.state().state.response.body_view.wrap;
-    click(&mut app.harness, "Wrap");
+    support::viewer_tool(&mut app.harness, "Wrap");
     assert_eq!(app.harness.state().state.response.body_view.wrap, !wrapped);
-    click(&mut app.harness, "Wrap");
+    support::viewer_tool(&mut app.harness, "Wrap");
     assert_eq!(app.harness.state().state.response.body_view.wrap, wrapped);
 
     click(&mut app.harness, "Find");
@@ -864,12 +864,12 @@ fn response_tools_share_the_tab_row_with_copy_at_the_right() {
                 .next_back()
                 .unwrap()
                 .rect();
-            let wrap = app.harness.get_by_label("Wrap").rect();
+            let more = app.harness.get_by_label("More tools").rect();
             let search = app.harness.get_by_label("Find").rect();
             let copy = app.harness.get_by_label(copy_label).rect();
-            assert!(tab_rect.right() < wrap.left());
-            assert!(wrap.right() < search.left() && search.right() < copy.left());
-            for tool in [wrap, search, copy] {
+            assert!(tab_rect.right() < more.left());
+            assert!(more.right() < search.left() && search.right() < copy.left());
+            for tool in [more, search, copy] {
                 assert!((tool.center().y - tab_rect.center().y).abs() < 1.0);
             }
             // The headers' Raw toggle ends the row, right after Copy; the body's Save does.

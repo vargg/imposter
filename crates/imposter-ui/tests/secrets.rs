@@ -319,5 +319,9 @@ fn the_lock_stores_a_capture_as_a_secret_and_never_shows_it() {
     settle(&mut f.app.harness);
     click(&mut f.app.harness, "Send");
     settle(&mut f.app.harness);
-    f.app.harness.get_by_label_contains("Not set: secret:token");
+    let badge = f.app.harness.get_by_label("1 not set");
+    assert_eq!(
+        badge.accesskit_node().description().as_deref(),
+        Some("Not set: secret:token — the Variables screen has unsaved changes to that scope")
+    );
 }

@@ -7,6 +7,7 @@ use imposter_app::core::check::{Check, CheckResult, Op, Verdict};
 use imposter_app::core::select::Selector;
 use imposter_app::core::variables::Snapshot;
 
+use crate::icons::Icon;
 use crate::theme::Tone;
 use crate::widgets::{self, VarUi, name, remove_button, tone_text};
 
@@ -522,13 +523,8 @@ pub fn captures_table(
                     "Store as a secret ({{secret:name}}) instead of a variable",
                 )
             };
-            let toggle = crate::icons::button_with_hint(
-                ui,
-                crate::icons::Icon::Lock,
-                &label,
-                hint,
-                capture.secret,
-            );
+            let toggle =
+                crate::icons::button_with_hint(ui, Icon::Lock, &label, hint, capture.secret);
             if toggle.clicked() {
                 capture.secret = !capture.secret;
                 changed = true;
@@ -651,11 +647,11 @@ impl Tally {
     }
 }
 
-fn verdict_text(verdict: &Verdict) -> (&'static str, Tone) {
+fn verdict_mark(verdict: &Verdict) -> (Icon, &'static str, Tone) {
     match verdict {
-        Verdict::Passed => ("Passed", Tone::Ok),
-        Verdict::Failed => ("Failed", Tone::Error),
-        Verdict::Unchecked(_) => ("Not checked", Tone::Warning),
+        Verdict::Passed => (Icon::Passed, "Passed", Tone::Ok),
+        Verdict::Failed => (Icon::Failed, "Failed", Tone::Error),
+        Verdict::Unchecked(_) => (Icon::Warning, "Not checked", Tone::Warning),
     }
 }
 
@@ -694,47 +690,34 @@ pub fn results(ui: &mut Ui, all: &Results<'_>) {
             });
             if let Some(script) = script.filter(|s| !s.error.is_empty()) {
                 tinted(ui, true, |ui| {
-                    ui.label(tone_text("Error", Tone::Error).strong());
+                    widgets::status_glyph(ui, Icon::Failed, "Error", Tone::Error);
                     ui.label(script.error.as_str());
                 });
             }
             let tests = script.map_or(&[][..], |s| s.tests.as_slice());
             for test in tests.iter().filter(|t| !t.passed) {
                 tinted(ui, true, |ui| {
-                    ui.label(tone_text("Failed", Tone::Error).strong());
+                    widgets::status_glyph(ui, Icon::Failed, "Failed", Tone::Error);
                     ui.label(test.name.as_str());
                     ui.label(tone_text(test.message.as_str(), Tone::Muted));
                 });
             }
             for result in ordered {
-                let failed = result.verdict == Verdict::Failed;
-                let tint = if failed {
-                    widgets::error_tint()
-                } else {
-                    egui::Color32::TRANSPARENT
-                };
-                egui::Frame::new()
-                    .fill(tint)
-                    .corner_radius(4)
-                    .inner_margin(egui::Margin::symmetric(4, 2))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.horizontal_wrapped(|ui| {
-                            let (word, tone) = verdict_text(&result.verdict);
-                            ui.label(tone_text(word, tone).strong());
-                            ui.label(result.check.describe());
-                            let detail = match (&result.verdict, &result.actual) {
-                                (Verdict::Unchecked(reason), _) => reason.clone(),
-                                (_, Some(actual)) => format!("got {actual}"),
-                                (_, None) => "nothing there".to_owned(),
-                            };
-                            ui.label(tone_text(detail, Tone::Muted));
-                        });
-                    });
+                tinted(ui, result.verdict == Verdict::Failed, |ui| {
+                    let (icon, word, tone) = verdict_mark(&result.verdict);
+                    widgets::status_glyph(ui, icon, word, tone);
+                    ui.label(result.check.describe());
+                    let detail = match (&result.verdict, &result.actual) {
+                        (Verdict::Unchecked(reason), _) => reason.clone(),
+                        (_, Some(actual)) => format!("got {actual}"),
+                        (_, None) => "nothing there".to_owned(),
+                    };
+                    ui.label(tone_text(detail, Tone::Muted));
+                });
             }
             for test in tests.iter().filter(|t| t.passed) {
                 tinted(ui, false, |ui| {
-                    ui.label(tone_text("Passed", Tone::Ok).strong());
+                    widgets::status_glyph(ui, Icon::Passed, "Passed", Tone::Ok);
                     ui.label(test.name.as_str());
                 });
             }
@@ -743,9 +726,9 @@ pub fn results(ui: &mut Ui, all: &Results<'_>) {
                     ui.add_space(8.0);
                 }
                 for capture in captured {
-                    ui.horizontal_wrapped(|ui| {
+                    tinted(ui, false, |ui| {
                         let (word, tone, detail) = captured_text(capture);
-                        ui.label(tone_text(word, tone).strong());
+                        widgets::status_glyph(ui, Icon::Variables, word, tone);
                         ui.label(&capture.variable);
                         ui.label(tone_text(detail, Tone::Muted));
                     });

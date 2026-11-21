@@ -155,8 +155,36 @@ fn checks_are_edited_saved_and_run_after_each_response() {
     let failed = app.harness.get_by_label("status = 200").rect();
     let passed = app.harness.get_by_label("$.id > 5").rect();
     assert!(failed.top() < passed.top(), "failures come first");
-    app.harness.get_by_label("Failed");
-    app.harness.get_by_label("Passed");
+    for (label, icon, row, tone) in [
+        (
+            "Failed",
+            imposter_ui::icons::Icon::Failed,
+            failed,
+            imposter_ui::theme::Tone::Error,
+        ),
+        (
+            "Passed",
+            imposter_ui::icons::Icon::Passed,
+            passed,
+            imposter_ui::theme::Tone::Ok,
+        ),
+    ] {
+        let glyph = app.harness.get_by_label(label).rect();
+        assert!(glyph.right() < row.left() && (glyph.center().y - row.center().y).abs() < 1.0);
+        assert!(app.harness.output().shapes.iter().any(|shape| {
+            matches!(&shape.shape, egui::Shape::Text(text)
+                if glyph.contains(text.visual_bounding_rect().center())
+                && text.galley.job.text == icon.glyph().to_string()
+                && text.galley.job.sections[0].format.color == imposter_ui::theme::palette().tone(tone))
+        }), "{label} uses its status icon and tone");
+    }
+    assert!(
+        app.harness.output().shapes.iter().any(|shape| {
+            matches!(&shape.shape, egui::Shape::Rect(rect)
+            if rect.rect.contains_rect(failed) && rect.fill == imposter_ui::widgets::error_tint())
+        }),
+        "failures keep the error tint"
+    );
 
     // Undecidable checks say why, and the results follow the next response.
     replace(app, "Check 2 JSON path", "id");
@@ -306,7 +334,14 @@ fn captures_set_variables_that_the_next_send_uses() {
         .filter(|text| text.ends_with(" · set user_id"))
         .expect("the result and the capture share the status bar");
     click(&mut app.harness, "Check results");
-    app.harness.get_by_label("in Global: 7");
+    let target = app.harness.get_by_label("in Global: 7").rect();
+    let glyph = app.harness.get_by_label("Set").rect();
+    assert!(glyph.right() < target.left());
+    assert!(app.harness.output().shapes.iter().any(|shape| {
+        matches!(&shape.shape, egui::Shape::Text(text)
+            if glyph.contains(text.visual_bounding_rect().center())
+            && text.galley.job.text == imposter_ui::icons::Icon::Variables.glyph().to_string())
+    }));
     app.harness
         .get_by_label("nothing there; the variable keeps its value");
     assert!(
@@ -351,11 +386,25 @@ fn captures_wait_for_unsaved_variables_and_refresh_a_clean_screen() {
     support::open_screen(&mut app.harness, "Requests");
     send(app);
     assert_eq!(globals(app)["user_id"], "1");
-    app.harness
-        .get_by_label("Not set: user_id — the Variables screen has unsaved changes to that scope");
+    let detail = "Not set: user_id — the Variables screen has unsaved changes to that scope";
+    let badge = app.harness.get_by_label("1 not set");
+    assert_eq!(
+        badge.accesskit_node().description().as_deref(),
+        Some(detail)
+    );
+    assert!(app.harness.query_by_label(detail).is_none());
+    badge.hover();
+    app.harness.run_steps(4);
+    app.harness.get_by_label(detail);
+    click(&mut app.harness, "1 not set");
+    assert_eq!(
+        app.harness.state().state.screen,
+        imposter_ui::app::Screen::Variables
+    );
+    assert_eq!(app.harness.state().state.variables.scope, Scope::Global);
+    assert!(app.harness.state().state.variables.dirty());
 
     // Once saved, the next capture is written and the clean screen shows it.
-    support::open_screen(&mut app.harness, "Variables");
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
     support::open_screen(&mut app.harness, "Requests");

@@ -7,7 +7,7 @@ mod support;
 
 use std::time::Duration;
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::store::executions;
 use imposter_testkit::{Server, response};
 use imposter_ui::app::Screen;
@@ -178,6 +178,30 @@ fn an_undefined_variable_can_be_defined_from_the_response_pane() {
             .query_by_label("Your response will appear here")
             .is_none()
     );
+    let hint = "Nothing was sent. Define the variable, or fix the name in the request.";
+    assert!(app.harness.query_by_label(hint).is_none());
+    let error = app
+        .harness
+        .get_by_label("Not sent: {{missing}} is not defined");
+    assert_eq!(error.accesskit_node().description().as_deref(), Some(hint));
+    error.hover();
+    app.harness.run_steps(4);
+    app.harness.get_by_label(hint);
+    let palette = imposter_ui::theme::palette();
+    for (label, fill) in [
+        ("Define {{missing}} in Global", palette.accent),
+        ("Open Variables", palette.input),
+    ] {
+        let button = app.harness.get_by_label(label).rect();
+        assert!(app.harness.output().shapes.iter().any(|shape| {
+            matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == button && rect.fill == fill)
+        }), "{label} has the expected action treatment");
+    }
+    click(&mut app.harness, "Open Variables");
+    settle(&mut app.harness);
+    assert_eq!(app.harness.state().state.screen, Screen::Variables);
+    assert_eq!(app.harness.state().state.variables.rows, []);
+    support::open_screen(&mut app.harness, "Requests");
     click(&mut app.harness, "Define {{missing}} in Global");
     settle(&mut app.harness);
     assert_eq!(app.harness.state().state.screen, Screen::Variables);

@@ -117,6 +117,12 @@ pub fn open_response_tab(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     click_button(harness, label);
 }
 
+/// Choose a command from the response viewer's More tools menu.
+pub fn viewer_tool(harness: &mut Harness<'_, ImposterApp>, label: &str) {
+    click(harness, "More tools");
+    click(harness, label);
+}
+
 /// Click the menu item `label` of the menu just opened; the empty request pane may offer
 /// a button with the same text.
 pub fn click_menu_item(harness: &mut Harness<'_, ImposterApp>, label: &str) {
