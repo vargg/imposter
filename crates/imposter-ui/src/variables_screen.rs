@@ -24,18 +24,28 @@ struct Columns {
 }
 
 impl Columns {
-    fn new(ui: &Ui) -> Self {
-        let available = ui.available_width() - icons::size() - 2.0 * ui.spacing().item_spacing.x;
-        let name = (available * 0.35).min(320.0);
+    fn new(ui: &Ui, remove_width: f32) -> Self {
+        let available = ui.available_width() - 2.0 * ui.spacing().item_spacing.x;
+        let name = ((available - icons::size()) * 0.35).min(480.0);
         Self {
             name,
-            value: (available - name).min(640.0),
+            value: available - name - remove_width,
             height: theme::spacing().control,
         }
     }
 
     fn value_with_eye(&self, ui: &Ui) -> f32 {
         self.value - icons::size() - ui.spacing().item_spacing.x
+    }
+
+    fn heading_with_help(&self, ui: &mut Ui, heading: &str, help: &str) {
+        heading_cell(ui, self.name, heading);
+        heading_cell(ui, self.value_with_eye(ui), "Value");
+        ui.allocate_ui_with_layout(
+            vec2(icons::size(), self.height),
+            Layout::centered_and_justified(egui::Direction::LeftToRight),
+            |ui| widgets::help(ui, help),
+        );
     }
 }
 
@@ -377,7 +387,11 @@ fn tabs_content(
         .auto_shrink([false, false])
         .show(ui, |ui| {
             widgets::scroll_view_bounds(ui);
-            let columns = Columns::new(ui);
+            let remove_width = match screen.tab {
+                VariablesTab::Variables | VariablesTab::Secrets => REMOVE_WIDTH,
+                VariablesTab::Cookies => icons::size(),
+            };
+            let columns = Columns::new(ui, remove_width);
             match screen.tab {
                 VariablesTab::Variables => {
                     variables_table(ui, &mut screen.rows, &columns, highlight)
@@ -505,9 +519,11 @@ fn secrets_table(
     let value_width = columns.value_with_eye(ui);
     let mut edited = false;
     ui.horizontal(|ui| {
-        heading_cell(ui, name_width, "Secret name");
-        heading_cell(ui, value_width, "Value");
-        widgets::help(ui, "Used as {{secret:name}}. Kept only on this computer: never exported, and removed from History.");
+        columns.heading_with_help(
+            ui,
+            "Secret name",
+            "Used as {{secret:name}}. Kept only on this computer: never exported, and removed from History.",
+        );
     });
     let mut remove = None;
     for (index, row) in rows.iter_mut().enumerate() {
@@ -602,10 +618,9 @@ fn cookies_table(
     let name_width = columns.name;
     let value_width = columns.value_with_eye(ui);
     ui.horizontal(|ui| {
-        heading_cell(ui, name_width, "Cookie name");
-        heading_cell(ui, value_width, "Value");
-        widgets::help(
+        columns.heading_with_help(
             ui,
+            "Cookie name",
             &format!(
                 "Set by servers for {requests}, and sent back to them. Kept only on this computer."
             ),
@@ -723,12 +738,18 @@ fn values_editor(ui: &mut Ui, row: &mut vars::VariableRow, number: usize, line_w
         None => {}
     }
 
+    let remaining = ui.available_size_before_wrap().x;
+    let composer_width = if remaining < line_width.min(160.0) {
+        line_width
+    } else {
+        remaining
+    };
     let composer = table_text(
         ui,
         &mut row.draft,
         egui::Id::unique(("variable draft", row.key)),
         &format!("Add value to variable {number}"),
-        line_width.min(160.0),
+        composer_width,
         "Add value…",
         false,
     );

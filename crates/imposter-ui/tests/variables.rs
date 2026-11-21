@@ -7,7 +7,9 @@ mod support;
 
 use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::model::{AuthKind, EnvColor, Variables};
-use imposter_app::store::{environments, executions};
+use imposter_app::core::variables::SecretScope;
+use imposter_app::http::cookies::Jar;
+use imposter_app::store::{cookies, environments, executions, secrets};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::{CloseState, EditorTab, Screen};
 use imposter_ui::icons::Icon;
@@ -26,6 +28,131 @@ fn vars(pairs: &[(&str, &str)]) -> Variables {
 fn open_screen(app: &mut support::App) {
     support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
+}
+
+fn open_wide_screen(app: &mut support::App) {
+    app.harness.set_size(egui::vec2(1600.0, 900.0));
+    open_screen(app);
+}
+
+fn assert_columns_align(app: &support::App, first: &str, second: &str) {
+    let left = |label| app.harness.get_by_label(label).rect().left();
+    assert!(
+        (left(first) - left(second)).abs() <= 1.0,
+        "{first} at {} and {second} at {} should align",
+        left(first),
+        left(second)
+    );
+}
+
+fn assert_row_reaches_pane_edge(app: &support::App, fields: &[&str]) {
+    let mut bounds = fields
+        .iter()
+        .map(|label| app.harness.get_by_label(label).rect());
+    let pane_edge = app.harness.ctx.content_rect().right();
+    let margin = pane_edge - bounds.clone().next_back().unwrap().right();
+    assert!(
+        (margin - 16.0).abs() <= 1.0,
+        "{fields:?} ends {margin} points from the pane edge, expected the 16-point screen margin"
+    );
+
+    let mut last = bounds.next().unwrap();
+    let gap = imposter_ui::theme::spacing().sm;
+    for next in bounds {
+        assert!(
+            (next.left() - last.right() - gap).abs() <= 1.0
+                && (next.center().y - last.center().y).abs() <= 1.0,
+            "{fields:?} should share a row with standard spacing: {last:?}, {next:?}"
+        );
+        last = next;
+    }
+}
+
+#[test]
+fn wide_variables_rows_reach_the_pane_edge() {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                environments::set_globals(db, &vars(&[("host", "test"), ("lang", "en")]))
+            })
+            .unwrap();
+    });
+    open_wide_screen(&mut app);
+
+    for (row, value) in [(1, "test"), (2, "en")] {
+        assert_row_reaches_pane_edge(
+            &app,
+            &[
+                &format!("Variable {row} name"),
+                &format!("Variable {row} value 1: {value}"),
+                &format!("Add value to variable {row}"),
+                &format!("Remove variable {row}"),
+            ],
+        );
+    }
+    assert_columns_align(&app, "Variable name", "New variable name");
+    assert_columns_align(&app, "Variable name", "Variable 2 name");
+    assert_columns_align(&app, "Values", "Variable 2 value 1: en");
+
+    let name = app.harness.get_by_label("Variable 2 name").rect();
+    let remove = app.harness.get_by_label("Remove variable 2").rect();
+    let share = name.width() / (remove.right() - name.left());
+    assert!((0.33..=0.36).contains(&share), "name column share: {share}");
+}
+
+#[test]
+fn wide_secrets_rows_reach_the_pane_edge_with_the_eye_button() {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                secrets::write(db, SecretScope::Global, &vars(&[("token", "token-1234")]))
+            })
+            .unwrap();
+    });
+    open_wide_screen(&mut app);
+    click(&mut app.harness, "Secrets");
+
+    assert_row_reaches_pane_edge(
+        &app,
+        &[
+            "Secret 1 name",
+            "Secret 1 value",
+            "Show secret 1",
+            "Remove secret 1",
+        ],
+    );
+    assert_columns_align(&app, "Secret name", "Secret 1 name");
+    assert_columns_align(&app, "Secret name", "New secret name");
+    assert_columns_align(&app, "Value", "Secret 1 value");
+    assert_columns_align(&app, "Value", "New secret value");
+}
+
+#[test]
+fn wide_cookies_rows_and_the_clear_button_reach_the_pane_edge_in_comfortable_density() {
+    let mut app = start_with(|store| {
+        let mut jar = Jar::default();
+        assert!(jar.receive("https://example.test", "session=example; Path=/"));
+        store
+            .call_blocking(move |db| cookies::write(db, None, &jar.to_json()))
+            .unwrap();
+    });
+    support::open_screen(&mut app.harness, "Settings");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Density: Comfortable");
+    settle(&mut app.harness);
+    open_wide_screen(&mut app);
+    click(&mut app.harness, "Cookies");
+
+    assert_row_reaches_pane_edge(
+        &app,
+        &[
+            "Cookie session value",
+            "Show cookie session",
+            "Remove cookie session",
+        ],
+    );
+    assert_row_reaches_pane_edge(&app, &["Clear cookies…"]);
+    assert_columns_align(&app, "Value", "Cookie session value");
 }
 
 #[test]

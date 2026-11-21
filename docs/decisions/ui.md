@@ -842,9 +842,14 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     keeps a short visible note because its values affect requests only while it is active.
     The Secrets and Cookies tables put their explanations in header tooltips, and an empty
     cookie jar still says "No cookies yet."
-  - The values column stops at 640 points to keep the remove control near its row on wide
-    windows. Cookies use icon buttons to remove a row or clear the jar. Both ask in a dialog
-    before writing the change.
+  - The name column takes 35% of the field space up to 480 points. The value column fills
+    the remaining space, reserving room for the reveal button where present and placing
+    the remove control at the pane's right edge. The previous cap left about a third of a
+    wide window empty in the user's report. The right edge gives remove controls a
+    predictable position, and horizontal alignment and standard spacing tie each control
+    to its value field. Checked at 1600 points wide by `imposter-ui/tests/variables.rs`.
+    Cookies use icon buttons to remove a row or clear the jar. Both ask in a dialog before
+    writing the change.
   - "Define in" and "Open definition" select the matching tab and focus the row's name field.
   The owner's review found that the stacked page mixed variables, secrets and cookies and
   hid scope choices in the "Editing" picker (Q4). Tooltips keep the precedence and usage

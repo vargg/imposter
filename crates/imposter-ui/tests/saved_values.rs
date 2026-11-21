@@ -327,11 +327,11 @@ fn remove_stays_beside_the_values_column_in_a_wide_window() {
     let mut app = variables_app();
     app.harness.set_size(egui::vec2(1600.0, 900.0));
     settle(&mut app.harness);
-    let values = app.harness.get_by_label("Values").rect();
+    let composer = support::text_input(&app.harness, "Add value to variable 2").rect();
     let remove = app.harness.get_by_label("Remove variable 2").rect();
     let gap = imposter_ui::theme::spacing().sm;
-    assert!((remove.left() - values.left() - 640.0 - gap).abs() < 1.0);
-    assert!(remove.right() < app.harness.ctx.content_rect().right() - 200.0);
+    assert!((remove.left() - composer.right() - gap).abs() < 1.0);
+    assert!((app.harness.ctx.content_rect().right() - remove.right() - 16.0).abs() < 1.0);
 }
 
 #[test]
