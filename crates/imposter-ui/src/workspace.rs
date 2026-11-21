@@ -83,7 +83,10 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
     navigation_rail(state, ui);
     let screen_draw: Option<fn(&mut State, &mut Ui)> = match state.screen {
         Screen::Requests => None,
-        Screen::Variables => Some(crate::variables_screen::draw),
+        Screen::Variables => {
+            crate::variables_screen::draw(state, ui);
+            return;
+        }
         Screen::History => Some(crate::history_screen::draw),
         Screen::Mocks => Some(crate::mock_screen::draw),
         Screen::Load => Some(crate::load_screen::draw),
@@ -92,11 +95,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
     };
     if let Some(draw) = screen_draw {
         egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(palette().background)
-                    .inner_margin(SCREEN_MARGIN),
-            )
+            .frame(screen_frame())
             .show(ui, |ui| draw(state, ui));
         return;
     }
@@ -112,7 +111,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
         }
         .clamp(SIDEBAR_WIDTH.0, SIDEBAR_WIDTH.1);
         let panel = egui::Panel::left(SIDEBAR)
-            .frame(egui::Frame::new().fill(palette().surface).inner_margin(12))
+            .frame(sidebar_frame())
             .resizable(true)
             .default_size(state.layout.sidebar_width)
             .size_range(SIDEBAR_WIDTH.0..=max_width)
@@ -142,11 +141,7 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
         widgets::split_grip(ui, handle, true, near);
     }
     egui::CentralPanel::default()
-        .frame(
-            egui::Frame::new()
-                .fill(palette().background)
-                .inner_margin(SCREEN_MARGIN),
-        )
+        .frame(screen_frame())
         .show(ui, |ui| {
             context_bar(state, ui, save, save_text);
             if state.editor.is_none() {
@@ -178,6 +173,16 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
             }
         });
     }
+}
+
+pub(crate) fn screen_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(palette().background)
+        .inner_margin(SCREEN_MARGIN)
+}
+
+pub(crate) fn sidebar_frame() -> egui::Frame {
+    egui::Frame::new().fill(palette().surface).inner_margin(12)
 }
 
 // ---- sidebar ------------------------------------------------------------------------------

@@ -439,7 +439,16 @@ fn every_screen_has_one_toolbar_above_its_content_and_the_status_bar_is_status_o
         assert_eq!(app.harness.state().state.screen, screen);
         let toolbar = app.harness.get_by_role(Role::Toolbar);
         let row = toolbar.rect();
-        let heading = toolbar.get_by_role_and_label(Role::Label, title);
+        let (heading_role, heading_name, height) = if screen == Screen::Variables {
+            (
+                Role::Button,
+                "Variables tab",
+                imposter_ui::widgets::tab_height(),
+            )
+        } else {
+            (Role::Label, title, theme::spacing().control)
+        };
+        let heading = toolbar.get_by_role_and_label(heading_role, heading_name);
         let action = toolbar.get_by_role_and_label(Role::Button, action);
         let content = app
             .harness
@@ -447,10 +456,7 @@ fn every_screen_has_one_toolbar_above_its_content_and_the_status_bar_is_status_o
             .rect();
         assert!(row.contains_rect(heading.rect()), "{title}");
         assert!(row.contains_rect(action.rect()), "{title}");
-        assert!(
-            (row.height() - theme::spacing().control).abs() <= 1.0,
-            "{title}: {row:?}"
-        );
+        assert!((row.height() - height).abs() <= 1.0, "{title}: {row:?}");
         assert!(heading.rect().right() < action.rect().left(), "{title}");
         assert!(
             row.bottom() < content.top(),

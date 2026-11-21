@@ -6,7 +6,7 @@
 
 mod support;
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::model::{RequestTemplate, Variables};
 use imposter_app::core::variables::{Scope, SecretScope};
 use imposter_app::store::{collections, environments, scopes, secrets};
@@ -117,6 +117,41 @@ fn stored(app: &support::App) -> (Variables, Variables) {
 }
 
 #[test]
+fn each_tab_shows_only_its_table_and_collections_offer_only_variables() {
+    let mut app = start_with(|store| {
+        support::collection(store, "API");
+    });
+    support::open_screen(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+
+    let has = |app: &support::App, label| app.harness.query_by_label(label).is_some();
+    assert!(has(&app, "New variable name"));
+    assert!(!has(&app, "New secret name"));
+    assert!(!has(&app, "No cookies yet."));
+
+    click(&mut app.harness, "Secrets");
+    assert!(has(&app, "New secret name"));
+    assert!(!has(&app, "New variable name"));
+    assert!(!has(&app, "No cookies yet."));
+    support::assert_help(
+        &app.harness,
+        "Used as {{secret:name}}. Kept only on this computer: never exported, and removed from History.",
+    );
+
+    click(&mut app.harness, "Cookies");
+    assert!(has(&app, "No cookies yet."));
+    assert!(!has(&app, "New secret name"));
+    assert!(!has(&app, "New variable name"));
+
+    click(&mut app.harness, "Collection · API");
+    settle(&mut app.harness);
+    assert!(has(&app, "Variables tab"));
+    assert!(has(&app, "New variable name"));
+    assert!(!has(&app, "Secrets"));
+    assert!(!has(&app, "Cookies"));
+}
+
+#[test]
 fn variable_and_secret_composers_stay_out_of_the_saved_scope() {
     let mut app = start_with(|_| {});
     app.harness.set_size(egui::vec2(1000.0, 700.0));
@@ -127,8 +162,9 @@ fn variable_and_secret_composers_stay_out_of_the_saved_scope() {
     assert_eq!(app.harness.state().state.variables.rows, []);
     assert_eq!(app.harness.state().state.variables.secrets, []);
     support::text_input(&app.harness, "New variable name");
-    support::text_input(&app.harness, "New secret name");
     assert!(app.harness.query_by_label("Remove variable 1").is_none());
+    click(&mut app.harness, "Secrets");
+    support::text_input(&app.harness, "New secret name");
     assert!(app.harness.query_by_label("Remove secret 1").is_none());
 
     type_into(&mut app.harness, "New secret value", "dev-");
@@ -140,6 +176,7 @@ fn variable_and_secret_composers_stay_out_of_the_saved_scope() {
     app.harness
         .get_by_label_contains("Name the secret before saving its value");
     type_into(&mut app.harness, "Secret 1 name", "token");
+    click(&mut app.harness, "Variables tab");
     type_into(&mut app.harness, "New variable name", "host");
     type_into(&mut app.harness, "Add value to variable 1", "example.test");
     click(&mut app.harness, "Save variables");
@@ -164,6 +201,7 @@ fn variable_and_secret_composers_stay_out_of_the_saved_scope() {
     assert_eq!(app.harness.state().state.variables.rows.len(), 1);
     assert_eq!(app.harness.state().state.variables.secrets.len(), 1);
     support::text_input(&app.harness, "New variable name");
+    click(&mut app.harness, "Secrets");
     support::text_input(&app.harness, "New secret value");
 }
 
@@ -179,6 +217,19 @@ fn a_secret_is_defined_from_a_blocked_send_masked_and_sent() {
     click(&mut f.app.harness, "Define {{secret:token}} in Dev secrets");
     settle(&mut f.app.harness);
     assert_eq!(f.app.harness.state().state.screen, Screen::Variables);
+    assert_eq!(
+        f.app.harness.state().state.variables.scope,
+        Scope::Environment(dev(&f.app)),
+    );
+    assert_eq!(
+        f.app
+            .harness
+            .get_by_label("Secrets")
+            .accesskit_node()
+            .is_selected(),
+        Some(true),
+    );
+    assert!(support::text_input(&f.app.harness, "Secret 1 name").is_focused());
     assert_eq!(
         f.app.harness.state().state.variables.secrets[0].name,
         "token"
@@ -260,16 +311,9 @@ fn the_lock_stores_a_capture_as_a_secret_and_never_shows_it() {
     // With unsaved edits to Dev's page, a capture into it waits rather than racing them.
     support::open_screen(&mut f.app.harness, "Variables");
     settle(&mut f.app.harness);
-    let dev = dev(&f.app);
-    f.app
-        .harness
-        .state_mut()
-        .state
-        .actions
-        .push(imposter_ui::app::Action::Variables(
-            imposter_ui::app::VariablesAction::SelectScope(Scope::Environment(dev)),
-        ));
+    click(&mut f.app.harness, "Environment · Dev");
     settle(&mut f.app.harness);
+    click(&mut f.app.harness, "Secrets");
     type_into(&mut f.app.harness, "Secret 1 value", "-edited");
     support::open_screen(&mut f.app.harness, "Requests");
     settle(&mut f.app.harness);

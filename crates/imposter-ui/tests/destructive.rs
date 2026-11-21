@@ -110,11 +110,10 @@ fn variables_ask_before_they_are_cleared_reverted_or_deleted() {
     let app = &mut fixture.app;
     support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
-    click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Environment · Dev");
     settle(&mut app.harness);
 
-    click(&mut app.harness, "Variable actions");
+    support::open_environment_menu(&mut app.harness, "Dev");
     click(&mut app.harness, "Delete environment…");
     asked_and_escaped(app, "Delete the environment \"Dev\" and its 2 variables?");
 

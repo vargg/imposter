@@ -267,6 +267,17 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-saved-values.png")))
             .unwrap();
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+        for (tab, file) in [("Secrets", "secrets"), ("Cookies", "cookies")] {
+            harness.get_by_label(tab).click();
+            settle(&mut harness);
+            harness
+                .render()
+                .unwrap()
+                .save(out.join(format!("{label}-{file}.png")))
+                .unwrap();
+        }
         harness
             .get_by_role_and_label(egui::accesskit::Role::Button, "History")
             .click();

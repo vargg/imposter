@@ -450,7 +450,7 @@ fn navigation_and_request_controls_fit_the_minimum_window() {
 
     support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
-    app.harness.get_by_label("Variable scope");
+    app.harness.get_by_label("Global");
     type_into(&mut app.harness, "New variable name", "base_url");
     type_into(
         &mut app.harness,

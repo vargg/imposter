@@ -19,9 +19,9 @@ use imposter_app::core::model::{
     BodyType, EnvColor, ParamItem, RequestAuth, RequestTemplate, SavedValues, Variables,
 };
 use imposter_app::core::select::Selector;
-use imposter_app::core::variables::Scope;
+use imposter_app::core::variables::{Scope, SecretScope};
 use imposter_app::paths::open_store;
-use imposter_app::store::{collections, environments, kv, scopes};
+use imposter_app::store::{collections, environments, kv, scopes, secrets};
 use imposter_ui::app::{HistoryTab, ImposterApp, ResponseTab};
 use imposter_ui::theme::ThemeChoice;
 
@@ -230,6 +230,11 @@ fn seed(dir: &Path, base: &str) {
             )?;
             environments::set_environment_color(db, production.id, Some(EnvColor::Red))?;
             environments::set_active_environment(db, Some(dev.id))?;
+            secrets::write(
+                db,
+                SecretScope::Environment(dev.id),
+                &vars(&[("api_key", "sample-key")]),
+            )?;
             let mut saved = SavedValues::default();
             saved.set("user_id", ["42".into(), "77".into(), "91".into()]);
             scopes::write(
@@ -498,9 +503,26 @@ fn main() {
         tour.settle();
         tour.shot("3-04-saved-values");
         tour.harness.key_press(egui::Key::Escape);
-        tour.click("Variable scope");
-        tour.shot("3-05-scope-picker");
+        tour.click("Environment · Production");
+        tour.settle();
+        tour.shot("3-05-inactive-environment");
+        tour.harness
+            .get_by_label("Environment · Production")
+            .click_secondary();
+        tour.settle();
+        tour.shot("3-05a-environment-actions");
         tour.harness.key_press(egui::Key::Escape);
+        tour.settle();
+        tour.click("Environment · Dev");
+        tour.settle();
+        tour.click("Secrets");
+        tour.shot("3-05b-secrets");
+        tour.click("Cookies");
+        tour.shot("3-05c-cookies");
+        tour.click("Collection · Shop API");
+        tour.settle();
+        tour.shot("3-05d-collection-variables");
+        tour.click("Global");
         tour.settle();
         tour.click("New environment");
         tour.settle();
@@ -518,6 +540,9 @@ fn main() {
         tour.type_into("Add value to variable 2", "en-edited");
         tour.shot("3-07-unsaved-variables");
         tour.click("Revert unsaved changes");
+        tour.settle();
+        tour.shot("3-07a-revert-variables");
+        tour.click("Discard changes");
         tour.settle();
         tour.open_screen("Requests");
         tour.settle();

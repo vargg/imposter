@@ -323,6 +323,18 @@ fn the_current_chip_is_filled_and_chips_have_no_reserved_remove_space() {
 }
 
 #[test]
+fn remove_stays_beside_the_values_column_in_a_wide_window() {
+    let mut app = variables_app();
+    app.harness.set_size(egui::vec2(1600.0, 900.0));
+    settle(&mut app.harness);
+    let values = app.harness.get_by_label("Values").rect();
+    let remove = app.harness.get_by_label("Remove variable 2").rect();
+    let gap = imposter_ui::theme::spacing().sm;
+    assert!((remove.left() - values.left() - 640.0 - gap).abs() < 1.0);
+    assert!(remove.right() < app.harness.ctx.content_rect().right() - 200.0);
+}
+
+#[test]
 fn the_chip_menu_copies_the_full_value_and_removes_it() {
     let prefix = "x".repeat(60);
     let long = format!("{prefix}-long\nsecond line");

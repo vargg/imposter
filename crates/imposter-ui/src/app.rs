@@ -691,10 +691,19 @@ enum VarTransition {
     Close,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum VariablesTab {
+    #[default]
+    Variables,
+    Secrets,
+    Cookies,
+}
+
 /// The Variables screen: one scope's rows, edited independently of requests.
 #[derive(Debug, Default)]
 pub struct VariablesScreen {
     pub scope: Scope,
+    pub(crate) tab: VariablesTab,
     pub rows: Vec<vars::VariableRow>,
     baseline: Vec<vars::VariableRow>,
     /// The scope's secrets, edited and saved with its variables; a collection has none.

@@ -2,45 +2,45 @@
 //! time with its own unsaved-changes guard.
 
 use egui::{Align, Layout, Response, Ui, UiBuilder, vec2};
+use imposter_app::core::model::EnvColor;
+use imposter_app::core::variables::{SecretScope, secret_name};
 
-use crate::app::{Action, State, VariablesAction};
+use crate::app::{Action, State, VariablesAction, VariablesTab};
 use crate::icons::{self, Icon};
-use crate::theme::{Tone, palette};
+use crate::theme::{self, Tone, palette};
 use crate::vars::{self, Choice, Scope};
 use crate::widgets::{
-    REMOVE_WIDTH, SaveStatus, SaveWord, Variant, append_row, blank_cell, button, env_option_text,
-    env_text, name, remove_button, save_controls, saved_label, screen_toolbar, table_text,
-    tone_text,
+    self, REMOVE_WIDTH, SaveStatus, SaveWord, TabSpec, Variant, append_row, blank_cell, button,
+    heading_cell, name, remove_button, saved_label, table_text, tone_text,
 };
-use imposter_app::core::model::EnvColor;
+use crate::workspace;
 
-fn scope_label(state: &State, scope: Scope) -> String {
-    match scope {
-        Scope::Global => "Global".to_owned(),
-        Scope::Environment(id) => state.environments.iter().find(|e| e.id == id).map_or_else(
-            || "Environment".to_owned(),
-            |e| format!("Environment · {}", e.name),
-        ),
-        Scope::Collection(id) => state.collections.iter().find(|c| c.id == id).map_or_else(
-            || "Collection".to_owned(),
-            |c| format!("Collection · {}", c.name),
-        ),
+const ACTIVE_HINT: &str = "Active: requests use this environment";
+const INACTIVE_NOTE: &str = "Inactive environment. Activate it to use these values in requests.";
+
+struct Columns {
+    name: f32,
+    value: f32,
+    height: f32,
+}
+
+impl Columns {
+    fn new(ui: &Ui) -> Self {
+        let available = ui.available_width() - icons::size() - 2.0 * ui.spacing().item_spacing.x;
+        let name = (available * 0.35).min(320.0);
+        Self {
+            name,
+            value: (available - name).min(640.0),
+            height: theme::spacing().control,
+        }
+    }
+
+    fn value_with_eye(&self, ui: &Ui) -> f32 {
+        self.value - icons::size() - ui.spacing().item_spacing.x
     }
 }
 
-fn scope_color(state: &State, scope: Scope) -> Option<EnvColor> {
-    match scope {
-        Scope::Environment(id) => state
-            .environments
-            .iter()
-            .find(|e| e.id == id)
-            .and_then(|e| e.color),
-        Scope::Global | Scope::Collection(_) => None,
-    }
-}
-
-/// What the scope is for, in a sentence, and where it stands in precedence (the active
-/// environment, then the collection, then Global). The picker above names the scope.
+/// What the scope is for and where it stands in precedence.
 pub fn explanation(state: &State, scope: Scope) -> (String, &'static str) {
     match scope {
         Scope::Global => (
@@ -84,133 +84,232 @@ pub fn explanation(state: &State, scope: Scope) -> (String, &'static str) {
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut actions = Vec::new();
+    let width = (ui.available_width() * 0.22).clamp(144.0, 192.0).round();
+    egui::Panel::left("variable scopes")
+        .frame(workspace::sidebar_frame())
+        .resizable(false)
+        .exact_size(width)
+        .show(ui, |ui| scope_list(state, ui, &mut actions));
+    egui::CentralPanel::default()
+        .frame(workspace::screen_frame())
+        .show(ui, |ui| scope_content(state, ui, &mut actions));
+    state.actions.extend(actions);
+}
+
+fn scope_list(state: &State, ui: &mut Ui, actions: &mut Vec<Action>) {
     let current = state.variables.scope;
-    let mut saves = Vec::new();
-    screen_toolbar(
-        ui,
-        "Variables",
-        |ui| {
-            let font = egui::TextStyle::Button.resolve(ui.style());
-            let text = palette().text;
-            ui.label(tone_text("Editing", Tone::Muted));
-            let gap = crate::theme::spacing().sm;
-            let reserve =
-                crate::widgets::action_width(ui, "+ Environment") + icons::size() + 2.0 * gap;
-            let label = scope_label(state, current);
-            let width = (ui.available_width() - reserve).clamp(100.0, 260.0);
-            let combo = crate::widgets::toolbar_combo(
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            widgets::scroll_view_bounds(ui);
+            let global = scope_row(
                 ui,
-                "variables scope",
-                width,
-                env_text(&label, scope_color(state, current), font.clone(), text),
-                |ui| {
-                    let mut pick = |ui: &mut Ui, scope: Scope, label: String| {
-                        let shown =
-                            env_option_text(&label, scope_color(state, scope), font.clone(), text);
-                        let option = crate::widgets::option(ui, scope == current, shown);
-                        name(&option, &label);
-                        if option.clicked() {
-                            actions.push(Action::Variables(VariablesAction::SelectScope(scope)));
-                        }
-                    };
-                    pick(ui, Scope::Global, "Global".into());
-                    for environment in &state.environments {
-                        let active = if state.active_environment == Some(environment.id) {
-                            " (active)"
-                        } else {
-                            ""
-                        };
-                        pick(
-                            ui,
-                            Scope::Environment(environment.id),
-                            format!("Environment · {}{active}", environment.name),
-                        );
-                    }
-                    for collection in &state.collections {
-                        pick(
-                            ui,
-                            Scope::Collection(collection.id),
-                            format!("Collection · {}", collection.name),
-                        );
-                    }
-                },
+                "Global",
+                ScopeMark::Glyph(Icon::Globe),
+                current == Scope::Global,
+                false,
             );
-            // Named for what it chooses; the caption says what the screen does with it.
-            name(&combo, "Variable scope");
-            combo.on_hover_text(label);
-            let new = button(ui, Variant::Secondary, None, "+ Environment")
-                .on_hover_text("Create an environment");
-            name(&new, "New environment");
-            if new.clicked() {
-                actions.push(Action::Variables(VariablesAction::NewEnvironment));
+            select_scope(&global, Scope::Global, actions);
+
+            ui.add_space(theme::spacing().sm);
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if icons::button(ui, Icon::Plus, "New environment", false).clicked() {
+                        actions.push(Action::Variables(VariablesAction::NewEnvironment));
+                    }
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        scope_heading(ui, "Environments");
+                    });
+                });
+            });
+            for environment in &state.environments {
+                let scope = Scope::Environment(environment.id);
+                ui.push_id(scope, |ui| {
+                    let active = state.active_environment == Some(environment.id);
+                    let row = scope_row(
+                        ui,
+                        &environment.name,
+                        ScopeMark::Dot(environment.color),
+                        current == scope,
+                        active,
+                    );
+                    name(&row, &format!("Environment · {}", environment.name));
+                    let hint = if active {
+                        row.ctx.accesskit_node_builder(row.id, |node| {
+                            node.set_description(ACTIVE_HINT);
+                        });
+                        format!("{}\n{ACTIVE_HINT}", environment.name)
+                    } else {
+                        environment.name.clone()
+                    };
+                    let row = row.on_hover_text(hint);
+                    select_scope(&row, scope, actions);
+                    environment_menu(ui, &row, environment.id, actions);
+                });
             }
-            let has_rows = !state.variables.rows.is_empty();
-            icons::menu(ui, Icon::More, "Variable actions", |ui| {
-                if current == Scope::Global {
-                    let mut share = state.globals_shared;
-                    if crate::widgets::checkbox(ui, &mut share, "Share values").clicked() {
-                        actions.push(Action::Variables(VariablesAction::ShareGlobals(share)));
-                    }
-                    ui.separator();
-                }
-                if let Scope::Environment(id) = current {
-                    if button(ui, Variant::Ghost, None, "Edit name and color…").clicked() {
-                        actions.push(Action::Variables(VariablesAction::RenameEnvironment(id)));
-                    }
-                    if button(ui, Variant::Ghost, None, "Delete environment…").clicked() {
-                        actions.push(Action::Variables(VariablesAction::DeleteEnvironment(id)));
-                    }
-                    ui.separator();
-                }
-                // Asks first, naming how many go.
-                if ui
-                    .add_enabled_ui(has_rows, |ui| {
-                        button(ui, Variant::Ghost, None, "Clear all variables…")
+
+            ui.add_space(theme::spacing().sm);
+            scope_heading(ui, "Collections");
+            for collection in &state.collections {
+                let scope = Scope::Collection(collection.id);
+                let row = ui
+                    .push_id(scope, |ui| {
+                        scope_row(
+                            ui,
+                            &collection.name,
+                            ScopeMark::Glyph(Icon::Folder),
+                            current == scope,
+                            false,
+                        )
                     })
                     .inner
-                    .clicked()
-                {
-                    actions.push(Action::Variables(VariablesAction::ClearAll));
-                }
-            });
-        },
-        |ui| {
-            let screen = &state.variables;
-            let dirty = screen.dirty();
-            let word = match screen.status {
-                Some(word) => word,
-                None if !screen.loaded => SaveWord::Loading,
-                None if screen.is_saving() => SaveWord::Saving,
-                None if dirty => SaveWord::Unsaved,
-                None => SaveWord::Saved,
-            };
-            let detail = match word {
-                SaveWord::Unsaved => "Unsaved variable changes",
-                SaveWord::Saved => "The variables are saved",
-                _ => "",
-            };
-            let status = SaveStatus {
-                word,
-                detail,
-                enabled: dirty,
-            };
-            if save_controls(ui, &status, "Save variables") {
-                saves.push(Action::Variables(VariablesAction::Save));
+                    .on_hover_text(&collection.name);
+                name(&row, &format!("Collection · {}", collection.name));
+                select_scope(&row, scope, actions);
             }
-            let revert = ui
-                .add_enabled_ui(dirty, |ui| {
-                    icons::button(ui, Icon::Revert, "Revert unsaved changes", false)
-                })
-                .inner;
-            if revert.clicked() {
-                saves.push(Action::Variables(VariablesAction::Revert));
+        });
+}
+
+#[derive(Clone, Copy)]
+enum ScopeMark {
+    Glyph(Icon),
+    Dot(Option<EnvColor>),
+}
+
+fn scope_row(ui: &mut Ui, label: &str, mark: ScopeMark, selected: bool, active: bool) -> Response {
+    let slot = egui::Vec2::splat(theme::SECTION);
+    let leading = egui::Atom::paint(slot, |ui, args| {
+        let center = args.rect.center();
+        match mark {
+            ScopeMark::Glyph(icon) => {
+                widgets::paint_glyph(ui, icon, theme::SECTION, center, palette().text_muted);
             }
-        },
+            ScopeMark::Dot(Some(color)) => {
+                ui.painter()
+                    .circle_filled(center, 4.0, theme::env_color(color));
+            }
+            ScopeMark::Dot(None) => {}
+        }
+    });
+    let trailing = egui::Atom::paint(slot, |ui, args| {
+        if active {
+            widgets::paint_glyph(
+                ui,
+                Icon::Check,
+                theme::SECTION,
+                args.rect.center(),
+                palette().text_muted,
+            );
+        }
+    });
+    widgets::list_row(
+        ui,
+        selected,
+        (leading, theme::body(label), egui::Atom::grow(), trailing),
+    )
+}
+
+fn scope_heading(ui: &mut Ui, text: &str) {
+    ui.label(
+        theme::meta(text)
+            .font(theme::semibold(theme::META))
+            .color(palette().text_muted),
     );
-    actions.extend(saves);
+}
+
+fn select_scope(response: &Response, scope: Scope, actions: &mut Vec<Action>) {
+    if response.clicked() {
+        actions.push(Action::Variables(VariablesAction::SelectScope(scope)));
+    }
+}
+
+fn environment_menu(
+    ui: &Ui,
+    row: &Response,
+    id: imposter_app::core::ids::EnvironmentId,
+    actions: &mut Vec<Action>,
+) {
+    let show_menu = egui::accesskit::Action::ShowContextMenu;
+    row.ctx
+        .accesskit_node_builder(row.id, |node| node.add_action(show_menu));
+    let keyboard =
+        row.has_focus() && ui.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, egui::Key::F10));
+    let assistive = ui.input(|i| {
+        i.accesskit_action_requests(row.id, show_menu)
+            .next()
+            .is_some()
+    });
+    let open = if keyboard || assistive || row.secondary_clicked() {
+        Some(egui::SetOpenCommand::Bool(true))
+    } else if row.clicked() {
+        Some(egui::SetOpenCommand::Bool(false))
+    } else {
+        None
+    };
+    egui::Popup::menu(row).open_memory(open).show(|ui| {
+        let edit = button(ui, Variant::Ghost, None, "Edit name and color…");
+        if keyboard || assistive {
+            edit.request_focus();
+        }
+        if edit.clicked() {
+            actions.push(Action::Variables(VariablesAction::RenameEnvironment(id)));
+            ui.close();
+        }
+        if button(ui, Variant::Ghost, None, "Delete environment…").clicked() {
+            actions.push(Action::Variables(VariablesAction::DeleteEnvironment(id)));
+            ui.close();
+        }
+    });
+}
+
+fn scope_content(state: &mut State, ui: &mut Ui, actions: &mut Vec<Action>) {
+    let current = state.variables.scope;
+    let has_local_data = SecretScope::of_scope(current).is_some();
+    let highlight = if state.variables.loaded {
+        state.variables.highlight.take()
+    } else {
+        None
+    };
+    if let Some(target) = highlight.as_deref() {
+        state.variables.tab = if has_local_data && secret_name(target).is_some() {
+            VariablesTab::Secrets
+        } else {
+            VariablesTab::Variables
+        };
+    }
+    if !has_local_data {
+        state.variables.tab = VariablesTab::Variables;
+    }
+
+    let (usage, precedence) = explanation(state, current);
+    let guidance = format!("{usage}\n{precedence}");
+    let mut tab = state.variables.tab;
+    widgets::toolbar_row_at_height(
+        ui,
+        widgets::tab_height(),
+        |ui| {
+            let tabs = [
+                TabSpec::new(VariablesTab::Variables, "Variables").named("Variables tab"),
+                TabSpec::new(VariablesTab::Secrets, "Secrets"),
+                TabSpec::new(VariablesTab::Cookies, "Cookies"),
+            ];
+            let count = if has_local_data { tabs.len() } else { 1 };
+            widgets::tab_strip(
+                ui,
+                &tabs[..count],
+                &mut tab,
+                count,
+                widgets::HELP_SIZE + theme::spacing().sm,
+                "More variable tabs",
+            );
+            widgets::help(ui, &guidance);
+        },
+        |ui| scope_actions(state, ui, actions),
+    );
+    state.variables.tab = tab;
     if state.variables_changed_on_disk {
         use crate::app::DiskChoice;
-        match crate::workspace::notice_banner(
+        match workspace::notice_banner(
             ui,
             "These variables changed on disk. Your unsaved rows are here.",
             &[
@@ -225,95 +324,165 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     }
     if !state.variables.loaded {
         ui.label(tone_text("Loading…", Tone::Muted));
-        state.actions.extend(actions);
         return;
     }
-    let mut edited = false;
-    let highlight = state.variables.highlight.take();
-    let (usage, precedence) = explanation(state, current);
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            crate::widgets::scroll_view_bounds(ui);
-            ui.label(usage);
-            ui.add(egui::Label::new(tone_text(precedence, Tone::Muted)).wrap());
-            ui.add_space(crate::theme::spacing().sm);
-            let height = ui.spacing().interact_size.y;
-            let gap = ui.spacing().item_spacing.x;
-            let available = ui.available_width() - REMOVE_WIDTH - 2.0 * gap;
-            let name_width = (available * 0.35).clamp(140.0, 320.0);
-            let value_width = (available - name_width).max(160.0);
-            let widths = (name_width, value_width, height);
-            ui.horizontal(|ui| {
-                crate::widgets::heading_cell(ui, name_width, "Variable name");
-                crate::widgets::heading_cell(ui, value_width, "Values");
-            });
-            let mut remove = None;
-            for (index, row) in state.variables.rows.iter_mut().enumerate() {
-                let (changed, removed) =
-                    variable_row(ui, row, index + 1, widths, highlight.as_deref());
-                edited |= changed;
-                if removed {
-                    remove = Some(index);
+    if matches!(current, Scope::Environment(id) if state.active_environment != Some(id)) {
+        ui.add(egui::Label::new(theme::meta(INACTIVE_NOTE).color(palette().text_muted)).truncate())
+            .on_hover_text(INACTIVE_NOTE);
+        ui.add_space(theme::spacing().xs);
+    }
+
+    tabs_content(state, ui, actions, highlight.as_deref());
+}
+
+fn scope_actions(state: &State, ui: &mut Ui, actions: &mut Vec<Action>) {
+    let screen = &state.variables;
+    let dirty = screen.dirty();
+    let word = match screen.status {
+        Some(word) => word,
+        None if !screen.loaded => SaveWord::Loading,
+        None if screen.is_saving() => SaveWord::Saving,
+        None if dirty => SaveWord::Unsaved,
+        None => SaveWord::Saved,
+    };
+    let detail = match word {
+        SaveWord::Unsaved => "Unsaved variable changes",
+        SaveWord::Saved => "The variables are saved",
+        _ => "",
+    };
+    let status = SaveStatus {
+        word,
+        detail,
+        enabled: dirty,
+    };
+    if widgets::save_controls_with(ui, &status, "Save variables", |ui| {
+        let revert = ui
+            .add_enabled_ui(dirty, |ui| {
+                icons::button(ui, Icon::Revert, "Revert unsaved changes", false)
+            })
+            .inner;
+        if revert.clicked() {
+            actions.push(Action::Variables(VariablesAction::Revert));
+        }
+        icons::menu(ui, Icon::More, "Variable actions", |ui| {
+            if screen.scope == Scope::Global {
+                let mut share = state.globals_shared;
+                if widgets::checkbox(ui, &mut share, "Share values").clicked() {
+                    actions.push(Action::Variables(VariablesAction::ShareGlobals(share)));
                 }
+                ui.separator();
             }
-            if let Some(index) = remove {
-                state.variables.rows.remove(index);
-                edited = true;
-            }
-            let id = ui.make_persistent_id(("new variable", current));
-            let mut row = ui.data_mut(|data| {
-                data.get_temp_mut_or_insert_with(id, || vars::VariableRow::new(""))
-                    .clone()
-            });
-            ui.horizontal(|ui| {
-                variable_name(ui, &mut row, "New variable name", name_width);
-                blank_cell(ui, value_width);
-                blank_cell(ui, REMOVE_WIDTH);
-            });
-            if !row.name.is_empty() {
-                ui.data_mut(|data| data.remove::<vars::VariableRow>(id));
-                edited |= append_row(ui, &mut state.variables.rows, row);
-            }
-            if imposter_app::core::variables::SecretScope::of_scope(current).is_some() {
-                edited |= secrets_section(
-                    ui,
-                    &mut state.variables.secrets,
-                    widths,
-                    highlight.as_deref(),
-                );
-                let requests = match current {
-                    Scope::Environment(id) => {
-                        state.environments.iter().find(|e| e.id == id).map_or_else(
-                            || "requests sent with this environment".to_owned(),
-                            |e| format!("requests sent with {}", e.name),
-                        )
-                    }
-                    _ => "requests sent without an environment".to_owned(),
-                };
-                cookies_section(
-                    ui,
-                    &state.variables.cookies,
-                    widths,
-                    &requests,
-                    &mut actions,
-                );
+            if ui
+                .add_enabled_ui(!screen.rows.is_empty(), |ui| {
+                    button(ui, Variant::Ghost, None, "Clear all variables…")
+                })
+                .inner
+                .clicked()
+            {
+                actions.push(Action::Variables(VariablesAction::ClearAll));
             }
         });
+    }) {
+        actions.push(Action::Variables(VariablesAction::Save));
+    }
+}
+
+fn tabs_content(
+    state: &mut State,
+    ui: &mut Ui,
+    actions: &mut Vec<Action>,
+    highlight: Option<&str>,
+) {
+    let screen = &mut state.variables;
+    let edited = egui::ScrollArea::vertical()
+        .id_salt((screen.scope, screen.tab))
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            widgets::scroll_view_bounds(ui);
+            let columns = Columns::new(ui);
+            match screen.tab {
+                VariablesTab::Variables => {
+                    variables_table(ui, &mut screen.rows, &columns, highlight)
+                }
+                VariablesTab::Secrets => secrets_table(
+                    ui,
+                    &mut screen.secrets,
+                    &columns,
+                    highlight.and_then(secret_name),
+                ),
+                VariablesTab::Cookies => {
+                    let requests = match screen.scope {
+                        Scope::Environment(id) => {
+                            state.environments.iter().find(|e| e.id == id).map_or_else(
+                                || "requests sent with this environment".to_owned(),
+                                |e| format!("requests sent with {}", e.name),
+                            )
+                        }
+                        _ => "requests sent without an environment".to_owned(),
+                    };
+                    cookies_table(ui, &screen.cookies, &columns, &requests, actions);
+                    false
+                }
+            }
+        })
+        .inner;
     if edited {
         actions.push(Action::Variables(VariablesAction::Edited));
     }
+}
 
-    state.actions.extend(actions);
+fn variables_table(
+    ui: &mut Ui,
+    rows: &mut Vec<vars::VariableRow>,
+    columns: &Columns,
+    highlight: Option<&str>,
+) -> bool {
+    ui.horizontal(|ui| {
+        heading_cell(ui, columns.name, "Variable name");
+        heading_cell(ui, columns.value, "Values");
+    });
+    let mut edited = false;
+    let mut remove = None;
+    for (index, row) in rows.iter_mut().enumerate() {
+        let (changed, removed) = variable_row(ui, row, index + 1, columns, highlight);
+        edited |= changed;
+        if removed {
+            remove = Some(index);
+        }
+    }
+    if let Some(index) = remove {
+        rows.remove(index);
+        edited = true;
+    }
+    let id = ui.make_persistent_id("new variable");
+    let mut row = ui.data_mut(|data| {
+        data.get_temp_mut_or_insert_with(id, || vars::VariableRow::new(""))
+            .clone()
+    });
+    ui.horizontal(|ui| {
+        variable_name(ui, &mut row, "New variable name", columns.name);
+        blank_cell(ui, columns.value);
+        blank_cell(ui, REMOVE_WIDTH);
+    });
+    if !row.name.is_empty() {
+        ui.data_mut(|data| data.remove::<vars::VariableRow>(id));
+        edited |= append_row(ui, rows, row);
+    }
+    edited
 }
 
 fn variable_row(
     ui: &mut Ui,
     row: &mut vars::VariableRow,
     number: usize,
-    (name_width, value_width, height): (f32, f32, f32),
+    columns: &Columns,
     highlight: Option<&str>,
 ) -> (bool, bool) {
+    let Columns {
+        name: name_width,
+        value: value_width,
+        height,
+    } = *columns;
     ui.horizontal_top(|ui| {
         let field = variable_name(ui, row, &format!("Variable {number} name"), name_width);
         if highlight == Some(row.name.as_str()) {
@@ -326,7 +495,7 @@ fn variable_row(
             Layout::left_to_right(Align::Center).with_main_wrap(true),
             |ui| {
                 ui.set_min_width(value_width);
-                values_editor(ui, row, number, value_width, height)
+                values_editor(ui, row, number, value_width)
             },
         );
         let id = egui::Id::unique(("remove variable", row.key));
@@ -348,30 +517,19 @@ fn variable_name(ui: &mut Ui, row: &mut vars::VariableRow, label: &str, width: f
     )
 }
 
-/// The scope's secrets under its variables: values masked, each with an eye to show it for
-/// the session, never saved values. Returns whether a row changed.
-fn secrets_section(
+fn secrets_table(
     ui: &mut Ui,
     rows: &mut Vec<vars::Row>,
-    (name_width, value_width, height): (f32, f32, f32),
+    columns: &Columns,
     highlight: Option<&str>,
 ) -> bool {
+    let name_width = columns.name;
+    let value_width = columns.value_with_eye(ui);
     let mut edited = false;
-    ui.add_space(16.0);
-    ui.label(egui::RichText::new("Secrets").font(crate::theme::semibold(13.0)));
-    ui.add(
-        egui::Label::new(tone_text(
-            "Used as {{secret:name}}. Kept only on this computer: never exported, and removed from History.",
-            Tone::Muted,
-        ))
-        .wrap(),
-    );
-    ui.add_space(4.0);
-    let eye = icons::size() + ui.spacing().item_spacing.x;
-    let value_width = (value_width - eye).max(120.0);
     ui.horizontal(|ui| {
-        crate::widgets::heading_cell(ui, name_width, "Secret name");
-        crate::widgets::heading_cell(ui, value_width, "Value");
+        heading_cell(ui, name_width, "Secret name");
+        heading_cell(ui, value_width, "Value");
+        widgets::help(ui, "Used as {{secret:name}}. Kept only on this computer: never exported, and removed from History.");
     });
     let mut remove = None;
     for (index, row) in rows.iter_mut().enumerate() {
@@ -385,9 +543,7 @@ fn secrets_section(
                 "name",
                 false,
             );
-            if highlight.and_then(imposter_app::core::variables::secret_name)
-                == Some(row.name.as_str())
-            {
+            if highlight == Some(row.name.as_str()) {
                 field.scroll_to_me(Some(Align::Center));
                 field.request_focus();
             }
@@ -415,7 +571,7 @@ fn secrets_section(
             edited |= field.changed() || value.changed();
             let what = format!("secret {}", index + 1);
             let id = egui::Id::unique(("remove secret", row.key));
-            if remove_button(ui, id, &what, height) {
+            if remove_button(ui, id, &what, columns.height) {
                 remove = Some(index);
             }
         });
@@ -458,51 +614,56 @@ fn secrets_section(
     edited
 }
 
-/// The cookies servers set for the scope's requests: name and value (masked, with an eye),
-/// where and until when each is sent, and a × that asks before removing it. Not part of
-/// the page's edits: a send changes them, and removing one is written at once.
-fn cookies_section(
+fn cookies_table(
     ui: &mut Ui,
     cookies: &[imposter_app::http::cookies::StoredCookie],
-    (name_width, value_width, height): (f32, f32, f32),
+    columns: &Columns,
     requests: &str,
     actions: &mut Vec<Action>,
 ) {
-    ui.add_space(16.0);
-    ui.label(egui::RichText::new("Cookies").font(crate::theme::semibold(13.0)));
-    ui.add(
-        egui::Label::new(tone_text(
-            format!(
+    let name_width = columns.name;
+    let value_width = columns.value_with_eye(ui);
+    ui.horizontal(|ui| {
+        heading_cell(ui, name_width, "Cookie name");
+        heading_cell(ui, value_width, "Value");
+        widgets::help(
+            ui,
+            &format!(
                 "Set by servers for {requests}, and sent back to them. Kept only on this computer."
             ),
-            Tone::Muted,
-        ))
-        .wrap(),
-    );
-    ui.add_space(4.0);
+        );
+        if ui
+            .add_enabled_ui(!cookies.is_empty(), |ui| {
+                icons::button(ui, Icon::Trash, "Clear cookies…", false)
+            })
+            .inner
+            .clicked()
+        {
+            actions.push(Action::Variables(VariablesAction::ClearCookies));
+        }
+    });
     if cookies.is_empty() {
         ui.label(tone_text("No cookies yet.", Tone::Muted));
         return;
     }
-    let eye = icons::size() + ui.spacing().item_spacing.x;
-    let value_width = (value_width - eye).max(120.0);
     for (index, cookie) in cookies.iter().enumerate() {
         ui.horizontal(|ui| {
-            // Its text names it to screen readers; the fields after it say "cookie".
             ui.add_sized(
-                [name_width, height],
-                egui::Label::new(cookie.name.as_str()).truncate(),
+                [name_width, columns.height],
+                egui::Label::new(theme::body(&cookie.name)).truncate(),
             );
             let shown_id = ui.make_persistent_id(("cookie shown", index, &cookie.name));
             let mut shown: bool = ui.data(|d| d.get_temp(shown_id)).unwrap_or(false);
             let mut value = cookie.value.as_str();
-            let field = ui.add_sized(
-                [value_width, height],
-                egui::TextEdit::singleline(&mut value)
-                    .id_salt(("cookie", index, "value"))
-                    .password(!shown),
+            table_text(
+                ui,
+                &mut value,
+                ui.make_persistent_id(("cookie", index, "value")),
+                &format!("Cookie {} value", cookie.name),
+                value_width,
+                "",
+                !shown,
             );
-            name(&field, &format!("Cookie {} value", cookie.name));
             let (icon, action) = if shown {
                 (Icon::EyeOff, format!("Hide cookie {}", cookie.name))
             } else {
@@ -512,23 +673,21 @@ fn cookies_section(
                 shown = !shown;
             }
             ui.data_mut(|d| d.insert_temp(shown_id, shown));
-            let remove = ui
-                .scope(|ui| {
-                    ui.spacing_mut().button_padding.x = 4.0;
-                    ui.add_sized([24.0, height], egui::Button::new("×"))
-                })
-                .inner
-                .on_hover_text("Remove this cookie…");
-            name(&remove, &format!("Remove cookie {}", cookie.name));
-            if remove.clicked() {
+            if icons::button(
+                ui,
+                Icon::Close,
+                &format!("Remove cookie {}", cookie.name),
+                false,
+            )
+            .clicked()
+            {
                 actions.push(Action::Variables(VariablesAction::RemoveCookie(index)));
             }
         });
-        ui.add(egui::Label::new(tone_text(cookie_place(cookie), Tone::Muted)).truncate());
-        ui.add_space(4.0);
-    }
-    if ui.button("Clear cookies…").clicked() {
-        actions.push(Action::Variables(VariablesAction::ClearCookies));
+        let place = cookie_place(cookie);
+        ui.add(egui::Label::new(theme::meta(&place).color(palette().text_muted)).truncate())
+            .on_hover_text(place);
+        ui.add_space(theme::spacing().xs);
     }
 }
 
@@ -563,13 +722,7 @@ enum ChipAction {
     Keep,
 }
 
-fn values_editor(
-    ui: &mut Ui,
-    row: &mut vars::VariableRow,
-    number: usize,
-    line_width: f32,
-    height: f32,
-) -> bool {
+fn values_editor(ui: &mut Ui, row: &mut vars::VariableRow, number: usize, line_width: f32) -> bool {
     let mut action = None;
     for (index, value) in row.values().iter().enumerate() {
         let choice = Choice::Ordinary(index);
@@ -592,13 +745,15 @@ fn values_editor(
         None => {}
     }
 
-    let composer = ui.add_sized(
-        [line_width.min(160.0), height],
-        egui::TextEdit::singleline(&mut row.draft)
-            .id(egui::Id::unique(("variable draft", row.key)))
-            .hint_text("Add value…"),
+    let composer = table_text(
+        ui,
+        &mut row.draft,
+        egui::Id::unique(("variable draft", row.key)),
+        &format!("Add value to variable {number}"),
+        line_width.min(160.0),
+        "Add value…",
+        false,
     );
-    name(&composer, &format!("Add value to variable {number}"));
     let entered = composer.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     let escape = (composer.has_focus() || composer.lost_focus())
         && ui.input(|i| i.key_pressed(egui::Key::Escape));

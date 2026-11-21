@@ -34,7 +34,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
 - **The layout lint gates every screen** (`imposter-ui/tests/layout.rs`).
   - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
-    walks the screens, a sent response, a History run and the dialogs.
+    walks the screens, each Variables tab and scope type, a sent response, a History run
+    and the dialogs.
   - **Widths:** visible controls and outlined frames stay inside the window. The lint
     checks frames in the painted shapes and checks controls against the accessible bounds of
     the flat request and response panes. The window bounds alone missed the Auth tab's eye
@@ -201,8 +202,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   Refresh, Newer and Older (chevrons), the find bar's Next and Previous, Close (×),
   Browse (a folder) and Save are Phosphor Regular icon buttons (`icons.rs`),
   each named for screen readers and tests and with its words in the hover text. Menu items
-  stay text, including Add check in the JSON viewer. Actions such as Restore as draft,
-  Retry and "+ Environment" keep their labels, whose words say more than a glyph could.
+  stay text, including Add check in the JSON viewer. Actions such as Restore as draft
+  and Retry keep their labels, whose words say more than a glyph could.
   Why: the same action was an icon in one place and a word in another ("Copy as curl" in the request bar and in
   History, the inspector's "Copy value"; the user's note), and text buttons crowded the
   toolbars. The hand-painted set did not scale; gaps forced text buttons. Phosphor provides
@@ -240,8 +241,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **Every screen has one toolbar above its content** (`widgets::screen_toolbar`), at
   the density's control height, with a 1-point control-edge divider underneath. The page
   title and scope controls sit at the left, and actions are reserved at the right with the
-  primary action rightmost. Requests uses the same row for its breadcrumb, with Copy as
-  curl and Save before a separated group of view controls. Until a request opens, the title
+  primary action rightmost. Variables puts its tabs in the title position to fit the tabs
+  and save actions beside the scope list. Its toolbar uses the tab height to fit the tab
+  underline. Requests uses the same row for its breadcrumb, with Copy as curl and Save
+  before a separated group of view controls. Until a request opens, the title
   is "Requests". Run keeps "Keep going after a failure" with its configuration below the
   toolbar so the two scope pickers and Start or Stop fit at the minimum width. Mocks puts
   the restart notice in its content so the server address and copy button fit beside
@@ -623,8 +626,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     which would read as this send's. Undefined variables come as names
     (`ExecuteError::Unresolved`), so the pane offers "Define in <active environment or
     Global>" under the headline that names `{{x}}` (its accessible name is the whole
-    "Define {{x}} in …", since a long name cut the destination off). That opens Variables
-    with a new unsaved row; nothing is written until Save.
+    "Define {{x}} in …", since a long name cut the destination off). That opens the
+    Variables or Secrets tab for the target scope and focuses the new unsaved row; nothing
+    is written until Save.
 
   Why: the review found raw `os error 61` text clipped at the pane edge, and an empty-state
   invitation shown right under "Request failed".
@@ -714,19 +718,32 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 ### Screens (Variables, Run, History, Settings)
 
 - **The Variables screen edits one scope at a time** (Global, an environment, a collection),
-  independently of the active execution environment, with its own unsaved-changes guard for
+  independently of the active execution environment. The scope list follows the flat Requests
+  sidebar with its own scroll and a 1-point divider. Every scope has a full-width hover and
+  selected fill, with an accent bar on the selected row. Names share a left edge after a
+  fixed slot for the Globe, Folder or environment color dot. The shared alignment makes
+  Global, environments and collections read as one list. Uncolored environments keep the
+  slot empty, and a check marks the active environment. The list narrows at the minimum
+  window size, and truncated names show in full on hover. The Environments heading
+  has a Plus button. Right-click or Shift+F10 opens the environment's menu for
+  "Edit name and color…" and "Delete environment…". The Variables guard still covers
   scope changes, reloads, environment management, "Open definition" and closing. Closing
-  resolves the request guard first, then the variables guard, then writes UI state.
-  The scope picker is captioned "Editing"; its list marks the active environment
-  ("(active)"). Under it, one sentence says what the scope is for ("Used by every
-  request.", "Dev is the active environment: requests use these now.") and one line where
-  it stands in precedence (`variables_screen::explanation`); the name is not repeated,
-  since the picker shows it. The toolbar has a labelled "+ Environment"; editing the name
-  and color, deleting and "Clear all variables…" are in its "⋯" menu, and clearing asks
-  in a dialog with the count. In environment lists, names without a color keep the dot's room,
-  so all start in line. Why: the screen did not say which scope wins, nor whether the
-  environment shown is the one sends use. The menu keeps scope-wide clearing apart
-  from row editing (the review's #37, #39; Phase 5 review Q22, Q25).
+  resolves the request guard first, then the Variables guard, then writes UI state.
+  - The toolbar shows **Variables**, **Secrets** and **Cookies** for Global and environments.
+    Collections show only Variables. Save and Revert stay at the right with the scope-wide
+    menu. "Share values" is Global only. The menu keeps "Clear all variables…" apart from
+    the row remove controls. Clearing asks first with the count.
+  - Scope usage and precedence are in the toolbar's info tooltip. An inactive environment
+    keeps a short visible note because its values affect requests only while it is active.
+    The Secrets and Cookies tables put their explanations in header tooltips, and an empty
+    cookie jar still says "No cookies yet."
+  - The values column stops at 640 points to keep the remove control near its row on wide
+    windows. Cookies use icon buttons to remove a row or clear the jar. Both ask in a dialog
+    before writing the change.
+  - "Define in" and "Open definition" select the matching tab and focus the row's name field.
+  The owner's review found that the stacked page mixed variables, secrets and cookies and
+  hid scope choices in the "Editing" picker (Q4). Tooltips keep the precedence and usage
+  guidance nearby while leaving the tables easier to scan (Q6).
 
 - **Settings save only on Save Settings**, against a baseline: undoing an edit is not a change. Settings the screen does not
   show are kept. Closing asks about unsaved settings after the request and variables guards.

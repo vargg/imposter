@@ -68,14 +68,20 @@ pub(crate) fn add_row_header(ui: &mut Ui, title: &str, action: &str, hint: Optio
     .inner
 }
 
-/// Requests supplies its breadcrumb in place of the standard page title.
+/// For screens that supply their own left-hand contents in place of a page title.
 pub(crate) fn toolbar_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
+    toolbar_row_at_height(ui, crate::theme::spacing().control, left, right);
+}
+
+pub(crate) fn toolbar_row_at_height(
+    ui: &mut Ui,
+    height: f32,
+    left: impl FnOnce(&mut Ui),
+    right: impl FnOnce(&mut Ui),
+) {
     let spacing = crate::theme::spacing();
     let available = ui.available_rect_before_wrap();
-    let row = egui::Rect::from_min_size(
-        available.min,
-        egui::vec2(available.width(), spacing.control),
-    );
+    let row = egui::Rect::from_min_size(available.min, egui::vec2(available.width(), height));
     ui.scope_builder(
         egui::UiBuilder::new()
             .max_rect(row)
@@ -516,10 +522,12 @@ fn draw_segments<T: PartialEq + Copy>(
     response
 }
 
+pub(crate) const HELP_SIZE: f32 = 24.0;
+
 /// Quiet help that is discoverable by pointer, keyboard and assistive technology.
 pub fn help(ui: &mut Ui, text: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(
-        egui::Vec2::splat(24.0),
+        egui::Vec2::splat(HELP_SIZE),
         egui::Sense::focusable_noninteractive(),
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, ui.is_enabled(), "Help"));
@@ -1014,6 +1022,27 @@ fn tab_row<T: Copy + PartialEq>(
 /// row looks the same everywhere (the theme outlines controls, and egui would outline it too).
 pub fn option<'a>(ui: &mut Ui, selected: bool, atoms: impl egui::IntoAtoms<'a>) -> egui::Response {
     ui.add(egui::Button::selectable(selected, atoms).stroke(egui::Stroke::NONE))
+}
+
+/// A full-width sidebar choice with the same selection marker as the Requests tree.
+pub(crate) fn list_row<'a>(
+    ui: &mut Ui,
+    selected: bool,
+    atoms: impl egui::IntoAtoms<'a>,
+) -> egui::Response {
+    let response = ui.add_sized(
+        [ui.available_width(), crate::theme::spacing().row],
+        egui::Button::selectable(selected, atoms)
+            .stroke(egui::Stroke::NONE)
+            .truncate(),
+    );
+    response
+        .ctx
+        .accesskit_node_builder(response.id, |node| node.set_selected(selected));
+    if selected {
+        selection_bar(ui, response.rect);
+    }
+    response
 }
 
 /// A color's name as people say it.
@@ -2062,7 +2091,7 @@ pub(crate) fn key_value_widths(ui: &Ui, extra: f32) -> [f32; 2] {
 
 pub(crate) fn table_text(
     ui: &mut Ui,
-    text: &mut String,
+    text: &mut dyn egui::TextBuffer,
     id: egui::Id,
     label: &str,
     width: f32,

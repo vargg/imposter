@@ -83,6 +83,14 @@ pub fn open_screen(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     click_button(harness, label);
 }
 
+/// Open the scope row's context menu without choosing it as the edited scope.
+pub fn open_environment_menu(harness: &mut Harness<'_, ImposterApp>, environment: &str) {
+    harness
+        .get_by_label(&format!("Environment · {environment}"))
+        .click_secondary();
+    harness.run_steps(2);
+}
+
 /// Open the request tab named `label`, from the row or from "More".
 pub fn open_tab(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     if harness
@@ -191,6 +199,20 @@ pub fn save_state(harness: &Harness<'_, ImposterApp>, save: &str) -> String {
         .get_all_by_label(save)
         .find_map(|node| node.accesskit_node().description())
         .unwrap_or_else(|| panic!("{save} has no save state"))
+}
+
+/// Help stays off the page, but the info icon describes it to assistive technology.
+pub fn assert_help(harness: &Harness<'_, ImposterApp>, text: &str) {
+    assert!(
+        harness.query_by_label(text).is_none(),
+        "visible help: {text}"
+    );
+    assert!(
+        harness
+            .get_all_by_label("Help")
+            .any(|node| { node.accesskit_node().description().as_deref() == Some(text) }),
+        "no help icon describes {text:?}"
+    );
 }
 
 /// The button named `label` is a square toolbar icon with its accessible name.

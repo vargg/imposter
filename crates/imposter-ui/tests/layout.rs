@@ -254,6 +254,9 @@ fn appearance(app: &mut support::App, theme: ThemeChoice, density: Density) {
 /// Send names the active, colored environment of the walk.
 const SEND: &str = "Send to Production EU";
 
+const LONG_ENVIRONMENT: &str =
+    "A very long environment name for sample requests with a scope that has to truncate";
+
 /// Walk the screens and dialogs, collecting problems at each stop.
 fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     let mut found = Vec::new();
@@ -825,24 +828,34 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     check(app, "environment picker");
     app.harness.key_press(egui::Key::Escape);
     settle(&mut app.harness);
+    walk_variable_scopes(app, &mut check);
+    app.harness.state_mut().state.screen = Screen::Requests;
+    walk_modals(app, &mut check);
+    found
+}
+
+fn walk_variable_scopes(app: &mut support::App, check: &mut impl FnMut(&mut support::App, &str)) {
     support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
-    let (scope, environment_name) = {
-        let state = &mut app.harness.state_mut().state;
-        let environment = &mut state.environments[0];
-        let original_name = std::mem::replace(
-            &mut environment.name,
-            "A very long environment name ".repeat(10),
-        );
-        let original_scope = std::mem::replace(
-            &mut state.variables.scope,
-            imposter_ui::vars::Scope::Environment(environment.id),
-        );
-        (original_scope, original_name)
-    };
-    check(app, "Variables with a long scope name");
-    app.harness.state_mut().state.variables.scope = scope;
-    app.harness.state_mut().state.environments[0].name = environment_name;
+    check(app, "Global variables");
+    app.harness.state_mut().state.variables.loaded = false;
+    check(app, "Variables loading");
+    app.harness.state_mut().state.variables.loaded = true;
+    click(&mut app.harness, "Collection · API");
+    settle(&mut app.harness);
+    check(app, "Collection variables");
+    click(
+        &mut app.harness,
+        &format!("Environment · {LONG_ENVIRONMENT}"),
+    );
+    settle(&mut app.harness);
+    check(app, "Variables with a long inactive environment name");
+    support::open_environment_menu(&mut app.harness, LONG_ENVIRONMENT);
+    check(app, "environment actions");
+    app.harness.key_press(egui::Key::Escape);
+    app.harness.run_steps(2);
+    click(&mut app.harness, "Global");
+    settle(&mut app.harness);
     let long_value = "a-saved-value-".repeat(8);
     let rows = std::mem::replace(
         &mut app.harness.state_mut().state.variables.rows,
@@ -867,12 +880,14 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     app.harness.key_press(egui::Key::Escape);
     app.harness.run_steps(2);
     app.harness.state_mut().state.variables.rows = rows;
-    // The Secrets section under the variables, a long name and a masked value.
+    // A long name and a masked value on Secrets.
     app.harness.state_mut().state.variables.secrets = vec![
         imposter_ui::vars::Row::new("api_key", "k-123456"),
         imposter_ui::vars::Row::new("a_rather_long_secret_name_for_the_column", "v-123456"),
     ];
-    // Cookies under the secrets: a long name, a domain with subdomains, an expiry.
+    click(&mut app.harness, "Secrets");
+    check(app, "Secrets tab");
+    // A long name, a domain with subdomains and an expiry on Cookies.
     app.harness.state_mut().state.variables.cookies =
         vec![imposter_app::http::cookies::StoredCookie {
             domain: "api.a-rather-long-domain-name.example.com".into(),
@@ -884,8 +899,11 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
             secure: true,
             http_only: true,
         }];
-    check(app, "variables with secrets");
+    click(&mut app.harness, "Cookies");
+    check(app, "Cookies tab with a cookie");
     app.harness.state_mut().state.variables.cookies.clear();
+    check(app, "Cookies tab empty");
+    click(&mut app.harness, "Variables tab");
     app.harness.state_mut().state.variables_changed_on_disk = true;
     check(app, "variables changed on disk banner");
     app.harness.state_mut().state.variables_changed_on_disk = false;
@@ -899,9 +917,6 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     check(app, "environment dialog");
     app.harness.key_press(egui::Key::Escape);
     settle(&mut app.harness);
-    app.harness.state_mut().state.screen = Screen::Requests;
-    walk_modals(app, &mut check);
-    found
 }
 
 fn walk_modals(app: &mut support::App, check: &mut impl FnMut(&mut support::App, &str)) {
@@ -1022,6 +1037,11 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
                                 Some(imposter_app::core::model::EnvColor::Red),
                             )?;
                             env::set_active_environment(db, Some(prod.id))?;
+                            env::create_environment(
+                                db,
+                                LONG_ENVIRONMENT,
+                                &imposter_app::core::model::Variables::new(),
+                            )?;
                             imposter_app::store::kv::set(
                                 db,
                                 imposter_app::store::kv::Table::Settings,

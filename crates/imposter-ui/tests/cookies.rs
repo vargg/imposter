@@ -8,10 +8,8 @@ mod support;
 
 use egui_kittest::kittest::Queryable;
 use imposter_app::core::model::{RequestTemplate, Variables};
-use imposter_app::core::variables::Scope;
 use imposter_app::store::{collections, environments};
 use imposter_testkit::{Received, Server, response};
-use imposter_ui::app::{Action, VariablesAction};
 use support::{click, click_button, settle, start_with};
 
 const SESSION: &str = "session-value-1234";
@@ -78,23 +76,9 @@ fn send(f: &mut Fixture, request: &str) {
 fn show_dev_cookies(f: &mut Fixture) {
     support::open_screen(&mut f.app.harness, "Variables");
     settle(&mut f.app.harness);
-    let dev = f
-        .app
-        .harness
-        .state()
-        .store()
-        .call_blocking(environments::active_environment)
-        .unwrap()
-        .unwrap();
-    f.app
-        .harness
-        .state_mut()
-        .state
-        .actions
-        .push(Action::Variables(VariablesAction::SelectScope(
-            Scope::Environment(dev),
-        )));
+    click(&mut f.app.harness, "Environment · Dev");
     settle(&mut f.app.harness);
+    click(&mut f.app.harness, "Cookies");
 }
 
 #[test]
@@ -110,9 +94,10 @@ fn a_login_cookie_is_listed_masked_sent_on_and_removed_after_asking() {
     show_dev_cookies(&mut f);
     f.app.harness.get_by_label("session");
     f.app.harness.get_by_label("Cookie session value");
-    f.app
-        .harness
-        .get_by_label_contains("requests sent with Dev");
+    support::assert_help(
+        &f.app.harness,
+        "Set by servers for requests sent with Dev, and sent back to them. Kept only on this computer.",
+    );
     f.app
         .harness
         .get_by_label_contains("127.0.0.1 · / · until cleared");
@@ -121,6 +106,7 @@ fn a_login_cookie_is_listed_masked_sent_on_and_removed_after_asking() {
         "the value is masked"
     );
 
+    support::assert_icon_button(&f.app.harness, "Remove cookie session");
     click(&mut f.app.harness, "Remove cookie session");
     settle(&mut f.app.harness);
     f.app
@@ -139,6 +125,7 @@ fn clearing_asks_with_the_count_and_settings_has_the_switch() {
     let mut f = fixture();
     send(&mut f, "GET Login");
     show_dev_cookies(&mut f);
+    support::assert_icon_button(&f.app.harness, "Clear cookies…");
     click(&mut f.app.harness, "Clear cookies…");
     settle(&mut f.app.harness);
     f.app

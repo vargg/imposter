@@ -51,8 +51,11 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 
 **Variables**
 - `{{name}}` placeholders in the URL, headers, body, auth and settings.
-- Three scopes: global, per collection, and environments. The active environment overrides
-  the collection, which overrides globals.
+- Open **Variables** from the rail and pick **Global**, an environment or a collection
+  from the scope list. The active environment has a check and overrides the collection,
+  which overrides globals. The toolbar's info icon explains the selected scope.
+- Use the Plus beside **Environments** to create one. Right-click or press Shift+F10 on
+  an environment to edit its name and color or delete it.
 - Give an environment a color (a new one named "prod", "production" or "live" is offered
   red). Its name appears in the header's environment picker, tinted in its color, and Send
   names a colored environment (for example, **Send to Prod**) before anything goes out.
@@ -66,15 +69,16 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   for another value (`{{$uuid second}}`). Postman's `$guid`, `$randomUUID`, `$timestamp`,
   `$isoTimestamp` and `$randomInt` work as imported. Type `{{$` for the list.
 - Secrets: write `{{secret:token}}` for a token, password or key. Its value lives on the
-  Variables screen's **Secrets** section, per environment or global (the active
+  **Secrets** tab in Variables, for Global or an environment (the active
   environment's first), masked, and only on this computer: never exported, and removed from
   History, which shows `«redacted»` instead. The inspector always masks it until Reveal. A
   capture's lock stores a login's token as a secret instead of a variable, and scripts
   have `secrets.get` and `secrets.set`. Secrets are kept unencrypted in your profile
   database (and its upgrade backups), like the rest of your data.
-- Cookies: the Variables screen's **Cookies** section lists what servers set for the
-  scope's requests (Global: those sent without an environment), masked like secrets, with
-  where and until when each is sent. Remove one, or **Clear cookies…**; both ask first.
+- The **Cookies** tab in Variables lists what servers set for the selected environment's
+  requests or, for Global, requests sent without an environment. Each row shows a masked
+  value and where and until when the cookie is sent. Removing one or using **Clear cookies…**
+  asks for confirmation.
   Cookies are kept only on this computer.
 - In Variables, each row shows its values as chips. Type in **Add value**, then press
   Enter to add and select it or Save to add it while saving the scope. Click a chip to

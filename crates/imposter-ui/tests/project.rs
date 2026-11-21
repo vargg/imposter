@@ -146,8 +146,13 @@ fn the_global_page_can_keep_its_values_on_this_computer() {
     assert_eq!(file(&app, "globals.yaml"), "variables:\n  region: eu\n");
     support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
-    app.harness
-        .get_by_label_contains("Saved to globals.yaml in the collections folder");
+    let precedence = "A collection's variables and the active environment override these.";
+    support::assert_help(
+        &app.harness,
+        &format!(
+            "Used by every request. Saved to globals.yaml in the collections folder.\n{precedence}"
+        ),
+    );
 
     click(&mut app.harness, "Variable actions");
     click(&mut app.harness, "Share values");
@@ -157,8 +162,12 @@ fn the_global_page_can_keep_its_values_on_this_computer() {
         file(&app, "globals.yaml"),
         "share_values: false\nvariables:\n  region: \"\"\n"
     );
-    app.harness
-        .get_by_label_contains("globals.yaml lists the names; the values stay on this computer");
+    support::assert_help(
+        &app.harness,
+        &format!(
+            "Used by every request. globals.yaml lists the names; the values stay on this computer.\n{precedence}"
+        ),
+    );
     let in_effect = app
         .harness
         .state()

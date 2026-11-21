@@ -145,11 +145,9 @@ fn renaming_shows_the_color_and_can_clear_it() {
     let mut app = with_environments(false);
     support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
-    click(&mut app.harness, "Variable scope");
-    click(&mut app.harness, "Environment · Prod");
-    settle(&mut app.harness);
-
-    click(&mut app.harness, "Variable actions");
+    assert_eq!(app.harness.state().state.variables.scope, Scope::Global);
+    support::open_environment_menu(&mut app.harness, "Prod");
+    assert_eq!(app.harness.state().state.variables.scope, Scope::Global);
     click(&mut app.harness, "Edit name and color…");
     assert_eq!(chosen(&app), ["Red"]);
     support::text_input(&app.harness, "Name").type_text("uction");
@@ -167,6 +165,24 @@ fn renaming_shows_the_color_and_can_clear_it() {
         stored(&app),
         [("Dev".to_owned(), None), ("Production".to_owned(), None)]
     );
+}
+
+#[test]
+fn a_focused_environment_can_open_its_menu_with_the_keyboard() {
+    let mut app = with_environments(false);
+    support::open_screen(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Environment · Prod").focus();
+    app.harness.run_steps(2);
+    app.harness
+        .key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::F10);
+    app.harness.run_steps(2);
+    assert!(
+        app.harness
+            .get_by_label("Edit name and color…")
+            .is_focused()
+    );
+    assert_eq!(app.harness.state().state.variables.scope, Scope::Global);
 }
 
 /// The accessible description of the Send button named `label`.

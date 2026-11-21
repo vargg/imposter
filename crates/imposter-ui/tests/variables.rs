@@ -5,11 +5,12 @@
 
 mod support;
 
-use egui_kittest::kittest::Queryable;
-use imposter_app::core::model::{AuthKind, Variables};
+use egui_kittest::kittest::{NodeT, Queryable};
+use imposter_app::core::model::{AuthKind, EnvColor, Variables};
 use imposter_app::store::{environments, executions};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::{CloseState, EditorTab, Screen};
+use imposter_ui::icons::Icon;
 use imposter_ui::vars::Scope;
 use support::{
     click, click_button, collection, request, save_state, settle, start_with, type_into,
@@ -135,10 +136,10 @@ fn switching_scope_with_unsaved_rows_asks_and_discard_keeps_the_stored_values() 
     open_screen(&mut app);
     type_into(&mut app.harness, "Add value to variable 1", "12");
 
-    click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Collection · API");
     app.harness
         .get_by_label("Save variable changes before continuing?");
+    assert_eq!(app.harness.state().state.variables.scope, Scope::Global);
     click(&mut app.harness, "Discard");
     settle(&mut app.harness);
 
@@ -167,7 +168,6 @@ fn saving_from_the_guard_stores_then_switches() {
     open_screen(&mut app);
     type_into(&mut app.harness, "Add value to variable 1", "12");
 
-    click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Collection · API");
     click(&mut app.harness, "Save");
     settle(&mut app.harness);
@@ -191,6 +191,7 @@ fn environments_are_created_renamed_and_deleted() {
     let mut app = start_with(|_| {});
     open_screen(&mut app);
 
+    support::assert_icon_button(&app.harness, "New environment");
     click(&mut app.harness, "New environment");
     app.harness.run_steps(2);
     support::text_input(&app.harness, "Name").type_text("Staging");
@@ -202,7 +203,7 @@ fn environments_are_created_renamed_and_deleted() {
         Scope::Environment(_)
     ));
 
-    click(&mut app.harness, "Variable actions");
+    support::open_environment_menu(&mut app.harness, "Staging");
     click(&mut app.harness, "Edit name and color…");
     app.harness.run_steps(2);
     support::text_input(&app.harness, "Name").type_text(" EU");
@@ -220,7 +221,7 @@ fn environments_are_created_renamed_and_deleted() {
         .collect();
     assert_eq!(names, ["Staging EU"]);
 
-    click(&mut app.harness, "Variable actions");
+    support::open_environment_menu(&mut app.harness, "Staging EU");
     click(&mut app.harness, "Delete environment…");
     click_button(&mut app.harness, "Delete environment");
     settle(&mut app.harness);
@@ -646,32 +647,140 @@ fn a_dollar_suggests_generated_values_and_the_inspector_explains_them() {
 }
 
 #[test]
-fn the_screen_says_what_it_edits_and_where_it_stands_in_precedence() {
-    let mut app = start_with(|store| {
-        store
-            .call_blocking(|db| {
-                let dev = environments::create_environment(db, "Dev", &vars(&[]))?;
-                environments::set_active_environment(db, Some(dev.id))?;
-                environments::create_environment(db, "Prod", &vars(&[]))
-            })
-            .unwrap();
-        collection(store, "API");
-    });
-    open_screen(&mut app);
-    // The picker is captioned; the text under it explains rather than repeats it.
-    let picker = app.harness.get_by_label("Variable scope").rect();
-    let caption = app.harness.get_by_label("Editing").rect();
-    assert!(
-        caption.right() <= picker.left() && (caption.center().y - picker.center().y).abs() < 4.0
+fn the_scope_list_orders_groups_and_marks_the_active_environment() {
+    let mut app = with_scopes();
+    let global = app.harness.get_by_label("Global");
+    assert_eq!(global.accesskit_node().is_selected(), Some(true));
+    let dev = app.harness.get_by_label("Environment · Dev");
+    let prod = app.harness.get_by_label("Environment · Prod");
+    assert_eq!(dev.accesskit_node().is_selected(), Some(false));
+    assert_eq!(
+        dev.accesskit_node().description().as_deref(),
+        Some("Active: requests use this environment"),
     );
-    app.harness
-        .get_by_label("Used by every request. Saved to globals.yaml in the collections folder.");
-    app.harness
-        .get_by_label("A collection's variables and the active environment override these.");
+    assert_eq!(prod.accesskit_node().description().as_deref(), Some("Prod"));
+    let glyph_in = |row: egui::Rect, icon: Icon| {
+        let glyph = icon.glyph().to_string();
+        app.harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Text(text)
+                if text.galley.job.text == glyph && row.contains(text.pos))
+        })
+    };
+    assert!(glyph_in(global.rect(), Icon::Globe));
+    assert!(glyph_in(
+        app.harness.get_by_label("Collection · API").rect(),
+        Icon::Folder
+    ));
+    assert!(glyph_in(dev.rect(), Icon::Check));
+    assert!(!glyph_in(prod.rect(), Icon::Check));
+    let red = imposter_ui::theme::env_color(EnvColor::Red);
+    assert!(app.harness.output().shapes.iter().any(|clipped| {
+        matches!(&clipped.shape, egui::Shape::Circle(dot)
+            if dot.fill == red && prod.rect().contains(dot.center))
+    }));
+    for pair in [
+        ["Global", "Environments"],
+        ["Environments", "Environment · Dev"],
+        ["Environment · Dev", "Environment · Prod"],
+        ["Environment · Prod", "Collections"],
+        ["Collections", "Collection · API"],
+        ["Collection · API", "Collection · Webhooks"],
+    ] {
+        let first = app.harness.get_by_label(pair[0]).rect();
+        let second = app.harness.get_by_label(pair[1]).rect();
+        assert!(
+            first.bottom() <= second.top(),
+            "{pair:?} should be in order"
+        );
+    }
+    assert!(app.harness.query_by_label("Editing").is_none());
+    assert!(app.harness.query_by_label("Variable scope").is_none());
+
+    click(&mut app.harness, "Environment · Prod");
+    settle(&mut app.harness);
+    let state = &app.harness.state().state;
+    let dev = state
+        .environments
+        .iter()
+        .find(|env| env.name == "Dev")
+        .unwrap();
+    let prod = state
+        .environments
+        .iter()
+        .find(|env| env.name == "Prod")
+        .unwrap();
+    assert_eq!(state.active_environment, Some(dev.id));
+    assert_eq!(state.variables.scope, Scope::Environment(prod.id));
+    assert_eq!(
+        app.harness
+            .get_by_label("Environment · Prod")
+            .accesskit_node()
+            .is_selected(),
+        Some(true),
+    );
+}
+
+#[test]
+fn scope_names_start_in_the_same_column() {
+    let mut app = with_scopes();
+    for size in [
+        egui::Vec2::from(imposter_ui::layout::MIN_WINDOW),
+        egui::vec2(1400.0, 900.0),
+    ] {
+        app.harness.set_size(size);
+        settle(&mut app.harness);
+        let label_left = |row_name, label| {
+            let bounds = app.harness.get_by_label(row_name).rect();
+            app.harness
+                .output()
+                .shapes
+                .iter()
+                .find_map(|clipped| {
+                    let egui::Shape::Text(text) = &clipped.shape else {
+                        return None;
+                    };
+                    if !bounds.contains(text.pos) {
+                        return None;
+                    }
+                    let prefix = text.galley.job.text.strip_suffix(label)?;
+                    let line = text.galley.rows.first()?;
+                    let first = line.glyphs.get(prefix.chars().count())?;
+                    Some(text.pos.x + line.pos.x + first.pos.x)
+                })
+                .unwrap_or_else(|| panic!("No painted label for {row_name}"))
+        };
+        let global = label_left("Global", "Global");
+        for (row, label) in [
+            ("Environment · Dev", "Dev"),
+            ("Environment · Prod", "Prod"),
+            ("Collection · API", "API"),
+            ("Collection · Webhooks", "Webhooks"),
+        ] {
+            let left = label_left(row, label);
+            assert!(
+                (left - global).abs() <= 1.0,
+                "{row} at {left}, Global at {global}, size {size:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn scope_guidance_is_in_the_tooltip_and_inactivity_stays_visible() {
+    let mut app = with_scopes();
+    let usage = "Used by every request. Saved to globals.yaml in the collections folder.";
+    let precedence = "A collection's variables and the active environment override these.";
+    let global_guidance = format!("{usage}\n{precedence}");
+    support::assert_help(&app.harness, &global_guidance);
+    assert!(app.harness.query_by_label(usage).is_none());
+    assert!(app.harness.query_by_label(precedence).is_none());
+    app.harness.get_by_label("Help").hover();
+    app.harness.run_steps(4);
+    app.harness.get_by_label(&global_guidance);
 
     for (scope, usage) in [
         (
-            "Environment · Dev (active)",
+            "Environment · Dev",
             "Dev is the active environment: requests use these now.",
         ),
         (
@@ -679,20 +788,39 @@ fn the_screen_says_what_it_edits_and_where_it_stands_in_precedence() {
             "Prod is not active: requests use these only while it is.",
         ),
     ] {
-        click(&mut app.harness, "Variable scope");
         click(&mut app.harness, scope);
         settle(&mut app.harness);
-        app.harness.get_by_label(usage);
-        app.harness
-            .get_by_label("While active, these override the collection's variables and Global.");
+        assert!(app.harness.query_by_label(usage).is_none());
+        let precedence = "While active, these override the collection's variables and Global.";
+        support::assert_help(&app.harness, &format!("{usage}\n{precedence}"));
     }
+    app.harness
+        .get_by_label("Inactive environment. Activate it to use these values in requests.");
 
-    click(&mut app.harness, "Variable scope");
     click(&mut app.harness, "Collection · API");
     settle(&mut app.harness);
-    app.harness.get_by_label("Used by the requests in API.");
-    app.harness
-        .get_by_label("The active environment overrides these, and they override Global.");
+    let usage = "Used by the requests in API.";
+    let precedence = "The active environment overrides these, and they override Global.";
+    support::assert_help(&app.harness, &format!("{usage}\n{precedence}"));
+    assert!(app.harness.query_by_label(usage).is_none());
+    assert!(app.harness.query_by_label(precedence).is_none());
+}
+
+fn with_scopes() -> support::App {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                let dev = environments::create_environment(db, "Dev", &vars(&[]))?;
+                environments::set_active_environment(db, Some(dev.id))?;
+                let prod = environments::create_environment(db, "Prod", &vars(&[]))?;
+                environments::set_environment_color(db, prod.id, Some(EnvColor::Red))
+            })
+            .unwrap();
+        collection(store, "API");
+        collection(store, "Webhooks");
+    });
+    open_screen(&mut app);
+    app
 }
 
 #[test]
