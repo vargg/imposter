@@ -555,6 +555,11 @@ mod tests {
                 contrast(p.accent, p.selected) >= AA,
                 "{name} selected segment"
             );
+            assert!(contrast(p.text, p.selected) >= AA, "{name} selected URL");
+            assert!(
+                contrast(p.error, p.selected) >= AA,
+                "{name} selected text in an invalid mock field"
+            );
             assert!(contrast(p.on_accent, p.accent) >= AA, "{name} check glyph");
             assert!(contrast(p.warning, p.input) >= AA, "{name} warning badge");
             assert!(contrast(p.error, p.input) >= AA, "{name} danger label");

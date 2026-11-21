@@ -851,7 +851,8 @@ fn frameless(ui: &mut Ui) {
     let visuals = ui.visuals_mut();
     visuals.extreme_bg_color = egui::Color32::TRANSPARENT;
     visuals.text_edit_bg_color = Some(egui::Color32::TRANSPARENT);
-    visuals.selection.stroke = egui::Stroke::NONE;
+    // egui uses the stroke color for selected glyphs even when its zero width hides the ring.
+    visuals.selection.stroke = egui::Stroke::new(0.0, palette().text);
     let hover = palette().hover;
     for (state, fill) in [
         (&mut visuals.widgets.inactive, egui::Color32::TRANSPARENT),

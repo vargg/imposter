@@ -153,11 +153,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **Orange means primary, selected or focused; nothing else.**
   - **Hover and press** outline framed controls in the muted text color. A hovered icon
     turns the text color.
-  - **Selection** (`selection.stroke`) is the accent: selected items' text, a focused field's
-    1.5-point ring, and a 2-point bar on the left of selected rail items and selected rows
-    in the tree, History and palette (`widgets::selection_bar`). Selected rows and menu
-    options use a fill (`widgets::option`), since egui's selected button outline read as
-    a hover left on.
+  - **Selection** (`selection.stroke`) defaults to the accent for selected items' text, a
+    focused field's 1.5-point ring, and a 2-point bar on the left of selected rail items
+    and selected rows in the tree, History and palette (`widgets::selection_bar`). Selected
+    rows and menu options use a fill (`widgets::option`), since egui's selected button
+    outline read as a hover left on.
   - **Icon toggles** use an accent glyph and a short underline without accent fill.
     The underline marks selection even when focus also colors a glyph. The filled
     treatment made a chosen layout resemble a primary action. The theme and icon
@@ -490,12 +490,15 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **The request bar is one control:** method, URL and Send share one edge
   (`field_border`) on the input fill, with a divider after the method and Send filling the
   right end. The fields inside draw no frame of their own (`workspace::frameless`), and the
-  focus ring goes around the whole bar. Single-line variable fields centre their text
-  vertically. A custom method being typed takes the method picker's place, so the URL
-  keeps its room at 720 points. Save's icon is in the text color while there is something
-  to save (`icons::ready_button`), muted at rest and faded when disabled. Why: the bar was
-  a frame in a frame in a card, its URL text sat 6 points above centre, and enabled and
-  disabled Save looked alike (the review's #22–#24). Checked by
+  focus ring goes around the whole bar. Their selection stroke has zero width (no ring of
+  their own) but the text color: egui paints selected glyphs in the stroke's color, and a
+  transparent stroke made a selected URL invisible (user's note; checked by
+  `imposter-ui/tests/shortcuts.rs` in both themes). Single-line variable fields centre their text vertically. A custom method being
+  typed takes the method picker's place, so the URL keeps its room at 720 points. Save's
+  icon is in the text color while there is something to save (`icons::ready_button`),
+  muted at rest and faded when disabled. Why: the bar was a frame in a frame in a card,
+  its URL text sat 6 points above centre, and enabled and disabled Save looked alike
+  (the review's #22–#24). Checked by
   `imposter-ui/tests/request_bar.rs` and the layout lint's custom-method state.
   - Send, Cancel and Stop share one slot with centred labels. Its width is measured from
     "Send to Production", "Cancel" and "Stop", with a 96-point minimum and a ceiling

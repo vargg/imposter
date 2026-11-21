@@ -4,12 +4,13 @@
 
 mod support;
 
-use egui::{Key, Modifiers};
-use egui_kittest::kittest::Queryable;
+use egui::{Key, Modifiers, Theme};
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::settings::AppSettings;
 use imposter_app::store::{collections, kv};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::Screen;
+use imposter_ui::theme::{contrast, of};
 use support::{click, collection, request, save_state, settle, start, start_with, type_into};
 
 fn press(app: &mut support::App, key: Key) {
@@ -249,6 +250,76 @@ fn select_url_shortcut_lets_typing_replace_the_url() {
 
     let pane = app.harness.state().state.editor.as_ref().unwrap();
     assert_eq!(pane.editor.url, "http://h/new");
+}
+
+fn assert_selected_url_is_readable(theme: Theme, theme_label: &str) {
+    let url = "http://{{host}}/users";
+    let mut app = start_with(|store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Users", url);
+    });
+    support::open_screen(&mut app.harness, "Settings");
+    support::open_settings_category(&mut app.harness, "Appearance");
+    click(&mut app.harness, theme_label);
+    support::open_screen(&mut app.harness, "Requests");
+    click(&mut app.harness, "GET Users");
+    settle(&mut app.harness);
+    press(&mut app, Key::L);
+    app.harness.step();
+
+    assert_eq!(app.harness.ctx.theme(), theme);
+    let field = support::text_input(&app.harness, "Request URL");
+    assert_eq!(field.accesskit_node().text_selection().unwrap().text(), url);
+
+    let text = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text)
+                if text.galley.job.text == url && field.rect().contains(text.pos) =>
+            {
+                Some(text)
+            }
+            _ => None,
+        })
+        .unwrap();
+    let [row] = text.galley.rows.as_slice() else {
+        panic!("the URL should fit on one line");
+    };
+    let background = of(theme).selected;
+    let mesh = &row.visuals.mesh;
+    let glyphs = row.visuals.glyph_vertex_range.clone();
+    assert!(
+        mesh.vertices[glyphs.end..]
+            .iter()
+            .any(|vertex| vertex.color == background),
+        "{theme:?} URL selection background"
+    );
+    assert!(!glyphs.is_empty());
+    for vertex in &mesh.vertices[glyphs] {
+        assert_eq!(
+            vertex.color.a(),
+            255,
+            "{theme:?} selected URL glyph opacity"
+        );
+        let ratio = contrast(vertex.color, background);
+        assert!(
+            ratio >= 4.5,
+            "{theme:?} selected URL glyph contrast: {ratio:.2}"
+        );
+    }
+}
+
+#[test]
+fn selected_url_glyphs_are_readable_in_dark_theme() {
+    assert_selected_url_is_readable(Theme::Dark, "Theme: Dark");
+}
+
+#[test]
+fn selected_url_glyphs_are_readable_in_light_theme() {
+    assert_selected_url_is_readable(Theme::Light, "Theme: Light");
 }
 
 #[test]
