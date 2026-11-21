@@ -437,6 +437,20 @@ fn appearance(state: &mut State, ui: &mut Ui) {
             );
         },
     );
+    settings_row(
+        ui,
+        "Response preview",
+        "How much of a response body the viewer formats and shows. Save body… and Copy full body always use all of it. Larger previews are slower to scroll.",
+        |ui| {
+            widgets::named_segments(
+                ui,
+                "Response preview",
+                &mut appearance.preview_limit,
+                &crate::viewer::PreviewLimit::ALL,
+                None,
+            );
+        },
+    );
     if appearance != state.appearance {
         state.actions.push(Action::SetAppearance(appearance));
     }

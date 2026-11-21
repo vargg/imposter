@@ -152,7 +152,7 @@ Detailed decisions and their reasons are organized by subsystem in `docs/decisio
 **When modifying a subsystem, consult its decision file before making changes:**
 
 - **[UI Architecture](docs/decisions/ui.md)** (`imposter-ui`):
-  egui/eframe (glow), virtualized response rows, 256 KiB preview limits, table composers
+  egui/eframe (glow), virtualized response rows, the response preview limit setting, table composers
   and header actions, JSON navigation & folding, dark/light themes, Inter & JetBrains Mono
   fonts, Phosphor icons, Compact/Comfortable density, accent color conventions, request bar,
   request tabs, Body and script headers, response tools, forms, modal dialogs, left navigation

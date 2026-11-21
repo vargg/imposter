@@ -54,13 +54,14 @@ const APPEARANCE_KEY: &str = "appearance";
 /// The Load screen's last plan.
 const LOAD_KEY: &str = "load_form";
 
-/// How the app looks: a UI preference, kept in UI state beside the layout rather than in the
-/// application settings, which also govern sends.
+/// How the app looks and how much of a response it shows: UI preferences, kept in UI state
+/// beside the layout rather than in the application settings, which also govern sends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Appearance {
     pub theme: theme::ThemeChoice,
     pub density: theme::Density,
+    pub preview_limit: crate::viewer::PreviewLimit,
 }
 const LAYOUT_KEY: &str = "workspace_layout";
 const DRAFT_KEY: &str = "draft";
@@ -646,7 +647,7 @@ pub struct HistoryScreen {
     generation: u64,
 }
 
-fn show_result_step(history: &mut HistoryScreen) {
+fn show_result_step(history: &mut HistoryScreen, limit: crate::viewer::PreviewLimit) {
     let result = history.opened.as_ref().and_then(OpenedResult::current);
     history.request = result
         .and_then(|result| result.request.as_ref())
@@ -658,7 +659,7 @@ fn show_result_step(history: &mut HistoryScreen) {
     history.request_headers_view = ViewerState::default();
     history.response = ResponsePane::default();
     if let Some(response) = result.and_then(RunResult::response) {
-        history.response.show(response);
+        history.response.show(response, limit);
     }
     if let Some(notice) = result
         .and_then(|result| result.response.as_ref())
@@ -954,6 +955,8 @@ pub struct ResponsePane {
     pub live_events: Vec<imposter_app::core::sse::Event>,
     /// The event whose whole text is shown under the list.
     pub event_selected: Option<usize>,
+    /// How much of a body the preview and filter results show.
+    limit: crate::viewer::PreviewLimit,
 }
 
 /// Writes deferred because a scope has unsaved edits. Keep names only, including for secrets.
@@ -1025,6 +1028,7 @@ pub struct FilterJob {
     shown: u64,
     query: String,
     source: crate::viewer::FilterSource,
+    limit: crate::viewer::PreviewLimit,
 }
 
 static NEXT_SHOWN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -1052,13 +1056,15 @@ impl Default for ResponsePane {
             shown: 0,
             live_events: Vec::new(),
             event_selected: None,
+            limit: crate::viewer::PreviewLimit::default(),
         }
     }
 }
 
 impl ResponsePane {
-    pub fn show(&mut self, response: Response) {
-        let preview = crate::viewer::preview(&response);
+    pub fn show(&mut self, response: Response, limit: crate::viewer::PreviewLimit) {
+        self.limit = limit;
+        let preview = crate::viewer::preview(&response, limit);
         let headers = crate::viewer::headers_text(&response);
         self.notice = Some((crate::viewer::notice(&response, &preview), Tone::Muted))
             .filter(|(n, _)| !n.is_empty());
@@ -1092,6 +1098,34 @@ impl ResponsePane {
         filter.folds.clear();
     }
 
+    /// Show the same response under another preview limit, keeping the tab and the request.
+    pub fn set_limit(&mut self, limit: crate::viewer::PreviewLimit) {
+        if limit == self.limit {
+            return;
+        }
+        self.limit = limit;
+        let (Some(response), Some((preview, _))) = (&self.response, &mut self.preview) else {
+            return;
+        };
+        let before = crate::viewer::notice(response, preview);
+        *preview = crate::viewer::preview(response, limit);
+        // Only the notice the preview wrote changes; History's own stays.
+        if self
+            .notice
+            .as_ref()
+            .map_or(before.is_empty(), |(notice, _)| *notice == before)
+        {
+            self.notice = Some((crate::viewer::notice(response, preview), Tone::Muted))
+                .filter(|(n, _)| !n.is_empty());
+        }
+        self.body_folds.clear();
+        // A filter result in flight was cut at the old limit: dropped, and run again.
+        self.shown = NEXT_SHOWN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.filter.result = None;
+        self.filter.running = false;
+        self.filter.folds.clear();
+    }
+
     /// The filter run this pane needs now, if any; marks it as running.
     pub fn filter_job(&mut self) -> Option<FilterJob> {
         let response = self.response.as_ref()?;
@@ -1117,6 +1151,7 @@ impl ResponsePane {
             shown: self.shown,
             query: query.to_owned(),
             source,
+            limit: self.limit,
         })
     }
 
@@ -1806,8 +1841,9 @@ impl ImposterApp {
                 if generation == self.state.generation {
                     match result {
                         Ok(Some(record)) => {
-                            let sent = crate::viewer::sent_request(&record).as_text();
-                            self.state.response.show(record.response);
+                            let limit = self.state.appearance.preview_limit;
+                            let sent = crate::viewer::sent_request(&record, limit).as_text();
+                            self.state.response.show(record.response, limit);
                             self.state.response.sent = Some(sent);
                         }
                         Ok(None) => self.status("That run is no longer in history"),
@@ -1886,9 +1922,10 @@ impl ImposterApp {
                 if self.state.history.selected == Some(id) {
                     match result {
                         Ok(Some(record)) => {
+                            let limit = self.state.appearance.preview_limit;
                             let history = &mut self.state.history;
-                            history.request = Some(crate::viewer::sent_request(&record));
-                            history.response.show(record.response.clone());
+                            history.request = Some(crate::viewer::sent_request(&record, limit));
+                            history.response.show(record.response.clone(), limit);
                             history.record = Some(*record);
                         }
                         Ok(None) => {
@@ -1946,7 +1983,7 @@ impl ImposterApp {
                         document: result,
                         step: 0,
                     });
-                    show_result_step(history);
+                    show_result_step(history, self.state.appearance.preview_limit);
                 }
                 Err(error) => {
                     self.state.history.status =
@@ -2702,7 +2739,8 @@ impl ImposterApp {
                 self.state.generation += 1;
                 self.load_editor(&request);
                 if let Some(response) = response {
-                    self.state.response.show(*response);
+                    let limit = self.state.appearance.preview_limit;
+                    self.state.response.show(*response, limit);
                 }
                 self.state.screen = Screen::Requests;
                 self.request_status(status, Tone::Muted);
@@ -3227,9 +3265,10 @@ impl ImposterApp {
                 };
                 self.request_status(&summary, tone);
                 self.state.response.shown_run = executed.record;
-                self.state.response.show(response);
+                let limit = self.state.appearance.preview_limit;
+                self.state.response.show(response, limit);
                 self.state.response.sent = Some(
-                    crate::viewer::sent_request_of(&executed.sent, executed.attach_cookies)
+                    crate::viewer::sent_request_of(&executed.sent, executed.attach_cookies, limit)
                         .as_text(),
                 );
                 self.state.response.captures_not_set = kept;
@@ -3601,6 +3640,10 @@ impl ImposterApp {
             ),
             Action::SetAppearance(appearance) => {
                 self.state.appearance = appearance;
+                let limit = appearance.preview_limit;
+                self.state.response.set_limit(limit);
+                self.state.history.response.set_limit(limit);
+                self.state.run.pane.set_limit(limit);
                 let stored = serde_json::to_value(appearance).unwrap_or(Value::Null);
                 self.write_ui_state(APPEARANCE_KEY, stored);
             }
@@ -5016,7 +5059,7 @@ impl ImposterApp {
                     screen.pane = ResponsePane::default();
                 }
             }
-            RunAction::Select(index) => screen.select(index),
+            RunAction::Select(index) => screen.select(index, self.state.appearance.preview_limit),
             RunAction::Stop => {
                 if let Some(run) = &mut screen.run {
                     run.stopping = true;
@@ -5352,7 +5395,7 @@ impl ImposterApp {
                 let history = &mut self.state.history;
                 if let Some(opened) = &mut history.opened {
                     opened.step = step;
-                    show_result_step(history);
+                    show_result_step(history, self.state.appearance.preview_limit);
                 }
             }
         }
@@ -5485,22 +5528,24 @@ impl ImposterApp {
                     shown,
                     query,
                     source,
+                    limit,
                 } = job;
                 let asked = query.clone();
-                let done = match imposter_app::runtime::compute(move || source.run(&query)).await {
-                    Ok((document, result)) => Filtered {
-                        shown,
-                        query: asked,
-                        document: Some(document),
-                        result,
-                    },
-                    Err(error) => Filtered {
-                        shown,
-                        query: asked,
-                        document: None,
-                        result: Err(format!("Filtering failed: {error}")),
-                    },
-                };
+                let done =
+                    match imposter_app::runtime::compute(move || source.run(&query, limit)).await {
+                        Ok((document, result)) => Filtered {
+                            shown,
+                            query: asked,
+                            document: Some(document),
+                            result,
+                        },
+                        Err(error) => Filtered {
+                            shown,
+                            query: asked,
+                            document: None,
+                            result: Err(format!("Filtering failed: {error}")),
+                        },
+                    };
                 Message::Filtered(kind, Box::new(done))
             });
         }
@@ -5634,7 +5679,7 @@ mod filter_tests {
     }
 
     fn finish(job: FilterJob) -> Filtered {
-        let (document, result) = job.source.run(&job.query);
+        let (document, result) = job.source.run(&job.query, job.limit);
         Filtered {
             shown: job.shown,
             query: job.query,
@@ -5646,7 +5691,10 @@ mod filter_tests {
     #[test]
     fn one_run_at_a_time_and_the_newest_query_follows() {
         let mut pane = ResponsePane::default();
-        pane.show(json(r#"{"a":1,"b":2}"#));
+        pane.show(
+            json(r#"{"a":1,"b":2}"#),
+            crate::viewer::PreviewLimit::default(),
+        );
         assert!(pane.filter_job().is_none(), "closed");
         pane.filter.open();
         assert!(pane.filter_job().is_none(), "no query yet");
@@ -5691,22 +5739,22 @@ mod filter_tests {
             verdict: Verdict::Passed,
             actual: Some("200".into()),
         }];
-        pane.show(checked.clone());
+        pane.show(checked.clone(), crate::viewer::PreviewLimit::default());
         pane.tab = ResponseTab::Tests;
-        pane.show(checked);
+        pane.show(checked, crate::viewer::PreviewLimit::default());
         assert_eq!(pane.tab, ResponseTab::Tests);
-        pane.show(json("{}"));
+        pane.show(json("{}"), crate::viewer::PreviewLimit::default());
         assert_eq!(pane.tab, ResponseTab::Body);
     }
 
     #[test]
     fn a_result_for_an_earlier_response_is_dropped() {
         let mut pane = ResponsePane::default();
-        pane.show(json(r#"{"a":1}"#));
+        pane.show(json(r#"{"a":1}"#), crate::viewer::PreviewLimit::default());
         pane.filter.open();
         pane.filter.query = "$.a".into();
         let old = pane.filter_job().unwrap();
-        pane.show(json(r#"{"a":2}"#));
+        pane.show(json(r#"{"a":2}"#), crate::viewer::PreviewLimit::default());
         let current = pane.filter_job().unwrap();
         pane.filtered(finish(old));
         assert!(
@@ -5727,7 +5775,7 @@ mod filter_tests {
     #[test]
     fn a_failed_run_keeps_its_query_and_parses_again_next_time() {
         let mut pane = ResponsePane::default();
-        pane.show(json(r#"{"a":1}"#));
+        pane.show(json(r#"{"a":1}"#), crate::viewer::PreviewLimit::default());
         pane.filter.open();
         pane.filter.query = "$.a".into();
         let job = pane.filter_job().unwrap();

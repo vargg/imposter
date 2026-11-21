@@ -439,6 +439,7 @@ fn long_chips_wrap_under_the_values_heading_and_row_remove_buttons_stay_aligned(
             .push(Action::SetAppearance(Appearance {
                 theme: ThemeChoice::Dark,
                 density,
+                ..Appearance::default()
             }));
         app.harness.run_steps(3);
         let area = |label: &str| app.harness.get_by_label(label).rect();

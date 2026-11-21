@@ -343,7 +343,11 @@ fn branding_and_the_rail_fit_with_a_long_environment_in_both_densities() {
                     .state_mut()
                     .state
                     .actions
-                    .push(Action::SetAppearance(Appearance { theme, density }));
+                    .push(Action::SetAppearance(Appearance {
+                        theme,
+                        density,
+                        ..Appearance::default()
+                    }));
                 app.harness.run_steps(3);
 
                 let window = egui::Rect::from_min_size(egui::Pos2::ZERO, size);

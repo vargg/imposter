@@ -101,7 +101,8 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 **Responses**
 - Status, time, size and content type at a glance.
 - JSON, XML and HTML highlighting, formatted JSON, find, wrap and copy. Large bodies stay
-  responsive (the viewer only lays out what is visible; previews stop at 256 KiB).
+  responsive (the viewer only lays out what is visible; previews stop at 256 KiB by
+  default, and Settings → Appearance → Response preview raises that to 1 or 4 MiB).
 - **More tools** (⋯) holds Wrap, Collapse all, Expand all and Filter with JSONPath.
   Find and Copy sit beside it, with Save body… when space allows.
 - Fold formatted JSON by object or array, or collapse everything below the top level.
@@ -300,7 +301,8 @@ response.send_json(#{ calls: state.calls, item: request.json().item });
   `url:users` and `-word`.
 - Side-by-side or stacked request and response, switched from the Requests toolbar. Collections
   sidebar can be hidden. Splitter positions, window size and the last selection are restored.
-- Dark, light or system theme, and Compact or Comfortable density (Settings → Appearance).
+- Dark, light or system theme, Compact or Comfortable density, and how much of a response
+  body the viewer shows (Settings → Appearance).
   Every control has an accessible name for screen readers; text colors meet WCAG AA
   contrast in both themes, and control edges 3:1.
 - Application **Settings** opens from the rail (or Cmd/Ctrl+,). Categories sit in a list on

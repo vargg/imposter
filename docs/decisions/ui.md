@@ -643,7 +643,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   per frame (`highlight::slice`): tokenizing each row alone lost a string's color on its
   continuation rows. Checked by `imposter-ui/tests/response.rs`.
 
-- **The preview stays at 256 KiB; the whole body is one click away.** When the preview is
+- **The preview limit is a setting: 256 KiB (default), 1 MiB or 4 MiB; the whole body is
+  one click away.** Settings → Appearance → Response preview, stored with the theme in UI
+  state and applied at once to the responses shown in Requests, History and Run. Fixed
+  choices, not a number: rows are recomputed from the whole preview every frame, so past a
+  few MiB scrolling slows (see the editor costs above). When the preview is
   shorter than the body, the pane says so precisely ("Preview shows 256 KB of 584 KB", or
   "Body cut at … when captured") and offers Save body… (written atomically on the bridge,
   `transfer::write_file`) and Copy full body, in Requests and History. Why: the limit keeps

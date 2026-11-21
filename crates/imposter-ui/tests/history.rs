@@ -166,7 +166,7 @@ fn history_keeps_the_response_tools_and_checks_in_its_unified_detail() {
 #[test]
 fn history_keeps_whole_body_actions_next_to_the_preview_tools() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let limit = imposter_ui::viewer::PREVIEW_LIMIT;
+    let limit = imposter_ui::viewer::PreviewLimit::default().bytes();
     let server = runtime.block_on(Server::start(move |_, _| {
         let mut body = "a line of text\n".repeat(limit / 12);
         body.push_str("end of the response");

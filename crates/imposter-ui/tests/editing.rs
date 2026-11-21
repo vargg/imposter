@@ -700,17 +700,16 @@ fn the_viewer_finds_text_in_the_response() {
         request(store, api.id, "Viewer", "http://x");
     });
     open(&mut app, "GET Viewer");
-    app.harness
-        .state_mut()
-        .state
-        .response
-        .show(imposter_app::core::execution::Response {
+    app.harness.state_mut().state.response.show(
+        imposter_app::core::execution::Response {
             status: 200,
             reason: "OK".into(),
             headers: vec![("content-type".into(), "text/plain".into())],
             body: b"alpha beta\nALPHA gamma\nalpha".to_vec(),
             ..Default::default()
-        });
+        },
+        imposter_ui::viewer::PreviewLimit::default(),
+    );
     app.harness.run_steps(2);
 
     app.harness.get_by_label("Copy body").click();
@@ -851,16 +850,15 @@ fn response_tools_share_the_tab_row_with_copy_at_the_right() {
         request(store, api.id, "Viewer", "http://x");
     });
     open(&mut app, "GET Viewer");
-    app.harness
-        .state_mut()
-        .state
-        .response
-        .show(imposter_app::core::execution::Response {
+    app.harness.state_mut().state.response.show(
+        imposter_app::core::execution::Response {
             status: 200,
             headers: vec![("content-type".into(), "text/plain".into())],
             body: b"response body".to_vec(),
             ..Default::default()
-        });
+        },
+        imposter_ui::viewer::PreviewLimit::default(),
+    );
     // The viewer's tools belong to the raw text of the headers, not their table.
     app.harness.state_mut().state.response.headers_raw = true;
     // The smallest window stacks the panes, as a user would there.

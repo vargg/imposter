@@ -292,7 +292,11 @@ fn appearance(app: &mut support::App, theme: ThemeChoice, density: Density) {
         .state_mut()
         .state
         .actions
-        .push(Action::SetAppearance(Appearance { theme, density }));
+        .push(Action::SetAppearance(Appearance {
+            theme,
+            density,
+            ..Appearance::default()
+        }));
     app.harness.run_steps(3);
 }
 
@@ -552,17 +556,20 @@ fn walk(
         let events: Vec<Event> = (1..40).map(event).collect();
 
         let response = &mut app.harness.state_mut().state.response;
-        response.show(imposter_app::core::execution::Response {
-            status: 200,
-            reason: "OK".into(),
-            headers: vec![("content-type".into(), "text/event-stream".into())],
-            stream: Some(Stream {
-                end: StreamEnd::Cut,
-                events,
-                more_events: 3,
-            }),
-            ..Default::default()
-        });
+        response.show(
+            imposter_app::core::execution::Response {
+                status: 200,
+                reason: "OK".into(),
+                headers: vec![("content-type".into(), "text/event-stream".into())],
+                stream: Some(Stream {
+                    end: StreamEnd::Cut,
+                    events,
+                    more_events: 3,
+                }),
+                ..Default::default()
+            },
+            imposter_ui::viewer::PreviewLimit::default(),
+        );
         response.event_selected = Some(1);
     }
     check(app, "event stream");

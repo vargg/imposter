@@ -11,8 +11,47 @@ use imposter_app::core::select;
 
 use crate::theme::Tone;
 
-/// Only this much of a body is decoded, formatted and shown.
-pub const PREVIEW_LIMIT: usize = 256 * 1024;
+/// How much of a body is decoded, formatted and shown (Settings → Appearance). A few fixed
+/// sizes: the viewer splits the whole preview into rows every frame, so its cost grows
+/// with the limit, and a body past it is one click away (Save body…, Copy full body).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum PreviewLimit {
+    #[default]
+    #[serde(rename = "256kib")]
+    Kib256,
+    #[serde(rename = "1mib")]
+    Mib1,
+    #[serde(rename = "4mib")]
+    Mib4,
+}
+
+impl PreviewLimit {
+    pub const ALL: [(Self, &'static str); 3] = [
+        (Self::Kib256, "256 KiB"),
+        (Self::Mib1, "1 MiB"),
+        (Self::Mib4, "4 MiB"),
+    ];
+
+    pub const fn bytes(self) -> usize {
+        match self {
+            Self::Kib256 => 256 * 1024,
+            Self::Mib1 => 1024 * 1024,
+            Self::Mib4 => 4 * 1024 * 1024,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        Self::ALL
+            .iter()
+            .find(|(limit, _)| *limit == self)
+            .map_or("", |(_, label)| label)
+    }
+
+    /// The line that ends a preview cut at the limit.
+    fn cut_line(self) -> String {
+        format!("\n… Preview limited to {}", self.label())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
@@ -32,6 +71,8 @@ pub struct Preview {
     pub outline: Option<Outline>,
     /// The body is not text ([`is_binary`]): it is described and saved, never shown.
     pub binary: bool,
+    /// The limit the preview was cut at, if it is shorter than the body.
+    pub limit: PreviewLimit,
 }
 
 /// The content type's essence, lowercased: `image/png` of `Image/PNG; q=1`.
@@ -255,7 +296,7 @@ fn reindent(text: &str) -> String {
     out
 }
 
-pub fn preview(response: &Response) -> Preview {
+pub fn preview(response: &Response, limit: PreviewLimit) -> Preview {
     if is_binary(response) {
         // Bytes shown as text are noise; the pane describes the body and offers to save it.
         return Preview {
@@ -264,37 +305,39 @@ pub fn preview(response: &Response) -> Preview {
             limited: response.truncated,
             outline: None,
             binary: true,
+            limit,
         };
     }
+    let max = limit.bytes();
     let content_type = content_type(&response.headers);
     let mut language = language(content_type);
-    let shown = &response.body[..response.body.len().min(PREVIEW_LIMIT)];
-    let mut text = decode(shown, response.body.len() > PREVIEW_LIMIT);
+    let shown = &response.body[..response.body.len().min(max)];
+    let mut text = decode(shown, response.body.len() > max);
     let mut limited = response.truncated;
     let mut outline = None;
     if language == Language::Json
-        && response.body.len() <= PREVIEW_LIMIT
+        && response.body.len() <= max
         && let Some(formatted) = pretty_json(&text)
     {
-        if formatted.len() > PREVIEW_LIMIT {
+        if formatted.len() > max {
             limited = true;
-            text = formatted[..formatted.floor_char_boundary(PREVIEW_LIMIT)].to_owned();
+            text = formatted[..formatted.floor_char_boundary(max)].to_owned();
         } else {
             outline = Outline::build(&formatted);
             text = formatted;
         }
     }
-    let cut = response.body.len() > PREVIEW_LIMIT || response.truncated;
+    let cut = response.body.len() > max || response.truncated;
     if language == Language::Json
         && cut
         && outline.is_none()
         && let Some(formatted) = pretty_json_start(&text)
     {
         // Folding needs the whole document, so a cut one has none.
-        formatted[..formatted.floor_char_boundary(PREVIEW_LIMIT)].clone_into(&mut text);
+        formatted[..formatted.floor_char_boundary(max)].clone_into(&mut text);
     }
-    if response.body.len() > PREVIEW_LIMIT {
-        text.push_str("\n… Preview limited to 256 KiB");
+    if response.body.len() > max {
+        text.push_str(&limit.cut_line());
         language = Language::Plain;
         limited = true;
     }
@@ -304,6 +347,7 @@ pub fn preview(response: &Response) -> Preview {
         limited,
         outline,
         binary: false,
+        limit,
     }
 }
 
@@ -478,8 +522,8 @@ impl SentRequest {
 
 /// What `record` sent, prepared the same way the executor prepares it. Records that no longer
 /// prepare (older formats) show their method and URL with an explanation.
-pub fn sent_request(record: &ExecutionRecord) -> SentRequest {
-    sent_request_of(&record.resolved, record.settings.attach_cookies)
+pub fn sent_request(record: &ExecutionRecord, limit: PreviewLimit) -> SentRequest {
+    sent_request_of(&record.resolved, record.settings.attach_cookies, limit)
 }
 
 /// The request a headless result records, as History shows a sent request. Its body is
@@ -558,6 +602,7 @@ pub fn outcome_tone(outcome: imposter_app::core::run_result::RunOutcome) -> Tone
 pub fn sent_request_of(
     sent: &imposter_app::core::model::Request,
     attach_cookies: bool,
+    limit: PreviewLimit,
 ) -> SentRequest {
     let template = &sent.template;
     let prepared = match prepare::prepare(template, attach_cookies) {
@@ -583,15 +628,16 @@ pub fn sent_request_of(
     let (body, language) = match prepared.body {
         PreparedBody::Bytes(bytes) if bytes.is_empty() => (String::new(), Language::Plain),
         PreparedBody::Bytes(bytes) => {
-            let cut = bytes.len() > PREVIEW_LIMIT;
-            let mut text = decode(&bytes[..bytes.len().min(PREVIEW_LIMIT)], cut);
+            let max = limit.bytes();
+            let cut = bytes.len() > max;
+            let mut text = decode(&bytes[..bytes.len().min(max)], cut);
             if cut {
                 if language == Language::Json
                     && let Some(formatted) = pretty_json_start(&text)
                 {
-                    formatted[..formatted.floor_char_boundary(PREVIEW_LIMIT)].clone_into(&mut text);
+                    formatted[..formatted.floor_char_boundary(max)].clone_into(&mut text);
                 }
-                text.push_str("\n… Preview limited to 256 KiB");
+                text.push_str(&limit.cut_line());
                 (text, Language::Plain)
             } else if language == Language::Json
                 && let Some(formatted) = pretty_json(&text)
@@ -891,7 +937,7 @@ pub fn notice(response: &Response, preview: &Preview) -> String {
         )),
         Outcome::Response if preview.limited => parts.push(format!(
             "Preview shows {} of {}",
-            format_size(PREVIEW_LIMIT),
+            format_size(preview.limit.bytes()),
             format_size(response.body.len())
         )),
         _ => {}
@@ -954,7 +1000,7 @@ pub type Document = std::sync::Arc<Result<serde_json::Value, select::SelectError
 
 /// Run `query` over `document`. Results are re-serialized, so integers up to 64 bits and
 /// floats keep their value but not their exact spelling (`1.50` becomes `1.5`).
-pub fn filter(document: &Document, query: &str) -> Result<Filtered, String> {
+pub fn filter(document: &Document, query: &str, limit: PreviewLimit) -> Result<Filtered, String> {
     let document = document.as_ref().as_ref().map_err(ToString::to_string)?;
     let path = select::parse_path(query).map_err(|error| error.to_string())?;
     let found = select::query(document, &path);
@@ -962,9 +1008,9 @@ pub fn filter(document: &Document, query: &str) -> Result<Filtered, String> {
     let paths: Vec<String> = found.iter().map(|f| f.path.clone()).collect();
     let values = serde_json::Value::Array(found.into_iter().map(|f| f.value).collect());
     let text = serde_json::to_string_pretty(&values).map_err(|error| error.to_string())?;
-    Ok(if text.len() > PREVIEW_LIMIT {
-        let mut cut = text[..text.floor_char_boundary(PREVIEW_LIMIT)].to_owned();
-        cut.push_str("\n… Preview limited to 256 KiB");
+    Ok(if text.len() > limit.bytes() {
+        let mut cut = text[..text.floor_char_boundary(limit.bytes())].to_owned();
+        cut.push_str(&limit.cut_line());
         Filtered {
             text: cut,
             count,
@@ -989,14 +1035,14 @@ pub enum FilterSource {
 
 impl FilterSource {
     /// Parse when needed, then filter. Runs off the UI thread.
-    pub fn run(self, query: &str) -> (Document, Result<Filtered, String>) {
+    pub fn run(self, query: &str, limit: PreviewLimit) -> (Document, Result<Filtered, String>) {
         let document = match self {
             Self::Parsed(document) => document,
             Self::Body { bytes, truncated } => {
                 std::sync::Arc::new(select::parse_body(&bytes, truncated))
             }
         };
-        let result = filter(&document, query);
+        let result = filter(&document, query, limit);
         (document, result)
     }
 }
@@ -1120,6 +1166,9 @@ pub fn find_all(haystack: &str, needle: &str) -> Vec<Range<usize>> {
 mod tests {
     use super::*;
 
+    const LIMIT: PreviewLimit = PreviewLimit::Kib256;
+    const MAX: usize = LIMIT.bytes();
+
     #[test]
     fn result_notices_name_the_excerpt_not_the_capture() {
         use imposter_app::core::run_result::{Excerpt, ResponseHead};
@@ -1181,7 +1230,7 @@ mod tests {
             "empty"
         );
 
-        let shown = preview(&response(&png, "image/png"));
+        let shown = preview(&response(&png, "image/png"), LIMIT);
         assert!(shown.binary && shown.text.is_empty() && !shown.limited);
     }
 
@@ -1246,14 +1295,17 @@ mod tests {
 
     #[test]
     fn a_json_post_shows_its_wire_headers_and_formatted_body() {
-        let sent = sent_request(&record(RequestTemplate {
-            method: "POST".into(),
-            url: "http://h/items?a=1".into(),
-            headers: vec![ParamItem::new("X-Trace", "on")],
-            body: br#"{"a":1}"#.to_vec(),
-            body_type: BodyType::Json,
-            ..RequestTemplate::default()
-        }));
+        let sent = sent_request(
+            &record(RequestTemplate {
+                method: "POST".into(),
+                url: "http://h/items?a=1".into(),
+                headers: vec![ParamItem::new("X-Trace", "on")],
+                body: br#"{"a":1}"#.to_vec(),
+                body_type: BodyType::Json,
+                ..RequestTemplate::default()
+            }),
+            LIMIT,
+        );
         assert_eq!(sent.summary, "POST http://h/items?a=1");
         assert!(sent.headers.contains("X-Trace: on"), "{}", sent.headers);
         assert!(
@@ -1265,13 +1317,16 @@ mod tests {
         assert_eq!(sent.language, Language::Json);
 
         // Larger than the preview: still laid out as far as it goes.
-        let sent = sent_request(&record(RequestTemplate {
-            method: "POST".into(),
-            url: "http://h/".into(),
-            body: format!("[{}1]", "{\"id\":1},".repeat(30_000)).into_bytes(),
-            body_type: BodyType::Json,
-            ..RequestTemplate::default()
-        }));
+        let sent = sent_request(
+            &record(RequestTemplate {
+                method: "POST".into(),
+                url: "http://h/".into(),
+                body: format!("[{}1]", "{\"id\":1},".repeat(30_000)).into_bytes(),
+                body_type: BodyType::Json,
+                ..RequestTemplate::default()
+            }),
+            LIMIT,
+        );
         assert!(sent.body.starts_with("[\n  {\n    \"id\": 1\n  },"));
         assert!(sent.body.ends_with("… Preview limited to 256 KiB"));
     }
@@ -1289,17 +1344,20 @@ mod tests {
             FormItem::file("upload", "/tmp/a.bin"),
         ]);
         template.auth = RequestAuth::digest("u", "p");
-        let sent = sent_request(&record(template));
+        let sent = sent_request(&record(template), LIMIT);
         assert_eq!(sent.body, "note: hi\nupload: file /tmp/a.bin");
         assert!(sent.headers.contains("Digest"), "{}", sent.headers);
     }
 
     #[test]
     fn unpreparable_records_say_why() {
-        let sent = sent_request(&record(RequestTemplate {
-            url: "not a url".into(),
-            ..RequestTemplate::default()
-        }));
+        let sent = sent_request(
+            &record(RequestTemplate {
+                url: "not a url".into(),
+                ..RequestTemplate::default()
+            }),
+            LIMIT,
+        );
         assert_eq!(sent.summary, "GET not a url");
         assert!(
             sent.body
@@ -1344,14 +1402,14 @@ mod tests {
         );
 
         let big = format!("[{}1]", "{\"id\":1},".repeat(30_000));
-        let preview = preview(&response(big.as_bytes(), "application/json"));
+        let preview = preview(&response(big.as_bytes(), "application/json"), LIMIT);
         assert!(preview.limited);
         assert!(
             preview.text.starts_with("[\n  {\n    \"id\": 1\n  },"),
             "{}",
             &preview.text[..40]
         );
-        assert!(preview.text.len() <= PREVIEW_LIMIT + 40);
+        assert!(preview.text.len() <= MAX + 40);
         assert!(preview.text.ends_with("… Preview limited to 256 KiB"));
         assert_eq!(
             preview.outline, None,
@@ -1477,12 +1535,12 @@ mod tests {
             "a scalar line is taken as shown"
         );
         let json = response(DOCUMENT.as_bytes(), "application/json");
-        assert!(preview(&json).outline.is_some());
+        assert!(preview(&json, LIMIT).outline.is_some());
         assert_eq!(
-            preview(&response(b"{oops", "application/json")).outline,
+            preview(&response(b"{oops", "application/json"), LIMIT).outline,
             None
         );
-        assert_eq!(preview(&response(b"{}", "text/plain")).outline, None);
+        assert_eq!(preview(&response(b"{}", "text/plain"), LIMIT).outline, None);
     }
 
     #[test]
@@ -1491,7 +1549,7 @@ mod tests {
             bytes: DOCUMENT.as_bytes().to_vec(),
             truncated: false,
         };
-        let (document, result) = source.run(" $.data.items[*].id ");
+        let (document, result) = source.run(" $.data.items[*].id ", LIMIT);
         let found = result.unwrap();
         assert_eq!((found.text.as_str(), found.count), ("[\n  7,\n  8\n]", 2));
         let paths: Vec<&str> = found
@@ -1511,24 +1569,24 @@ mod tests {
                 "$.data.items[*].id"
             ]
         );
-        let (_, numbers) = FilterSource::Parsed(document.clone()).run("$.n");
+        let (_, numbers) = FilterSource::Parsed(document.clone()).run("$.n", LIMIT);
         assert_eq!(numbers.unwrap().text, "[\n  1.5\n]", "re-serialized");
-        let (_, none) = FilterSource::Parsed(document.clone()).run("$.nothing");
+        let (_, none) = FilterSource::Parsed(document.clone()).run("$.nothing", LIMIT);
         assert_eq!(none.unwrap().count, 0);
-        let (_, bad) = FilterSource::Parsed(document).run("data");
+        let (_, bad) = FilterSource::Parsed(document).run("data", LIMIT);
         assert!(bad.unwrap_err().starts_with("Invalid JSONPath"));
 
         let (_, cut) = FilterSource::Body {
             bytes: b"{}".to_vec(),
             truncated: true,
         }
-        .run("$");
+        .run("$", LIMIT);
         assert!(cut.unwrap_err().contains("capture limit"));
         let (_, html) = FilterSource::Body {
             bytes: b"<html>".to_vec(),
             truncated: false,
         }
-        .run("$");
+        .run("$", LIMIT);
         assert!(html.unwrap_err().starts_with("The body is not JSON"));
 
         let many = format!("[{}]", vec!["\"xxxxxxxxxx\""; 30_000].join(","));
@@ -1536,7 +1594,7 @@ mod tests {
             bytes: many.into_bytes(),
             truncated: false,
         }
-        .run("$[*]");
+        .run("$[*]", LIMIT);
         let large = large.unwrap();
         assert!(large.limited && large.outline.is_none() && large.count == 30_000);
         assert!(large.text.ends_with("Preview limited to 256 KiB"));
@@ -1591,38 +1649,41 @@ mod tests {
 
     #[test]
     fn previews_format_json_and_bound_large_bodies() {
-        let small = preview(&response(br#"{"k":1}"#, "application/json; charset=utf-8"));
+        let small = preview(
+            &response(br#"{"k":1}"#, "application/json; charset=utf-8"),
+            LIMIT,
+        );
         assert_eq!(
             (small.text.as_str(), small.language, small.limited),
             ("{\n  \"k\": 1\n}", Language::Json, false)
         );
 
-        let invalid = preview(&response(b"{not json", "application/json"));
+        let invalid = preview(&response(b"{not json", "application/json"), LIMIT);
         assert_eq!(invalid.text, "{not json");
 
-        let big = vec![b'a'; PREVIEW_LIMIT + 10];
-        let large = preview(&response(&big, "application/json"));
+        let big = vec![b'a'; MAX + 10];
+        let large = preview(&response(&big, "application/json"), LIMIT);
         assert!(large.text.ends_with("\n… Preview limited to 256 KiB"));
         assert_eq!((large.language, large.limited), (Language::Plain, true));
         assert_eq!(
             large.text.len(),
-            PREVIEW_LIMIT + "\n… Preview limited to 256 KiB".len()
+            MAX + "\n… Preview limited to 256 KiB".len()
         );
     }
 
     #[test]
     fn non_utf8_bodies_fall_back_to_latin1_and_cut_characters_are_dropped() {
         assert_eq!(
-            preview(&response(&[0x63, 0x61, 0x66, 0xe9], "text/plain")).text,
+            preview(&response(&[0x63, 0x61, 0x66, 0xe9], "text/plain"), LIMIT).text,
             "café"
         );
-        let mut cut = vec![b'a'; PREVIEW_LIMIT - 1];
+        let mut cut = vec![b'a'; MAX - 1];
         cut.extend("é".as_bytes());
         cut.extend(b"more");
         assert!(
-            preview(&response(&cut, "text/plain"))
+            preview(&response(&cut, "text/plain"), LIMIT)
                 .text
-                .starts_with(&"a".repeat(PREVIEW_LIMIT - 1))
+                .starts_with(&"a".repeat(MAX - 1))
         );
     }
 
@@ -1682,7 +1743,7 @@ mod tests {
             ..response(b"", "text/plain")
         };
         assert_eq!(
-            notice(&empty, &preview(&empty)),
+            notice(&empty, &preview(&empty, LIMIT)),
             "Response body is empty · history down"
         );
         let truncated = Response {
@@ -1690,12 +1751,12 @@ mod tests {
             ..ok
         };
         assert_eq!(
-            notice(&truncated, &preview(&truncated)),
+            notice(&truncated, &preview(&truncated, LIMIT)),
             "Body cut at 1 B when captured"
         );
-        let large = response(&vec![b'x'; PREVIEW_LIMIT + 1024], "text/plain");
+        let large = response(&vec![b'x'; MAX + 1024], "text/plain");
         assert_eq!(
-            notice(&large, &preview(&large)),
+            notice(&large, &preview(&large, LIMIT)),
             "Preview shows 256 KB of 257 KB"
         );
         assert_eq!(body_file_name(&large), "response.txt");

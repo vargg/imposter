@@ -58,7 +58,11 @@ fn the_rail_and_sidebar_leave_room_for_both_pane_minimums() {
                 .state_mut()
                 .state
                 .actions
-                .push(Action::SetAppearance(Appearance { theme, density }));
+                .push(Action::SetAppearance(Appearance {
+                    theme,
+                    density,
+                    ..Appearance::default()
+                }));
             app.harness.run_steps(3);
             let panes = ["Request pane", "Response pane"]
                 .map(|label| app.harness.get_by_role_and_label(Role::Group, label).rect());
@@ -306,6 +310,7 @@ fn body_type_and_json_tools_share_the_header_above_a_full_height_editor() {
             .push(Action::SetAppearance(Appearance {
                 theme: ThemeChoice::Dark,
                 density,
+                ..Appearance::default()
             }));
         {
             let pane = app.harness.state_mut().state.editor.as_mut().unwrap();

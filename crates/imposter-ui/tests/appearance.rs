@@ -40,6 +40,7 @@ fn set_density(app: &mut support::App, density: Density) {
         .push(Action::SetAppearance(Appearance {
             theme: ThemeChoice::Dark,
             density,
+            ..Appearance::default()
         }));
     app.harness.run_steps(3);
 }
@@ -125,6 +126,7 @@ fn a_theme_change_repaints_every_control_in_the_same_frame() {
         .push(Action::SetAppearance(Appearance {
             theme: ThemeChoice::Light,
             density: Density::Compact,
+            ..Appearance::default()
         }));
     app.harness.step();
     app.harness.step();
@@ -279,6 +281,7 @@ fn light_scope_and_category_rows_paint_the_selected_fill_and_bar_in_both_densiti
             .push(Action::SetAppearance(Appearance {
                 theme: ThemeChoice::Light,
                 density,
+                ..Appearance::default()
             }));
         app.harness.run_steps(3);
         for (screen, row) in [("Variables", "Global"), ("Settings", "Network settings")] {

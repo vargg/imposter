@@ -468,6 +468,40 @@ fn a_body_larger_than_the_preview_can_be_saved_whole() {
 }
 
 #[test]
+fn the_preview_limit_is_a_setting_that_applies_to_the_shown_response() {
+    let big: &'static str =
+        Box::leak(format!("[{}]", "1,".repeat(150 * 1024) + "1").into_boxed_str());
+    let mut fixture = sent("application/json", big);
+    let app = &mut fixture.app;
+    app.harness.get_by_label("Preview shows 256 KB of 300 KB");
+
+    support::open_screen(&mut app.harness, "Settings");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Response preview: 1 MiB");
+    settle(&mut app.harness);
+    support::open_screen(&mut app.harness, "Requests");
+    settle(&mut app.harness);
+
+    assert!(!shows(app, "Preview shows"), "the whole body fits now");
+    let pane = &app.harness.state().state.response;
+    let (preview, _) = pane.preview.as_ref().unwrap();
+    assert!(
+        !preview.limited && preview.outline.is_some(),
+        "formatted whole"
+    );
+    let stored: serde_json::Value = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| {
+            imposter_app::store::kv::get(db, imposter_app::store::kv::Table::UiState, "appearance")
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored["preview_limit"], "1mib");
+}
+
+#[test]
 fn headers_show_as_a_table_with_a_copy_per_row_and_raw_on_request() {
     let mut fixture = sent("application/json", BODY);
     let app = &mut fixture.app;

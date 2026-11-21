@@ -344,16 +344,15 @@ fn real_app_toolbar_pixels_match_phosphor() {
     });
     support::click(&mut app.harness, "GET Get");
     support::settle(&mut app.harness);
-    app.harness
-        .state_mut()
-        .state
-        .response
-        .show(imposter_app::core::execution::Response {
+    app.harness.state_mut().state.response.show(
+        imposter_app::core::execution::Response {
             status: 200,
             headers: vec![("Content-Type".into(), "application/json".into())],
             body: br#"{"key":1}"#.to_vec(),
             ..Default::default()
-        });
+        },
+        imposter_ui::viewer::PreviewLimit::default(),
+    );
     app.harness.run_steps(2);
     let atlas = app.harness.ctx.fonts_mut(|fonts| fonts.image());
     for icon in [

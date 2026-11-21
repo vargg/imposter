@@ -151,13 +151,13 @@ impl RunScreen {
     }
 
     /// Open the `index`th request's response in the viewer.
-    pub fn select(&mut self, index: usize) {
+    pub fn select(&mut self, index: usize, limit: crate::viewer::PreviewLimit) {
         let step = self.steps().get(index).cloned();
         self.selected = Some(index);
         self.pane = ResponsePane::default();
         if let Some(Step::Ran { record, .. }) = step {
-            self.pane.show(record.response.clone());
-            self.pane.sent = Some(crate::viewer::sent_request(&record).as_text());
+            self.pane.show(record.response.clone(), limit);
+            self.pane.sent = Some(crate::viewer::sent_request(&record, limit).as_text());
         }
     }
 }

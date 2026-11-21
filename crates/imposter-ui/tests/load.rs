@@ -358,7 +358,11 @@ fn both_running_tools_remain_reachable_with_unsaved_mocks_and_a_long_result() {
                 .state_mut()
                 .state
                 .actions
-                .push(Action::SetAppearance(Appearance { theme, density }));
+                .push(Action::SetAppearance(Appearance {
+                    theme,
+                    density,
+                    ..Appearance::default()
+                }));
             f.app.harness.run_steps(3);
             click(&mut f.app.harness, "Environment");
             click(&mut f.app.harness, LONG_ENV);

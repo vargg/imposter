@@ -132,15 +132,14 @@ fn find_opens_in_the_viewer_under_the_pointer() {
     });
     click(&mut app.harness, "GET Get");
     settle(&mut app.harness);
-    app.harness
-        .state_mut()
-        .state
-        .response
-        .show(imposter_app::core::execution::Response {
+    app.harness.state_mut().state.response.show(
+        imposter_app::core::execution::Response {
             status: 200,
             body: b"alpha".to_vec(),
             ..Default::default()
-        });
+        },
+        imposter_ui::viewer::PreviewLimit::default(),
+    );
     app.harness.run_steps(2);
     let body = app.harness.get_by_label("Copy body").rect();
     app.harness.hover_at(body.center() + egui::vec2(0.0, 80.0));
