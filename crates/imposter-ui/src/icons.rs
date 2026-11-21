@@ -68,10 +68,11 @@ pub enum Icon {
     Key,
     Cookie,
     Globe,
+    Appearance,
 }
 
 impl Icon {
-    pub const ALL: [Self; 45] = [
+    pub const ALL: [Self; 46] = [
         Self::Sidebar,
         Self::Columns,
         Self::Rows,
@@ -117,6 +118,7 @@ impl Icon {
         Self::Key,
         Self::Cookie,
         Self::Globe,
+        Self::Appearance,
     ];
 
     /// Codepoints from `@phosphor-icons/web` 2.1.2, `src/regular/style.css`.
@@ -167,6 +169,7 @@ impl Icon {
             Self::Key => '\u{e2d6}',          // key
             Self::Cookie => '\u{e6ca}',       // cookie
             Self::Globe => '\u{e288}',        // globe
+            Self::Appearance => '\u{e164}',   // circle-half
         }
     }
 }
@@ -201,6 +204,24 @@ pub fn button_with_hint(
 /// color, apart from its muted resting and faded disabled looks.
 pub fn ready_button(ui: &mut Ui, icon: Icon, label: &str, hint: &str) -> Response {
     drawn(ui, icon, label, hint, false, palette().text)
+}
+
+pub(crate) fn remove(ui: &mut Ui, label: &str, armed: bool) -> Response {
+    let resting = if armed {
+        palette().error
+    } else {
+        palette().text_muted
+    };
+    let response = drawn(ui, Icon::Trash, label, label, false, resting);
+    if armed {
+        ui.painter().rect_stroke(
+            response.rect,
+            ui.visuals().widgets.inactive.corner_radius,
+            egui::Stroke::new(1.0, palette().error),
+            egui::StrokeKind::Inside,
+        );
+    }
+    response
 }
 
 fn drawn(

@@ -34,8 +34,8 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   client credentials token and never signs in.
 - A cookie jar per environment: cookies a server sets (a login's session cookie) are sent
   back on later requests where their domain, path and `Secure` flag allow, redirects
-  included. Your own cookie rows win over the jar's. Turn it off in Settings (**Keep
-  cookies**) or per request. Runs keep their cookies to themselves, and the command line
+  included. Your own cookie rows win over the jar's. Turn it off in **Settings → Network**
+  with **Keep cookies**, or per request. Runs keep their cookies to themselves, and the command line
   starts each run with an empty jar.
 - Server-sent events: a `text/event-stream` response shows its events as they arrive on an
   **Events** tab (time, event, data; choose one to read it whole), and Send becomes
@@ -228,7 +228,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 
 **Collections on disk**
 - Every collection is a folder of YAML files, one per request, in the collections folder
-  set in **Settings → Collections folder**. Point it at a folder in your repository and your
+  set in **Settings → Collections**. Point it at a folder in your repository and your
   team reviews request and check edits as small diffs, and CI runs them with
   `imposter run … --project DIR`.
 - Values an environment shares are in its file, and shared globals in `globals.yaml`; turn
@@ -309,8 +309,9 @@ and xkbcommon. File dialogs go through the XDG desktop portal
 4. Run a whole folder in order with **Run…** in its right-click menu, or open **Run** from
    the left rail and choose a folder.
 5. Find any earlier execution on the **History** screen.
-6. Application defaults (timeout, proxy, TLS, history limits, autosave) are behind the
-   **Settings** icon at the bottom of the left rail.
+6. Open **Settings** at the bottom of the left rail and choose a category. Hover over an
+   info icon for help. Amber dots mark edited categories, and **Save settings** saves
+   changes across all categories.
 
 ### Keyboard shortcuts
 
@@ -585,10 +586,14 @@ description, which saves and exports with the request.
 The **Body** header contains the body type picker and, for a nonempty JSON body, the
 validation status and **Format body** action. Hover over a parse error for the full message.
 
+In **More → Settings**, choose **Default**, **On** or **Off** for on/off overrides.
+Hover over **Default** to see the application setting. Text fields show the inherited
+value until you enter an override, which you can clear with the reset icon.
+
 Right-click a request and choose **Duplicate** to create and open a saved sibling copy.
 An open request copies its current edits; navigation still resolves unsaved changes.
 
-Settings → **Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.
+**Settings → TLS → Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.
 
 Open **Mocks** in the left rail to configure a local HTTP server on `127.0.0.1` (port 8080 by default; 0 chooses an available port). Add routes by exact method and encoded path, with a response status, headers and text body. Query strings and request bodies do not affect matching; unmatched requests return 404. Save before Start; edits to a running server apply after Stop and Start. Configuration persists, but the server never starts automatically and stops when Imposter closes.
 

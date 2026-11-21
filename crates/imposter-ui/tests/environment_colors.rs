@@ -10,6 +10,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::model::{EnvColor, Variables};
 use imposter_app::store::environments;
 use imposter_ui::app::Screen;
+use imposter_ui::icons::Icon;
 use imposter_ui::theme::env_color;
 use imposter_ui::vars::Scope;
 use support::{click, click_button, collection, request, settle, start_with};
@@ -185,6 +186,33 @@ fn a_focused_environment_can_open_its_menu_with_the_keyboard() {
     assert_eq!(app.harness.state().state.variables.scope, Scope::Global);
 }
 
+#[test]
+fn hovering_an_environment_reveals_its_menu_without_selecting_the_scope() {
+    let mut app = with_environments(false);
+    support::open_screen(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    let label = "Actions for environment Prod";
+    let menu = app
+        .harness
+        .get_by_role_and_label(Role::Button, label)
+        .rect();
+    let more = Icon::More.glyph().to_string();
+    let painted = |app: &support::App| {
+        app.harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Text(text)
+                if menu.contains(text.pos) && text.galley.job.text == more)
+        })
+    };
+    assert!(!painted(&app));
+    app.harness.get_by_label("Environment · Prod").hover();
+    app.harness.run_steps(2);
+    assert!(painted(&app));
+    click_button(&mut app.harness, label);
+    app.harness.get_by_label("Edit name and color…");
+    app.harness.get_by_label("Delete environment…");
+    assert_eq!(app.harness.state().state.variables.scope, Scope::Global);
+}
+
 /// The accessible description of the Send button named `label`.
 fn send_description(app: &support::App, label: &str) -> Option<String> {
     app.harness
@@ -294,6 +322,23 @@ fn a_long_environment_name_is_cut_on_send_and_the_url_keeps_its_room() {
     assert!(send.width() <= 168.5, "{send:?}");
     let url = app.harness.get_by_label("Request URL").rect();
     assert!(url.width() >= 200.0, "{url:?}");
+
+    support::open_screen(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    let name = "Production Europe West Primary";
+    let row = app
+        .harness
+        .get_by_label("Environment · Production Europe West Primary");
+    assert!(app.harness.output().shapes.iter().any(|clipped| {
+        matches!(&clipped.shape, egui::Shape::Text(text)
+            if row.rect().contains(text.pos) && text.galley.job.text == name && text.galley.elided)
+    }));
+    row.hover();
+    app.harness.run_steps(12);
+    app.harness.get_by_role_and_label(
+        Role::Label,
+        "Production Europe West Primary\nActive: requests use this environment",
+    );
 }
 
 #[test]

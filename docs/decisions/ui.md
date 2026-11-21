@@ -34,8 +34,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
 - **The layout lint gates every screen** (`imposter-ui/tests/layout.rs`).
   - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
-    walks the screens, each Variables tab and scope type, a sent response, a History run
-    and the dialogs.
+    walks the screens, each Variables tab and scope type, every Settings category, the
+    request Settings tab in both pane orientations, a sent response, a History run and
+    the dialogs. It compares each request setting caption's bounds with its full text width.
   - **Widths:** visible controls and outlined frames stay inside the window. The lint
     checks frames in the painted shapes and checks controls against the accessible bounds of
     the flat request and response panes. The window bounds alone missed the Auth tab's eye
@@ -182,6 +183,13 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   is a named button with selected state, operable by keyboard and screen readers.
   A shared track keeps short alternatives visible together.
 
+- **Application on/off settings use a switch** (`widgets::toggle`). A pill track and a
+  moving knob show the state, with an accent fill when on and a neutral outlined track
+  when off. Disabled switches stay neutral. The full-height target shows focus, responds
+  to Space, and has a checkbox role with the setting's name and toggled state. The theme
+  tests check the contrast of the track edge and knob in both states. Switches make
+  on/off preferences read as settings, where checkboxes and dropdowns read as form inputs.
+
 - **Contextual help uses a tooltip** (`widgets::help`, `label_with_help`): a frameless,
   muted 13 pt info glyph in a 24 pt focusable target, named "Help", with the explanation
   as its accessible description. The tooltip opens on hover or keyboard focus. A caption
@@ -241,9 +249,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **Every screen has one toolbar above its content** (`widgets::screen_toolbar`), at
   the density's control height, with a 1-point control-edge divider underneath. The page
   title and scope controls sit at the left, and actions are reserved at the right with the
-  primary action rightmost. Variables puts its tabs in the title position to fit the tabs
-  and save actions beside the scope list. Its toolbar uses the tab height to fit the tab
-  underline. Requests uses the same row for its breadcrumb, with Copy as curl and Save
+  primary action rightmost. Variables puts its tabs in the title position. Its toolbar
+  uses the tab height to fit the tab underline. Variables and Settings put their
+  navigation columns below the toolbar. Requests uses the same row for its breadcrumb, with Copy as curl and Save
   before a separated group of view controls. Until a request opens, the title
   is "Requests". Run keeps "Keep going after a failure" with its configuration below the
   toolbar so the two scope pickers and Start or Stop fit at the minimum width. Mocks puts
@@ -523,15 +531,16 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   choice is never stored. Why: labels were indented differently, the field had a fixed width,
   and a typed secret could not be checked (the review's #25).
 
-- **The request's Settings tab is one row per setting** (`widgets::options_form`), under a
-  muted heading per group: the label in a 150-point column, then the control. A text
-  setting shows the application default in its empty field ("Default: 30 seconds");
-  typing makes it the request's own, and a reset icon after it ("Use application default
-  for …") goes back. An on/off setting is a choice of "Default (On)", On and Off. In a
-  pane too narrow for the column each control goes under its label. Why: each setting took
-  three or four rows (label, a "Use application default" box, the field greyed out, a
-  hint), about 35 rows for ten settings, and the useful value sat in the small grey hint
-  (the user's note).
+- **The request's Settings tab shares the application Settings rows and section titles.**
+  Each setting has a caption and an info tooltip, with the field in the shared control
+  column. When the pane is narrow the control goes below the caption. Text fields show
+  their inherited value as a placeholder ("Default: 30 seconds"). Typing overrides it,
+  and the reset icon restores inheritance. On/off overrides keep Default, On and Off
+  visible as segments, with the current application value in Default's tooltip and a
+  field-qualified accessible name on each segment. Response limit puts KiB beside the
+  field and explains 0 in its tooltip so the caption fits at the minimum width. Each
+  setting used to take several lines and hid the inherited value in a small hint. Shared
+  rows and visible choices make settings easier to scan across the two screens.
 
 - **A curl command pasted over the whole URL field replaces the open request** (after Yaak):
   method, URL, headers, cookies, auth, body and options come from the command; identity,
@@ -717,16 +726,21 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
 ### Screens (Variables, Run, History, Settings)
 
+- **Variables and Settings share a flat navigation column** with its own scroll and a
+  1-point divider. Both columns begin against the rail below the screen toolbar, share
+  the workspace background, and adapt from 144 to 192 points. Rows have a left-aligned
+  icon slot and caption, full-width hover and selected fills, and an accent bar on the
+  selected row. Trailing markers leave the caption's left edge fixed. Truncated names
+  show in full on hover. The owner's tour review found the centered Settings labels
+  and inset panel inconsistent with the Variables list. `imposter-ui/tests/variables.rs`
+  checks the shared placement and the alignment of the painted captions.
+
 - **The Variables screen edits one scope at a time** (Global, an environment, a collection),
-  independently of the active execution environment. The scope list follows the flat Requests
-  sidebar with its own scroll and a 1-point divider. Every scope has a full-width hover and
-  selected fill, with an accent bar on the selected row. Names share a left edge after a
-  fixed slot for the Globe, Folder or environment color dot. The shared alignment makes
-  Global, environments and collections read as one list. Uncolored environments keep the
-  slot empty, and a check marks the active environment. The list narrows at the minimum
-  window size, and truncated names show in full on hover. The Environments heading
-  has a Plus button. Right-click or Shift+F10 opens the environment's menu for
-  "Edit name and color…" and "Delete environment…". The Variables guard still covers
+  independently of the active execution environment. The icon slot holds a Globe,
+  Folder or environment color dot. Uncolored environments keep the slot empty, and a
+  check marks the active environment. The Environments heading has a Plus button.
+  A row's hover menu, right-click or Shift+F10 opens "Edit name and color…" and
+  "Delete environment…". The Variables guard still covers
   scope changes, reloads, environment management, "Open definition" and closing. Closing
   resolves the request guard first, then the Variables guard, then writes UI state.
   - The toolbar shows **Variables**, **Secrets** and **Cookies** for Global and environments.
@@ -745,16 +759,25 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   hid scope choices in the "Editing" picker (Q4). Tooltips keep the precedence and usage
   guidance nearby while leaving the tables easier to scan (Q6).
 
-- **Settings save only on Save Settings**, against a baseline: undoing an edit is not a change. Settings the screen does not
-  show are kept. Closing asks about unsaved settings after the request and variables guards.
-  Saving applies history retention at once, not at the next send, so the
-  limits the History screen shows are already true. The screen is one form: section headings
-  instead of framed groups, one label column shared by every section (`LABEL_COLUMN`), at most
-  720 points wide, with a line of help under fields that need it. Every path field has
-  Browse… (through `ImposterApp::pick`) and says "File not found" when the path names no file;
-  the check runs on the bridge (`transfer::is_file`) and is redone when the screen is opened.
-  "Verify TLS certificates", not SSL. Why: label columns differed per group, paths had to be
-  typed, and a wrong path showed only on the next send (the review's #50, #51).
+- **Settings shows one category at a time.** The navigation column lists Appearance,
+  Collections, General, Network, TLS, History and
+  Command line. The selection lasts for the session. Each group has a section title and
+  aligned rows, capped at 640 points, with space between rows. Info icons carry the help
+  in tooltips. Errors and History usage stay visible beside the relevant settings. The
+  single long form with a help paragraph under almost every field was the heaviest text
+  on any screen in the owner's review.
+  - Application defaults save together from the toolbar. The corner dot marks each
+    category that differs from the saved baseline, so undoing an edit clears the
+    marker. Hidden settings are kept. Closing asks about unsaved settings after the
+    request and Variables guards. Saving applies history retention immediately so
+    History shows the current limits. Theme and density apply immediately from their
+    segments. Collections changes immediately through the navigation guard.
+  - TLS path fields have Browse… (through `ImposterApp::pick`) and say "File not found"
+    for missing files. The bridge checks them when TLS is shown and rechecks on reopening
+    Settings. This surfaces bad paths before a send and lets the user pick files. TLS uses
+    "Verify TLS certificates" and keeps host client certificates in compact bordered
+    blocks, with a Plus in the section header and a two-click remove icon in each block
+    header so removal stays beside the certificate it applies to.
 
 - **The Run screen runs a collection or a folder in the app** (`run_screen.rs`, Run in the
   left rail, "Run…" in the collection's ⋯ menu and a folder's context menu, and the palette's

@@ -83,15 +83,21 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
     navigation_rail(state, ui);
     let screen_draw: Option<fn(&mut State, &mut Ui)> = match state.screen {
         Screen::Requests => None,
-        Screen::Variables => {
-            crate::variables_screen::draw(state, ui);
+        Screen::Variables | Screen::Settings => {
+            let draw = if state.screen == Screen::Variables {
+                crate::variables_screen::draw
+            } else {
+                crate::settings_screen::draw
+            };
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(palette().background))
+                .show(ui, |ui| draw(state, ui));
             return;
         }
         Screen::History => Some(crate::history_screen::draw),
         Screen::Mocks => Some(crate::mock_screen::draw),
         Screen::Load => Some(crate::load_screen::draw),
         Screen::Run => Some(crate::run_screen::draw),
-        Screen::Settings => Some(crate::settings_screen::draw),
     };
     if let Some(draw) = screen_draw {
         egui::CentralPanel::default()

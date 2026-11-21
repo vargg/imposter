@@ -137,5 +137,8 @@ fn clearing_asks_with_the_count_and_settings_has_the_switch() {
 
     support::open_screen(&mut f.app.harness, "Settings");
     settle(&mut f.app.harness);
-    f.app.harness.get_by_label("Keep cookies");
+    support::open_settings_category(&mut f.app.harness, "Network");
+    f.app
+        .harness
+        .get_by_role_and_label(egui::accesskit::Role::CheckBox, "Keep cookies");
 }

@@ -783,6 +783,90 @@ mod controls_kit {
     }
 
     #[test]
+    fn the_switch_paints_its_state_and_focus_and_disables_interaction() {
+        for choice in [ThemeChoice::Dark, ThemeChoice::Light] {
+            let density = Density::Comfortable;
+            let mut harness = Harness::builder()
+                .with_context_setup(move |ctx| theme::apply(ctx, choice, density))
+                .build_ui_state(
+                    |ui, checked| {
+                        widgets::name(&widgets::toggle(ui, checked), "Follow redirects");
+                        ui.add_enabled_ui(false, |ui| {
+                            widgets::name(&widgets::toggle(ui, checked), "Disabled switch");
+                        });
+                    },
+                    false,
+                );
+            let palette = theme::palette();
+            let rect = harness.get_by_label("Follow redirects").rect();
+            assert_eq!(rect.height(), density.spacing().control);
+            let track = Rect::from_center_size(rect.center(), egui::vec2(rect.width(), 18.0));
+            let knob = |harness: &Harness<'_, bool>, x, y| {
+                harness
+                    .output()
+                    .shapes
+                    .iter()
+                    .find_map(|shape| match &shape.shape {
+                        Shape::Circle(circle) if circle.center == egui::pos2(x, y) => {
+                            Some(circle.fill)
+                        }
+                        _ => None,
+                    })
+            };
+            assert_eq!(rect_shape(&harness, track).fill, palette.input);
+            assert_eq!(
+                rect_shape(&harness, track).stroke.color,
+                palette.field_border
+            );
+            assert_eq!(
+                rect_shape(&harness, track).corner_radius,
+                egui::CornerRadius::same(9)
+            );
+            assert_eq!(
+                knob(&harness, track.left() + 9.0, track.center().y),
+                Some(palette.text)
+            );
+            harness.get_by_label("Follow redirects").focus();
+            harness.run_steps(2);
+            assert_eq!(
+                rect_shape(&harness, track).stroke,
+                egui::Stroke::new(1.5, palette.accent)
+            );
+
+            harness.key_press(egui::Key::Space);
+            harness.run_steps(2);
+            assert!(*harness.state());
+            assert_eq!(rect_shape(&harness, track).fill, palette.accent);
+            assert_eq!(
+                rect_shape(&harness, track).stroke,
+                egui::Stroke::new(1.5, palette.on_accent)
+            );
+            assert_eq!(
+                knob(&harness, track.right() - 9.0, track.center().y),
+                Some(palette.on_accent)
+            );
+
+            let disabled = harness.get_by_role_and_label(Role::CheckBox, "Disabled switch");
+            assert!(disabled.accesskit_node().is_disabled());
+            assert_eq!(disabled.accesskit_node().toggled(), Some(Toggled::True));
+            let rect = disabled.rect();
+            let track = Rect::from_center_size(rect.center(), egui::vec2(rect.width(), 18.0));
+            let visuals = &harness.ctx.global_style().visuals;
+            assert_eq!(
+                rect_shape(&harness, track).fill,
+                visuals.disable(palette.input)
+            );
+            assert_eq!(
+                knob(&harness, track.right() - 9.0, track.center().y),
+                Some(visuals.disable(palette.text_muted))
+            );
+            disabled.click();
+            harness.run_steps(2);
+            assert!(*harness.state());
+        }
+    }
+
+    #[test]
     fn help_exposes_its_explanation_and_draws_a_small_unframed_info_glyph() {
         let mut harness = harness(ThemeChoice::Dark, Density::Compact);
         harness.get_by_role_and_label(Role::Label, "Help");

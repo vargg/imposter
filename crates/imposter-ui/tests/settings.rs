@@ -12,7 +12,18 @@ use imposter_app::core::model::Request;
 use imposter_app::core::settings::AppSettings;
 use imposter_app::store::{executions, kv};
 use imposter_ui::app::{Action, CloseState};
-use support::{click, save_state, settle, start, start_with, type_into};
+use support::{click, open_settings_category, save_state, settle, start, start_with, type_into};
+
+const AUTOSAVE: &str = "Automatically save request changes";
+
+fn switch<'a>(app: &'a support::App, label: &'a str) -> egui_kittest::Node<'a> {
+    app.harness.get_by_role_and_label(Role::CheckBox, label)
+}
+
+fn click_switch(app: &mut support::App, label: &str) {
+    switch(app, label).click();
+    app.harness.run_steps(2);
+}
 
 fn open_settings(app: &mut support::App) {
     support::open_screen(&mut app.harness, "Settings");
@@ -35,14 +46,119 @@ fn save_enabled(app: &support::App) -> bool {
 }
 
 #[test]
+fn categories_show_one_group_and_remember_the_selection_for_the_session() {
+    let mut app = start();
+    open_settings(&mut app);
+    let fields = [
+        ("Appearance", Role::Group, "Theme"),
+        ("Collections", Role::Button, "Change collections folder"),
+        ("General", Role::CheckBox, AUTOSAVE),
+        ("Network", Role::TextInput, "Proxy server"),
+        ("TLS", Role::TextInput, "CA bundle"),
+        ("History", Role::Label, "History storage"),
+        (
+            "Command line",
+            Role::CheckBox,
+            "Allow production environments",
+        ),
+    ];
+    app.harness.get_by_role_and_label(Role::Group, "Theme");
+    for (category, _, _) in fields {
+        open_settings_category(&mut app.harness, category);
+        for (other, role, field) in fields {
+            let label = format!("{other} settings");
+            let item = app.harness.get_by_role_and_label(Role::Button, &label);
+            assert_eq!(item.accesskit_node().is_selected(), Some(category == other));
+            assert_eq!(
+                app.harness.query_by_role_and_label(role, field).is_some(),
+                category == other,
+                "{field} while viewing {category}"
+            );
+        }
+    }
+    support::open_screen(&mut app.harness, "Requests");
+    open_settings(&mut app);
+    app.harness
+        .get_by_role_and_label(Role::CheckBox, "Allow production environments");
+}
+
+#[test]
+fn settings_explanations_are_tooltips_and_history_usage_is_visible() {
+    let mut app = start();
+    open_settings(&mut app);
+    open_settings_category(&mut app.harness, "Network");
+    let explanations = [
+        "For connecting and for each read, not the whole exchange.",
+        "Every request goes through it; empty for none. System proxies are never used.",
+        "Larger bodies are cut at this size; 0 for no limit.",
+        "Follow redirects returned by servers.",
+        "Cookies servers set are sent back on later requests, per environment. They are listed on the Variables screen.",
+    ];
+    let help: Vec<_> = app.harness.query_all_by_label("Help").collect();
+    assert_eq!(help.len(), explanations.len());
+    for (node, explanation) in help.iter().zip(explanations) {
+        assert_eq!(
+            node.accesskit_node().description().as_deref(),
+            Some(explanation)
+        );
+        assert!(
+            app.harness.query_by_label(explanation).is_none(),
+            "{explanation}"
+        );
+    }
+    help[0].hover();
+    app.harness.run_steps(12);
+    app.harness.get_by_label(explanations[0]);
+
+    open_settings_category(&mut app.harness, "History");
+    app.harness
+        .get_by_label_contains("History holds 0 executions, ");
+    assert!(
+        app.harness
+            .query_by_label("The oldest runs go first when either limit is reached.")
+            .is_none()
+    );
+}
+
+#[test]
 fn edits_are_unsaved_until_saved_and_saving_applies_them() {
     let mut app = start();
     open_settings(&mut app);
     assert_eq!(save_state(&app.harness, "Save settings"), "Saved");
     assert!(!save_enabled(&app), "nothing to save yet");
 
+    open_settings_category(&mut app.harness, "Network");
     type_into(&mut app.harness, "Proxy server", "http://proxy:8080");
-    click(&mut app.harness, "Automatically save request changes");
+    open_settings_category(&mut app.harness, "General");
+    assert_eq!(
+        switch(&app, AUTOSAVE).accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    switch(&app, AUTOSAVE).focus();
+    app.harness.run_steps(2);
+    app.harness.key_press(egui::Key::Space);
+    app.harness.run_steps(2);
+    assert_eq!(
+        switch(&app, AUTOSAVE).accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::False)
+    );
+    for label in ["General settings", "Network settings"] {
+        assert_eq!(
+            app.harness
+                .get_by_role_and_label(Role::Button, label)
+                .accesskit_node()
+                .description()
+                .as_deref(),
+            Some("Unsaved changes"),
+        );
+    }
+    assert!(
+        app.harness
+            .get_by_role_and_label(Role::Button, "Appearance settings")
+            .accesskit_node()
+            .description()
+            .is_none()
+    );
     assert_eq!(save_state(&app.harness, "Save settings"), "Unsaved");
     assert!(
         app.harness.query_by_label("Unsaved").is_none(),
@@ -60,6 +176,15 @@ fn edits_are_unsaved_until_saved_and_saving_applies_them() {
 
     assert_eq!(save_state(&app.harness, "Save settings"), "Saved");
     assert!(!save_enabled(&app));
+    for label in ["General settings", "Network settings"] {
+        assert!(
+            app.harness
+                .get_by_role_and_label(Role::Button, label)
+                .accesskit_node()
+                .description()
+                .is_none()
+        );
+    }
     let saved = stored(&app);
     assert_eq!(saved.proxy_url, "http://proxy:8080");
     assert!(!saved.autosave);
@@ -74,9 +199,14 @@ fn edits_are_unsaved_until_saved_and_saving_applies_them() {
 fn undoing_an_edit_is_not_a_change() {
     let mut app = start();
     open_settings(&mut app);
-    click(&mut app.harness, "Follow redirects");
+    open_settings_category(&mut app.harness, "Network");
+    click_switch(&mut app, "Follow redirects");
     assert_eq!(save_state(&app.harness, "Save settings"), "Unsaved");
-    click(&mut app.harness, "Follow redirects");
+    assert!(app.harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
+        egui::Shape::Circle(dot) if dot.fill == imposter_ui::theme::palette().warning
+        && app.harness.get_by_role_and_label(Role::Button, "Network settings").rect().contains(dot.center)
+    )));
+    click_switch(&mut app, "Follow redirects");
     assert_eq!(save_state(&app.harness, "Save settings"), "Saved");
     assert!(!save_enabled(&app));
 }
@@ -97,7 +227,8 @@ fn settings_the_screen_does_not_show_are_kept() {
             .unwrap();
     });
     open_settings(&mut app);
-    click(&mut app.harness, "Verify TLS certificates");
+    open_settings_category(&mut app.harness, "TLS");
+    click_switch(&mut app, "Verify TLS certificates");
     click(&mut app.harness, "Save settings");
     settle(&mut app.harness);
 
@@ -153,6 +284,7 @@ fn lower_history_limits_apply_when_saved() {
 fn closing_with_unsaved_settings_asks_first() {
     let mut app = start();
     open_settings(&mut app);
+    open_settings_category(&mut app.harness, "Network");
     type_into(&mut app.harness, "Proxy server", "http://p");
 
     app.harness.state_mut().request_close();
@@ -174,6 +306,7 @@ fn closing_with_unsaved_settings_asks_first() {
 fn discarding_settings_on_close_keeps_the_stored_ones() {
     let mut app = start();
     open_settings(&mut app);
+    open_settings_category(&mut app.harness, "Network");
     type_into(&mut app.harness, "Proxy server", "http://p");
 
     app.harness.state_mut().request_close();
@@ -190,8 +323,10 @@ fn host_certificates_save_only_on_save_and_validate_duplicates() {
     app.harness.set_size(egui::vec2(1200.0, 1500.0));
     app.harness.run_steps(2);
     open_settings(&mut app);
+    open_settings_category(&mut app.harness, "TLS");
     support::assert_icon_button(&app.harness, "Add host certificate");
     click(&mut app.harness, "Add host certificate");
+    support::assert_icon_button(&app.harness, "Remove Host certificate 1");
     assert_eq!(
         app.harness
             .state()
@@ -244,6 +379,27 @@ fn host_certificates_save_only_on_save_and_validate_duplicates() {
 }
 
 #[test]
+fn a_host_certificate_is_removed_from_its_header_after_two_clicks() {
+    let mut app = start();
+    app.harness.set_size(egui::vec2(1200.0, 900.0));
+    open_settings(&mut app);
+    open_settings_category(&mut app.harness, "TLS");
+    click(&mut app.harness, "Add host certificate");
+    let remove = app.harness.get_by_label("Remove Host certificate 1");
+    let title = app.harness.get_by_label("Host certificate 1");
+    assert!((remove.rect().center().y - title.rect().center().y).abs() < 4.0);
+    click(&mut app.harness, "Remove Host certificate 1");
+    support::text_input(&app.harness, "Host certificate 1 Host");
+    click(&mut app.harness, "Click again to remove Host certificate 1");
+    assert!(
+        app.harness
+            .query_by_label("Host certificate 1 Host")
+            .is_none()
+    );
+    assert_eq!(save_state(&app.harness, "Save settings"), "Saved");
+}
+
+#[test]
 fn the_theme_applies_at_once_and_is_remembered() {
     let mut app = start();
     open_settings(&mut app);
@@ -252,11 +408,8 @@ fn the_theme_applies_at_once_and_is_remembered() {
         egui::Theme::Dark,
         "dark by default"
     );
-    app.harness
-        .get_by_role_and_label(Role::ComboBox, "Theme")
-        .click();
-    app.harness.run_steps(2);
-    click(&mut app.harness, "Light");
+    app.harness.get_by_role_and_label(Role::Group, "Theme");
+    click(&mut app.harness, "Theme: Light");
     settle(&mut app.harness);
 
     assert_eq!(app.harness.ctx.theme(), egui::Theme::Light);
@@ -289,6 +442,7 @@ fn paths_are_chosen_with_browse_and_a_missing_file_says_so() {
     std::fs::write(&pem, b"pem").unwrap();
     let mut app = start();
     open_settings(&mut app);
+    open_settings_category(&mut app.harness, "TLS");
     app.harness
         .state_mut()
         .script_file_dialogs([Some(pem.clone())]);
@@ -313,25 +467,30 @@ fn paths_are_chosen_with_browse_and_a_missing_file_says_so() {
 #[test]
 fn every_section_puts_its_fields_in_one_column() {
     let mut app = start();
-    // Tall enough that every section is on screen at once.
-    app.harness.set_size(egui::vec2(1200.0, 1500.0));
+    // Tall enough for the TLS group and the certificate block.
+    app.harness.set_size(egui::vec2(1200.0, 900.0));
     app.harness.run_steps(2);
     open_settings(&mut app);
+    open_settings_category(&mut app.harness, "Network");
+    let proxy_left = support::text_input(&app.harness, "Proxy server")
+        .rect()
+        .left();
+    open_settings_category(&mut app.harness, "TLS");
     click(&mut app.harness, "Add host certificate");
-    let lefts: Vec<(String, f32)> = ["Proxy server", "CA bundle", "Host certificate 1 Host"]
-        .into_iter()
-        .map(|label| {
-            let rect = support::text_input(&app.harness, label).rect();
-            (label.to_owned(), rect.left())
-        })
-        .collect();
+    let mut lefts = vec![("Proxy server", proxy_left)];
+    lefts.extend(["CA bundle", "Host certificate 1 Host"].map(|label| {
+        (
+            label,
+            support::text_input(&app.harness, label).rect().left(),
+        )
+    }));
     assert!(
         lefts
             .iter()
             .all(|(_, left)| (left - lefts[0].1).abs() < 0.5),
         "{lefts:?}"
     );
-    app.harness.get_by_label("Verify TLS certificates");
+    switch(&app, "Verify TLS certificates");
 }
 
 #[test]
@@ -339,11 +498,8 @@ fn production_from_the_command_line_is_allowed_only_here() {
     let mut app = start();
     open_settings(&mut app);
     assert!(!stored(&app).allow_production_from_cli, "off until allowed");
-    // The last section, below the fold: pressed as a screen reader does, which needs no
-    // scrolling.
-    app.harness
-        .get_by_label("Allow production environments")
-        .click_accesskit();
+    open_settings_category(&mut app.harness, "Command line");
+    switch(&app, "Allow production environments").click_accesskit();
     app.harness.run_steps(2);
     assert!(
         app.harness

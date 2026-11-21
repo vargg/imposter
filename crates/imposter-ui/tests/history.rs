@@ -85,6 +85,7 @@ fn history_says_how_much_it_holds_beside_its_limits() {
         .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
     settle(&mut app.harness);
     assert_eq!(app.harness.state().state.screen, Screen::Settings);
+    support::open_settings_category(&mut app.harness, "History");
     app.harness
         .get_by_label_contains("History holds 1 execution, ");
 

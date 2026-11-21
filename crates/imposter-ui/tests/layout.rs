@@ -12,6 +12,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::model::{BodyType, FormItem, ParamItem};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::{Action, Appearance, EditorTab, Screen};
+use imposter_ui::editor::OPTION_GROUPS;
 use imposter_ui::layout::MIN_WINDOW;
 use imposter_ui::theme::{self, Density, ThemeChoice};
 use support::{click, click_button, collection, request, settle, start_with, type_into};
@@ -196,6 +197,17 @@ fn problems(app: &support::App, state: &str) -> Vec<String> {
     // the pane next door.
     for name in ["Request pane", "Response pane"] {
         if let Some(pane) = app.harness.query_by_role_and_label(Role::Group, name) {
+            if name == "Request pane"
+                && app
+                    .harness
+                    .state()
+                    .state
+                    .editor
+                    .as_ref()
+                    .is_some_and(|editor| editor.tab == EditorTab::Settings)
+            {
+                found.extend(request_settings_labels(app, &pane, state));
+            }
             let boundary = pane.rect();
             for node in pane.children_recursive() {
                 let ak = node.accesskit_node();
@@ -237,6 +249,37 @@ fn problems(app: &support::App, state: &str) -> Vec<String> {
             if overlap.is_positive() && overlap.area() > 4.0 {
                 found.push(format!("{state}: buttons {a:?} and {b:?} overlap"));
             }
+        }
+    }
+    found
+}
+
+fn request_settings_labels(
+    app: &support::App,
+    pane: &egui_kittest::Node<'_>,
+    state: &str,
+) -> Vec<String> {
+    let mut found = Vec::new();
+    for field in OPTION_GROUPS.iter().flat_map(|(_, fields)| fields.iter()) {
+        let label = field.label();
+        let width = app.harness.ctx.fonts_mut(|fonts| {
+            fonts
+                .layout_no_wrap(
+                    label.to_owned(),
+                    egui::FontId::proportional(theme::BODY),
+                    egui::Color32::PLACEHOLDER,
+                )
+                .size()
+                .x
+        });
+        let caption = pane.get_by_role_and_label(Role::Label, label);
+        if caption.rect().width() + 0.5 < width
+            || caption.rect().right() > pane.rect().right() + 0.5
+        {
+            found.push(format!(
+                "{state}: settings label {label:?} needs {width:.1} pt: {:?}",
+                caption.rect()
+            ));
         }
     }
     found
@@ -562,6 +605,9 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         pane.editor.options.verify_ssl.inherit = false;
     }
     check(app, "request settings tab");
+    click(&mut app.harness, "Stack request and response");
+    check(app, "request settings tab with stacked panes");
+    click(&mut app.harness, "Put request and response side by side");
     // The banners over a request whose file changed, or went, on disk.
     let open = app
         .harness
@@ -635,25 +681,42 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         settle(&mut app.harness);
         check(app, screen);
         if screen == "Settings" {
-            app.harness
-                .get_by_label("Add host certificate")
-                .scroll_to_me();
-            check(app, "host certificates header");
-            app.harness
-                .state_mut()
-                .state
-                .settings_screen
-                .form
-                .host_identities
-                .push(imposter_app::core::settings::HostIdentity::default());
-            check(app, "host certificate row");
-            app.harness
-                .state_mut()
-                .state
-                .settings_screen
-                .form
-                .host_identities
-                .clear();
+            for category in [
+                "Appearance",
+                "Collections",
+                "General",
+                "Network",
+                "TLS",
+                "History",
+                "Command line",
+            ] {
+                support::open_settings_category(&mut app.harness, category);
+                check(app, &format!("{category} settings"));
+                if category == "Collections" {
+                    app.harness.state_mut().state.folder_error = Some(
+                        "Could not read the collections folder. Check the file named in the error before reopening the project.".into()
+                    );
+                    check(app, "collections folder read error");
+                    app.harness.state_mut().state.folder_error = None;
+                }
+                if category == "TLS" {
+                    app.harness
+                        .get_by_label("Add host certificate")
+                        .scroll_to_me();
+                    check(app, "host certificates header");
+                    click(&mut app.harness, "Add host certificate");
+                    check(app, "host certificate block");
+                    support::text_input(&app.harness, "Host certificate 1 Key").scroll_to_me();
+                    check(app, "host certificate fields");
+                    app.harness
+                        .state_mut()
+                        .state
+                        .settings_screen
+                        .form
+                        .host_identities
+                        .clear();
+                }
+            }
         }
     }
     let routes = std::mem::take(&mut app.harness.state_mut().state.mocks.form.routes);
@@ -850,6 +913,10 @@ fn walk_variable_scopes(app: &mut support::App, check: &mut impl FnMut(&mut supp
     );
     settle(&mut app.harness);
     check(app, "Variables with a long inactive environment name");
+    app.harness
+        .get_by_label(&format!("Environment · {LONG_ENVIRONMENT}"))
+        .hover();
+    check(app, "Variables with a visible environment menu button");
     support::open_environment_menu(&mut app.harness, LONG_ENVIRONMENT);
     check(app, "environment actions");
     app.harness.key_press(egui::Key::Escape);

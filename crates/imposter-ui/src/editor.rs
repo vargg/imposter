@@ -140,7 +140,7 @@ impl OptionField {
             Self::FollowRedirects => "Follow redirects",
             Self::AttachCookies => "Attach cookies",
             Self::CookieJar => "Cookie jar",
-            Self::DownloadLimit => "Response limit (KiB; 0 unlimited)",
+            Self::DownloadLimit => "Response limit",
             Self::ProxyUrl => "Proxy URL",
             Self::VerifySsl => "Verify TLS",
             Self::CaBundle => "CA bundle",
@@ -149,6 +149,32 @@ impl OptionField {
             Self::Password => "Key password",
             Self::StreamSeconds => "Listen for (seconds)",
             Self::StreamEvents => "Stop after (events)",
+        }
+    }
+
+    pub(crate) const fn help(self) -> &'static str {
+        match self {
+            Self::Timeout => "For connecting and for each read, not the whole exchange.",
+            Self::FollowRedirects => "Follow the server’s redirects when sending this request.",
+            Self::AttachCookies => "Send the cookies entered on this request’s Cookies tab.",
+            Self::CookieJar => {
+                "Keep cookies servers set and send matching cookies from the active environment’s jar."
+            }
+            Self::DownloadLimit => {
+                "Larger response bodies are cut at this size in KiB. Enter 0 for no limit."
+            }
+            Self::ProxyUrl => {
+                "Send this request through a proxy. An empty override bypasses the proxy."
+            }
+            Self::VerifySsl => {
+                "Turn off only for servers you trust, such as local ones with self-signed certificates."
+            }
+            Self::CaBundle => "Replaces the system’s trusted roots for this request.",
+            Self::CertificatePath => "Sent when a server asks for a client certificate.",
+            Self::KeyFile => "The private key for the client certificate.",
+            Self::Password => "The password for an encrypted private key.",
+            Self::StreamSeconds => "Stop listening for events after this many seconds.",
+            Self::StreamEvents => "Stop listening after receiving this many events.",
         }
     }
 }

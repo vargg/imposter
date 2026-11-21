@@ -373,6 +373,47 @@ pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> egui::Response 
     response
 }
 
+/// An on/off setting with a full control-height target and checkbox semantics.
+pub fn toggle(ui: &mut Ui, checked: &mut bool) -> egui::Response {
+    let (rect, mut response) = ui.allocate_exact_size(
+        egui::vec2(36.0, crate::theme::spacing().control),
+        egui::Sense::click(),
+    );
+    if response.clicked() {
+        *checked = !*checked;
+        response.mark_changed();
+    }
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *checked, "")
+    });
+    if ui.is_rect_visible(rect) {
+        let p = palette();
+        let (fill, knob, edge) = if !ui.is_enabled() {
+            (p.input, p.text_muted, p.field_border)
+        } else if *checked {
+            (p.accent, p.on_accent, p.accent)
+        } else {
+            (p.input, p.text, p.field_border)
+        };
+        let track = egui::Rect::from_center_size(rect.center(), egui::vec2(rect.width(), 18.0));
+        ui.painter().rect(
+            track,
+            9,
+            fill,
+            control_edge(&response, fill, edge),
+            egui::StrokeKind::Inside,
+        );
+        let x = if *checked {
+            track.right() - 9.0
+        } else {
+            track.left() + 9.0
+        };
+        ui.painter()
+            .circle_filled(egui::pos2(x, track.center().y), 5.0, knob);
+    }
+    response
+}
+
 struct Segment<'a, T> {
     value: T,
     label: &'a str,
@@ -393,20 +434,57 @@ pub fn segmented<T: PartialEq + Copy>(
     options: &[(T, &str)],
 ) -> egui::Response {
     let size = crate::theme::BODY;
+    let segments = equal_segments(ui, options, None);
+    draw_segments(ui, id, value, &segments, BUTTON_PAD, size, None)
+}
+
+pub(crate) fn named_segments<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut T,
+    options: &[(T, &str)],
+    hint: Option<(&str, &str)>,
+) -> egui::Response {
+    let segments = equal_segments(ui, options, hint);
+    let builder = egui::UiBuilder::new()
+        .accessibility_role(egui::Role::Group)
+        .accessibility_label(label);
+    ui.scope_builder(builder, |ui| {
+        let response = draw_segments(
+            ui,
+            label,
+            value,
+            &segments,
+            BUTTON_PAD,
+            crate::theme::BODY,
+            Some(label),
+        );
+        region_bounds(ui, response.rect);
+        response
+    })
+    .inner
+}
+
+fn equal_segments<'a, T: Copy>(
+    ui: &Ui,
+    options: &[(T, &'a str)],
+    hint: Option<(&str, &'a str)>,
+) -> Vec<Segment<'a, T>> {
     let width = options
         .iter()
-        .map(|(_, label)| segment_width(ui, label, BUTTON_PAD, size))
+        .map(|(_, label)| segment_width(ui, label, BUTTON_PAD, crate::theme::BODY))
         .fold(24.0, f32::max);
-    let segments: Vec<_> = options
+    options
         .iter()
         .map(|&(value, label)| Segment {
             value,
             label,
-            hint: None,
+            hint: hint
+                .filter(|(segment, _)| *segment == label)
+                .map(|(_, text)| text),
             width,
         })
-        .collect();
-    draw_segments(ui, id, value, &segments, BUTTON_PAD, size)
+        .collect()
 }
 
 /// A named track with compact, label-sized segments and full names as hover text.
@@ -437,7 +515,7 @@ pub(crate) fn compact_segments<T: PartialEq + Copy>(
         .accessibility_role(egui::accesskit::Role::Group)
         .accessibility_label(label);
     ui.scope_builder(builder, |ui| {
-        let response = draw_segments(ui, label, value, &segments, pad, size);
+        let response = draw_segments(ui, label, value, &segments, pad, size, None);
         region_bounds(ui, response.rect);
     });
     true
@@ -450,6 +528,7 @@ fn draw_segments<T: PartialEq + Copy>(
     segments: &[Segment<'_, T>],
     pad: f32,
     size: f32,
+    group: Option<&str>,
 ) -> egui::Response {
     let id = ui.make_persistent_id(id);
     let total: f32 = segments.iter().map(|segment| segment.width).sum();
@@ -492,6 +571,13 @@ fn draw_segments<T: PartialEq + Copy>(
         item.widget_info(|| {
             egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, option.label)
         });
+        if let Some(group) = group {
+            name(&item, &format!("{group}: {}", option.label));
+        }
+        if let Some(hint) = option.hint {
+            item.ctx
+                .accesskit_node_builder(item.id, |node| node.set_description(hint));
+        }
         let (fill, color) = if selected && ui.is_enabled() {
             (p.selected, p.accent)
         } else {
@@ -549,9 +635,15 @@ pub fn help(ui: &mut Ui, text: &str) -> egui::Response {
 /// A visible caption and its optional explanation, without another line of prose.
 pub fn label_with_help(ui: &mut Ui, label: &str, explanation: &str) -> egui::Response {
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::theme::spacing().xs;
+        let gap = crate::theme::spacing().xs;
+        ui.spacing_mut().item_spacing.x = gap;
+        let width = ui.available_width() - HELP_SIZE - gap;
         let response = ui
-            .label(crate::theme::body(label))
+            .scope(|ui| {
+                ui.set_max_width(width.max(0.0));
+                ui.add(egui::Label::new(crate::theme::body(label)).wrap())
+            })
+            .inner
             .on_hover_text(explanation);
         help(ui, explanation);
         response
@@ -1024,25 +1116,174 @@ pub fn option<'a>(ui: &mut Ui, selected: bool, atoms: impl egui::IntoAtoms<'a>) 
     ui.add(egui::Button::selectable(selected, atoms).stroke(egui::Stroke::NONE))
 }
 
-/// A full-width sidebar choice with the same selection marker as the Requests tree.
-pub(crate) fn list_row<'a>(
+pub(crate) fn list_toolbar<T>(ui: &mut Ui, draw: impl FnOnce(&mut Ui) -> T) -> T {
+    let inset = crate::theme::spacing().lg;
+    egui::Frame::new()
+        .inner_margin(egui::epaint::MarginF32 {
+            left: inset,
+            right: inset,
+            top: inset,
+            bottom: 0.0,
+        })
+        .show(ui, draw)
+        .inner
+}
+
+/// The Variables and Settings lists share the workspace background and the panel divider.
+pub(crate) fn list_column(ui: &mut Ui, label: &'static str, draw: impl FnOnce(&mut Ui)) {
+    let width = (ui.available_width() * 0.22).clamp(144.0, 192.0).round();
+    egui::Panel::left(label)
+        .frame(egui::Frame::new())
+        .resizable(false)
+        .exact_size(width)
+        .show(ui, |ui| {
+            let area = ui.max_rect();
+            let group = egui::UiBuilder::new()
+                .accessibility_role(egui::Role::Group)
+                .accessibility_label(label);
+            ui.scope_builder(group, |ui| {
+                region_bounds(ui, area);
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        scroll_view_bounds(ui);
+                        draw(ui);
+                    });
+            });
+        });
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ListIcon {
+    Glyph(Icon),
+    Dot(Option<Color32>),
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ListEnd<'a> {
+    None,
+    Unsaved,
+    Menu { name: &'a str, checked: bool },
+}
+
+/// The icon slot, caption and trailing controls keep their positions as hover and selection change.
+pub(crate) fn list_row(
     ui: &mut Ui,
+    label: &str,
+    icon: ListIcon,
     selected: bool,
-    atoms: impl egui::IntoAtoms<'a>,
-) -> egui::Response {
-    let response = ui.add_sized(
-        [ui.available_width(), crate::theme::spacing().row],
-        egui::Button::selectable(selected, atoms)
-            .stroke(egui::Stroke::NONE)
-            .truncate(),
-    );
+    end: ListEnd<'_>,
+    hint: Option<&str>,
+) -> (egui::Response, Option<egui::Response>) {
+    let spacing = crate::theme::spacing();
+    let (id, rect) = ui.allocate_space(egui::vec2(ui.available_width(), spacing.row));
+    let mut target = rect;
+    let reserved = match end {
+        ListEnd::None => 0.0,
+        ListEnd::Unsaved => spacing.sm,
+        ListEnd::Menu { .. } => crate::theme::SECTION + spacing.xs,
+    };
+    if matches!(end, ListEnd::Menu { .. }) {
+        target.max.x -= icons::size();
+    }
+    let response = ui.interact(target, id, egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, label)
+    });
     response
         .ctx
         .accesskit_node_builder(response.id, |node| node.set_selected(selected));
-    if selected {
-        selection_bar(ui, response.rect);
+    let menu = if let ListEnd::Menu { name, .. } = end {
+        let menu_rect = egui::Rect::from_min_max(target.right_top(), rect.right_bottom());
+        let menu = ui.interact(menu_rect, id.with("menu"), egui::Sense::click());
+        menu.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
+        Some(menu.on_hover_text(name))
+    } else {
+        None
+    };
+
+    let p = palette();
+    let hovered = response.hovered() || menu.as_ref().is_some_and(egui::Response::hovered);
+    let left = rect.left() + spacing.sm;
+    let x = left + crate::theme::SECTION + spacing.sm;
+    let caption_right = target.right() - spacing.sm - reserved;
+    let galley = control_text(ui, crate::theme::body(label), caption_right - x);
+    let elided = galley.elided;
+    if ui.is_rect_visible(rect) {
+        let fill = if selected {
+            p.selected
+        } else if hovered {
+            p.hover
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter().rect_filled(rect, 0, fill);
+        if selected {
+            selection_bar(ui, rect);
+        }
+        let y = rect.center().y;
+        let center = egui::pos2(left + crate::theme::SECTION / 2.0, y);
+        match icon {
+            ListIcon::Glyph(glyph) => {
+                paint_glyph(ui, glyph, crate::theme::SECTION, center, p.text_muted);
+            }
+            ListIcon::Dot(Some(color)) => {
+                ui.painter().circle_filled(center, 4.0, color);
+            }
+            ListIcon::Dot(None) => {}
+        }
+        ui.painter()
+            .galley(egui::pos2(x, y - galley.size().y / 2.0), galley, p.text);
+        list_row_end(ui, rect, end, hovered, menu.as_ref());
+        list_focus(ui, &response);
     }
-    response
+    let response = if let Some(hint) = hint.or(elided.then_some(label)) {
+        response.on_hover_text(hint)
+    } else {
+        response
+    };
+    (response, menu)
+}
+
+fn list_row_end(
+    ui: &Ui,
+    rect: egui::Rect,
+    end: ListEnd<'_>,
+    hovered: bool,
+    menu: Option<&egui::Response>,
+) {
+    let p = palette();
+    if matches!(end, ListEnd::Unsaved) {
+        corner_dot(ui, rect, egui::Align::Min, Tone::Warning);
+    }
+    if let Some(menu) = menu {
+        if let ListEnd::Menu { checked: true, .. } = end {
+            let x = menu.rect.left() - crate::theme::spacing().sm - crate::theme::SECTION / 2.0;
+            paint_glyph(
+                ui,
+                Icon::Check,
+                crate::theme::SECTION,
+                egui::pos2(x, rect.center().y),
+                p.text_muted,
+            );
+        }
+        if hovered || menu.has_focus() {
+            let color = if menu.hovered() { p.text } else { p.text_muted };
+            paint_glyph(ui, Icon::More, 16.0, menu.rect.center(), color);
+            list_focus(ui, menu);
+        }
+    }
+}
+
+fn list_focus(ui: &Ui, response: &egui::Response) {
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect,
+            0,
+            egui::Stroke::new(1.5, palette().accent),
+            egui::StrokeKind::Inside,
+        );
+    }
 }
 
 /// A color's name as people say it.
@@ -2004,23 +2245,38 @@ pub(crate) const REMOVE_WIDTH: f32 = 24.0;
 /// remove …"). It disarms after [`REMOVE_ARMED_SECONDS`] or once the pointer is somewhere
 /// else outside it. Returns whether to remove now.
 pub fn remove_button(ui: &mut Ui, id: egui::Id, what: &str, height: f32) -> bool {
-    two_click(ui, id, what, height, None)
+    two_click(ui, id, what, RemoveControl::Row(height))
 }
 
 /// [`remove_button`] with words ("Delete route") instead of ×, in red text, for removing a
 /// whole thing rather than a row.
 pub fn delete_button(ui: &mut Ui, id: egui::Id, what: &str, text: &str) -> bool {
-    let height = ui.spacing().interact_size.y;
-    two_click(ui, id, what, height, Some(text))
+    two_click(ui, id, what, RemoveControl::Text(text))
 }
 
-fn two_click(ui: &mut Ui, id: egui::Id, what: &str, height: f32, text: Option<&str>) -> bool {
+pub(crate) fn remove_icon_button(ui: &mut Ui, id: egui::Id, what: &str) -> bool {
+    two_click(ui, id, what, RemoveControl::Icon)
+}
+
+#[derive(Clone, Copy)]
+enum RemoveControl<'a> {
+    Row(f32),
+    Text(&'a str),
+    Icon,
+}
+
+fn two_click(ui: &mut Ui, id: egui::Id, what: &str, control: RemoveControl<'_>) -> bool {
     let (now, pointer) = ui.input(|i| (i.time, i.pointer.latest_pos()));
     // When it was armed, and where the pointer was then.
     let armed_at: Option<(f64, Option<egui::Pos2>)> = ui.data(|d| d.get_temp(id));
     let armed = armed_at.is_some_and(|(at, _)| now - at < REMOVE_ARMED_SECONDS);
-    let response = match text {
-        None => {
+    let label = if armed {
+        format!("Click again to remove {what}")
+    } else {
+        format!("Remove {what}")
+    };
+    let response = match control {
+        RemoveControl::Row(height) => {
             let button = if armed {
                 egui::Button::new(RichText::new("×").strong().color(palette().error))
                     .stroke(egui::Stroke::new(1.0, palette().error))
@@ -2034,7 +2290,7 @@ fn two_click(ui: &mut Ui, id: egui::Id, what: &str, height: f32, text: Option<&s
             })
             .inner
         }
-        Some(text) => {
+        RemoveControl::Text(text) => {
             let shown = if armed { "Click again" } else { text };
             let button = egui::Button::new(RichText::new(shown).color(palette().error));
             let button = if armed {
@@ -2044,14 +2300,14 @@ fn two_click(ui: &mut Ui, id: egui::Id, what: &str, height: f32, text: Option<&s
             };
             ui.add(button)
         }
+        RemoveControl::Icon => icons::remove(ui, &label, armed),
     };
-    let label = if armed {
-        format!("Click again to remove {what}")
+    let response = if matches!(control, RemoveControl::Icon) {
+        response
     } else {
-        format!("Remove {what}")
+        name(&response, &label);
+        response.on_hover_text(&label)
     };
-    name(&response, &label);
-    let response = response.on_hover_text(&label);
     let disarm = |ui: &mut Ui| ui.data_mut(|d| d.remove_temp::<(f64, Option<egui::Pos2>)>(id));
     if response.clicked() {
         if armed {
@@ -2605,8 +2861,45 @@ fn secret_edit(ui: &mut Ui, text: &mut String, label: &str, width: f32, vars: &m
     changed
 }
 
-/// The width of the request settings' label column, which fits "Client certificate".
-const OPTION_LABELS: f32 = 150.0;
+pub(crate) const SETTINGS_WIDTH: f32 = 640.0;
+const SETTINGS_LABEL_WIDTH: f32 = 200.0;
+const SETTINGS_CONTROL_MIN: f32 = 196.0;
+
+pub(crate) fn settings_heading(ui: &mut Ui, title: &str) {
+    ui.label(crate::theme::section(title));
+    ui.add_space(crate::theme::spacing().xs);
+}
+
+/// Keep the field column aligned across groups, or put controls under captions in narrow panes.
+pub(crate) fn settings_row<T>(
+    ui: &mut Ui,
+    label: &str,
+    explanation: &str,
+    control: impl FnOnce(&mut Ui) -> T,
+) -> T {
+    let spacing = crate::theme::spacing();
+    let result = if ui.available_width() < SETTINGS_LABEL_WIDTH + spacing.md + SETTINGS_CONTROL_MIN
+    {
+        label_with_help(ui, label, explanation);
+        control(ui)
+    } else {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = spacing.md;
+            ui.allocate_ui_with_layout(
+                egui::vec2(SETTINGS_LABEL_WIDTH, spacing.control),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_min_size(egui::vec2(SETTINGS_LABEL_WIDTH, spacing.control));
+                    label_with_help(ui, label, explanation);
+                },
+            );
+            ui.vertical(control).inner
+        })
+        .inner
+    };
+    ui.add_space((spacing.md - ui.spacing().item_spacing.y).max(0.0));
+    result
+}
 
 /// A text setting in one line: the field shows the default while it is inherited, and
 /// typing makes it the request's own; the reset icon after it goes back to the default.
@@ -2615,39 +2908,42 @@ fn override_text(
     field: OptionField,
     value: &mut Override<String>,
     default: &str,
-    width: f32,
     vars: &mut VarUi,
 ) -> bool {
     let password = field == OptionField::Password;
+    let limit = field == OptionField::DownloadLimit;
+    let gap = ui.spacing().item_spacing.x;
     let reset_room = icons::size() + ui.spacing().item_spacing.x;
+    let units = crate::theme::meta("KiB").color(palette().text_muted);
+    let units_room = if limit {
+        text_width(ui, units.clone()) + gap
+    } else {
+        0.0
+    };
+    let width = (ui.available_width() - reset_room - units_room).max(0.0);
+    let inherited = value.inherit;
     let mut changed = false;
-    if value.inherit {
+    if inherited {
         let mut draft = String::new();
+        let default = if limit {
+            default.strip_suffix(" KiB").unwrap_or(default)
+        } else {
+            default
+        };
         let hint = format!("Default: {default}");
-        let typed = var_edit_hinted(
-            ui,
-            &mut draft,
-            field.label(),
-            width - reset_room,
-            password,
-            vars,
-            &hint,
-        );
+        let typed = var_edit_hinted(ui, &mut draft, field.label(), width, password, vars, &hint);
         if typed.changed() && !draft.is_empty() {
             value.value = draft;
             value.inherit = false;
             changed = true;
         }
     } else {
-        changed |= var_edit(
-            ui,
-            &mut value.value,
-            field.label(),
-            width - reset_room,
-            password,
-            vars,
-        )
-        .changed();
+        changed |= var_edit(ui, &mut value.value, field.label(), width, password, vars).changed();
+    }
+    if limit {
+        ui.label(units);
+    }
+    if !inherited {
         let reset = icons::button_with_hint(
             ui,
             Icon::Revert,
@@ -2663,39 +2959,29 @@ fn override_text(
     changed
 }
 
-/// An on/off setting as a choice of three: the default (saying what it is), On or Off.
+/// An on/off setting exposes its inherited value on the Default segment.
 fn override_bool(
     ui: &mut Ui,
     field: OptionField,
     value: &mut Override<bool>,
     default: &str,
 ) -> bool {
-    let on_off = |on: bool| if on { "On" } else { "Off" };
-    let inherited = format!("Default ({default})");
-    let selected = if value.inherit {
-        inherited.clone()
-    } else {
-        on_off(value.value).to_owned()
-    };
-    let mut changed = false;
-    let combo = combo(("request option", field.label()))
-        .selected_text(selected)
-        .width(140.0)
-        .show_ui(ui, |ui| {
-            if option(ui, value.inherit, inherited.as_str()).clicked() && !value.inherit {
-                value.inherit = true;
-                changed = true;
-            }
-            for on in [true, false] {
-                let chosen = !value.inherit && value.value == on;
-                if option(ui, chosen, on_off(on)).clicked() && !chosen {
-                    value.inherit = false;
-                    value.value = on;
-                    changed = true;
-                }
-            }
-        });
-    name(&combo.response, field.label());
+    let mut selected = (!value.inherit).then_some(value.value);
+    let hint = format!("Default: {default}, from Settings");
+    let changed = named_segments(
+        ui,
+        field.label(),
+        &mut selected,
+        &[(None, "Default"), (Some(true), "On"), (Some(false), "Off")],
+        Some(("Default", &hint)),
+    )
+    .changed();
+    if changed {
+        value.inherit = selected.is_none();
+        if let Some(on) = selected {
+            value.value = on;
+        }
+    }
     changed
 }
 
@@ -2709,85 +2995,47 @@ pub fn options_form(
     vars: &mut VarUi,
 ) -> bool {
     let mut changed = false;
-    // Beside their labels where the pane has room; in a narrow one each control goes under
-    // its label, so nothing runs past the pane's edge.
-    let stacked = ui.available_width() < OPTION_LABELS + 12.0 + 200.0;
-    // Fields take the rest of the pane; inside a grid cell the cell is all a field would see.
-    let width = if stacked {
-        ui.available_width()
-    } else {
-        ui.available_width() - OPTION_LABELS - 12.0
-    };
+    scroll_view_bounds(ui);
+    ui.set_max_width(ui.available_width().min(SETTINGS_WIDTH));
     let mut control = |ui: &mut Ui, field: OptionField| {
         let default = default_value(field, defaults);
-        ui.vertical(|ui| {
-            ui.horizontal(|ui| {
-                let text = |ui: &mut Ui, value: &mut Override<String>, vars: &mut VarUi| {
-                    override_text(ui, field, value, &default, width, vars)
-                };
-                changed |= match field {
-                    OptionField::FollowRedirects => {
-                        override_bool(ui, field, &mut options.follow_redirects, &default)
-                    }
-                    OptionField::AttachCookies => {
-                        override_bool(ui, field, &mut options.attach_cookies, &default)
-                    }
-                    OptionField::CookieJar => {
-                        override_bool(ui, field, &mut options.cookie_jar, &default)
-                    }
-                    OptionField::VerifySsl => {
-                        override_bool(ui, field, &mut options.verify_ssl, &default)
-                    }
-                    OptionField::Timeout => text(ui, &mut options.timeout, vars),
-                    OptionField::DownloadLimit => text(ui, &mut options.download_limit, vars),
-                    OptionField::ProxyUrl => text(ui, &mut options.proxy_url, vars),
-                    OptionField::CaBundle => text(ui, &mut options.ca_bundle, vars),
-                    OptionField::CertificatePath => text(ui, &mut options.certificate_path, vars),
-                    OptionField::KeyFile => text(ui, &mut options.key_file, vars),
-                    OptionField::Password => text(ui, &mut options.password, vars),
-                    OptionField::StreamSeconds => text(ui, &mut options.stream_seconds, vars),
-                    OptionField::StreamEvents => text(ui, &mut options.stream_events, vars),
-                };
-            });
-            if let Some((_, message)) = errors.iter().find(|(f, _)| *f == field) {
-                ui.label(tone_text(*message, Tone::Error));
-            }
-        });
-    };
-    for (index, (title, fields)) in OPTION_GROUPS.iter().enumerate() {
-        if index > 0 {
-            ui.add_space(10.0);
-        }
-        ui.label(
-            RichText::new(*title)
-                .font(crate::theme::semibold(13.0))
-                .color(palette().text_muted),
-        );
-        if stacked {
-            for &field in *fields {
-                ui.add(egui::Label::new(field.label()).wrap());
-                control(ui, field);
-                ui.add_space(4.0);
-            }
-            continue;
-        }
-        egui::Grid::new(("request settings", *title))
-            .num_columns(2)
-            .min_col_width(OPTION_LABELS)
-            .max_col_width(OPTION_LABELS.max(width))
-            .spacing([12.0, 6.0])
-            .show(ui, |ui| {
-                for &field in *fields {
-                    // Left-aligned and cut with "…" past the column, its whole text on hover.
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(OPTION_LABELS, crate::theme::spacing().control),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| ui.add(egui::Label::new(field.label()).truncate()),
-                    );
-                    control(ui, field);
-                    ui.end_row();
+        ui.horizontal(|ui| {
+            let text = |ui: &mut Ui, value: &mut Override<String>, vars: &mut VarUi| {
+                override_text(ui, field, value, &default, vars)
+            };
+            changed |= match field {
+                OptionField::FollowRedirects => {
+                    override_bool(ui, field, &mut options.follow_redirects, &default)
                 }
-            });
+                OptionField::AttachCookies => {
+                    override_bool(ui, field, &mut options.attach_cookies, &default)
+                }
+                OptionField::CookieJar => {
+                    override_bool(ui, field, &mut options.cookie_jar, &default)
+                }
+                OptionField::VerifySsl => {
+                    override_bool(ui, field, &mut options.verify_ssl, &default)
+                }
+                OptionField::Timeout => text(ui, &mut options.timeout, vars),
+                OptionField::DownloadLimit => text(ui, &mut options.download_limit, vars),
+                OptionField::ProxyUrl => text(ui, &mut options.proxy_url, vars),
+                OptionField::CaBundle => text(ui, &mut options.ca_bundle, vars),
+                OptionField::CertificatePath => text(ui, &mut options.certificate_path, vars),
+                OptionField::KeyFile => text(ui, &mut options.key_file, vars),
+                OptionField::Password => text(ui, &mut options.password, vars),
+                OptionField::StreamSeconds => text(ui, &mut options.stream_seconds, vars),
+                OptionField::StreamEvents => text(ui, &mut options.stream_events, vars),
+            };
+        });
+        if let Some((_, message)) = errors.iter().find(|(f, _)| *f == field) {
+            ui.add(egui::Label::new(tone_text(*message, Tone::Error)).wrap());
+        }
+    };
+    for (title, fields) in OPTION_GROUPS {
+        settings_heading(ui, title);
+        for &field in fields {
+            settings_row(ui, field.label(), field.help(), |ui| control(ui, field));
+        }
     }
     changed
 }

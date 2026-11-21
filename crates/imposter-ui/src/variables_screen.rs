@@ -2,7 +2,6 @@
 //! time with its own unsaved-changes guard.
 
 use egui::{Align, Layout, Response, Ui, UiBuilder, vec2};
-use imposter_app::core::model::EnvColor;
 use imposter_app::core::variables::{SecretScope, secret_name};
 
 use crate::app::{Action, State, VariablesAction, VariablesTab};
@@ -10,8 +9,8 @@ use crate::icons::{self, Icon};
 use crate::theme::{self, Tone, palette};
 use crate::vars::{self, Choice, Scope};
 use crate::widgets::{
-    self, REMOVE_WIDTH, SaveStatus, SaveWord, TabSpec, Variant, append_row, blank_cell, button,
-    heading_cell, name, remove_button, saved_label, table_text, tone_text,
+    self, ListEnd, ListIcon, REMOVE_WIDTH, SaveStatus, SaveWord, TabSpec, Variant, append_row,
+    blank_cell, button, heading_cell, name, remove_button, saved_label, table_text, tone_text,
 };
 use crate::workspace;
 
@@ -84,137 +83,103 @@ pub fn explanation(state: &State, scope: Scope) -> (String, &'static str) {
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut actions = Vec::new();
-    let width = (ui.available_width() * 0.22).clamp(144.0, 192.0).round();
-    egui::Panel::left("variable scopes")
-        .frame(workspace::sidebar_frame())
-        .resizable(false)
-        .exact_size(width)
-        .show(ui, |ui| scope_list(state, ui, &mut actions));
+    let highlight = widgets::list_toolbar(ui, |ui| scope_toolbar(state, ui, &mut actions));
+    widgets::list_column(ui, "Variable scopes", |ui| {
+        scope_list(state, ui, &mut actions);
+    });
     egui::CentralPanel::default()
         .frame(workspace::screen_frame())
-        .show(ui, |ui| scope_content(state, ui, &mut actions));
+        .show(ui, |ui| {
+            scope_content(state, ui, &mut actions, highlight.as_deref());
+        });
     state.actions.extend(actions);
 }
 
 fn scope_list(state: &State, ui: &mut Ui, actions: &mut Vec<Action>) {
     let current = state.variables.scope;
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            widgets::scroll_view_bounds(ui);
-            let global = scope_row(
-                ui,
-                "Global",
-                ScopeMark::Glyph(Icon::Globe),
-                current == Scope::Global,
-                false,
-            );
-            select_scope(&global, Scope::Global, actions);
-
-            ui.add_space(theme::spacing().sm);
-            ui.horizontal(|ui| {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if icons::button(ui, Icon::Plus, "New environment", false).clicked() {
-                        actions.push(Action::Variables(VariablesAction::NewEnvironment));
-                    }
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        scope_heading(ui, "Environments");
-                    });
-                });
-            });
-            for environment in &state.environments {
-                let scope = Scope::Environment(environment.id);
-                ui.push_id(scope, |ui| {
-                    let active = state.active_environment == Some(environment.id);
-                    let row = scope_row(
-                        ui,
-                        &environment.name,
-                        ScopeMark::Dot(environment.color),
-                        current == scope,
-                        active,
-                    );
-                    name(&row, &format!("Environment · {}", environment.name));
-                    let hint = if active {
-                        row.ctx.accesskit_node_builder(row.id, |node| {
-                            node.set_description(ACTIVE_HINT);
-                        });
-                        format!("{}\n{ACTIVE_HINT}", environment.name)
-                    } else {
-                        environment.name.clone()
-                    };
-                    let row = row.on_hover_text(hint);
-                    select_scope(&row, scope, actions);
-                    environment_menu(ui, &row, environment.id, actions);
-                });
-            }
-
-            ui.add_space(theme::spacing().sm);
-            scope_heading(ui, "Collections");
-            for collection in &state.collections {
-                let scope = Scope::Collection(collection.id);
-                let row = ui
-                    .push_id(scope, |ui| {
-                        scope_row(
-                            ui,
-                            &collection.name,
-                            ScopeMark::Glyph(Icon::Folder),
-                            current == scope,
-                            false,
-                        )
-                    })
-                    .inner
-                    .on_hover_text(&collection.name);
-                name(&row, &format!("Collection · {}", collection.name));
-                select_scope(&row, scope, actions);
-            }
-        });
-}
-
-#[derive(Clone, Copy)]
-enum ScopeMark {
-    Glyph(Icon),
-    Dot(Option<EnvColor>),
-}
-
-fn scope_row(ui: &mut Ui, label: &str, mark: ScopeMark, selected: bool, active: bool) -> Response {
-    let slot = egui::Vec2::splat(theme::SECTION);
-    let leading = egui::Atom::paint(slot, |ui, args| {
-        let center = args.rect.center();
-        match mark {
-            ScopeMark::Glyph(icon) => {
-                widgets::paint_glyph(ui, icon, theme::SECTION, center, palette().text_muted);
-            }
-            ScopeMark::Dot(Some(color)) => {
-                ui.painter()
-                    .circle_filled(center, 4.0, theme::env_color(color));
-            }
-            ScopeMark::Dot(None) => {}
-        }
-    });
-    let trailing = egui::Atom::paint(slot, |ui, args| {
-        if active {
-            widgets::paint_glyph(
-                ui,
-                Icon::Check,
-                theme::SECTION,
-                args.rect.center(),
-                palette().text_muted,
-            );
-        }
-    });
-    widgets::list_row(
+    let (global, _) = widgets::list_row(
         ui,
-        selected,
-        (leading, theme::body(label), egui::Atom::grow(), trailing),
-    )
+        "Global",
+        ListIcon::Glyph(Icon::Globe),
+        current == Scope::Global,
+        ListEnd::None,
+        None,
+    );
+    select_scope(&global, Scope::Global, actions);
+
+    ui.add_space(theme::spacing().sm);
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if icons::button(ui, Icon::Plus, "New environment", false).clicked() {
+                actions.push(Action::Variables(VariablesAction::NewEnvironment));
+            }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                scope_heading(ui, "Environments");
+            });
+        });
+    });
+    for environment in &state.environments {
+        let scope = Scope::Environment(environment.id);
+        ui.push_id(scope, |ui| {
+            let active = state.active_environment == Some(environment.id);
+            let hint = if active {
+                format!("{}\n{ACTIVE_HINT}", environment.name)
+            } else {
+                environment.name.clone()
+            };
+            let menu_name = format!("Actions for environment {}", environment.name);
+            let (row, menu) = widgets::list_row(
+                ui,
+                &environment.name,
+                ListIcon::Dot(environment.color.map(theme::env_color)),
+                current == scope,
+                ListEnd::Menu {
+                    name: &menu_name,
+                    checked: active,
+                },
+                Some(&hint),
+            );
+            name(&row, &format!("Environment · {}", environment.name));
+            if active {
+                row.ctx.accesskit_node_builder(row.id, |node| {
+                    node.set_description(ACTIVE_HINT);
+                });
+            }
+            select_scope(&row, scope, actions);
+            environment_menu(ui, &row, menu.as_ref(), environment.id, actions);
+        });
+    }
+
+    ui.add_space(theme::spacing().sm);
+    scope_heading(ui, "Collections");
+    for collection in &state.collections {
+        let scope = Scope::Collection(collection.id);
+        let (row, _) = ui
+            .push_id(scope, |ui| {
+                widgets::list_row(
+                    ui,
+                    &collection.name,
+                    ListIcon::Glyph(Icon::Folder),
+                    current == scope,
+                    ListEnd::None,
+                    Some(&collection.name),
+                )
+            })
+            .inner;
+        name(&row, &format!("Collection · {}", collection.name));
+        select_scope(&row, scope, actions);
+    }
 }
 
 fn scope_heading(ui: &mut Ui, text: &str) {
-    ui.label(
-        theme::meta(text)
-            .font(theme::semibold(theme::META))
-            .color(palette().text_muted),
-    );
+    ui.horizontal(|ui| {
+        ui.add_space(theme::spacing().sm);
+        ui.label(
+            theme::meta(text)
+                .font(theme::semibold(theme::META))
+                .color(palette().text_muted),
+        );
+    });
 }
 
 fn select_scope(response: &Response, scope: Scope, actions: &mut Vec<Action>) {
@@ -226,6 +191,7 @@ fn select_scope(response: &Response, scope: Scope, actions: &mut Vec<Action>) {
 fn environment_menu(
     ui: &Ui,
     row: &Response,
+    menu: Option<&Response>,
     id: imposter_app::core::ids::EnvironmentId,
     actions: &mut Vec<Action>,
 ) {
@@ -241,6 +207,8 @@ fn environment_menu(
     });
     let open = if keyboard || assistive || row.secondary_clicked() {
         Some(egui::SetOpenCommand::Bool(true))
+    } else if menu.is_some_and(Response::clicked) {
+        Some(egui::SetOpenCommand::Toggle)
     } else if row.clicked() {
         Some(egui::SetOpenCommand::Bool(false))
     } else {
@@ -262,7 +230,7 @@ fn environment_menu(
     });
 }
 
-fn scope_content(state: &mut State, ui: &mut Ui, actions: &mut Vec<Action>) {
+fn scope_toolbar(state: &mut State, ui: &mut Ui, actions: &mut Vec<Action>) -> Option<String> {
     let current = state.variables.scope;
     let has_local_data = SecretScope::of_scope(current).is_some();
     let highlight = if state.variables.loaded {
@@ -307,6 +275,16 @@ fn scope_content(state: &mut State, ui: &mut Ui, actions: &mut Vec<Action>) {
         |ui| scope_actions(state, ui, actions),
     );
     state.variables.tab = tab;
+    highlight
+}
+
+fn scope_content(
+    state: &mut State,
+    ui: &mut Ui,
+    actions: &mut Vec<Action>,
+    highlight: Option<&str>,
+) {
+    let current = state.variables.scope;
     if state.variables_changed_on_disk {
         use crate::app::DiskChoice;
         match workspace::notice_banner(
@@ -332,7 +310,7 @@ fn scope_content(state: &mut State, ui: &mut Ui, actions: &mut Vec<Action>) {
         ui.add_space(theme::spacing().xs);
     }
 
-    tabs_content(state, ui, actions, highlight.as_deref());
+    tabs_content(state, ui, actions, highlight);
 }
 
 fn scope_actions(state: &State, ui: &mut Ui, actions: &mut Vec<Action>) {

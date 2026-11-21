@@ -510,6 +510,28 @@ mod tests {
     const BOTH: [(&str, &Palette); 2] = [("dark", &DARK), ("light", &LIGHT)];
 
     #[test]
+    fn toggle_edges_and_knobs_contrast_in_both_states() {
+        for (name, p) in BOTH {
+            for background in [p.background, p.surface] {
+                assert!(
+                    contrast(p.accent, background) >= NON_TEXT,
+                    "{name} on track"
+                );
+                assert!(
+                    contrast(p.field_border, background) >= NON_TEXT,
+                    "{name} off edge"
+                );
+            }
+            assert!(
+                contrast(p.on_accent, p.accent) >= NON_TEXT,
+                "{name} on knob and focus"
+            );
+            assert!(contrast(p.text, p.input) >= NON_TEXT, "{name} off knob");
+            assert!(contrast(p.accent, p.input) >= NON_TEXT, "{name} off focus");
+        }
+    }
+
+    #[test]
     fn controls_kit_pairings_are_readable_in_both_palettes() {
         for (name, p) in BOTH {
             assert!(

@@ -720,48 +720,151 @@ fn the_scope_list_orders_groups_and_marks_the_active_environment() {
     );
 }
 
+fn list_column(app: &support::App, name: &str) -> (egui::Rect, f32) {
+    use egui::accesskit::Role;
+    let column = app.harness.get_by_role_and_label(Role::Group, name).rect();
+    let toolbar = app.harness.get_by_role(Role::Toolbar).rect();
+    let gap = column.top() - toolbar.bottom();
+    assert!(gap > 0.0, "{name} must begin below the toolbar");
+    let rail = app.harness.ctx.content_rect().left() + imposter_ui::layout::RAIL_WIDTH;
+    assert!(
+        (column.left() - rail).abs() <= 0.5,
+        "{name} must touch the rail"
+    );
+    let palette = imposter_ui::theme::palette();
+    let sample = column.center_bottom() - egui::vec2(0.0, 4.0);
+    let shapes = &app.harness.output().shapes;
+    let background = shapes
+        .iter()
+        .rev()
+        .find_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect)
+                if rect.rect.contains(sample)
+                    && clipped.clip_rect.contains(sample)
+                    && rect.fill != egui::Color32::TRANSPARENT =>
+            {
+                Some(rect.fill)
+            }
+            _ => None,
+        });
+    assert_eq!(background, Some(palette.background), "{name} background");
+    assert!(
+        shapes.iter().any(|clipped| matches!(clipped.shape,
+            egui::Shape::LineSegment { points: [a, b], stroke }
+                if (a.x - column.right()).abs() <= 1.0
+                    && (a.x - b.x).abs() < 0.5
+                    && (a.y - column.top()).abs() < 0.5
+                    && (b.y - column.bottom()).abs() < 0.5
+                    && (stroke.width - 1.0).abs() < 0.001
+                    && stroke.color == palette.border
+        )),
+        "{name} divider"
+    );
+    (column, gap)
+}
+
+fn list_label_left(app: &support::App, row_name: &str, label: &str) -> f32 {
+    let bounds = app.harness.get_by_label(row_name).rect();
+    app.harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|clipped| {
+            let egui::Shape::Text(text) = &clipped.shape else {
+                return None;
+            };
+            if !bounds.contains(text.pos) {
+                return None;
+            }
+            let prefix = text.galley.job.text.strip_suffix(label)?;
+            let line = text.galley.rows.first()?;
+            let first = line.glyphs.get(prefix.chars().count())?;
+            Some(text.pos.x + line.pos.x + first.pos.x)
+        })
+        .unwrap_or_else(|| panic!("No painted label for {row_name}"))
+}
+
 #[test]
-fn scope_names_start_in_the_same_column() {
+fn scope_names_and_settings_categories_align_in_matching_columns() {
     let mut app = with_scopes();
     for size in [
         egui::Vec2::from(imposter_ui::layout::MIN_WINDOW),
         egui::vec2(1400.0, 900.0),
     ] {
         app.harness.set_size(size);
-        settle(&mut app.harness);
-        let label_left = |row_name, label| {
-            let bounds = app.harness.get_by_label(row_name).rect();
-            app.harness
-                .output()
-                .shapes
-                .iter()
-                .find_map(|clipped| {
-                    let egui::Shape::Text(text) = &clipped.shape else {
-                        return None;
-                    };
-                    if !bounds.contains(text.pos) {
-                        return None;
-                    }
-                    let prefix = text.galley.job.text.strip_suffix(label)?;
-                    let line = text.galley.rows.first()?;
-                    let first = line.glyphs.get(prefix.chars().count())?;
-                    Some(text.pos.x + line.pos.x + first.pos.x)
-                })
-                .unwrap_or_else(|| panic!("No painted label for {row_name}"))
-        };
-        let global = label_left("Global", "Global");
+        open_screen(&mut app);
+        let (scopes, scopes_gap) = list_column(&app, "Variable scopes");
+        let global = list_label_left(&app, "Global", "Global");
         for (row, label) in [
             ("Environment · Dev", "Dev"),
             ("Environment · Prod", "Prod"),
             ("Collection · API", "API"),
             ("Collection · Webhooks", "Webhooks"),
         ] {
-            let left = label_left(row, label);
+            let left = list_label_left(&app, row, label);
             assert!(
                 (left - global).abs() <= 1.0,
                 "{row} at {left}, Global at {global}, size {size:?}"
             );
         }
+        support::open_screen(&mut app.harness, "Settings");
+        settle(&mut app.harness);
+        let (categories, categories_gap) = list_column(&app, "Settings categories");
+        assert_eq!(scopes.x_range(), categories.x_range(), "size {size:?}");
+        assert_eq!(scopes_gap, categories_gap, "size {size:?}");
+        for category in [
+            "Appearance",
+            "Collections",
+            "General",
+            "Network",
+            "TLS",
+            "History",
+            "Command line",
+        ] {
+            let row = format!("{category} settings");
+            let left = list_label_left(&app, &row, category);
+            assert!(
+                (left - global).abs() <= 1.0,
+                "{row} at {left}, Global at {global}, size {size:?}"
+            );
+            let bounds = app.harness.get_by_label(&row).rect();
+            assert_eq!(
+                bounds.x_range(),
+                categories.x_range(),
+                "{row} spans the column"
+            );
+        }
+        let selected = app.harness.get_by_label("Appearance settings").rect();
+        let network = app.harness.get_by_label("Network settings");
+        let hovered = network.rect();
+        network.hover();
+        app.harness.run_steps(2);
+        let palette = imposter_ui::theme::palette();
+        for (row, fill) in [(selected, palette.selected), (hovered, palette.hover)] {
+            assert!(
+                app.harness
+                    .output()
+                    .shapes
+                    .iter()
+                    .any(|clipped| matches!(&clipped.shape,
+                        egui::Shape::Rect(shape) if shape.rect == row && shape.fill == fill
+                    )),
+                "missing row fill at {row:?}"
+            );
+        }
+        assert!(
+            app.harness
+                .output()
+                .shapes
+                .iter()
+                .any(|clipped| matches!(&clipped.shape,
+                    egui::Shape::Rect(shape) if shape.fill == palette.selected_bar
+                        && (shape.rect.left() - selected.left()).abs() < 0.5
+                        && selected.contains_rect(shape.rect)
+                        && (shape.rect.width() - 2.0).abs() < 0.001
+                )),
+            "missing selected row's accent bar"
+        );
     }
 }
 

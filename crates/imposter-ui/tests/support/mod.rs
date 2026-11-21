@@ -83,6 +83,10 @@ pub fn open_screen(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     click_button(harness, label);
 }
 
+pub fn open_settings_category(harness: &mut Harness<'_, ImposterApp>, category: &str) {
+    click_button(harness, &format!("{category} settings"));
+}
+
 /// Open the scope row's context menu without choosing it as the edited scope.
 pub fn open_environment_menu(harness: &mut Harness<'_, ImposterApp>, environment: &str) {
     harness

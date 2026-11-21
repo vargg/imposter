@@ -37,7 +37,7 @@ use serde_json::Value;
 use crate::dialogs::{ConfirmPurpose, Dialog, GuardChoice, NamePurpose, Outcome};
 use crate::editor::{Editor, InvalidOptions, OptionField};
 use crate::layout::WorkspaceLayout;
-use crate::settings_screen::SettingsForm;
+use crate::settings_screen::{Category, SettingsForm};
 use crate::theme::{self, Tone};
 use crate::tree::{NodeId, TreeView};
 use crate::vars::{self, Scope};
@@ -512,6 +512,7 @@ pub enum Screen {
 #[derive(Debug)]
 pub struct SettingsScreen {
     pub form: SettingsForm,
+    pub(crate) category: Category,
     /// The stored settings, including those the screen does not show.
     base: AppSettings,
     baseline: Option<SettingsForm>,
@@ -531,6 +532,7 @@ impl Default for SettingsScreen {
         let base = AppSettings::default();
         Self {
             form: SettingsForm::new(&base),
+            category: Category::default(),
             base,
             baseline: None,
             status: None,
@@ -553,6 +555,12 @@ impl SettingsScreen {
 
     pub fn dirty(&self) -> bool {
         self.baseline.as_ref().is_some_and(|b| *b != self.form)
+    }
+
+    pub(crate) fn category_dirty(&self, category: Category) -> bool {
+        self.baseline
+            .as_ref()
+            .is_some_and(|baseline| category.changed(&self.form, baseline))
     }
 
     fn refresh_status(&mut self) {

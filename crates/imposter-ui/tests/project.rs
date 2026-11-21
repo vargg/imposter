@@ -85,6 +85,7 @@ fn settings_switches_the_collections_folder() {
     support::open_screen(&mut app.harness, "Settings");
     settle(&mut app.harness);
     assert_eq!(app.harness.state().state.screen, Screen::Settings);
+    support::open_settings_category(&mut app.harness, "Collections");
     app.harness
         .get_by_label_contains(&app.dir.path().join("collections").display().to_string());
     app.harness
@@ -331,6 +332,11 @@ fn a_folder_that_does_not_read_keeps_the_tree_and_says_why() {
     reload(&mut app);
     app.harness.get_by_label_contains("does not read now");
     app.harness.get_by_label("GET Create user");
+    support::open_screen(&mut app.harness, "Settings");
+    support::open_settings_category(&mut app.harness, "Collections");
+    let error = app.harness.state().state.folder_error.as_deref().unwrap();
+    app.harness
+        .get_by_role_and_label(egui::accesskit::Role::Label, error);
     std::fs::write(&path, good).unwrap();
     reload(&mut app);
     app.harness

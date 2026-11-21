@@ -219,6 +219,13 @@ fn main() {
         settle(&mut harness);
         harness.get_by_label("Show Collections").click();
         settle(&mut harness);
+        open_from(&mut harness, "More request tabs", "Request settings");
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-request-settings.png")))
+            .unwrap();
+        open_from(&mut harness, "More request tabs", "Tests");
         harness.get_by_label("HTTP method").click();
         settle(&mut harness);
         harness
@@ -293,6 +300,29 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-history.png")))
             .unwrap();
+        harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, "Settings")
+            .click();
+        settle(&mut harness);
+        for (category, file) in [
+            ("Appearance", "appearance"),
+            ("Network", "network"),
+            ("TLS", "tls"),
+        ] {
+            harness
+                .get_by_label(&format!("{category} settings"))
+                .click();
+            settle(&mut harness);
+            harness
+                .render()
+                .unwrap()
+                .save(out.join(format!("{label}-settings-{file}.png")))
+                .unwrap();
+        }
+        harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, "History")
+            .click();
+        settle(&mut harness);
         harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
         settle(&mut harness);
         harness

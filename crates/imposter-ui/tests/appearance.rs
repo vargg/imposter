@@ -82,11 +82,8 @@ fn the_density_is_chosen_in_settings_and_remembered() {
     let mut app = many_requests();
     support::open_screen(&mut app.harness, "Settings");
     settle(&mut app.harness);
-    app.harness
-        .get_by_role_and_label(Role::ComboBox, "Density")
-        .click();
-    app.harness.run_steps(2);
-    click(&mut app.harness, "Comfortable");
+    app.harness.get_by_role_and_label(Role::Group, "Density");
+    click(&mut app.harness, "Density: Comfortable");
     settle(&mut app.harness);
     assert_eq!(
         app.harness
@@ -146,10 +143,14 @@ fn hovering_a_tab_previews_its_underline_without_a_button_frame() {
 
 /// The font of `needle` in the text `whole` painted last frame.
 fn font_of(app: &support::App, whole: &str, needle: &str) -> egui::FontId {
+    font_in(app, whole, needle, egui::Rect::EVERYTHING)
+}
+
+fn font_in(app: &support::App, whole: &str, needle: &str, region: egui::Rect) -> egui::FontId {
     for clipped in &app.harness.output().shapes {
         if let egui::Shape::Text(text) = &clipped.shape {
             let job = &text.galley.job;
-            if job.text != whole {
+            if job.text != whole || !region.contains(text.pos) {
                 continue;
             }
             if let Some(at) = job.text.find(needle) {
@@ -190,15 +191,18 @@ fn titles_use_the_title_style() {
         title,
         "Settings page title"
     );
+    let group_font = |app: &support::App, title| {
+        let region = app.harness.get_by_role_and_label(Role::Label, title).rect();
+        font_in(app, title, title, region.expand(0.5))
+    };
     assert_eq!(
-        font_of(&app, "Appearance", "Appearance"),
+        group_font(&app, "Appearance"),
         imposter_ui::theme::semibold(14.0),
         "Settings group headings"
     );
-    // Every group heading comes from the same helper; the host certificates' heading is now
-    // below the window, under the collections folder.
+    support::open_settings_category(&mut app.harness, "Collections");
     assert_eq!(
-        font_of(&app, "Collections", "Collections"),
+        group_font(&app, "Collections"),
         imposter_ui::theme::semibold(14.0),
         "and the heading of the collections folder"
     );

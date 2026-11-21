@@ -73,7 +73,11 @@ impl Tour {
         // Scrolling animates; wait until it has settled.
         node.scroll_to_me();
         self.harness.run_steps(12);
-        self.harness.query_by_label(label).unwrap().click();
+        let Some(node) = self.harness.query_by_label(label) else {
+            eprintln!("tour ({}): {label:?} went away while scrolling", self.size);
+            return false;
+        };
+        node.click();
         self.harness.run_steps(2);
         true
     }
@@ -768,6 +772,31 @@ fn main() {
         tour.open_screen("Settings");
         tour.settle();
         tour.shot("8-01-settings");
+        for (category, file) in [
+            ("Collections", "collections"),
+            ("General", "general"),
+            ("Network", "network"),
+            ("TLS", "tls"),
+            ("History", "history"),
+            ("Command line", "command-line"),
+        ] {
+            tour.click(&format!("{category} settings"));
+            tour.shot(&format!("8-01-settings-{file}"));
+            if category == "TLS" && tour.click("Add host certificate") {
+                tour.harness
+                    .get_by_label("Host certificate 1 Password")
+                    .scroll_to_me();
+                tour.harness.run_steps(12);
+                tour.shot("8-01-settings-host-certificate");
+                if tour.click("Remove Host certificate 1") {
+                    // The armed button disarms if the pointer leaves it, so no scroll here.
+                    tour.harness
+                        .get_by_label("Click again to remove Host certificate 1")
+                        .click();
+                    tour.harness.run_steps(2);
+                }
+            }
+        }
         tour.open_screen("Requests");
         tour.settle();
         tour.click("Stack request and response");

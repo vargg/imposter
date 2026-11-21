@@ -448,12 +448,27 @@ fn request_settings_take_one_row_each_and_show_what_they_inherit() {
     open(&mut app, "GET Get");
     app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Settings;
     app.harness.run_steps(2);
+    assert_eq!(
+        support::text_input(&app.harness, "Timeout (seconds)")
+            .accesskit_node()
+            .placeholder(),
+        Some("Default: 30 seconds")
+    );
+    app.harness.get_by_label("KiB");
+    let limit_help = "Larger response bodies are cut at this size in KiB. Enter 0 for no limit.";
+    assert!(
+        app.harness
+            .query_all_by_label("Help")
+            .any(|node| { node.accesskit_node().description().as_deref() == Some(limit_help) })
+    );
+    assert!(app.harness.query_by_label(limit_help).is_none());
     // Each label shares its row with its control.
     for label in [
         "Timeout (seconds)",
         "Follow redirects",
         "Proxy URL",
         "Key password",
+        "Response limit",
     ] {
         let rows: Vec<egui::Rect> = app
             .harness
@@ -478,20 +493,50 @@ fn request_settings_take_one_row_each_and_show_what_they_inherit() {
             .clone()
     };
 
-    // An on/off setting: the default says what it is; On or Off overrides it.
-    app.harness
-        .get_by_role_and_label(egui::accesskit::Role::ComboBox, "Follow redirects")
-        .click();
-    app.harness.run_steps(3);
-    click(&mut app.harness, "Off");
-    assert!(!options(&app).follow_redirects.inherit);
-    assert!(!options(&app).follow_redirects.value);
-    app.harness
-        .get_by_role_and_label(egui::accesskit::Role::ComboBox, "Follow redirects")
-        .click();
-    app.harness.run_steps(3);
-    click(&mut app.harness, "Default (On)");
-    assert!(options(&app).follow_redirects.inherit);
+    let role = egui::accesskit::Role::Button;
+    let default = app
+        .harness
+        .get_by_role_and_label(role, "Follow redirects: Default");
+    assert_eq!(
+        default.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    assert_eq!(
+        default.accesskit_node().description().as_deref(),
+        Some("Default: On, from Settings")
+    );
+    default.hover();
+    app.harness.run_steps(12);
+    app.harness.get_by_label("Default: On, from Settings");
+
+    // Each choice makes it through Save to the request's stored options.
+    for (segment, expected) in [("Off", Some(false)), ("On", Some(true)), ("Default", None)] {
+        let label = format!("Follow redirects: {segment}");
+        click_button(&mut app.harness, &label);
+        assert_eq!(
+            app.harness
+                .get_by_role_and_label(role, &label)
+                .accesskit_node()
+                .toggled(),
+            Some(egui::accesskit::Toggled::True)
+        );
+        let redirects = options(&app).follow_redirects;
+        assert_eq!((!redirects.inherit).then_some(redirects.value), expected);
+        click_button(&mut app.harness, "Save request");
+        settle(&mut app.harness);
+        let saved = app
+            .harness
+            .state()
+            .store()
+            .call_blocking(|db| {
+                let api = collections::collections(db)?[0].id;
+                let tree = collections::tree(db, api)?.unwrap();
+                collections::request(db, tree.requests[0].id)
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.template.options.follow_redirects, expected);
+    }
 
     // A text setting: typing overrides, the reset icon goes back.
     type_into(&mut app.harness, "Timeout (seconds)", "5");

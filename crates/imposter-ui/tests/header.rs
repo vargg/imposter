@@ -215,6 +215,7 @@ fn variables_and_settings_keep_unsaved_markers_on_other_screens() {
     type_into(&mut app.harness, "Add value to variable 1", "test");
     open_screen(&mut app.harness, "Settings");
     settle(&mut app.harness);
+    support::open_settings_category(&mut app.harness, "Network");
     type_into(&mut app.harness, "Proxy server", "http://localhost:8080");
     open_screen(&mut app.harness, "Requests");
     for label in ["Variables", "Settings"] {
