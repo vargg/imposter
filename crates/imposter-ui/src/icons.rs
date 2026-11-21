@@ -21,6 +21,7 @@ pub enum Icon {
     Copy,
     Search,
     Wrap,
+    Indent,
     Save,
     /// A shell prompt, for curl commands.
     Terminal,
@@ -70,7 +71,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Self; 44] = [
+    pub const ALL: [Self; 45] = [
         Self::Sidebar,
         Self::Columns,
         Self::Rows,
@@ -80,6 +81,7 @@ impl Icon {
         Self::Copy,
         Self::Search,
         Self::Wrap,
+        Self::Indent,
         Self::Save,
         Self::Terminal,
         Self::Collapse,
@@ -129,6 +131,7 @@ impl Icon {
             Self::Copy => '\u{e1ca}',         // copy
             Self::Search => '\u{e30c}',       // magnifying-glass
             Self::Wrap => '\u{e484}',         // text-align-left
+            Self::Indent => '\u{ea1e}',       // text-indent
             Self::Save => '\u{e248}',         // floppy-disk
             Self::Terminal => '\u{eae8}',     // terminal-window
             Self::Collapse => '\u{e532}',     // arrows-in-line-vertical

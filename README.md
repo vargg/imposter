@@ -39,8 +39,9 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   starts each run with an empty jar.
 - Server-sent events: a `text/event-stream` response shows its events as they arrive on an
   **Events** tab (time, event, data; choose one to read it whole), and Send becomes
-  **Stop**. A request can stop listening after some seconds or events (its Settings tab,
-  **Event streams**), which ends the stream normally; checks then decide on what arrived.
+  **Stop**. A request can stop listening after some seconds or events under
+  **More → Settings → Event streams**. This ends the stream normally so checks can evaluate
+  what arrived.
   A stream cut at the response limit, timed out or stopped never passes.
 - Per-request settings that override the application defaults: timeout, redirects,
   certificate verification, cookies, the cookie jar, proxy, CA bundle, client certificate
@@ -96,7 +97,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Earlier runs of the same request stay one click away.
 
 **Checks**
-- Each request can carry checks, edited in its Tests tab and run after every response: the
+- Each request can carry checks, edited under **More → Tests** and run after every response: the
   status (`= 200`, `= 2xx`), a header, a JSONPath into the body, the body text, the duration
   or the size, compared with `=`, `≠`, `<`, `≤`, `>`, `≥`, contains, matches (a regular
   expression), exists or is of type. Expected values can use `{{variables}}`.
@@ -111,7 +112,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   to add one. Nothing is set while the Variables screen has unsaved changes to that scope.
 
 **Scripts**
-- Each request can have two [Rhai](https://rhai.rs) scripts, edited in its Scripts tab. The
+- Each request can have two [Rhai](https://rhai.rs) scripts, edited under **More → Scripts**. The
   before-sending script runs with variables and generated values filled in and can change
   the method, URL, query, headers and a JSON or text body; what it changes is what is sent,
   and what History and Copy as curl show. Use it to sign a request (HMAC), add computed
@@ -571,9 +572,14 @@ Further reading:
 `cargo run -p imposter-ui --example screenshot -- <dir>` renders the app with sample data to
 PNG files, without a display.
 
-Request tabs open on **Body**, followed by Auth, Query, Headers, Cookies, Settings, Docs,
-Tests, Captures and Scripts. Tabs that do not fit are in **More**. Use Docs to edit the
-request description; it saves and exports with the request.
+Requests open on **Body**, followed by **Auth**, **Query** and **Headers**. **More** holds
+Cookies, Settings, Docs, Tests, Captures and Scripts, plus any primary tabs that are too
+wide for the pane. The selected tab appears in the strip. Hover over **More** when it
+shows a dot to see which hidden tabs have content. Use **More → Docs** to edit the request
+description, which saves and exports with the request.
+
+The **Body** header contains the body type picker and, for a nonempty JSON body, the
+validation status and **Format body** action. Hover over a parse error for the full message.
 
 Right-click a request and choose **Duplicate** to create and open a saved sibling copy.
 An open request copies its current edits; navigation still resolves unsaved changes.

@@ -1598,6 +1598,15 @@ fn count_badge(count: usize, tone: Tone) -> Option<widgets::TabBadge> {
 /// request, not its last response, so the Tests count is never red.
 fn editor_badge(editor: &crate::editor::Editor, tab: EditorTab) -> Option<widgets::TabBadge> {
     match editor.badge(tab)? {
+        crate::editor::Badge::Count(count) if tab == EditorTab::Tests => Some(widgets::TabBadge {
+            mark: widgets::Mark::Count(count),
+            tone: Tone::Muted,
+            description: if count == 1 {
+                "1 check".to_owned()
+            } else {
+                format!("{count} checks")
+            },
+        }),
         crate::editor::Badge::Count(count) => count_badge(count, Tone::Muted),
         // Green, as API clients mark a tab that holds something.
         crate::editor::Badge::Dot => Some(widgets::TabBadge {
@@ -1898,20 +1907,36 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
         snapshot: snapshot.as_ref(),
         inspect,
     };
-    let tabs = EditorTab::ALL.map(|(tab, label)| {
-        let spec = widgets::TabSpec::new(tab, label).badge(editor_badge(&pane.editor, tab));
-        if tab == EditorTab::Settings {
-            // Screen readers need distinct names for this tab and the Settings destination.
-            spec.named("Request settings")
-        } else {
-            spec
-        }
+    let tabs: Vec<_> = EditorTab::PRIMARY
+        .into_iter()
+        .chain(EditorTab::MORE)
+        .map(|(tab, label)| {
+            let spec = widgets::TabSpec::new(tab, label).badge(editor_badge(&pane.editor, tab));
+            if tab == EditorTab::Settings {
+                // Screen readers need distinct names for this tab and the Settings destination.
+                spec.named("Request settings")
+            } else {
+                spec
+            }
+        })
+        .collect();
+    ui.horizontal(|ui| {
+        widgets::tab_strip(
+            ui,
+            &tabs,
+            &mut pane.tab,
+            EditorTab::PRIMARY.len(),
+            0.0,
+            "More request tabs",
+        );
     });
-    ui.horizontal(|ui| widgets::tab_strip(ui, &tabs, &mut pane.tab, 0.0, "More request tabs"));
     ui.separator();
+    if pane.tab == EditorTab::Body {
+        body_tab(ui, pane, &mut vars, actions);
+        return;
+    }
     let mut edited = false;
     let mut params = false;
-    let mut pick = None;
     egui::ScrollArea::both()
         .id_salt(("editor", pane.tab as u8))
         .auto_shrink([false, false])
@@ -1987,82 +2012,172 @@ fn request_pane(state: &mut State, ui: &mut Ui) {
                     &mut vars,
                 );
             }
-            EditorTab::Body => {
-                ui.horizontal(|ui| {
-                    let caption = ui.label("Body type");
-                    let selected = BODY_CHOICES
-                        .iter()
-                        .find(|(t, _)| *t == pane.editor.body_type)
-                        .map_or("JSON", |(_, l)| *l);
-                    let combo =
-                        widgets::combo("body type")
-                            .selected_text(selected)
-                            .show_ui(ui, |ui| {
-                                for (body_type, label) in BODY_CHOICES {
-                                    edited |= ui
-                                        .selectable_value(
-                                            &mut pane.editor.body_type,
-                                            body_type,
-                                            label,
-                                        )
-                                        .changed();
-                                }
-                            });
-                    combo.response.labelled_by(caption.id);
-                });
-                match pane.editor.body_type {
-                    BodyType::None => {
-                        ui.label(tone_text("This request has no body", Tone::Muted));
-                    }
-                    BodyType::Json | BodyType::Plain | BodyType::Text => {
-                        let json = pane.editor.body_type == BodyType::Json;
-                        edited |=
-                            widgets::body_editor(ui, &mut pane.editor.body_text, json, &mut vars);
-                    }
-                    BodyType::Urlencoded | BodyType::FormData => {
-                        edited |= widgets::rows_table(
-                            ui,
-                            "Fields",
-                            &mut pane.editor.form,
-                            &mut pane.confirm_clear[3],
-                            &mut vars,
-                        );
-                    }
-                    BodyType::Multipart => {
-                        edited |= widgets::multipart_table(
-                            ui,
-                            &mut pane.editor.multipart,
-                            &mut pane.confirm_clear[4],
-                            &mut pick,
-                            &mut vars,
-                        );
-                    }
-                    BodyType::Binary => {
-                        ui.horizontal(|ui| {
-                            let width = ui.available_width() - 110.0;
-                            edited |= widgets::var_edit(
-                                ui,
-                                &mut pane.editor.binary_path,
-                                "Binary file path",
-                                width,
-                                false,
-                                &mut vars,
-                            )
-                            .changed();
-                            if ui.button("Choose file…").clicked() {
-                                pick = Some(FileRequest::Binary);
-                            }
-                        });
-                    }
-                }
-            }
+            EditorTab::Body => {}
         });
-    if let Some(target) = pick {
-        actions.push(Action::PickFile(target));
-    }
     if edited || params {
         actions.push(Action::Edited { url: false, params });
     }
+}
+
+fn body_tab(
+    ui: &mut Ui,
+    pane: &mut crate::app::EditorPane,
+    vars: &mut VarUi,
+    actions: &mut Vec<Action>,
+) {
+    let editor = &mut pane.editor;
+    let mut edited = body_header(ui, &mut editor.body_type, &editor.body_text, actions);
+    let mut pick = None;
+    edited |= match editor.body_type {
+        BodyType::None => {
+            ui.label(tone_text("This request has no body", Tone::Muted));
+            false
+        }
+        BodyType::Json | BodyType::Plain | BodyType::Text => {
+            // Only the text scrolls, so its viewport height stays independent of the scroll offset.
+            widgets::body_editor(
+                ui,
+                &mut editor.body_text,
+                editor.body_type == BodyType::Json,
+                vars,
+            )
+        }
+        BodyType::Urlencoded | BodyType::FormData | BodyType::Multipart => {
+            egui::ScrollArea::both()
+                .id_salt("body fields")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    if editor.body_type == BodyType::Multipart {
+                        widgets::multipart_table(
+                            ui,
+                            &mut editor.multipart,
+                            &mut pane.confirm_clear[4],
+                            &mut pick,
+                            vars,
+                        )
+                    } else {
+                        widgets::rows_table(
+                            ui,
+                            "Fields",
+                            &mut editor.form,
+                            &mut pane.confirm_clear[3],
+                            vars,
+                        )
+                    }
+                })
+                .inner
+        }
+        BodyType::Binary => {
+            ui.horizontal(|ui| {
+                let width = ui.available_width() - icons::size() - ui.spacing().item_spacing.x;
+                let edited = widgets::var_edit(
+                    ui,
+                    &mut editor.binary_path,
+                    "Binary file path",
+                    width,
+                    false,
+                    vars,
+                )
+                .changed();
+                if icons::button(ui, Icon::Folder, "Choose file…", false).clicked() {
+                    pick = Some(FileRequest::Binary);
+                }
+                edited
+            })
+            .inner
+        }
+    };
+    if let Some(target) = pick {
+        actions.push(Action::PickFile(target));
+    }
+    if edited {
+        actions.push(Action::Edited {
+            url: false,
+            params: false,
+        });
+    }
+}
+
+fn body_header(
+    ui: &mut Ui,
+    body_type: &mut BodyType,
+    text: &str,
+    actions: &mut Vec<Action>,
+) -> bool {
+    let json = (*body_type == BodyType::Json && !text.trim().is_empty())
+        .then(|| viewer::check_json_template(text));
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = crate::theme::spacing().xs;
+        // Keep the picker steady as the JSON status appears or changes during editing.
+        let reserve = widgets::text_width(ui, crate::theme::meta("Valid JSON"))
+            + icons::size()
+            + 2.0 * ui.spacing().item_spacing.x;
+        let previous = *body_type;
+        if !widgets::compact_segments(ui, "Body type", body_type, &BODY_CHOICES, reserve) {
+            let selected = BODY_CHOICES
+                .iter()
+                .find(|(value, _, _)| value == body_type)
+                .map_or("JSON", |(_, _, full)| *full);
+            let width = 108.0_f32
+                .max(widgets::button_width(ui, crate::theme::body(selected)) + icons::size());
+            let picker = widgets::toolbar_combo(ui, "body type", width, selected, |ui| {
+                for (value, _, label) in BODY_CHOICES {
+                    if widgets::option(ui, *body_type == value, label).clicked() {
+                        *body_type = value;
+                        ui.close();
+                    }
+                }
+            });
+            name(&picker, "Body type");
+        }
+        if *body_type == BodyType::Json
+            && let Some(result) = json
+        {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let enabled = result.is_ok()
+                    && viewer::format_json_body(text).is_some_and(|formatted| formatted != text);
+                let hint = if enabled {
+                    crate::shortcuts::hint(
+                        ui.ctx(),
+                        "Re-indent the body, keeping every value as typed",
+                        &crate::shortcuts::FORMAT_BODY,
+                    )
+                } else {
+                    "Already formatted, or invalid JSON".to_owned()
+                };
+                let format = ui
+                    .add_enabled_ui(enabled, |ui| {
+                        icons::button_with_hint(ui, Icon::Indent, "Format body", &hint, false)
+                    })
+                    .inner;
+                if format.clicked() {
+                    actions.push(Action::FormatBody);
+                }
+                let (status, hover) = match result {
+                    Ok(()) => (crate::theme::meta("Valid JSON").color(palette().ok), None),
+                    Err(error) => {
+                        let full = error.to_string();
+                        let location =
+                            format!(" at line {} column {}", error.line(), error.column());
+                        let reason = full.strip_suffix(&location).unwrap_or(&full);
+                        let status = crate::theme::meta(format!("Line {}: {reason}", error.line()))
+                            .color(palette().error);
+                        (status, Some(format!("Invalid JSON: {full}")))
+                    }
+                };
+                let label = ui.add(
+                    egui::Label::new(status)
+                        .truncate()
+                        .show_tooltip_when_elided(hover.is_none()),
+                );
+                if let Some(hover) = hover {
+                    label.on_hover_text(hover);
+                }
+            });
+        }
+        *body_type != previous
+    })
+    .inner
 }
 
 fn response_pane(state: &mut State, ui: &mut Ui) {
@@ -2680,7 +2795,7 @@ pub fn response_body(
         if *tab == ResponseTab::Headers {
             reserve += widgets::button_width(ui, RichText::new(RAW)) + gap;
         }
-        widgets::tab_strip(ui, &tabs, tab, reserve, "More response tabs");
+        widgets::tab_strip(ui, &tabs, tab, tabs.len(), reserve, "More response tabs");
         tools(ui, *tab);
     });
     let mut close_filter = false;

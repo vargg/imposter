@@ -97,7 +97,7 @@ impl Tour {
         }
     }
 
-    /// Open the request tab `label`, from "More" when it did not fit the row.
+    /// Open the request tab `label`, from the strip or "More".
     fn open_tab(&mut self, label: &str) {
         self.open_from("More request tabs", label);
     }
@@ -397,6 +397,29 @@ fn main() {
         tour.click("POST Create user");
         tour.settle();
         tour.shot("2-02-json-body");
+        tour.click("Stack request and response");
+        tour.shot("2-02b-stacked-body");
+        tour.click("Put request and response side by side");
+        let original = {
+            let editor = &mut tour
+                .harness
+                .state_mut()
+                .state
+                .editor
+                .as_mut()
+                .unwrap()
+                .editor;
+            std::mem::replace(&mut editor.body_text, "{\n  \"name\": }".into())
+        };
+        tour.shot("2-02c-invalid-body");
+        tour.harness
+            .state_mut()
+            .state
+            .editor
+            .as_mut()
+            .unwrap()
+            .editor
+            .body_text = original;
         tour.open_tab("Auth");
         tour.shot("2-03-auth");
         tour.open_tab("Request settings");
@@ -412,17 +435,15 @@ fn main() {
         tour.send();
         tour.settle();
         tour.shot("2-05-json-response");
-        // The overflow menus, where the window is too small for every tab and tool.
-        for (menu, name) in [
-            ("More request tabs", "2-05b-more-tabs"),
-            ("More tools", "2-05c-more-tools"),
-        ] {
-            if tour.harness.query_by_label(menu).is_some() {
-                tour.click(menu);
-                tour.shot(name);
-                tour.harness.key_press(egui::Key::Escape);
-                tour.settle();
-            }
+        tour.click("More request tabs");
+        tour.shot("2-05b-more-tabs");
+        tour.harness.key_press(egui::Key::Escape);
+        tour.settle();
+        if tour.harness.query_by_label("More tools").is_some() {
+            tour.click("More tools");
+            tour.shot("2-05c-more-tools");
+            tour.harness.key_press(egui::Key::Escape);
+            tour.settle();
         }
         tour.harness.state_mut().state.response.tab = ResponseTab::Headers;
         tour.settle();

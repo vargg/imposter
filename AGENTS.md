@@ -154,9 +154,9 @@ Detailed decisions and their reasons are organized by subsystem in `docs/decisio
 - **[UI Architecture](docs/decisions/ui.md)** (`imposter-ui`):
   egui/eframe (glow), virtualized response rows, 256 KiB preview limits, table composers
   and header actions, JSON navigation & folding, dark/light themes, Inter & JetBrains Mono
-  fonts, Phosphor icons, Compact/Comfortable density, accent color conventions, request bar & body editor
-  controls, forms, modal dialogs, left navigation rail, flat panes, screen toolbars, and
-  navigation guards.
+  fonts, Phosphor icons, Compact/Comfortable density, accent color conventions, request bar,
+  request tabs and Body header, forms, modal dialogs, left navigation rail, flat panes,
+  screen toolbars, and navigation guards.
 - **[HTTP & Transport](docs/decisions/http.md)** (`imposter-http`):
   rustls (`ring` provider), PKCS#8/PKCS#1/SEC1 client keys, HTTP/1.1-only, server-sent
   events (SSE), wire header ordering, in-crate redirect handling, RFC 6265 cookie jar,

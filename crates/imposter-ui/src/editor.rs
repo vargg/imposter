@@ -13,13 +13,13 @@ use imposter_app::core::url;
 
 /// The body types the editor offers. `form-data` loads as URL-encoded and `text` as plain
 /// text: they are sent the same way.
-pub const BODY_CHOICES: [(BodyType, &str); 6] = [
-    (BodyType::None, "None"),
-    (BodyType::Json, "JSON"),
-    (BodyType::Plain, "Plain text"),
-    (BodyType::Urlencoded, "URL-encoded"),
-    (BodyType::Multipart, "Multipart"),
-    (BodyType::Binary, "Binary file"),
+pub const BODY_CHOICES: [(BodyType, &str, &str); 6] = [
+    (BodyType::None, "None", "None"),
+    (BodyType::Json, "JSON", "JSON"),
+    (BodyType::Plain, "Text", "Plain text"),
+    (BodyType::Urlencoded, "Form", "URL-encoded form"),
+    (BodyType::Multipart, "Multipart", "Multipart form"),
+    (BodyType::Binary, "File", "Binary file"),
 ];
 
 pub const AUTH_CHOICES: [(Option<AuthKind>, &str); 6] = [
@@ -608,7 +608,7 @@ mod tests {
     fn badges_count_rows_in_use_and_mark_what_is_set() {
         use crate::app::EditorTab;
         let mut editor = Editor::load(&request(RequestTemplate::default()));
-        for (tab, _) in EditorTab::ALL {
+        for (tab, _) in EditorTab::PRIMARY.into_iter().chain(EditorTab::MORE) {
             assert_eq!(editor.badge(tab), None, "{tab:?} of an empty request");
         }
         editor.headers = vec![

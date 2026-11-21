@@ -817,11 +817,13 @@ pub enum EditorTab {
 }
 
 impl EditorTab {
-    pub const ALL: [(Self, &'static str); 10] = [
+    pub const PRIMARY: [(Self, &'static str); 4] = [
         (Self::Body, "Body"),
         (Self::Auth, "Auth"),
         (Self::Params, "Query"),
         (Self::Headers, "Headers"),
+    ];
+    pub const MORE: [(Self, &'static str); 6] = [
         (Self::Cookies, "Cookies"),
         (Self::Settings, "Settings"),
         (Self::Docs, "Docs"),

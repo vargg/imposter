@@ -144,7 +144,7 @@ fn checks_are_edited_saved_and_run_after_each_response() {
             .accesskit_node()
             .description()
     };
-    assert_eq!(description(app, "Tests").as_deref(), Some("2 in use"));
+    assert_eq!(description(app, "Tests").as_deref(), Some("2 checks"));
     assert_eq!(
         description(app, "Check results").as_deref(),
         Some("1 failed")

@@ -367,6 +367,18 @@ pub fn checkbox(ui: &mut Ui, checked: &mut bool, label: &str) -> egui::Response 
     response
 }
 
+struct Segment<'a, T> {
+    value: T,
+    label: &'a str,
+    hint: Option<&'a str>,
+    width: f32,
+}
+
+fn segment_width(ui: &Ui, label: &str, pad: f32, size: f32) -> f32 {
+    let text = RichText::new(label).font(crate::theme::semibold(size));
+    (text_width(ui, text) + 2.0 * pad).max(24.0)
+}
+
 /// Short choices share a single track; the response changes when a different segment is chosen.
 pub fn segmented<T: PartialEq + Copy>(
     ui: &mut Ui,
@@ -374,22 +386,73 @@ pub fn segmented<T: PartialEq + Copy>(
     value: &mut T,
     options: &[(T, &str)],
 ) -> egui::Response {
-    let id = ui.make_persistent_id(id);
-    let selected_font = crate::theme::semibold(crate::theme::BODY);
+    let size = crate::theme::BODY;
     let width = options
         .iter()
-        .map(|(_, label)| {
-            text_width(ui, crate::theme::body(*label).font(selected_font.clone()))
-                + 2.0 * BUTTON_PAD
-        })
+        .map(|(_, label)| segment_width(ui, label, BUTTON_PAD, size))
         .fold(24.0, f32::max);
-    let total: f32 = options.iter().map(|_| width).sum();
+    let segments: Vec<_> = options
+        .iter()
+        .map(|&(value, label)| Segment {
+            value,
+            label,
+            hint: None,
+            width,
+        })
+        .collect();
+    draw_segments(ui, id, value, &segments, BUTTON_PAD, size)
+}
+
+/// A named track with compact, label-sized segments and full names as hover text.
+/// Returns false if the track would crowd the controls that follow it.
+pub(crate) fn compact_segments<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut T,
+    options: &[(T, &str, &str)],
+    reserve: f32,
+) -> bool {
+    let pad = 3.0;
+    let size = crate::theme::META;
+    let segments: Vec<_> = options
+        .iter()
+        .map(|&(value, label, hint)| Segment {
+            value,
+            label,
+            hint: Some(hint),
+            width: segment_width(ui, label, pad, size),
+        })
+        .collect();
+    let width: f32 = segments.iter().map(|segment| segment.width).sum();
+    if width + reserve > ui.available_width() {
+        return false;
+    }
+    let builder = egui::UiBuilder::new()
+        .accessibility_role(egui::accesskit::Role::Group)
+        .accessibility_label(label);
+    ui.scope_builder(builder, |ui| {
+        let response = draw_segments(ui, label, value, &segments, pad, size);
+        region_bounds(ui, response.rect);
+    });
+    true
+}
+
+fn draw_segments<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    id: impl egui::AsIdSalt,
+    value: &mut T,
+    segments: &[Segment<'_, T>],
+    pad: f32,
+    size: f32,
+) -> egui::Response {
+    let id = ui.make_persistent_id(id);
+    let total: f32 = segments.iter().map(|segment| segment.width).sum();
     let available = ui.available_width().max(0.0);
     let (rect, mut response) = ui.allocate_exact_size(
         egui::vec2(total.min(available), crate::theme::spacing().control),
         egui::Sense::hover(),
     );
-    if options.is_empty() {
+    if segments.is_empty() {
         return response;
     }
     let p = palette();
@@ -400,27 +463,28 @@ pub fn segmented<T: PartialEq + Copy>(
         egui::Stroke::new(1.0, p.field_border),
         egui::StrokeKind::Inside,
     );
-    let segment_width = width * (rect.width() / total);
+    let scale = rect.width() / total;
     let mut left = rect.left();
-    let mut items = Vec::with_capacity(options.len());
-    for (index, (option, _)) in options.iter().enumerate() {
+    let mut items = Vec::with_capacity(segments.len());
+    for (index, option) in segments.iter().enumerate() {
         let segment = egui::Rect::from_min_size(
             egui::pos2(left, rect.top()),
-            egui::vec2(segment_width, rect.height()),
+            egui::vec2(option.width * scale, rect.height()),
         );
         left = segment.right();
         let item = ui.interact(segment, id.with(index), egui::Sense::click());
-        if item.clicked() && *value != *option {
-            *value = *option;
+        if item.clicked() && *value != option.value {
+            *value = option.value;
             response.mark_changed();
         }
         items.push(item);
     }
     // Resolve the click before painting so the previous segment clears in the same frame.
-    for (item, (option, label)) in items.into_iter().zip(options) {
-        let selected = *value == *option;
+    let selected_font = crate::theme::semibold(size);
+    for (item, option) in items.into_iter().zip(segments) {
+        let selected = *value == option.value;
         item.widget_info(|| {
-            egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, *label)
+            egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), selected, option.label)
         });
         let (fill, color) = if selected && ui.is_enabled() {
             (p.selected, p.accent)
@@ -436,13 +500,13 @@ pub fn segmented<T: PartialEq + Copy>(
             control_edge(&item, fill, Color32::TRANSPARENT),
             egui::StrokeKind::Inside,
         );
-        let mut text = crate::theme::body(*label);
+        let mut text = RichText::new(option.label).size(size);
         if selected {
             text = text.font(selected_font.clone());
         }
-        let galley = control_text(ui, text, segment.width() - 2.0 * BUTTON_PAD);
-        if galley.elided {
-            item.on_hover_text(*label);
+        let galley = control_text(ui, text, segment.width() - 2.0 * pad);
+        if let Some(hint) = option.hint.or(galley.elided.then_some(option.label)) {
+            item.on_hover_text(hint);
         }
         // Clip to each segment as well as the parent, including under very narrow constraints.
         ui.painter()
@@ -657,13 +721,10 @@ pub fn tab_with(
             .stroke(egui::Stroke::NONE)
             .min_size(egui::vec2(0.0, tab_height())),
     );
-    if let Some(badge) = badge {
-        name(&response, label);
-        let description = badge.description.clone();
-        response
-            .ctx
-            .accesskit_node_builder(response.id, |node| node.set_description(description));
-    }
+    describe_tab(&response, label, badge);
+    response
+        .ctx
+        .accesskit_node_builder(response.id, |node| node.set_selected(selected));
     let underline = if selected {
         Some(palette().accent)
     } else if response.hovered() {
@@ -673,6 +734,15 @@ pub fn tab_with(
     };
     tab_marks(ui, &response, underline);
     response
+}
+
+fn describe_tab(response: &egui::Response, label: &str, badge: Option<&TabBadge>) {
+    name(response, label);
+    if let Some(badge) = badge {
+        response.ctx.accesskit_node_builder(response.id, |node| {
+            node.set_description(badge.description.clone());
+        });
+    }
 }
 
 /// A marker inset from a button's right corner, with room for one at each end.
@@ -745,23 +815,23 @@ impl<'a, T> TabSpec<'a, T> {
     }
 }
 
-/// Which tabs of `widths` show in a row `available` wide, in order, when `more` is the width
-/// of the "More" button: as many as fit from the start, and always the selected one.
+/// The primary tabs that fit, followed by the selected tab if it still needs a spot.
 fn shown_tabs(
     widths: &[f32],
+    primary: usize,
     selected: Option<usize>,
     available: f32,
     more: f32,
     gap: f32,
 ) -> Vec<usize> {
     let total: f32 = widths.iter().map(|w| w + gap).sum::<f32>() - gap;
-    if total <= available {
+    if primary == widths.len() && total <= available {
         return (0..widths.len()).collect();
     }
     let budget = available - more;
     let mut shown = Vec::new();
     let mut used = 0.0;
-    for (i, width) in widths.iter().enumerate() {
+    for (i, width) in widths.iter().take(primary).enumerate() {
         if used + width + gap > budget {
             break;
         }
@@ -822,13 +892,15 @@ pub fn menu_text_button(
     response
 }
 
-/// One row of tabs in a horizontal `ui`. Tabs that do not fit, leaving `reserve` points for
-/// what follows on the row, go into a "More" menu; the selected tab always stays in the row.
+/// One row of tabs in a horizontal `ui`. Only the first `primary` tabs and the selected
+/// tab qualify for the row. Other tabs, including primaries that do not fit after reserving
+/// `reserve` points for tools, go into a "More" menu.
 /// `more` names the menu button for screen readers. Returns whether the user chose a tab.
 pub fn tab_strip<T: Copy + PartialEq>(
     ui: &mut Ui,
     tabs: &[TabSpec<'_, T>],
     selected: &mut T,
+    primary: usize,
     reserve: f32,
     more: &str,
 ) -> bool {
@@ -836,7 +908,7 @@ pub fn tab_strip<T: Copy + PartialEq>(
         // Frameless tabs need less padding than buttons: their labels stay 14 points apart.
         ui.spacing_mut().button_padding.x = TAB_PADDING;
         ui.spacing_mut().item_spacing.x = 2.0;
-        tab_row(ui, tabs, selected, reserve, more)
+        tab_row(ui, tabs, selected, primary, reserve, more)
     })
     .inner
 }
@@ -847,6 +919,7 @@ fn tab_row<T: Copy + PartialEq>(
     ui: &mut Ui,
     tabs: &[TabSpec<'_, T>],
     selected: &mut T,
+    primary: usize,
     reserve: f32,
     more: &str,
 ) -> bool {
@@ -864,13 +937,13 @@ fn tab_row<T: Copy + PartialEq>(
     let wide = menu_text_button_width(ui, more_job(ui, Some(9), Some(Tone::Ok)));
     let gap = ui.spacing().item_spacing.x;
     let available = ui.available_width() - reserve;
-    let mut shown = shown_tabs(&widths, current, available, wide, gap);
+    let mut shown = shown_tabs(&widths, primary, current, available, wide, gap);
     let used: f32 = shown.iter().map(|&i| widths[i] + gap).sum();
     // When even the selected tab leaves no room for the count, More drops it.
     let counted = shown.len() == tabs.len() || used + wide <= available;
     if !counted {
         let narrow = menu_text_button_width(ui, more_job(ui, None, Some(Tone::Ok)));
-        shown = shown_tabs(&widths, current, available, narrow, gap);
+        shown = shown_tabs(&widths, primary, current, available, narrow, gap);
     }
     let mut chosen = None;
     for &i in &shown {
@@ -915,8 +988,12 @@ fn tab_row<T: Copy + PartialEq>(
                 if shown.contains(&i) {
                     continue;
                 }
-                let item = ui.button(tab_job(ui, spec.label, false, spec.badge.as_ref()));
-                name(&item, spec.name.unwrap_or(spec.label));
+                let item = option(
+                    ui,
+                    false,
+                    tab_job(ui, spec.label, false, spec.badge.as_ref()),
+                );
+                describe_tab(&item, spec.name.unwrap_or(spec.label), spec.badge.as_ref());
                 if item.clicked() {
                     chosen = Some(spec.value);
                     ui.close();
@@ -1397,8 +1474,7 @@ fn var_edit_with(
         };
         ui.fonts_mut(|fonts| fonts.layout_job(job))
     };
-    // A body fills the scroll area `body_editor` gives it.
-    let fill = ui.available_height().max(MIN_BODY_HEIGHT);
+    let fill = ui.available_height();
     let mut edit = match multiline {
         Some((_, hint)) => egui::TextEdit::multiline(text)
             .code_editor()
@@ -2751,20 +2827,12 @@ pub fn method_picker(ui: &mut Ui, method: &mut String, custom: &mut Option<Strin
     changed
 }
 
-/// A multiline body editor; JSON bodies are highlighted while small enough.
-/// Room under a body editor for its footer ("Valid JSON" or the parse error).
-const BODY_FOOTER: f32 = 24.0;
-/// A body editor is never shorter than about four lines, even in a small pane.
-const MIN_BODY_HEIGHT: f32 = 96.0;
-
+/// Fill the pane below the header with an independently scrolling text editor.
 pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi) -> bool {
     let was_empty = text.trim().is_empty();
     let width = ui.available_width();
-    // Measured against the content rect, which scrolls with the pane, not the clip rect,
-    // which stays put: from the clip rect the editor grew by every point scrolled, so the
-    // pane's end was never reached.
-    let fill = (ui.max_rect().bottom() - ui.cursor().top() - BODY_FOOTER).max(MIN_BODY_HEIGHT);
-    let mut changed = egui::ScrollArea::vertical()
+    let fill = ui.available_height();
+    let changed = egui::ScrollArea::vertical()
         .id_salt("request body")
         .max_height(fill)
         .min_scrolled_height(fill)
@@ -2774,7 +2842,7 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
             let typing = (json && text.len() <= HIGHLIGHT_LIMIT)
                 .then(|| Typing::read(ui, id, text))
                 .flatten();
-            let changed = var_edit_with(
+            let mut field = var_edit_with(
                 ui,
                 text,
                 "Request body",
@@ -2782,8 +2850,11 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
                 false,
                 vars,
                 Some((Some(json), "Enter request body (JSON, XML, etc.)")),
-            )
-            .changed();
+            );
+            if text.len() > HIGHLIGHT_LIMIT {
+                field = field.on_hover_text("Large body: highlighting is off");
+            }
+            let changed = field.changed();
             if let Some(typing) = typing {
                 typing.help(ui, id, text, changed);
             }
@@ -2800,42 +2871,6 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
         && let Some(formatted) = viewer::format_json_body(text)
     {
         *text = formatted;
-    }
-    if json && !text.trim().is_empty() {
-        ui.horizontal(|ui| {
-            let formatted = viewer::format_json_body(text).filter(|f| f != text);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let hint = crate::shortcuts::hint(
-                    ui.ctx(),
-                    "Re-indent the body, keeping every value as typed",
-                    &crate::shortcuts::FORMAT_BODY,
-                );
-                let format = ui
-                    .add_enabled(formatted.is_some(), egui::Button::new("Format"))
-                    .on_hover_text(&hint)
-                    .on_disabled_hover_text("Already formatted, or not valid JSON");
-                if format.clicked()
-                    && let Some(formatted) = formatted
-                {
-                    *text = formatted;
-                    changed = true;
-                }
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    // Placeholders stand for values: `{"n": {{n}}}` is valid.
-                    let status = match viewer::check_json_template(text) {
-                        Ok(()) => tone_text("Valid JSON", Tone::Ok),
-                        Err(error) => tone_text(
-                            format!("Invalid JSON, line {}: {error}", error.line()),
-                            Tone::Error,
-                        ),
-                    };
-                    ui.add(egui::Label::new(status).truncate());
-                });
-            });
-        });
-    }
-    if text.len() > HIGHLIGHT_LIMIT {
-        ui.label(tone_text("Large body: highlighting is off", Tone::Muted).small());
     }
     changed
 }
@@ -3618,15 +3653,27 @@ mod tests {
     fn tabs_that_do_not_fit_leave_the_row_but_the_selected_one_stays() {
         let widths = [40.0, 40.0, 40.0, 40.0];
         // 4 × 40 + 3 gaps of 4 = 172.
-        assert_eq!(shown_tabs(&widths, Some(0), 172.0, 30.0, 4.0), [0, 1, 2, 3]);
-        // 100 wide, 30 for More: two tabs (88 with their gaps) fit before it.
-        assert_eq!(shown_tabs(&widths, Some(0), 120.0, 30.0, 4.0), [0, 1]);
-        // The selected tab takes the place of the last one that fitted.
-        assert_eq!(shown_tabs(&widths, Some(3), 120.0, 30.0, 4.0), [0, 3]);
-        // Even when nothing else fits.
-        assert_eq!(shown_tabs(&widths, Some(2), 50.0, 30.0, 4.0), [2]);
         assert_eq!(
-            shown_tabs(&widths, None, 50.0, 30.0, 4.0),
+            shown_tabs(&widths, widths.len(), Some(0), 172.0, 30.0, 4.0),
+            [0, 1, 2, 3]
+        );
+        // 100 wide, 30 for More: two tabs (88 with their gaps) fit before it.
+        assert_eq!(
+            shown_tabs(&widths, widths.len(), Some(0), 120.0, 30.0, 4.0),
+            [0, 1]
+        );
+        // The selected tab takes the place of the last one that fitted.
+        assert_eq!(
+            shown_tabs(&widths, widths.len(), Some(3), 120.0, 30.0, 4.0),
+            [0, 3]
+        );
+        // Even when nothing else fits.
+        assert_eq!(
+            shown_tabs(&widths, widths.len(), Some(2), 50.0, 30.0, 4.0),
+            [2]
+        );
+        assert_eq!(
+            shown_tabs(&widths, widths.len(), None, 50.0, 30.0, 4.0),
             Vec::<usize>::new()
         );
     }

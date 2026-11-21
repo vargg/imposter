@@ -9,7 +9,7 @@ use egui::accesskit::Role;
 use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::store::{collections, executions};
 use imposter_testkit::{Server, response};
-use imposter_ui::app::{EditorTab, ResponseTab};
+use imposter_ui::app::ResponseTab;
 use imposter_ui::scripts_tab::{AFTER_EDITOR, BEFORE_EDITOR};
 use support::{click, click_button, collection, request, settle, start_with};
 
@@ -43,8 +43,7 @@ fn fixture() -> Fixture {
 }
 
 fn open_scripts(app: &mut support::App) {
-    app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Scripts;
-    app.harness.run_steps(2);
+    support::open_tab(&mut app.harness, "Scripts");
 }
 
 fn set_scripts(app: &mut support::App, before: &str, after: &str) {

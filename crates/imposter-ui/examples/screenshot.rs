@@ -152,7 +152,15 @@ fn main() {
         let path = out.join(format!("{label}.png"));
         image.save(&path).unwrap();
         println!("{}", path.display());
-        open_from(&mut harness, "More request tabs", "Tests");
+        harness.get_by_label("More request tabs").click();
+        harness.run_steps(2);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-request-tabs.png")))
+            .unwrap();
+        harness.get_by_label("Tests").click();
+        harness.run_steps(2);
         open_from(&mut harness, "More response tabs", "Check results");
         settle(&mut harness);
         harness

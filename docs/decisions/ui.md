@@ -174,12 +174,12 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   input fill at rest and neutral hover/press colors. Why: stock triangles and checks made
   the app look dated in the owner's review; common marks make controls feel related.
 
-- **Short choices have a shared segmented-control API** (`widgets::segmented`): one
-  rounded input track with a control-edge border, equal-width segments at control height,
-  selected fill with accent SemiBold text, muted regular text otherwise. Each segment
-  is a named button with selected state, operable by keyboard and screen readers. Existing
-  screen pickers migrate in later steps. Why: short alternatives should be visible together
-  and share geometry instead of looking like unrelated buttons.
+- **Short choices share one segmented-control design.** A rounded input track uses a
+  control-edge border, accent SemiBold text on the selected fill and muted regular
+  text elsewhere. Segments use the control height and are equal width by default.
+  Body type uses label-sized segments to fit more choices on one row. Each segment
+  is a named button with selected state, operable by keyboard and screen readers.
+  A shared track keeps short alternatives visible together.
 
 - **Contextual help uses a tooltip** (`widgets::help`, `label_with_help`): a frameless,
   muted 13 pt info glyph in a 24 pt focusable target, named "Help", with the explanation
@@ -278,9 +278,14 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   Checked by `imposter-ui/tests/fit.rs`.
 
 - **Rows of tabs, tools and status stay one row high; what does not fit goes into a menu.**
-  - **Tabs** (`widgets::tab_strip`): tabs that do not fit go under "More", a chevron no
-    wider than a target needs; the selected tab always stays, in place of the last one that
-    fitted. Tabs come before tools.
+  - **Request tabs** (`widgets::tab_strip`) start with Body, Auth, Query and Headers.
+    Cookies, Settings, Docs, Tests, Captures and Scripts live under "More". The selected
+    menu tab joins the strip after the primaries until another tab is selected. Narrow
+    panes can move primary tabs into More to keep the selected tab visible. The ten tabs
+    used to jump between the strip and the menu as the width changed. The four primaries
+    cover what most requests use, and badges make hidden content discoverable.
+    Response tabs still show as many as fit beside the tools, with the selected tab
+    always visible.
   - **Badges** say what a tab holds without opening it (`Editor::badge`): Query, Headers,
     Cookies, Tests and Captures count rows in use (enabled and named); Auth, Body and Docs show a
     small green dot raised to the top of the line when set (a muted "•" at mid-height read
@@ -289,8 +294,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     checks failed, else their count (a red total read as that many failures, Q5). Screen readers hear the count as the
     tab's description, so its name stays the label. "More" shows how many tabs it hides
     ("+2", so it does not read as the tools' "⋯" beside it; dropped only when even the
-    selected tab leaves no room) and the dot when one of them holds something, and names
-    those tabs in its description.
+    selected tab leaves no room) and has a dot when a hidden tab holds something.
+    Menu items keep their badges, and the More tooltip and accessible description name
+    the tabs with content, for example "More tabs: Tests: 2 checks".
   - **Viewer tools:** those that do not fit go under "More tools" (⋯); fold buttons go
     first, then Wrap, the filter, Find and Copy. In the menu, Wrap and the filter are
     check boxes: a filled row for "on" read as the row under the pointer (Q11).
@@ -432,7 +438,13 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   disabled Save looked alike (the review's #22–#24). Checked by
   `imposter-ui/tests/request_bar.rs` and the layout lint's custom-method state.
 
-- **Request tabs start on Body and run Body, Auth, Query, Headers, Cookies, Settings, Docs, Tests, Captures, Scripts.** Docs edits the existing plain-text description through the normal save guard and exports; Tests edits the request's checks and Captures the variables it sets from a response, each tab counting its own rows ("Set variable" from a JSON row opens Captures). Why: body editing is the primary workflow; descriptions and checks belong with the request rather than in a separate document; checks and captures in one tab under two headings made captures hard to find (user's note). The response keeps one Tests tab for check results and capture writes, both results of the run. Enforced by `imposter-ui/tests/editing.rs`.
+- **Requests open on Body** because body editing is the primary workflow. The Docs tab
+  edits the plain-text description through the normal save guard and includes it in exports.
+  Tests edits the request's checks. Captures edits the variables it sets from a response
+  and opens from "Set variable" on a JSON row. Tests and Captures count their own rows
+  because captures were hard to find when both shared a tab. The response keeps one Tests
+  tab for check results and capture writes from the run. Checked by
+  `imposter-ui/tests/editing.rs`.
 
 - **Editable key/value tables end with an empty composer.** Its muted name and value
   hints line up with the existing fields. Typing in either field creates one row and
@@ -453,12 +465,17 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   scattered and unfinished. Typing where the next row goes follows the way Postman,
   Yaak and spreadsheets handle entry.
 
-- **The body editor fills its pane**, above a one-line footer ("Valid JSON" or the parse
-  error with its line, then Format), and is never shorter than about four lines. It
-  scrolls its own text in a scroll area sized from the pane's content rect, which moves
-  with scrolling, never from the clip rect, which does not: sized from the clip rect it grew
-  by every point scrolled, so a long body never reached its end (user's note; checked by
-  `scrolling_a_long_body_reaches_its_end`). A
+- **The Body tab has a single header**. The named Body type group uses None, JSON, Text,
+  Form, Multipart and File as segment labels so the choices fit a typical split pane.
+  Each segment gives its full name on hover and in its accessible description. Narrower
+  panes use the Body type combo with full names. JSON status and the Format body icon
+  are aligned at the right. Parse errors retain their error color and line number, and their hover
+  text gives the full error when the label truncates. Moving the tools into the header
+  puts them next to the type they act on and leaves the editor all the space below it,
+  never shorter than about four lines (a fixed ten rows left most of a large pane empty,
+  the review's #20). The editor scrolls its own text within that space. Sizing against the pane's clip
+  rectangle while scrolling used to grow the editor by every point scrolled, so a long
+  body never reached its end (checked by `scrolling_a_long_body_reaches_its_end`). A
   `{{placeholder}}` outside a string stands for a value, so `{"n": {{n}}}` is valid
   (`viewer::check_json_template`). Format (the button, Cmd/Ctrl+Shift+F or the palette)
   re-indents with two spaces, keeping every token and placeholder as typed
@@ -471,13 +488,13 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   indent, one level more after an opener, with the closer on its own line; a closer on a
   line of indent goes one level out. The help is computed from the text before the key
   and applied only when egui made exactly the plain edit, so a paste, IME or an accepted
-  suggestion is left as egui made it, and undo never stops at a half pair. Why: a pasted
-  minified body stayed one line, and the footer called every templated body invalid; JSON
-  typed by hand needed every closer and indent typed too (the user's notes). Why: a fixed
-  ten rows left most of a large pane empty (the review's #20).
+  suggestion is left as egui made it, and undo never stops at a half pair. A pasted
+  minified body used to stay on one line, templated bodies were reported as invalid,
+  and JSON typed by hand needed every closer and indent typed too.
 
-- **Body editor: egui `TextEdit`; `{{var}}`/JSON highlighting only up to 64 KiB.** Why: per
-  interactive frame the editor costs about 4 ms at 64 KiB, 24 ms at 256 KiB and 130 ms at 1 MiB
+- **The egui `TextEdit` highlights `{{var}}` and JSON up to 64 KiB.** Above that limit
+  the editor's tooltip explains that highlighting is off. Per interactive frame the editor
+  costs about 4 ms at 64 KiB, 24 ms at 256 KiB and 130 ms at 1 MiB
   (plain), and highlighting adds about 30%. Larger bodies stay editable but slow; a custom
   virtualized editor would be needed to fix that and is out of scope.
 

@@ -268,6 +268,71 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, "GET Users");
     settle(&mut app.harness);
     check(app, "empty response");
+    click(&mut app.harness, "More request tabs");
+    check(app, "request More menu");
+    click(&mut app.harness, "Docs");
+    check(app, "selected secondary request tab");
+    support::open_tab(&mut app.harness, "Body");
+    let (original_type, original_text) = {
+        let editor = &mut app
+            .harness
+            .state_mut()
+            .state
+            .editor
+            .as_mut()
+            .unwrap()
+            .editor;
+        (
+            std::mem::replace(&mut editor.body_type, BodyType::Json),
+            std::mem::replace(&mut editor.body_text, r#"{"id":1}"#.into()),
+        )
+    };
+    check(app, "valid JSON body header");
+    app.harness
+        .state_mut()
+        .state
+        .editor
+        .as_mut()
+        .unwrap()
+        .editor
+        .body_text = "{\n  \"id\": }".into();
+    check(app, "invalid JSON body header");
+    if app
+        .harness
+        .query_by_role_and_label(Role::ComboBox, "Body type")
+        .is_some()
+    {
+        click(&mut app.harness, "Body type");
+        check(app, "body type menu");
+        click(&mut app.harness, "JSON");
+    }
+    click(&mut app.harness, "Stack request and response");
+    check(app, "stacked JSON body header");
+    click(&mut app.harness, "Put request and response side by side");
+    {
+        let editor = &mut app
+            .harness
+            .state_mut()
+            .state
+            .editor
+            .as_mut()
+            .unwrap()
+            .editor;
+        editor.body_type = BodyType::Binary;
+    }
+    check(app, "binary body header and file picker");
+    {
+        let editor = &mut app
+            .harness
+            .state_mut()
+            .state
+            .editor
+            .as_mut()
+            .unwrap()
+            .editor;
+        editor.body_type = original_type;
+        editor.body_text = original_text;
+    }
     click(&mut app.harness, "Hide Collections");
     check(app, "empty response without sidebar");
     click(&mut app.harness, "Show Collections");

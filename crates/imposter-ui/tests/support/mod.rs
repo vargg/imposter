@@ -83,7 +83,7 @@ pub fn open_screen(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     click_button(harness, label);
 }
 
-/// Open the request tab named `label`, from the row or, when it did not fit, from "More".
+/// Open the request tab named `label`, from the row or from "More".
 pub fn open_tab(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     if harness
         .query_by_role_and_label(egui::accesskit::Role::Button, label)

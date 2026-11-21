@@ -386,7 +386,7 @@ fn a_json_body_with_placeholders_is_valid_and_formats_on_request_or_paste() {
     // A placeholder stands for a value, so this is not an error.
     app.harness.get_by_label("Valid JSON");
 
-    click(&mut app.harness, "Format");
+    click(&mut app.harness, "Format body");
     assert_eq!(
         json_body(&mut app),
         "{\n  \"id\": {{id}},\n  \"price\": 19.50\n}"
@@ -394,7 +394,7 @@ fn a_json_body_with_placeholders_is_valid_and_formats_on_request_or_paste() {
     assert_eq!(save_state(&app.harness, "Save request"), "Unsaved");
     assert!(
         app.harness
-            .get_by_role_and_label(egui::accesskit::Role::Button, "Format")
+            .get_by_role_and_label(egui::accesskit::Role::Button, "Format body")
             .accesskit_node()
             .is_disabled(),
         "already formatted"
@@ -409,13 +409,17 @@ fn a_json_body_with_placeholders_is_valid_and_formats_on_request_or_paste() {
         .unwrap()
         .editor
         .body_text = r#"[1,{"a":[]}]"#.into();
-    app.harness.run_steps(1);
+    support::open_tab(&mut app.harness, "Docs");
     app.harness.key_press_modifiers(
         egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
         egui::Key::F,
     );
     app.harness.run_steps(2);
     assert_eq!(json_body(&mut app), "[\n  1,\n  {\n    \"a\": []\n  }\n]");
+    assert_eq!(
+        app.harness.state().state.editor.as_ref().unwrap().tab,
+        EditorTab::Body
+    );
 
     // Pasted into an empty body, a document is laid out at once.
     app.harness
@@ -508,22 +512,14 @@ fn body_types_and_invalid_settings_reach_the_saved_request() {
     });
     open(&mut app, "GET Upload");
 
-    app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Body;
+    app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
     app.harness.run_steps(2);
-    app.harness
-        .state_mut()
-        .state
-        .editor
-        .as_mut()
-        .unwrap()
-        .editor
-        .body_type = BodyType::Json;
-    app.harness.run_steps(1);
+    click(&mut app.harness, "Body type");
+    click(&mut app.harness, "JSON");
     type_into(&mut app.harness, "Request body", r#"{"a": 1}"#);
     app.harness.get_by_label("Valid JSON");
 
-    app.harness.state_mut().state.editor.as_mut().unwrap().tab = EditorTab::Settings;
-    app.harness.run_steps(2);
+    support::open_tab(&mut app.harness, "Request settings");
     // Typing over the default makes it the request's own; no box to untick first.
     assert!(
         app.harness
@@ -987,7 +983,11 @@ fn body_is_default_and_docs_save_with_the_request() {
         app.harness.state().state.editor.as_ref().unwrap().tab,
         EditorTab::Body
     );
-    let labels: Vec<_> = EditorTab::ALL.iter().map(|(_, label)| *label).collect();
+    let labels: Vec<_> = EditorTab::PRIMARY
+        .into_iter()
+        .chain(EditorTab::MORE)
+        .map(|(_, label)| label)
+        .collect();
     assert_eq!(
         labels,
         [
@@ -995,15 +995,10 @@ fn body_is_default_and_docs_save_with_the_request() {
             "Scripts"
         ]
     );
-    // Tabs that fit are in this order; the rest wait under "More", in the same order.
-    let positions: Vec<_> = labels
-        .iter()
-        .filter(|label| **label != "Settings")
-        .filter_map(|label| app.harness.query_by_label(label).map(|n| n.rect().left()))
-        .collect();
-    assert!(positions.len() >= 7, "most tabs fit: {positions:?}");
+    let positions = ["Body", "Auth", "Query", "Headers", "More request tabs"]
+        .map(|label| app.harness.get_by_label(label).rect().left());
     assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
-    click(&mut app.harness, "Docs");
+    support::open_tab(&mut app.harness, "Docs");
     type_into(
         &mut app.harness,
         "Request description",
@@ -1080,7 +1075,7 @@ fn duplication_captures_edits_and_cancel_creates_nothing() {
             .unwrap();
     });
     open(&mut app, "GET Original");
-    click(&mut app.harness, "Docs");
+    support::open_tab(&mut app.harness, "Docs");
     type_into(&mut app.harness, "Request description", "unsaved notes");
     let duplicate = |app: &mut support::App| {
         app.harness.get_by_label("GET Original").click_secondary();
