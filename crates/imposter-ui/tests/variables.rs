@@ -424,19 +424,81 @@ fn values_inspected_from_a_password_field_stay_masked_until_revealed() {
     assert!(app.harness.state().state.inspect.is_none());
 }
 
-#[test]
-fn undefined_names_show_as_not_defined() {
-    let mut app = with_request();
+fn inspect(app: &mut support::App, name: &str) {
     let anchor = support::text_input(&app.harness, "Request URL")
         .rect()
         .left_bottom();
     app.harness.state_mut().state.inspect = Some(imposter_ui::widgets::Inspection {
-        name: "nope".into(),
+        name: name.into(),
         masked: false,
         anchor,
     });
     app.harness.run_steps(2);
+}
+
+#[test]
+fn undefined_names_show_as_not_defined_and_can_be_defined() {
+    let mut app = with_request();
+    inspect(&mut app, "nope");
     app.harness.get_by_label("Not defined");
+    assert!(app.harness.query_by_label("Open definition").is_none());
+
+    click(&mut app.harness, "Define in Global");
+    settle(&mut app.harness);
+    assert_eq!(app.harness.state().state.screen, Screen::Variables);
+    assert_eq!(app.harness.state().state.variables.scope, Scope::Global);
+    let rows = &app.harness.state().state.variables.rows;
+    assert_eq!(rows.last().map(|r| r.name.as_str()), Some("nope"));
+}
+
+#[test]
+fn generated_values_have_no_definition_to_open() {
+    let mut app = with_request();
+    inspect(&mut app, "$uuid");
+    app.harness.get_by_label_contains("For example: ");
+    assert!(app.harness.query_by_label("Open definition").is_none());
+    assert!(app.harness.query_by_label_contains("Define in").is_none());
+}
+
+#[test]
+fn in_a_body_the_inspector_and_suggestions_open_under_the_token_line() {
+    let mut app = with_request();
+    {
+        let pane = app.harness.state_mut().state.editor.as_mut().unwrap();
+        pane.tab = EditorTab::Body;
+        pane.editor.body_type = imposter_app::core::model::BodyType::Json;
+        pane.editor.body_text = "{{host}}\n".into();
+    }
+    app.harness.run_steps(2);
+    let body = support::text_input(&app.harness, "Request body").rect();
+    assert!(body.height() > 120.0, "a tall editor: {body:?}");
+    let line = egui::pos2(body.left() + 20.0, body.top() + 10.0);
+    app.harness.drag_at(line);
+    app.harness.drop_at(line);
+    app.harness.run_steps(2);
+    let anchor = app.harness.state().state.inspect.as_ref().unwrap().anchor;
+    assert!(
+        anchor.y < body.top() + 40.0,
+        "under the first line, not the editor's bottom: {anchor:?} in {body:?}"
+    );
+    app.harness.key_press(egui::Key::Escape);
+    app.harness.run_steps(2);
+
+    support::text_input(&app.harness, "Request body").focus();
+    app.harness.run_steps(1);
+    app.harness.key_press(egui::Key::End);
+    app.harness.run_steps(1);
+    app.harness.key_press(egui::Key::ArrowDown);
+    app.harness.run_steps(1);
+    for typed in ["{", "{", "h"] {
+        app.harness.event(egui::Event::Text(typed.into()));
+        app.harness.run_steps(1);
+    }
+    let suggestion = app.harness.get_by_label("host · Global · Global").rect();
+    assert!(
+        suggestion.top() < body.top() + 80.0,
+        "under the second line: {suggestion:?} in {body:?}"
+    );
 }
 
 #[test]

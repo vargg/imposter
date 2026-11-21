@@ -1907,21 +1907,29 @@ fn var_edit_with(
     // Inspect on click or Alt+Enter.
     let alt_enter =
         response.has_focus() && ui.input_mut(|i| i.consume_shortcut(&crate::shortcuts::INSPECT));
+    // Under a character's line: a single line points from the field's edge, a body from the
+    // line itself, since the editor's edge can be a screen away.
+    let visible = response.rect.intersect(ui.clip_rect());
+    let below = |chars: usize| {
+        let at = output
+            .galley
+            .pos_from_cursor(egui::text::CCursor::new(chars))
+            .left_bottom()
+            + output.galley_pos.to_vec2();
+        let y = if single_line {
+            response.rect.bottom()
+        } else {
+            at.y.clamp(visible.top(), visible.bottom())
+        };
+        egui::pos2(at.x.clamp(visible.left(), visible.right()), y)
+    };
     if (response.clicked() || alt_enter)
         && let Some(token) = cursor.and_then(|c| vars::token_at(text, c))
     {
-        // Under the token itself, so the inspector points at what it explains.
-        let start = text[..token.range.start].chars().count();
-        let at = output
-            .galley
-            .pos_from_cursor(egui::text::CCursor::new(start))
-            .left_bottom()
-            + output.galley_pos.to_vec2();
-        let x = at.x.clamp(response.rect.left(), response.rect.right());
         *vars.inspect = Some(Inspection {
+            anchor: below(text[..token.range.start].chars().count()),
             name: token.name,
             masked: password,
-            anchor: egui::pos2(x, response.rect.bottom()),
         });
     }
 
@@ -1962,9 +1970,14 @@ fn var_edit_with(
                     (state.selected as i64 + step).rem_euclid(items.len() as i64) as usize;
             }
             let mut chosen = accept.then(|| items[state.selected].name.clone());
+            let at = if single_line {
+                response.rect.left_bottom()
+            } else {
+                below(text[..start].chars().count())
+            };
             let area = egui::Area::new(id.with("completion"))
                 .order(egui::Order::Foreground)
-                .fixed_pos(response.rect.left_bottom() + egui::vec2(0.0, 2.0))
+                .fixed_pos(at + egui::vec2(0.0, 2.0))
                 .show(&ctx, |ui| {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.set_max_width(width.clamp(200.0, 360.0));
@@ -2020,6 +2033,8 @@ pub fn focus_and_select_all(ctx: &egui::Context, field: &egui::Response, chars: 
 pub enum InspectorAction {
     /// Edit the definition in effect on the Variables screen.
     Open(vars::Scope),
+    /// Add the undefined name to this scope on the Variables screen.
+    Define(vars::Scope),
     /// Make a saved value the current one.
     Choose { scope: vars::Scope, value: String },
 }
@@ -2043,13 +2058,15 @@ pub fn saved_label(value: &str, masked: bool) -> String {
 }
 
 /// The inspector popover for an open [`Inspection`]. `blocked` is a scope whose saved values
-/// cannot be chosen now (the Variables screen has unsaved edits to it).
+/// cannot be chosen now (the Variables screen has unsaved edits to it); `define_in` is where
+/// an undefined name would be added, and that scope's name.
 pub fn inspector(
     ctx: &egui::Context,
     inspection: &mut Option<Inspection>,
     snapshot: Option<&Snapshot>,
     error: Option<&str>,
     blocked: Option<vars::Scope>,
+    define_in: (vars::Scope, &str),
 ) -> Option<InspectorAction> {
     let current = inspection.as_mut()?;
     // A secret stays hidden until revealed, whatever field it was opened from.
@@ -2157,16 +2174,27 @@ pub fn inspector(
                     if current.masked && definitions.is_some() && ui.button(if revealed { "Hide value" } else { "Reveal" }).clicked() {
                         revealed = !revealed;
                     }
-                    let target = definitions.and_then(|d| d.first()).map_or(Some(vars::Scope::Global), |d| vars::Scope::of(&d.source));
-                    let button = ui.add_enabled(target.is_some(), egui::Button::new("Open definition"));
-                    let button = if target.is_none() {
-                        button.on_disabled_hover_text("The original collection was deleted; this value comes from execution history.")
-                    } else {
-                        button
-                    };
-                    if button.clicked() {
-                        open = target.map(InspectorAction::Open);
-                        close = true;
+                    if let Some(effective) = definitions.and_then(|d| d.first()) {
+                        let target = vars::Scope::of(&effective.source);
+                        let button = ui.add_enabled(target.is_some(), egui::Button::new("Open definition"));
+                        let button = if target.is_none() {
+                            button.on_disabled_hover_text("The original collection was deleted; this value comes from execution history.")
+                        } else {
+                            button
+                        };
+                        if button.clicked() {
+                            open = target.map(InspectorAction::Open);
+                            close = true;
+                        }
+                    } else if snapshot.is_some()
+                        && error.is_none()
+                        && imposter_app::core::generate::describe(&current.name).is_none()
+                    {
+                        let (scope, place) = define_in;
+                        if ui.button(format!("Define in {place}")).clicked() {
+                            open = Some(InspectorAction::Define(scope));
+                            close = true;
+                        }
                     }
                     let value = definitions.and_then(|d| d.first()).filter(|_| error.is_none());
                     if let Some(value) = value {

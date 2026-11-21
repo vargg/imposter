@@ -165,21 +165,34 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
         });
     let name = state.inspect.as_ref().map(|i| i.name.clone());
     let blocked = state.variables.dirty().then_some(state.variables.scope);
+    let (define_scope, define_place) = define_target(state);
     if let Some(action) = widgets::inspector(
         ui.ctx(),
         &mut state.inspect,
         state.snapshot.as_ref(),
         state.snapshot_error.as_deref(),
         blocked,
+        (define_scope, &define_place),
     ) && let Some(name) = name
     {
         state.actions.push(match action {
             widgets::InspectorAction::Open(scope) => Action::OpenDefinition(scope, name),
+            widgets::InspectorAction::Define(scope) => Action::DefineVariable(scope, name),
             widgets::InspectorAction::Choose { scope, value } => {
                 Action::ChooseValue { scope, name, value }
             }
         });
     }
+}
+
+/// Where an undefined name is added: the active environment, else Global; and its name.
+fn define_target(state: &State) -> (crate::vars::Scope, String) {
+    state
+        .active_environment
+        .and_then(|id| state.environments.iter().find(|e| e.id == id))
+        .map_or((crate::vars::Scope::Global, "Global".to_owned()), |e| {
+            (crate::vars::Scope::Environment(e.id), e.name.clone())
+        })
 }
 
 pub(crate) fn screen_frame() -> egui::Frame {
@@ -2307,12 +2320,7 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
     }
     if let Some(blocked) = state.response.blocked.clone() {
         // Only why nothing went out: an earlier response here would read as this send's.
-        let target = state
-            .active_environment
-            .and_then(|id| state.environments.iter().find(|e| e.id == id))
-            .map_or((crate::vars::Scope::Global, "Global".to_owned()), |e| {
-                (crate::vars::Scope::Environment(e.id), e.name.clone())
-            });
+        let target = define_target(state);
         if !state.response.runs.is_empty() {
             ui.horizontal(|ui| {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

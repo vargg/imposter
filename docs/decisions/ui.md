@@ -580,7 +580,13 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   Global"; `vars::describe`). It closes with × at its top right or Esc, and "Copy value"
   copies what a send would use, masked or not, since copying is explicit. Why: opened at
   the field's edge it pointed at nothing, and "Effective · Environment · Dev" read as
-  internal labels (the review's #36).
+  internal labels (the review's #36). In a multi-line editor (Body, scripts) the inspector
+  and the suggestions open under the token's own line, kept inside the visible part of
+  the editor; under the editor's rect they opened at the bottom of a tall body.
+  - **Its one action fits the name:** "Open definition" for a defined variable; "Define in
+    Dev" (the active environment, else Global) for an unknown one, which opens Variables
+    with a new row of that name; nothing for a generated value (`{{$uuid}}`), which has no
+    definition to open. Checked by `imposter-ui/tests/variables.rs`.
 
 - **The Auth tab is a two-column grid** (`widgets::auth_form`): one label column, fields to
   the pane's edge (sized from the pane, since a grid cell sees only itself), and an eye
