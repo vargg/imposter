@@ -105,6 +105,35 @@ fn the_density_is_chosen_in_settings_and_remembered() {
     assert_eq!(stored["theme"], "dark", "the theme is kept");
 }
 
+#[test]
+fn a_theme_change_repaints_every_control_in_the_same_frame() {
+    let mut app = many_requests();
+    click(&mut app.harness, "GET Request 00");
+    settle(&mut app.harness);
+    let dark = imposter_ui::theme::of(egui::Theme::Dark);
+    let painted_dark = |app: &support::App| {
+        app.harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Rect(rect)
+                if rect.fill == dark.input || rect.fill == dark.background)
+        })
+    };
+    assert!(painted_dark(&app), "the dark fields are found");
+    app.harness
+        .state_mut()
+        .state
+        .actions
+        .push(Action::SetAppearance(Appearance {
+            theme: ThemeChoice::Light,
+            density: Density::Compact,
+        }));
+    app.harness.step();
+    app.harness.step();
+    assert!(
+        !painted_dark(&app),
+        "the first light frame paints no dark fills"
+    );
+}
+
 /// The shapes painted last frame that lie within `area`.
 fn shapes_in(app: &support::App, area: egui::Rect) -> Vec<egui::Shape> {
     app.harness

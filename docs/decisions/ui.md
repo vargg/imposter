@@ -74,6 +74,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   field_border, selected_bar, text, tones, syntax…, as `DARK` and `LIGHT`).
   - **Setting:** Settings → Appearance → Dark / Light / System; it applies at once and is
     stored in UI state (`appearance`), not in the application settings, which govern sends.
+    The frame that applies a new theme restyles its own root `Ui` and asks for one more
+    frame: the root had copied the old style before the change, so panes drawn in it kept
+    the old fills for a frame and the switch showed in two steps. Checked by
+    `imposter-ui/tests/appearance.rs` (no dark fill in the first light frame).
   - **Reading colors:** widgets read colors through `theme::palette()`, a thread-local that
     `theme::begin_frame` sets from the frame's theme. egui draws a frame on one thread, and a
     context-free lookup keeps helpers like `tone_text` simple.

@@ -5533,6 +5533,10 @@ impl eframe::App for ImposterApp {
                 self.state.appearance.theme,
                 self.state.appearance.density,
             );
+            // The root `Ui` copied the old style when the frame began; without this the
+            // frame mixes egui's old visuals with the new palette.
+            ui.set_style(ui.ctx().global_style());
+            ui.ctx().request_repaint();
             self.applied = Some(self.state.appearance);
         }
         theme::begin_frame(ui.ctx());
