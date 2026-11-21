@@ -74,6 +74,44 @@ pub(crate) fn toolbar_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl F
     toolbar_row_at_height(ui, crate::theme::spacing().control, left, right);
 }
 
+pub(crate) fn tool_columns<T>(
+    ui: &mut Ui,
+    state: &mut T,
+    config: impl FnOnce(&mut Ui, &mut T),
+    results: impl FnOnce(&mut Ui, &mut T),
+) {
+    let spacing = crate::theme::spacing();
+    if ui.available_width() < 900.0 {
+        config(ui, state);
+        ui.add_space(spacing.md);
+        results(ui, state);
+        return;
+    }
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = spacing.lg;
+        let height = ui.available_height();
+        let column = egui::Layout::top_down(egui::Align::Min);
+        let config = ui.allocate_ui_with_layout(egui::vec2(320.0, height), column, |ui| {
+            ui.set_width(320.0);
+            config(ui, state);
+        });
+        let width = ui.available_width();
+        let results = ui.allocate_ui_with_layout(egui::vec2(width, height), column, |ui| {
+            ui.set_width(width);
+            results(ui, state);
+        });
+        ui.painter().vline(
+            config.response.rect.right() + spacing.lg / 2.0,
+            config
+                .response
+                .rect
+                .y_range()
+                .union(results.response.rect.y_range()),
+            egui::Stroke::new(1.0, palette().border),
+        );
+    });
+}
+
 pub(crate) fn toolbar_row_at_height(
     ui: &mut Ui,
     height: f32,
@@ -1193,6 +1231,7 @@ pub(crate) fn list_column(ui: &mut Ui, label: &'static str, draw: impl FnOnce(&m
 #[derive(Clone, Copy)]
 pub(crate) enum ListIcon {
     Glyph(Icon),
+    Status(Icon, Tone),
     Dot(Option<Color32>),
 }
 
@@ -1263,6 +1302,9 @@ pub(crate) fn list_row(
         match icon {
             ListIcon::Glyph(glyph) => {
                 paint_glyph(ui, glyph, crate::theme::SECTION, center, p.text_muted);
+            }
+            ListIcon::Status(icon, tone) => {
+                paint_glyph(ui, icon, crate::theme::SECTION, center, p.tone(tone));
             }
             ListIcon::Dot(Some(color)) => {
                 ui.painter().circle_filled(center, 4.0, color);
@@ -1769,11 +1811,7 @@ fn var_edit_with(
         // A single-line field scrolls sideways; wrapping would show its text on two lines.
         let wrap = if single_line { f32::INFINITY } else { wrap };
         let content = buffer.as_str();
-        let spans = if body_json && content.len() <= HIGHLIGHT_LIMIT {
-            highlight::json(content)
-        } else {
-            vec![(0..content.len(), highlight::Token::Plain)]
-        };
+        let spans = body_spans(content, body_json);
         let job = if content.len() <= HIGHLIGHT_LIMIT {
             variable_job(content, &spans, &font, wrap, snapshot)
         } else {
@@ -2285,21 +2323,19 @@ pub fn remove_button(ui: &mut Ui, id: egui::Id, what: &str, height: f32) -> bool
     two_click(ui, id, what, RemoveControl::Row(height))
 }
 
-/// [`remove_button`] with words ("Delete route") instead of ×, in red text, for removing a
-/// whole thing rather than a row.
+/// A two-click trash button with the accessible name of the delete action.
 pub fn delete_button(ui: &mut Ui, id: egui::Id, what: &str, text: &str) -> bool {
-    two_click(ui, id, what, RemoveControl::Text(text))
+    two_click(ui, id, what, RemoveControl::Icon(Some(text)))
 }
 
 pub(crate) fn remove_icon_button(ui: &mut Ui, id: egui::Id, what: &str) -> bool {
-    two_click(ui, id, what, RemoveControl::Icon)
+    two_click(ui, id, what, RemoveControl::Icon(None))
 }
 
 #[derive(Clone, Copy)]
 enum RemoveControl<'a> {
     Row(f32),
-    Text(&'a str),
-    Icon,
+    Icon(Option<&'a str>),
 }
 
 fn two_click(ui: &mut Ui, id: egui::Id, what: &str, control: RemoveControl<'_>) -> bool {
@@ -2309,6 +2345,8 @@ fn two_click(ui: &mut Ui, id: egui::Id, what: &str, control: RemoveControl<'_>) 
     let armed = armed_at.is_some_and(|(at, _)| now - at < REMOVE_ARMED_SECONDS);
     let label = if armed {
         format!("Click again to remove {what}")
+    } else if let RemoveControl::Icon(Some(label)) = control {
+        label.to_owned()
     } else {
         format!("Remove {what}")
     };
@@ -2327,19 +2365,9 @@ fn two_click(ui: &mut Ui, id: egui::Id, what: &str, control: RemoveControl<'_>) 
             })
             .inner
         }
-        RemoveControl::Text(text) => {
-            let shown = if armed { "Click again" } else { text };
-            let button = egui::Button::new(RichText::new(shown).color(palette().error));
-            let button = if armed {
-                button.stroke(egui::Stroke::new(1.0, palette().error))
-            } else {
-                button
-            };
-            ui.add(button)
-        }
-        RemoveControl::Icon => icons::remove(ui, &label, armed),
+        RemoveControl::Icon(_) => icons::remove(ui, &label, armed),
     };
-    let response = if matches!(control, RemoveControl::Icon) {
+    let response = if matches!(control, RemoveControl::Icon(_)) {
         response
     } else {
         name(&response, &label);
@@ -3187,6 +3215,53 @@ pub fn body_editor(ui: &mut Ui, text: &mut String, json: bool, vars: &mut VarUi)
         *text = formatted;
     }
     changed
+}
+
+fn body_spans(text: &str, json: bool) -> Spans {
+    if json && text.len() <= HIGHLIGHT_LIMIT {
+        highlight::json(text)
+    } else {
+        vec![(0..text.len(), highlight::Token::Plain)]
+    }
+}
+
+pub(crate) fn plain_body_editor(
+    ui: &mut Ui,
+    text: &mut String,
+    json: bool,
+    label: &str,
+    height: f32,
+) -> bool {
+    egui::ScrollArea::vertical()
+        .id_salt(label)
+        .max_height(height)
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            scroll_view_bounds(ui);
+            let mut layouter = |ui: &Ui, buffer: &dyn egui::TextBuffer, wrap: f32| {
+                let text = buffer.as_str();
+                let font = FontId::monospace(crate::theme::BODY);
+                let job = spans_job(text, &body_spans(text, json), &font, wrap);
+                ui.fonts_mut(|fonts| fonts.layout_job(job))
+            };
+            let response = ui.add(
+                egui::TextEdit::multiline(text)
+                    .code_editor()
+                    .desired_rows(1)
+                    .min_size(egui::vec2(0.0, height))
+                    .desired_width(ui.available_width())
+                    .layouter(&mut layouter),
+            );
+            name(&response, label);
+            if json && text.len() > HIGHLIGHT_LIMIT {
+                response
+                    .on_hover_text("Large body: highlighting is off")
+                    .changed()
+            } else {
+                response.changed()
+            }
+        })
+        .inner
 }
 
 /// A key typed into a code field, with the text and selection before it, for the typing

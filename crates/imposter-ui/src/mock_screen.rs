@@ -6,8 +6,9 @@ use imposter_app::core::model::ParamItem;
 use imposter_app::runtime::TaskId;
 
 use crate::app::{Action, State};
-use crate::theme::{Tone, palette};
-use crate::widgets::{self, SaveStatus, SaveWord};
+use crate::icons::{self, Icon};
+use crate::theme::{self, Tone, palette};
+use crate::widgets::{self, SaveStatus, SaveWord, Variant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MockAction {
@@ -148,10 +149,13 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         ui,
         "Mocks",
         |ui| {
-            server_action = server_controls(ui, screen, &problems, &mut port);
+            port_field(ui, screen, &mut port);
             server_state(ui, screen);
         },
-        |ui| save_controls(ui, screen, &mut actions),
+        |ui| {
+            server_action = server_controls(ui, screen, &problems);
+            save_controls(ui, screen, &mut actions);
+        },
     );
     actions.extend(server_action.map(Action::Mock));
     edited |= port != screen.form.port;
@@ -202,33 +206,40 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     state.actions.extend(actions);
 }
 
+fn port_field(ui: &mut Ui, screen: &MockScreen, port: &mut u16) {
+    ui.label(widgets::tone_text("Port", Tone::Muted));
+    let editable = screen.loaded() && !screen.loading;
+    let field = ui
+        .add_enabled_ui(editable, |ui| {
+            ui.add_sized(
+                [64.0, theme::spacing().control],
+                egui::DragValue::new(port)
+                    .range(0..=65535)
+                    .custom_formatter(|port, _| {
+                        if port == 0.0 {
+                            "auto".to_owned()
+                        } else {
+                            format!("{port}")
+                        }
+                    }),
+            )
+        })
+        .inner
+        .on_hover_text("auto: a free port chosen when the server starts");
+    widgets::name(&field, "Mock port");
+}
+
 fn server_controls(
     ui: &mut Ui,
     screen: &MockScreen,
     problems: &[RouteProblem],
-    port: &mut u16,
 ) -> Option<MockAction> {
-    ui.label(widgets::tone_text("Port", Tone::Muted));
-    let editable = screen.loaded() && !screen.loading;
-    let field = ui
-        .add_enabled(
-            editable,
-            egui::DragValue::new(port)
-                .range(0..=65535)
-                .custom_formatter(|port, _| {
-                    if port == 0.0 {
-                        "auto".to_owned()
-                    } else {
-                        format!("{port}")
-                    }
-                }),
-        )
-        .on_hover_text("auto: a free port chosen when the server starts");
-    widgets::name(&field, "Mock port");
     if let Some(run) = &screen.run {
         return ui
             .add_enabled_ui(!run.stopping, |ui| {
-                widgets::button(ui, widgets::Variant::Danger, None, "Stop mock server")
+                let button = widgets::button(ui, Variant::Danger, Some(Icon::Stop), "Stop");
+                widgets::name(&button, "Stop mock server");
+                button
             })
             .inner
             .clicked()
@@ -240,7 +251,9 @@ fn server_controls(
         && !screen.loading
         && problems.is_empty();
     ui.add_enabled_ui(ready, |ui| {
-        widgets::button(ui, widgets::Variant::Secondary, None, "Start mock server")
+        let button = widgets::button(ui, Variant::Primary, Some(Icon::Play), "Start");
+        widgets::name(&button, "Start mock server");
+        button
     })
     .inner
     .on_disabled_hover_text(match problems.first() {
@@ -275,12 +288,7 @@ fn save_controls(ui: &mut Ui, screen: &MockScreen, actions: &mut Vec<Action>) {
     }
     let revert = ui
         .add_enabled_ui(!screen.saving && !screen.loading, |ui| {
-            crate::icons::button(
-                ui,
-                crate::icons::Icon::Revert,
-                "Revert to saved mocks",
-                false,
-            )
+            icons::button(ui, Icon::Revert, "Revert to saved mocks", false)
         })
         .inner;
     if revert.clicked() {
@@ -290,28 +298,35 @@ fn save_controls(ui: &mut Ui, screen: &MockScreen, actions: &mut Vec<Action>) {
 
 /// Whether the server runs and where.
 fn server_state(ui: &mut Ui, screen: &MockScreen) {
-    let (dot, text) = match &screen.run {
-        None => (palette().text_muted, "Stopped".to_owned()),
-        Some(run) if run.stopping => (palette().warning, "Stopping…".to_owned()),
-        Some(run) => match &run.address {
-            Some(address) => (palette().ok, format!("Running at {address}")),
-            None => (palette().warning, "Starting…".to_owned()),
-        },
+    let Some(run) = &screen.run else {
+        ui.label(widgets::tone_text("Stopped", Tone::Muted));
+        return;
+    };
+    let (dot, text) = match (&run.address, run.stopping) {
+        (_, true) => (palette().warning, "Stopping…".to_owned()),
+        (None, false) => (palette().warning, "Starting…".to_owned()),
+        (Some(address), false) => (palette().ok, format!("Running at {address}")),
     };
     let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
     ui.painter().circle_filled(rect.center(), 4.0, dot);
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        if let Some(address) = screen.run.as_ref().and_then(|run| run.address.as_deref())
-            && crate::icons::button(ui, crate::icons::Icon::Copy, "Copy mock server URL", false)
-                .clicked()
-        {
-            ui.ctx().copy_text(address.to_owned());
-        }
-        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-            ui.add(egui::Label::new(&text).truncate())
-                .on_hover_text(&text);
-        });
-    });
+    let copy_space = run
+        .address
+        .as_ref()
+        .map_or(0.0, |_| icons::size() + ui.spacing().item_spacing.x);
+    let width = widgets::text_width(ui, theme::body(&text))
+        .min((ui.available_width() - copy_space).max(0.0));
+    ui.add_sized(
+        [width, theme::spacing().control],
+        egui::Label::new(theme::body(&text))
+            .truncate()
+            .halign(Align::Min),
+    )
+    .on_hover_text(&text);
+    if let Some(address) = &run.address
+        && icons::button(ui, Icon::Copy, "Copy mock server URL", false).clicked()
+    {
+        ui.ctx().copy_text(address.to_owned());
+    }
 }
 
 /// The routes, one row each: enabled, method in its color, path, status; a route with a
@@ -324,7 +339,7 @@ fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bo
         screen.custom_method = None;
         edited = true;
     }
-    let height = crate::theme::spacing().row;
+    let height = theme::spacing().row;
     // The log takes the lower half while it has something to show.
     let list_height = if screen.log.is_empty() {
         ui.available_height()
@@ -357,7 +372,7 @@ fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bo
                         0.0,
                         egui::TextFormat::simple(
                             mono.clone(),
-                            fade(crate::theme::method_color(&route.method)),
+                            fade(theme::method_color(&route.method)),
                         ),
                     );
                     job.append(
@@ -424,7 +439,7 @@ fn routes(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem]) -> bo
 fn request_log(ui: &mut Ui, screen: &mut MockScreen) {
     ui.horizontal(|ui| {
         // Not "Requests", which names the header's tab.
-        ui.label(egui::RichText::new("Answered requests").font(crate::theme::semibold(13.0)));
+        ui.label(egui::RichText::new("Answered requests").font(theme::semibold(13.0)));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let clear = ui.small_button("Clear");
             widgets::name(&clear, "Clear the mock request log");
@@ -513,10 +528,7 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
             let top = ui.cursor().top();
             let route = &mut screen.form.routes[index];
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("Route {}", index + 1))
-                        .font(crate::theme::semibold(15.0)),
-                );
+                ui.label(theme::section(format!("Route {}", index + 1)));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     remove = widgets::delete_button(
                         ui,
@@ -543,8 +555,11 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
                 problem_lines(ui, problems, index, field);
             }
             ui.horizontal(|ui| {
-                edited |= widgets::checkbox(ui, &mut route.enabled, "Enabled").changed();
-                ui.add_space(12.0);
+                ui.label(theme::body("Enabled"));
+                let enabled = widgets::toggle(ui, &mut route.enabled);
+                widgets::name(&enabled, "Enabled");
+                edited |= enabled.changed();
+                ui.add_space(theme::spacing().sm);
                 ui.label("Status");
                 let response = ui.add(egui::DragValue::new(&mut route.status).range(200..=599));
                 widgets::name(&response, "Mock response status");
@@ -552,24 +567,28 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
             });
             problem_lines(ui, problems, index, RouteField::Status);
             ui.add_space(8.0);
-            ui.label(crate::theme::section("Response headers"));
+            ui.label(theme::section("Response headers"));
             edited |= response_headers(ui, &mut route.headers, index, problems);
             ui.add_space(8.0);
-            ui.label(egui::RichText::new("Response body").font(crate::theme::semibold(13.0)));
-            let response = ui.add(
-                egui::TextEdit::multiline(&mut route.body)
-                    .code_editor()
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(10),
+            ui.label(theme::section("Response body"));
+            let control = theme::spacing().control;
+            let gap = theme::spacing().sm;
+            // Measure from the form's start so scrolling cannot grow either editor.
+            let script_header = control + gap + 2.0 * ui.spacing().item_spacing.y;
+            let available = height - (ui.cursor().top() - top) - script_header;
+            let body_height = (available / 2.0).max(4.0 * control);
+            let script_height = (available - body_height).max(4.0 * control);
+            let json = route.body.trim_start().starts_with(['{', '['])
+                || route.headers.iter().any(|header| {
+                    header.is_enabled
+                        && header.name.eq_ignore_ascii_case("content-type")
+                        && crate::viewer::language(&header.value) == crate::viewer::Language::Json
+                });
+            edited |= widgets::plain_body_editor(
+                ui, &mut route.body, json, "Mock response body", body_height,
             );
-            widgets::name(&response, "Mock response body");
-            edited |= response.changed();
-            ui.add_space(8.0);
+            ui.add_space(gap);
             ui.push_id(("mock script", index), |ui| {
-                let control = crate::theme::spacing().control;
-                // Measure from the form's start so scrolling cannot grow the editor.
-                let header = control + ui.spacing().item_spacing.y;
-                let remaining = height - (ui.cursor().top() - top) - header;
                 edited |= crate::scripts_tab::script_editor(
                     ui,
                     imposter_app::script::Phase::Mock,
@@ -577,7 +596,7 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
                     "Runs for each matched request; it starts from the status, headers and body above",
                     "Mock response script",
                     &mut route.script,
-                    remaining.max(4.0 * control),
+                    script_height,
                 );
             });
             // The editor says why it does not compile; the list's ⚠ and Start say it too.
@@ -598,7 +617,7 @@ fn response_headers(
 ) -> bool {
     use crate::widgets::{ENABLED_WIDTH, blank_cell, heading_cell};
     let widths = widgets::key_value_widths(ui, 0.0);
-    let height = crate::theme::spacing().control;
+    let height = theme::spacing().control;
     let mut edited = false;
     let mut remove = None;
     ui.horizontal(|ui| {
@@ -633,7 +652,7 @@ fn response_headers(
     ui.horizontal(|ui| {
         blank_cell(ui, ENABLED_WIDTH);
         header_fields(ui, &mut row, (route, rows.len()), widths, "New mock header");
-        blank_cell(ui, crate::icons::size());
+        blank_cell(ui, icons::size());
     });
     if !row.name.is_empty() || !row.value.is_empty() {
         edited |= widgets::append_row(ui, rows, row);

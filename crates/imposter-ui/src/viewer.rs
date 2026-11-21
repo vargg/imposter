@@ -94,7 +94,7 @@ pub fn content_type(headers: &[(String, String)]) -> &str {
         .map_or("", |(_, v)| v.as_str())
 }
 
-fn language(content_type: &str) -> Language {
+pub(crate) fn language(content_type: &str) -> Language {
     let essence = content_type
         .split(';')
         .next()

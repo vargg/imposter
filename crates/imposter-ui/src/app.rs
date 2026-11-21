@@ -651,6 +651,9 @@ fn show_result_step(history: &mut HistoryScreen) {
     history.request = result
         .and_then(|result| result.request.as_ref())
         .map(crate::viewer::result_request);
+    if history.request.is_none() {
+        history.tab = HistoryTab::Response;
+    }
     history.request_body_view = ViewerState::default();
     history.request_headers_view = ViewerState::default();
     history.response = ResponsePane::default();
@@ -5229,20 +5232,13 @@ impl ImposterApp {
         match result {
             Ok(rows) => {
                 let filtered = !history.filter.trim().is_empty();
-                history.status = Some(if rows.is_empty() && filtered {
-                    ("No matching executions".to_owned(), Tone::Muted)
-                } else if rows.is_empty() {
-                    ("No executions yet".to_owned(), Tone::Muted)
-                } else {
-                    (
-                        format!(
-                            "{} {}-{}",
-                            if filtered { "Matches" } else { "Executions" },
-                            history.offset + 1,
-                            history.offset + rows.len() as u64
-                        ),
-                        Tone::Muted,
-                    )
+                history.status = rows.is_empty().then(|| {
+                    let text = if filtered {
+                        "No matching executions"
+                    } else {
+                        "No executions yet"
+                    };
+                    (text.to_owned(), Tone::Muted)
                 });
                 history.rows = rows;
                 history.loaded = true;

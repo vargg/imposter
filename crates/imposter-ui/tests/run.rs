@@ -216,12 +216,42 @@ fn a_failure_stops_the_run_unless_it_keeps_going() {
         .harness
         .get_by_label("Skipped: an earlier request did not pass.");
 
-    click(&mut f.app.harness, "Keep going after a failure");
+    f.app
+        .harness
+        .get_by_role_and_label(
+            egui::accesskit::Role::CheckBox,
+            "Keep going after a failure",
+        )
+        .click();
+    f.app.harness.run_steps(2);
     start(&mut f.app);
     assert_eq!(targets(&f.server), ["GET /fail", "GET /fail", "GET /after"]);
     f.app
         .harness
         .get_by_label("Run step Passed API/Broken/After");
+    for (path, icon, tone) in [
+        (
+            "Run step Failed API/Broken/Fails",
+            imposter_ui::icons::Icon::Failed,
+            imposter_ui::theme::Tone::Error,
+        ),
+        (
+            "Run step Passed API/Broken/After",
+            imposter_ui::icons::Icon::Passed,
+            imposter_ui::theme::Tone::Ok,
+        ),
+    ] {
+        let bounds = f.app.harness.get_by_label(path).rect();
+        assert!(
+            f.app.harness.output().shapes.iter().any(|shape| {
+                matches!(&shape.shape, egui::Shape::Text(text)
+                if bounds.contains(text.visual_bounding_rect().center())
+                && text.galley.job.text == icon.glyph().to_string()
+                && text.fallback_color == imposter_ui::theme::palette().tone(tone))
+            }),
+            "{path} uses the check-result icon and tone"
+        );
+    }
     click(&mut f.app.harness, "Earlier runs");
     assert_eq!(
         f.app

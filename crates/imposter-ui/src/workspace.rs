@@ -8,6 +8,7 @@ use imposter_app::core::model::BodyType;
 use crate::app::{Action, EditorTab, ImposterApp, ResponseTab, Screen, State, TokenAction};
 use crate::dialogs::{Dialog, NamePurpose};
 use crate::editor::BODY_CHOICES;
+use crate::history_screen::HistoryViewer;
 use crate::icons::{self, Icon};
 use crate::layout::{Orientation, RAIL_WIDTH, SIDEBAR_WIDTH};
 use crate::theme::{Tone, method_color, palette};
@@ -1220,7 +1221,9 @@ fn status_context(state: &mut State, ui: &mut Ui) {
             state.actions.push(Action::Screen(Screen::Run));
         }
     }
-    if let Some(run) = &state.mocks.run {
+    if state.screen != Screen::Mocks
+        && let Some(run) = &state.mocks.run
+    {
         let (label, hint) = if run.stopping {
             (
                 "Mocks stopping…".to_owned(),
@@ -2302,7 +2305,7 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
                     + ui.spacing().item_spacing.x
             });
             if let Some(response) = &response_state.response
-                && status_line(ui, response, runs + warning_width)
+                && status_line(ui, response, runs + warning_width, None)
             {
                 response_state.tab = ResponseTab::Tests;
             }
@@ -2531,6 +2534,14 @@ enum StatusPart {
 /// The response headers' view toggle.
 const RAW: &str = "Raw";
 
+pub(crate) fn history_status(
+    ui: &mut Ui,
+    response: &imposter_app::core::execution::Response,
+    request: &str,
+) -> bool {
+    status_line(ui, response, 0.0, Some(request))
+}
+
 /// One line about a response: its status as a pill, then what fits of the checks, time,
 /// size and content type, dropped in reverse order of importance. The status's hover text
 /// has them all. `reserve` keeps room at the end of the row. Returns whether the checks were
@@ -2539,14 +2550,23 @@ fn status_line(
     ui: &mut Ui,
     response: &imposter_app::core::execution::Response,
     reserve: f32,
+    request: Option<&str>,
 ) -> bool {
     let status = viewer::status(response);
     // In order of importance. A transport failure has no status for a pill: the card under
     // the line names it, and a pill would only repeat it.
     let failed = response.outcome == imposter_app::core::execution::Outcome::TransportError;
     let mut parts = Vec::new();
-    if !failed {
-        parts.push(StatusPart::Pill(status.text.clone(), status.tone));
+    if !failed || request.is_some() {
+        let caption = if request.is_some()
+            && response.outcome == imposter_app::core::execution::Outcome::Response
+            && widgets::text_width(ui, crate::theme::body(&status.text)) > 142.0
+        {
+            response.status.to_string()
+        } else {
+            status.text.clone()
+        };
+        parts.push(StatusPart::Pill(caption, status.tone));
     }
     let tally = crate::checks::Tally::of_response(response);
     if !tally.is_empty() {
@@ -2561,7 +2581,7 @@ fn status_line(
     }
     let content_type = viewer::content_type(&response.headers);
     let kind = content_type.split(';').next().unwrap_or_default().trim();
-    if delivered && !kind.is_empty() {
+    if delivered && !kind.is_empty() && request.is_none() {
         parts.push(StatusPart::Text(tone_text(kind, Tone::Muted)));
     }
     let mut hover = vec![status.detail.clone()];
@@ -2585,6 +2605,28 @@ fn status_line(
                 + 2.0 * ui.spacing().button_padding.x
         }
     };
+    if let Some(request) = request {
+        let (method, url) = request.split_once(' ').unwrap_or((request, ""));
+        let method = RichText::new(method)
+            .monospace()
+            .color(method_color(method));
+        let height = crate::theme::spacing().control;
+        let method_width = widgets::text_width(ui, method.clone()).min(76.0);
+        ui.add_sized([method_width, height], egui::Label::new(method).truncate());
+        let metadata = parts.iter().map(|part| width(ui, part) + gap).sum::<f32>();
+        let available = ui.available_width();
+        let url_width = (available - metadata).max(available.min(64.0));
+        let url_text = RichText::new(url).monospace();
+        let url_width = widgets::text_width(ui, url_text.clone()).min(url_width);
+        ui.add_sized(
+            [url_width, height],
+            egui::Label::new(url_text)
+                .truncate()
+                .selectable(true)
+                .halign(Align::Min),
+        )
+        .on_hover_text(url);
+    }
     let mut open_checks = false;
     // Parts come in order of importance: each shows if it fits what the row has left, and
     // the first that does not ends the line. The status always shows, cut if need be.
@@ -2645,14 +2687,34 @@ pub fn response_body(
     status: bool,
     live: bool,
 ) -> Option<PaneAction> {
+    response_content(ui, response_state, id, status, live, None)
+}
+
+pub(crate) fn history_response(
+    ui: &mut Ui,
+    response_state: &mut crate::app::ResponsePane,
+    history: HistoryViewer<'_>,
+) -> Option<PaneAction> {
+    response_content(ui, response_state, "history", false, false, Some(history))
+}
+
+fn response_content(
+    ui: &mut Ui,
+    response_state: &mut crate::app::ResponsePane,
+    id: &str,
+    status: bool,
+    live: bool,
+    mut history: Option<HistoryViewer<'_>>,
+) -> Option<PaneAction> {
     let queued = response_state.pending_tool.take();
     if status
         && let Some(response) = &response_state.response
-        && ui.horizontal(|ui| status_line(ui, response, 0.0)).inner
+        && ui
+            .horizontal(|ui| status_line(ui, response, 0.0, None))
+            .inner
     {
         response_state.tab = ResponseTab::Tests;
     }
-    let mut save_body = false;
     // The preview holds part of the body: the whole of it can still be saved or copied.
     let partial = response_state
         .preview
@@ -2662,32 +2724,10 @@ pub fn response_body(
             .response
             .as_ref()
             .is_some_and(|r| r.outcome == imposter_app::core::execution::Outcome::Response);
-    if let Some((notice, tone)) = &response_state.notice {
-        // One line, the actions as icons at its end: wrapped words and buttons took three
-        // rows from the body at the smallest size.
-        ui.horizontal(|ui| {
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if partial && let Some(response) = &response_state.response {
-                    let binary = response_state
-                        .preview
-                        .as_ref()
-                        .is_some_and(|(preview, _)| preview.binary);
-                    // Bytes that are not text would be damaged as text.
-                    if !binary && icons::button(ui, Icon::Copy, "Copy full body", false).clicked() {
-                        ui.ctx()
-                            .copy_text(String::from_utf8_lossy(&response.body).into_owned());
-                    }
-                    save_body = icons::button(ui, Icon::Save, "Save body…", false).clicked();
-                }
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.add(egui::Label::new(tone_text(notice.as_str(), *tone)).truncate());
-                });
-            });
-        });
-    }
-    if save_body || (partial && queued == Some(ViewerTool::Save)) {
-        return Some(PaneAction::SaveBody);
-    }
+    let binary = response_state
+        .preview
+        .as_ref()
+        .is_some_and(|(preview, _)| preview.binary);
     let filter_status = filter_status(&response_state.filter);
     let crate::app::ResponsePane {
         response,
@@ -2701,8 +2741,31 @@ pub fn response_body(
         sent,
         sent_view,
         event_selected,
+        notice,
         ..
     } = response_state;
+    if history.is_none()
+        && (response_notice(ui, notice.as_ref(), response.as_ref(), partial, binary)
+            || (partial && queued == Some(ViewerTool::Save)))
+    {
+        return Some(PaneAction::SaveBody);
+    }
+    let failure = response
+        .as_ref()
+        .filter(|r| r.outcome == imposter_app::core::execution::Outcome::TransportError);
+    if (preview.is_none() || failure.is_some())
+        && let Some(history) = &mut history
+    {
+        history.tabs(ui, basic_history_tabs(), tab, 0.0, |_, _| {});
+        if !history.shows_response() {
+            history.show_request(ui);
+            return None;
+        }
+        if let Some(text) = &history.empty_response {
+            ui.add(egui::Label::new(text.clone()).wrap().selectable(true));
+            return None;
+        }
+    }
     let Some((preview, headers)) = preview.as_ref() else {
         centered_message(
             ui,
@@ -2712,10 +2775,7 @@ pub fn response_body(
         );
         return None;
     };
-    if let Some(failure) = response
-        .as_ref()
-        .filter(|r| r.outcome == imposter_app::core::execution::Outcome::TransportError)
-    {
+    if let Some(failure) = failure {
         return failure_card(ui, failure, id, live).then_some(PaneAction::Retry);
     }
     let filterable = response.as_ref().is_some_and(viewer::is_json);
@@ -2827,7 +2887,12 @@ pub fn response_body(
         widgets::TabSpec::new(ResponseTab::Headers, "Headers")
             .badge(count_badge(headers_count, Tone::Muted)),
     ]);
-    if !results.is_empty() || !captured.is_empty() || script.is_some() || !console.is_empty() {
+    if history.is_some()
+        || !results.is_empty()
+        || !captured.is_empty()
+        || script.is_some()
+        || !console.is_empty()
+    {
         // Failures, when there are any: a red total read as that many failures.
         let failed = tally.failed;
         let badge = if failed > 0 {
@@ -2853,29 +2918,55 @@ pub fn response_body(
     } else if *tab == ResponseTab::Request {
         *tab = ResponseTab::Body;
     }
-    ui.horizontal(|ui| {
-        // Leave room for More tools, Find and Copy, plus Raw when it switches the viewer.
-        let gap = ui.spacing().item_spacing.x;
-        let slot = icons::size() + gap;
-        let reserve = match *tab {
-            ResponseTab::Body if !preview.binary => 3.0 * slot,
-            ResponseTab::Body => {
-                if body_saved_here {
-                    slot
-                } else {
-                    0.0
-                }
+    // Leave room for More tools, Find and Copy, plus Raw when it switches the viewer.
+    let gap = ui.spacing().item_spacing.x;
+    let slot = icons::size() + gap;
+    let reserve = match *tab {
+        ResponseTab::Body if !preview.binary => 3.0 * slot,
+        ResponseTab::Body => {
+            if body_saved_here {
+                slot
+            } else {
+                0.0
             }
-            ResponseTab::Headers => {
-                let raw = widgets::action_width(ui, RAW) + gap;
-                raw + if raw_open { 2.0 * slot } else { slot }
+        }
+        ResponseTab::Headers => {
+            let raw = widgets::action_width(ui, RAW) + gap;
+            raw + if raw_open { 2.0 * slot } else { slot }
+        }
+        ResponseTab::Request => 3.0 * slot,
+        ResponseTab::Tests | ResponseTab::Events => 0.0,
+    };
+    if let Some(history) = &mut history {
+        let mut save_full = false;
+        let full_tools = response.as_ref().filter(|_| partial);
+        let reserve = reserve + full_tools.map_or(0.0, |_| if binary { slot } else { 2.0 * slot });
+        history.tabs(ui, tabs, tab, reserve, |ui, tab| {
+            if let Some(response) = full_tools {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    save_full = whole_body_tools(ui, response, binary);
+                    tools(ui, tab);
+                });
+            } else {
+                tools(ui, tab);
             }
-            ResponseTab::Request => 3.0 * slot,
-            ResponseTab::Tests | ResponseTab::Events => 0.0,
-        };
-        widgets::tab_strip(ui, &tabs, tab, tabs.len(), reserve, "More response tabs");
-        tools(ui, *tab);
-    });
+        });
+        if !history.shows_response() {
+            history.show_request(ui);
+            return None;
+        }
+        if let Some((notice, tone)) = notice {
+            ui.add(egui::Label::new(tone_text(notice.as_str(), *tone)).truncate());
+        }
+        if save_full || (partial && queued == Some(ViewerTool::Save)) {
+            return Some(PaneAction::SaveBody);
+        }
+    } else {
+        ui.horizontal(|ui| {
+            widgets::tab_strip(ui, &tabs, tab, tabs.len(), reserve, "More response tabs");
+            tools(ui, *tab);
+        });
+    }
     let mut close_filter = false;
     if *tab == ResponseTab::Body && filterable && filter.open {
         ui.horizontal_wrapped(|ui| {
@@ -2992,6 +3083,51 @@ pub fn response_body(
         ui.ctx().request_repaint();
     }
     action.map(PaneAction::Row)
+}
+
+fn basic_history_tabs() -> Vec<widgets::TabSpec<'static, ResponseTab>> {
+    vec![
+        widgets::TabSpec::new(ResponseTab::Body, "Body"),
+        widgets::TabSpec::new(ResponseTab::Headers, "Headers"),
+        widgets::TabSpec::new(ResponseTab::Tests, "Tests").named("Check results"),
+    ]
+}
+
+fn response_notice(
+    ui: &mut Ui,
+    notice: Option<&(String, Tone)>,
+    response: Option<&imposter_app::core::execution::Response>,
+    partial: bool,
+    binary: bool,
+) -> bool {
+    let Some((notice, tone)) = notice else {
+        return false;
+    };
+    let mut save = false;
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if partial && let Some(response) = response {
+                save = whole_body_tools(ui, response, binary);
+            }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(egui::Label::new(tone_text(notice.as_str(), *tone)).truncate());
+            });
+        });
+    });
+    save
+}
+
+fn whole_body_tools(
+    ui: &mut Ui,
+    response: &imposter_app::core::execution::Response,
+    binary: bool,
+) -> bool {
+    // Bytes that are not text would be damaged as text.
+    if !binary && icons::button(ui, Icon::Copy, "Copy full body", false).clicked() {
+        ui.ctx()
+            .copy_text(String::from_utf8_lossy(&response.body).into_owned());
+    }
+    icons::button(ui, Icon::Save, "Save body…", false).clicked()
 }
 
 /// A body that is not text: what it is and how big, instead of its bytes as characters.

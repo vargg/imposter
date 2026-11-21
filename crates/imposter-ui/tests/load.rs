@@ -59,6 +59,153 @@ fn set_plan(app: &mut support::App, requests: &str, concurrency: &str) {
     app.harness.run_steps(1);
 }
 
+fn assert_target(app: &support::App) {
+    let picker = app.harness.get_by_label("Choose the request to load-test");
+    assert_eq!(
+        picker.accesskit_node().description().as_deref(),
+        Some("API / GET Ping")
+    );
+    assert!(app.harness.output().shapes.iter().any(|shape| {
+        matches!(&shape.shape, egui::Shape::Text(text)
+            if text.galley.job.text == "GET Ping" && picker.rect().contains(text.visual_bounding_rect().center()))
+    }));
+}
+
+#[test]
+fn load_config_and_results_share_a_row_at_wide_width_and_stack_at_720() {
+    let mut f = fixture(Duration::ZERO, false);
+    click(&mut f.app.harness, "GET Ping");
+    settle(&mut f.app.harness);
+    support::open_screen(&mut f.app.harness, "Load");
+    set_plan(&mut f.app, "2", "1");
+    click(&mut f.app.harness, "Start the load test");
+    settle(&mut f.app.harness);
+
+    let bounds = |app: &support::App| {
+        (
+            support::text_input(&app.harness, "Total requests").rect(),
+            app.harness.get_by_label("Result").rect(),
+        )
+    };
+    let (config, result) = bounds(&f.app);
+    assert!(config.right() < result.left() && (config.center().y - result.center().y).abs() < 2.0);
+    f.app.harness.set_size(egui::vec2(720.0, 480.0));
+    f.app.harness.run_steps(3);
+    let (config, result) = bounds(&f.app);
+    let keep_alive = f.app.harness.get_by_label("Reuse connections").rect();
+    assert!(result.left() < config.left() && result.top() > keep_alive.bottom());
+}
+
+fn metric_cells(app: &support::App, table: &str) -> Vec<egui::Rect> {
+    app.harness
+        .get_by_role_and_label(egui::Role::Group, table)
+        .query_all_by_role(egui::Role::Label)
+        .map(|node| {
+            let bounds = node.rect();
+            let value = node.accesskit_node().value().unwrap();
+            app.harness
+                .output()
+                .shapes
+                .iter()
+                .find_map(|shape| {
+                    let egui::Shape::Text(text) = &shape.shape else {
+                        return None;
+                    };
+                    let painted = text.galley.rect.translate(text.pos.to_vec2());
+                    (text.galley.job.text == value && bounds.contains(painted.center()))
+                        .then_some(painted)
+                })
+                .unwrap_or_else(|| panic!("{table} cell {value:?} was not painted at {bounds:?}"))
+        })
+        .collect()
+}
+
+fn assert_metric_columns(header: &[egui::Rect], rows: &[&[egui::Rect]]) {
+    for row in std::iter::once(header).chain(rows.iter().copied()) {
+        for cells in row.windows(2) {
+            assert!(cells[1].left() - cells[0].right() >= 8.0, "{cells:?}");
+        }
+    }
+    let stride = header[1].right() - header[0].right();
+    for cells in header.windows(2) {
+        assert!((cells[1].right() - cells[0].right() - stride).abs() <= 1.0);
+    }
+    for row in rows {
+        assert_eq!(row.len(), header.len());
+        for (caption, value) in header.iter().zip(*row) {
+            assert!(
+                (caption.right() - value.right()).abs() <= 1.0,
+                "{caption:?}, {value:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn load_tables_line_up_and_summary_tiles_share_a_width_at_both_sizes() {
+    let mut f = fixture(Duration::ZERO, false);
+    click(&mut f.app.harness, "GET Ping");
+    settle(&mut f.app.harness);
+    support::open_screen(&mut f.app.harness, "Load");
+    set_plan(&mut f.app, "5", "1");
+    click(&mut f.app.harness, "Start the load test");
+    settle(&mut f.app.harness);
+
+    for size in [egui::vec2(1024.0, 580.0), egui::vec2(720.0, 480.0)] {
+        f.app.harness.set_size(size);
+        f.app.harness.run_steps(3);
+        f.app
+            .harness
+            .get_by_label_contains("Latency histogram: ")
+            .scroll_to_me();
+        f.app.harness.run_steps(12);
+
+        let latency = metric_cells(&f.app, "Latency table");
+        assert_eq!(latency.len(), 23);
+        let (header, rows) = latency.split_at(7);
+        let (total, first_byte) = rows.split_at(8);
+        assert!((total[0].left() - first_byte[0].left()).abs() <= 1.0);
+        for row in [total, first_byte] {
+            assert!(row[1].left() - row[0].right() >= 8.0);
+        }
+        assert_metric_columns(header, &[&total[1..], &first_byte[1..]]);
+
+        let served = metric_cells(&f.app, "Served within table");
+        assert_eq!(served.len(), 18);
+        let (header, values) = served.split_at(9);
+        assert_metric_columns(header, &[values]);
+
+        f.app.harness.get_by_label("Requests/s").scroll_to_me();
+        f.app.harness.run_steps(12);
+        let tiles = f
+            .app
+            .harness
+            .get_by_role_and_label(egui::Role::Group, "Summary metrics");
+        let widths = ["Requests/s", "Throughput", "Errors", "p50", "p95", "p99"].map(|caption| {
+            let center = tiles.get_by_label(caption).rect().center();
+            f.app
+                .harness
+                .output()
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Rect(frame)
+                        if frame.rect.contains(center)
+                            && frame.stroke.color == imposter_ui::theme::palette().border =>
+                    {
+                        Some(frame.rect.width())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{caption} tile is missing its border at {size:?}"))
+        });
+        assert!(
+            widths.iter().all(|width| (width - widths[0]).abs() <= 1.0),
+            "{size:?}: {widths:?}"
+        );
+    }
+}
+
 #[test]
 fn the_load_rail_item_takes_the_open_request_and_a_run_shows_its_summary() {
     let mut f = fixture(Duration::ZERO, false);
@@ -67,15 +214,23 @@ fn the_load_rail_item_takes_the_open_request_and_a_run_shows_its_summary() {
     support::open_screen(&mut f.app.harness, "Load");
     settle(&mut f.app.harness);
     assert_eq!(f.app.harness.state().state.screen, Screen::Load);
-    f.app.harness.get_by_label("Ping");
+    assert_target(&f.app);
 
     set_plan(&mut f.app, "20", "4");
     click(&mut f.app.harness, "Start the load test");
     settle(&mut f.app.harness);
 
     assert_eq!(f.server.requests().len(), 20);
-    f.app.harness.get_by_label_contains("req/s · ");
-    f.app.harness.get_by_label_contains("errors 0%");
+    let load = &f.app.harness.state().state.load;
+    let rate = imposter_ui::load_screen::rate_text(load.runs[0].report.summary.per_second);
+    f.app.harness.get_by_label(rate.trim_end_matches(" req/s"));
+    f.app.harness.get_by_label("0%");
+    for label in ["Requests/s", "Throughput", "Errors", "p50", "p95", "p99"] {
+        assert!(
+            f.app.harness.query_all_by_label(label).next().is_some(),
+            "{label}"
+        );
+    }
     f.app.harness.get_by_label("200 ×20");
     f.app.harness.get_by_label("Served within");
     f.app.harness.get_by_label_contains("Latency histogram: ");
@@ -97,7 +252,7 @@ fn the_sidebar_menu_opens_the_screen_on_its_request_and_stop_ends_a_run() {
     click(&mut f.app.harness, "Load test…");
     settle(&mut f.app.harness);
     assert_eq!(f.app.harness.state().state.screen, Screen::Load);
-    f.app.harness.get_by_label("Ping");
+    assert_target(&f.app);
 
     set_plan(&mut f.app, "1000", "2");
     click(&mut f.app.harness, "Start the load test");
@@ -287,7 +442,14 @@ fn a_plan_that_cannot_run_says_why_and_the_palette_chooses_the_request() {
     let mut f = fixture(Duration::ZERO, false);
     support::open_screen(&mut f.app.harness, "Load");
     settle(&mut f.app.harness);
-    f.app.harness.get_by_label("Choose a request to load-test");
+    assert!(
+        f.app
+            .harness
+            .get_by_label("Choose the request to load-test")
+            .accesskit_node()
+            .description()
+            .is_none()
+    );
     set_plan(&mut f.app, "5", "10");
     f.app
         .harness
@@ -297,7 +459,7 @@ fn a_plan_that_cannot_run_says_why_and_the_palette_chooses_the_request() {
     settle(&mut f.app.harness);
     click(&mut f.app.harness, "GET API › Ping");
     settle(&mut f.app.harness);
-    f.app.harness.get_by_label("Ping");
+    assert_target(&f.app);
     assert!(f.app.harness.state().state.load.target.is_some());
 }
 
@@ -337,9 +499,20 @@ fn a_request_with_scripts_says_they_run_and_shows_the_first_script_error() {
         .after = "let a = 1;\nthrow \"bad answer\";".into();
     support::open_screen(&mut f.app.harness, "Load");
     settle(&mut f.app.harness);
-    f.app
+    let hint = f
+        .app
         .harness
-        .get_by_label(imposter_ui::load_screen::SCRIPTS_RUN);
+        .get_by_label("Choose the request to load-test")
+        .accesskit_node()
+        .description()
+        .unwrap();
+    assert!(hint.contains(imposter_ui::load_screen::SCRIPTS_RUN));
+    assert!(
+        f.app
+            .harness
+            .query_by_label(imposter_ui::load_screen::SCRIPTS_RUN)
+            .is_none()
+    );
     set_plan(&mut f.app, "3", "1");
     click(&mut f.app.harness, "Start the load test");
     settle(&mut f.app.harness);

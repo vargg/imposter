@@ -15,8 +15,9 @@ use imposter_app::store::collections::IndexedRequest;
 use serde::{Deserialize, Serialize};
 
 use crate::app::{Action, State};
-use crate::theme::{Tone, method_color, palette};
-use crate::widgets::{self, name, tone_text};
+use crate::icons::Icon;
+use crate::theme::{self, Tone, palette};
+use crate::widgets::{self, Variant, name, tone_text};
 
 /// How many finished runs the screen keeps, newest first; nothing is stored.
 pub const RUNS_KEPT: usize = 10;
@@ -223,22 +224,6 @@ pub fn count_text(count: u64) -> String {
     out
 }
 
-/// The run in one line: "412 req/s · 1.2 MB/s · errors 0.2% · p50 21 ms · p95 52 ms ·
-/// p99 95 ms". Without responses the latencies are left out.
-pub fn headline(summary: &Summary) -> String {
-    let mut parts = vec![
-        rate_text(summary.per_second),
-        bytes_rate_text(summary.bytes_per_second),
-        format!("errors {}", percent_text(summary.error_rate())),
-    ];
-    if let Some(total) = summary.total {
-        parts.push(format!("p50 {}", duration_text(total.p50)));
-        parts.push(format!("p95 {}", duration_text(total.p95)));
-        parts.push(format!("p99 {}", duration_text(total.p99)));
-    }
-    parts.join(" · ")
-}
-
 /// How the run ended, when it did not send everything.
 pub fn ending(finished: &Finished) -> Option<String> {
     let done = count_text(finished.report.summary.completed);
@@ -281,12 +266,12 @@ pub fn progress_text(done: u64, planned: u32, elapsed: f64) -> String {
 
 // ---- drawing -------------------------------------------------------------------------------
 
-const LABEL_COLUMN: f32 = 110.0;
+const LABEL_COLUMN: f32 = 128.0;
+const FIELD_WIDTH: f32 = 96.0;
 
 /// What a load run does with the request's scripts, which differs from a Send.
 pub const SCRIPTS_RUN: &str =
     "This request's scripts run for every request; variables they set are not written";
-const FIELD_WIDTH: f32 = 90.0;
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
     // Opened with nothing chosen, the request in the editor is the natural target.
@@ -299,133 +284,149 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     let mut actions = Vec::new();
     let plan = state.load.form.plan();
     let mut execution = None;
+    let scripted = state
+        .editor
+        .as_ref()
+        .filter(|p| p.editor.id() == state.load.target.as_ref().map(|t| t.id))
+        .is_some_and(|p| !p.editor.scripts.is_empty());
     widgets::screen_toolbar(
         ui,
         "Load",
-        |ui| target_row(ui, &state.load, &mut actions),
-        |ui| {
-            execution = controls(ui, &state.load, &plan);
-        },
+        |ui| target_row(ui, &state.load, scripted, &mut actions),
+        |ui| execution = controls(ui, &state.load, &plan),
     );
     actions.extend(execution.map(Action::Load));
     egui::ScrollArea::vertical()
         .id_salt("load screen")
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            ui.set_max_width(ui.available_width().min(760.0));
-            // Said where it is known before a run: when the request is open.
-            let scripted = state
-                .editor
-                .as_ref()
-                .filter(|p| p.editor.id() == state.load.target.as_ref().map(|t| t.id))
-                .is_some_and(|p| !p.editor.scripts.is_empty());
-            if scripted {
-                ui.add(egui::Label::new(tone_text(SCRIPTS_RUN, Tone::Muted)).wrap());
-                ui.add_space(4.0);
-            }
-            plan_form(ui, &mut state.load);
-            ui.add_space(12.0);
-            if let Some(problem) = state.load.error.as_deref().or_else(|| {
-                plan.as_ref()
-                    .err()
-                    .filter(|_| state.load.run.is_none())
-                    .map(String::as_str)
-            }) {
-                ui.add(egui::Label::new(tone_text(problem, Tone::Error)).wrap());
-            }
-            if let Some(run) = &state.load.run {
-                ui.ctx().request_repaint_after(Duration::from_millis(100));
-                ui.add_space(8.0);
-                progress(ui, run, now);
-            }
-            if let Some(finished) = state.load.runs.get(state.load.shown) {
-                ui.add_space(16.0);
-                ui.separator();
-                ui.add_space(8.0);
-                result(ui, &state.load, finished, &mut actions);
-            }
+            widgets::scroll_view_bounds(ui);
+            widgets::tool_columns(
+                ui,
+                &mut state.load,
+                |ui, screen| {
+                    plan_form(ui, screen);
+                    if let Some(problem) = screen.error.as_deref().or_else(|| {
+                        plan.as_ref()
+                            .err()
+                            .filter(|_| screen.run.is_none())
+                            .map(String::as_str)
+                    }) {
+                        ui.add(egui::Label::new(tone_text(problem, Tone::Error)).wrap());
+                    }
+                },
+                |ui, screen| {
+                    if let Some(run) = &screen.run {
+                        ui.ctx().request_repaint_after(Duration::from_millis(100));
+                        progress(ui, run, now);
+                        ui.add_space(theme::spacing().sm);
+                    }
+                    if let Some(finished) = screen.runs.get(screen.shown) {
+                        result(ui, screen, finished, &mut actions);
+                    }
+                },
+            );
         });
     state.actions.extend(actions);
 }
 
-fn target_row(ui: &mut Ui, screen: &LoadScreen, actions: &mut Vec<Action>) {
-    let choose = if screen.target.is_some() {
-        "Change…"
-    } else {
-        "Choose…"
-    };
+fn target_row(ui: &mut Ui, screen: &LoadScreen, scripted: bool, actions: &mut Vec<Action>) {
+    let (label, path) = screen.target.as_ref().map_or_else(
+        || ("Choose request…".to_owned(), String::new()),
+        |target| {
+            let label = format!("{} {}", target.method, target.name);
+            let path = if target.place.is_empty() {
+                label.clone()
+            } else {
+                format!("{} / {label}", target.place)
+            };
+            (label, path)
+        },
+    );
     let button = ui
         .add_enabled_ui(screen.run.is_none(), |ui| {
-            widgets::button(ui, widgets::Variant::Secondary, None, choose)
+            widgets::button(ui, Variant::Secondary, None, &label)
         })
         .inner;
     name(&button, "Choose the request to load-test");
+    let hint = if scripted {
+        format!("{path}\n{SCRIPTS_RUN}")
+    } else {
+        path
+    };
+    let button = if hint.is_empty() {
+        button
+    } else {
+        button
+            .ctx
+            .accesskit_node_builder(button.id, |node| node.set_description(hint.as_str()));
+        button.on_hover_text(hint)
+    };
     if button.clicked() {
         actions.push(Action::Load(LoadAction::Choose));
-    }
-    if let Some(target) = &screen.target {
-        let method = RichText::new(&target.method)
-            .monospace()
-            .color(method_color(&target.method));
-        let width = widgets::text_width(ui, method.clone()).min(ui.available_width() / 6.0);
-        ui.add_sized(
-            [width, crate::theme::spacing().control],
-            egui::Label::new(method).truncate(),
-        )
-        .on_hover_text(&target.method);
-        ui.add(egui::Label::new(crate::theme::section(&target.name)).truncate())
-            .on_hover_text(if target.place.is_empty() {
-                target.name.clone()
-            } else {
-                format!("{} / {}", target.place, target.name)
-            });
-    } else {
-        ui.label(tone_text("Choose a request to load-test", Tone::Muted));
     }
 }
 
 fn plan_form(ui: &mut Ui, screen: &mut LoadScreen) {
     let editable = screen.run.is_none();
     let form = &mut screen.form;
+    let spacing = theme::spacing();
     ui.add_enabled_ui(editable, |ui| {
         egui::Grid::new("load plan")
             .num_columns(2)
-            .spacing([12.0, 8.0])
+            .spacing([spacing.md, spacing.sm])
             .min_col_width(LABEL_COLUMN)
             .show(ui, |ui| {
-                // Spoken names say the unit; "Requests" alone is also the header's tab.
-                for (label, spoken, value, help) in [
-                    ("Total requests", "Total requests", &mut form.requests, ""),
+                for (label, spoken, value, hint, help) in [
+                    (
+                        "Total requests",
+                        "Total requests",
+                        &mut form.requests,
+                        "",
+                        "",
+                    ),
                     (
                         "Concurrency",
                         "Concurrency",
                         &mut form.concurrency,
-                        "requests at once",
+                        "",
+                        "Requests sent at once",
                     ),
                     (
                         "Time limit",
                         "Time limit in seconds",
                         &mut form.time_limit,
-                        "seconds; empty for none",
+                        "none",
+                        "Leave empty to run without a time limit",
                     ),
                     (
                         "Ramp-up",
                         "Ramp-up in seconds",
                         &mut form.ramp_up,
-                        "seconds to start all workers; empty starts them at once",
+                        "none",
+                        "Time to start all workers. Leave empty to start them at once",
                     ),
                 ] {
-                    ui.label(label);
+                    if help.is_empty() {
+                        ui.label(theme::body(label));
+                    } else {
+                        widgets::label_with_help(ui, label, help);
+                    }
                     ui.horizontal(|ui| {
-                        let field =
-                            ui.add(egui::TextEdit::singleline(value).desired_width(FIELD_WIDTH));
+                        let field = ui.add_sized(
+                            [FIELD_WIDTH, spacing.control],
+                            egui::TextEdit::singleline(value).hint_text(hint),
+                        );
                         name(&field, spoken);
-                        ui.add(egui::Label::new(tone_text(help, Tone::Muted)).truncate());
+                        if !hint.is_empty() {
+                            ui.label(theme::meta("s").color(palette().text_muted));
+                        }
                     });
                     ui.end_row();
                 }
-                ui.label("Keep-alive");
-                widgets::checkbox(ui, &mut form.keep_alive, "Reuse connections");
+                widgets::label_with_help(ui, "Keep-alive", "Reuse connections between requests");
+                let toggle = widgets::toggle(ui, &mut form.keep_alive);
+                name(&toggle, "Reuse connections");
                 ui.end_row();
             });
     });
@@ -439,7 +440,7 @@ fn controls(
     if let Some(run) = &screen.run {
         let stop = ui
             .add_enabled_ui(!run.stopping, |ui| {
-                widgets::button(ui, widgets::Variant::Danger, None, "Stop")
+                widgets::button(ui, Variant::Danger, Some(Icon::Stop), "Stop")
             })
             .inner;
         name(&stop, "Stop the load test");
@@ -448,7 +449,7 @@ fn controls(
     let ready = screen.target.is_some() && plan.is_ok();
     let start = ui
         .add_enabled_ui(ready, |ui| {
-            widgets::button(ui, widgets::Variant::Primary, None, "Start")
+            widgets::button(ui, Variant::Primary, Some(Icon::Play), "Start")
         })
         .inner
         .on_disabled_hover_text(match (&screen.target, plan) {
@@ -491,21 +492,24 @@ fn progress(ui: &mut Ui, run: &Running, now: f64) {
 fn result(ui: &mut Ui, screen: &LoadScreen, finished: &Finished, actions: &mut Vec<Action>) {
     let summary = &finished.report.summary;
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Result").font(crate::theme::semibold(15.0)));
-        ui.label(tone_text(
-            format!(
+        ui.label(theme::section("Result"));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if screen.runs.len() > 1 {
+                runs_menu(ui, screen, actions);
+            }
+            let caption = format!(
                 "{} {} · {} × {} · {}",
                 finished.target.method,
                 finished.target.name,
                 count_text(u64::from(finished.plan.requests())),
                 finished.plan.concurrency(),
                 finished.when
-            ),
-            Tone::Muted,
-        ));
-        if screen.runs.len() > 1 {
-            runs_menu(ui, screen, actions);
-        }
+            );
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add(egui::Label::new(tone_text(&caption, Tone::Muted)).truncate())
+                    .on_hover_text(caption);
+            });
+        });
     });
     if let Some(ending) = ending(finished) {
         ui.label(tone_text(ending, Tone::Warning));
@@ -514,48 +518,175 @@ fn result(ui: &mut Ui, screen: &LoadScreen, finished: &Finished, actions: &mut V
     if let Some(error) = &finished.report.script_error {
         ui.add(egui::Label::new(tone_text(error.as_str(), Tone::Error)).wrap());
     }
-    ui.add(egui::Label::new(RichText::new(headline(summary)).strong()).wrap());
-    ui.add_space(6.0);
+    let spacing = theme::spacing();
+    stat_tiles(ui, summary);
+    ui.add_space(spacing.xs);
     outcomes(ui, summary);
     if let Some(total) = summary.total {
-        ui.add_space(10.0);
-        egui::Grid::new("load latency")
-            .num_columns(8)
-            .spacing([16.0, 4.0])
-            .show(ui, |ui| {
-                ui.label("");
-                for column in ["min", "mean", "p50", "p90", "p95", "p99", "max"] {
-                    ui.label(tone_text(column, Tone::Muted));
-                }
-                ui.end_row();
-                for (label, latency) in [("Total", Some(total)), ("First byte", summary.first_byte)]
-                {
-                    let Some(l) = latency else { continue };
-                    ui.label(tone_text(label, Tone::Muted));
-                    for value in [l.min, l.mean, l.p50, l.p90, l.p95, l.p99, l.max] {
-                        ui.label(RichText::new(duration_text(value)).monospace());
-                    }
-                    ui.end_row();
-                }
-            });
-        ui.add_space(10.0);
-        ui.label(tone_text("Served within", Tone::Muted));
-        egui::Grid::new("load served within")
-            .num_columns(summary.served_within.len())
-            .spacing([16.0, 4.0])
-            .show(ui, |ui| {
-                for (percent, _) in &summary.served_within {
-                    ui.label(tone_text(format!("{percent}%"), Tone::Muted));
-                }
-                ui.end_row();
-                for (_, within) in &summary.served_within {
-                    ui.label(RichText::new(duration_text(*within)).monospace());
-                }
-                ui.end_row();
-            });
-        ui.add_space(10.0);
+        ui.add_space(spacing.sm);
+        let mut rows = vec![
+            ["", "min", "mean", "p50", "p90", "p95", "p99", "max"]
+                .map(str::to_owned)
+                .to_vec(),
+        ];
+        for (label, latency) in [("Total", Some(total)), ("First byte", summary.first_byte)] {
+            if let Some(l) = latency {
+                let mut row = vec![label.to_owned()];
+                row.extend([l.min, l.mean, l.p50, l.p90, l.p95, l.p99, l.max].map(duration_text));
+                rows.push(row);
+            }
+        }
+        number_table(ui, "Latency table", &rows, true);
+        ui.add_space(spacing.sm);
+        ui.label(theme::section("Served within"));
+        number_table(
+            ui,
+            "Served within table",
+            &[
+                summary
+                    .served_within
+                    .iter()
+                    .map(|(p, _)| format!("{p}%"))
+                    .collect(),
+                summary
+                    .served_within
+                    .iter()
+                    .map(|(_, d)| duration_text(*d))
+                    .collect(),
+            ],
+            false,
+        );
+        ui.add_space(spacing.sm);
         histogram(ui, &summary.histogram);
     }
+}
+
+fn stat_tiles(ui: &mut Ui, summary: &Summary) {
+    let latency = |select: fn(imposter_app::core::load::Latency) -> Duration| {
+        summary
+            .total
+            .map(select)
+            .map_or_else(|| "—".into(), duration_text)
+    };
+    let rate = rate_text(summary.per_second);
+    let tiles = [
+        (
+            "Requests/s",
+            rate.trim_end_matches(" req/s").to_owned(),
+            Tone::Normal,
+        ),
+        (
+            "Throughput",
+            bytes_rate_text(summary.bytes_per_second),
+            Tone::Normal,
+        ),
+        (
+            "Errors",
+            percent_text(summary.error_rate()),
+            if summary.errors > 0 {
+                Tone::Error
+            } else {
+                Tone::Normal
+            },
+        ),
+        ("p50", latency(|l| l.p50), Tone::Normal),
+        ("p95", latency(|l| l.p95), Tone::Normal),
+        ("p99", latency(|l| l.p99), Tone::Normal),
+    ];
+    let tiles = tiles.map(|(caption, value, tone)| {
+        let number = RichText::new(value)
+            .font(egui::FontId::monospace(theme::PAGE_TITLE))
+            .color(palette().tone(tone));
+        (theme::meta(caption).color(palette().text_muted), number)
+    });
+    let spacing = theme::spacing();
+    let frame = egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(6, 4))
+        .stroke(egui::Stroke::new(1.0, palette().border));
+    let margin = frame.total_margin().sum().x;
+    let widest = tiles
+        .iter()
+        .flat_map(|(caption, number)| [caption, number])
+        .map(|text| widgets::text_width(ui, text.clone()))
+        .fold(64.0_f32, f32::max);
+    let available = ui.available_width();
+    let single_row = (available - 5.0 * spacing.xs) / 6.0 - margin;
+    let width = single_row
+        .clamp(widest, widest + spacing.xl)
+        .min((available - margin).max(0.0));
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .accessibility_role(egui::Role::Group)
+            .accessibility_label("Summary metrics"),
+        |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = spacing.xs;
+                for (caption, number) in tiles {
+                    frame.show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(width);
+                            ui.add(egui::Label::new(number).truncate());
+                            ui.add(egui::Label::new(caption).truncate());
+                        });
+                    });
+                }
+            })
+        },
+    );
+}
+
+fn number_table(ui: &mut Ui, name: &str, rows: &[Vec<String>], row_labels: bool) {
+    #[allow(clippy::cast_precision_loss)] // the latency and percentile tables have 8 and 9 columns
+    let columns = rows[0].len() as f32;
+    let cell_text = |row: usize, column: usize, text: &str| {
+        if row == 0 || (row_labels && column == 0) {
+            theme::meta(text).color(palette().text_muted)
+        } else {
+            theme::meta(text).monospace()
+        }
+    };
+    let widest = rows
+        .iter()
+        .enumerate()
+        .flat_map(|(row, cells)| {
+            cells
+                .iter()
+                .enumerate()
+                .map(move |(column, text)| cell_text(row, column, text))
+        })
+        .map(|text| widgets::text_width(ui, text))
+        .fold(0.0_f32, f32::max);
+    let spacing = theme::spacing();
+    let gap = spacing.md;
+    let available = (ui.available_width() - (columns - 1.0) * gap) / columns;
+    let width = available.clamp(0.0, widest + spacing.xl);
+    let size = egui::vec2(width, ui.text_style_height(&egui::TextStyle::Body));
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .accessibility_role(egui::Role::Group)
+            .accessibility_label(name),
+        |ui| {
+            for (row, cells) in rows.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    for (column, text) in cells.iter().enumerate() {
+                        // Set the layout of the cell so it places the label itself at the edge.
+                        let layout = if row_labels && column == 0 {
+                            egui::Layout::left_to_right(egui::Align::Center)
+                        } else {
+                            egui::Layout::right_to_left(egui::Align::Center)
+                        };
+                        ui.allocate_ui_with_layout(size, layout, |ui| {
+                            ui.set_min_size(size);
+                            if !text.is_empty() {
+                                ui.add(egui::Label::new(cell_text(row, column, text)).truncate());
+                            }
+                        });
+                    }
+                });
+            }
+        },
+    );
 }
 
 /// Statuses and errors as pills with counts, then the checks.
@@ -615,7 +746,24 @@ fn histogram(ui: &mut Ui, buckets: &[Bucket]) {
         .min(560.0)
         .min(56.0 * buckets.len() as f32);
     let height = 72.0;
-    let label_height = 16.0;
+    let font = egui::FontId::proportional(theme::META);
+    let labels: Vec<_> = buckets
+        .iter()
+        .map(|bucket| {
+            if bucket.upper == Duration::MAX {
+                "≥10 s".into()
+            } else {
+                bucket_label(bucket)
+            }
+        })
+        .collect();
+    #[allow(clippy::cast_precision_loss)] // a handful of buckets
+    let slot = width / buckets.len() as f32;
+    let stagger = labels
+        .iter()
+        .any(|label| widgets::text_width(ui, RichText::new(label).font(font.clone())) + 2.0 > slot);
+    let line = theme::META + theme::spacing().xs;
+    let label_height = if stagger { 2.0 * line } else { line };
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(width, height + label_height),
         egui::Sense::hover(),
@@ -629,8 +777,6 @@ fn histogram(ui: &mut Ui, buckets: &[Bucket]) {
         &format!("Latency histogram: {}", description.join(", ")),
     );
     let most = buckets.iter().map(|b| b.count).max().unwrap_or(1).max(1);
-    #[allow(clippy::cast_precision_loss)] // a handful of buckets
-    let slot = width / buckets.len() as f32;
     let painter = ui.painter_at(rect);
     for (index, bucket) in buckets.iter().enumerate() {
         #[allow(clippy::cast_precision_loss)] // display fractions
@@ -644,11 +790,18 @@ fn histogram(ui: &mut Ui, buckets: &[Bucket]) {
         if bucket.count > 0 {
             painter.rect_filled(bar, 2.0, palette().text_muted);
         }
+        let label = &labels[index];
+        let half = widgets::text_width(ui, RichText::new(label).font(font.clone())) / 2.0;
+        let x = (left + slot / 2.0).clamp(
+            rect.left() + half,
+            (rect.right() - half).max(rect.left() + half),
+        );
+        let offset = if stagger && index % 2 == 1 { line } else { 0.0 };
         painter.text(
-            egui::pos2(left + slot / 2.0, rect.top() + height + 2.0),
+            egui::pos2(x, rect.top() + height + 2.0 + offset),
             egui::Align2::CENTER_TOP,
-            bucket_label(bucket),
-            egui::FontId::proportional(11.0),
+            label,
+            font.clone(),
             palette().text_muted,
         );
     }

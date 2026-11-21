@@ -307,6 +307,17 @@ fn main() {
             .unwrap()
             .save(out.join(format!("{label}-history.png")))
             .unwrap();
+        if harness.query_by_label("Request headers").is_none() {
+            harness.get_by_label("More History tabs").click();
+            settle(&mut harness);
+        }
+        harness.get_by_label("Request headers").click();
+        settle(&mut harness);
+        harness
+            .render()
+            .unwrap()
+            .save(out.join(format!("{label}-history-request.png")))
+            .unwrap();
         harness
             .get_by_role_and_label(egui::accesskit::Role::Button, "Settings")
             .click();

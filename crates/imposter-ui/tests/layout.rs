@@ -782,6 +782,7 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
                 .routes
                 .push(imposter_app::core::mock::MockRoute::default());
         }
+        mocks.form.routes[0].body = "{\"calls\": 1}".into();
         mocks.form.routes[0].script =
             "state.calls = (state.calls ?? 0) + 1;\nresponse.send_json(#{ calls: state.calls });"
                 .into();
@@ -836,6 +837,9 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     }
     app.harness.state_mut().state.mocks.form.routes[0].body = "unsaved".into();
     check(app, "Mocks running with unsaved changes");
+    support::open_screen(&mut app.harness, "Requests");
+    check(app, "Mock server in global status");
+    support::open_screen(&mut app.harness, "Mocks");
     click(&mut app.harness, "Stop mock server");
     settle(&mut app.harness);
     // The Load screen on the open request: idle, asking about production, running, and a
@@ -860,9 +864,33 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     check(app, "Load production question");
     click_button(&mut app.harness, "Start load test");
     check(app, "Load running");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while app
+        .harness
+        .state()
+        .state
+        .load
+        .run
+        .as_ref()
+        .unwrap()
+        .progress
+        .done()
+        == 0
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "load test did not finish a request"
+        );
+        app.harness.run_steps(2);
+        std::thread::yield_now();
+    }
     click(&mut app.harness, "Stop the load test");
     settle(&mut app.harness);
     check(app, "Load result");
+    app.harness.get_by_label("Result").scroll_to_me();
+    app.harness.run_steps(12);
+    app.harness.get_by_label("Served within");
+    check(app, "Load metrics");
     if let Some(run) = app.harness.state_mut().state.load.runs.first_mut() {
         run.report.script_error = Some(
             "Before-sending script, line 12: a long error that has to wrap in a narrow window"
@@ -911,6 +939,25 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     settle(&mut app.harness);
     app.harness.state_mut().state.history.tab = imposter_ui::app::HistoryTab::Response;
     check(app, "History response");
+    support::viewer_tool(&mut app.harness, "Wrap");
+    check(app, "History response with Wrap off");
+    for tab in [
+        "Headers",
+        "Check results",
+        "Request body",
+        "Request headers",
+        "Body",
+    ] {
+        if app
+            .harness
+            .query_by_role_and_label(Role::Button, tab)
+            .is_none()
+        {
+            click(&mut app.harness, "More History tabs");
+        }
+        click_button(&mut app.harness, tab);
+        check(app, &format!("History {tab} tab"));
+    }
     // A restored draft: its banner above the request bar, the recorded response beside it.
     click(&mut app.harness, "Restore as draft");
     settle(&mut app.harness);

@@ -99,7 +99,10 @@ fn saved_edits_apply_only_after_restart_and_close_stops_the_listener() {
     assert!(response(&first).ends_with("\r\n\r\nfirst"));
     let port = first.rsplit(':').next().unwrap().to_owned();
     app.harness.run_steps(2);
-    app.harness.get_by_label(&format!("Mocks :{port}"));
+    let global = format!("Mocks :{port}");
+    assert!(app.harness.query_by_label(&global).is_none());
+    support::open_screen(&mut app.harness, "Requests");
+    click(&mut app.harness, &global);
     click(&mut app.harness, "Mock route 1");
     type_into(&mut app.harness, "Mock response body", "-edited");
     click(&mut app.harness, "Save mocks");
@@ -274,7 +277,7 @@ fn route_editing_validation_two_click_removal_and_save_shortcut() {
     );
     click(&mut app.harness, "Click again to remove mock header 1");
     assert_eq!(app.harness.state().state.mocks.form.routes[1].headers, []);
-    click(&mut app.harness, "Remove mock route");
+    click(&mut app.harness, "Delete route");
     assert_eq!(app.harness.state().state.mocks.form.routes.len(), 2);
     click(&mut app.harness, "Click again to remove mock route");
     assert_eq!(app.harness.state().state.mocks.form.routes.len(), 1);
@@ -369,14 +372,22 @@ fn the_server_state_reads_in_words_and_its_controls_stay_put() {
             .as_deref(),
         Some("auto")
     );
-    app.harness.get_by_label("Stopped");
+    assert_eq!(app.harness.query_all_by_label("Stopped").count(), 1);
     let start_at = app.harness.get_by_label("Start mock server").rect();
     start(&mut app);
     let url = address(&app);
-    app.harness.get_by_label(&format!("Running at {url}"));
+    assert_eq!(
+        app.harness
+            .query_all_by_label(&format!("Running at {url}"))
+            .count(),
+        1
+    );
+    assert!(app.harness.query_by_label_contains("Mocks :").is_none());
+    assert!(app.harness.query_by_label("Stopped").is_none());
+    support::assert_icon_button(&app.harness, "Delete route");
     let stop_at = app.harness.get_by_label("Stop mock server").rect();
     assert!(
-        (stop_at.left() - start_at.left()).abs() < 0.5,
+        (stop_at.right() - start_at.right()).abs() < 0.5,
         "Start and Stop share a place: {start_at:?} {stop_at:?}"
     );
     app.harness.get_by_label("Copy mock server URL").click();
@@ -429,7 +440,7 @@ fn routes_are_a_list_beside_the_selected_routes_editor() {
         "{description:?}"
     );
     // Deleting takes two clicks.
-    click(&mut app.harness, "Remove mock route");
+    click(&mut app.harness, "Delete route");
     assert_eq!(app.harness.state().state.mocks.form.routes.len(), 1);
     click(&mut app.harness, "Click again to remove mock route");
     assert_eq!(app.harness.state().state.mocks.form.routes.len(), 0);
@@ -460,6 +471,33 @@ fn scripted(script: &str) -> MockRoute {
         script: script.into(),
         ..Default::default()
     }
+}
+
+#[test]
+fn the_mock_body_uses_the_request_json_highlight_and_shares_the_editor_height() {
+    let mut app = opened_with(vec![MockRoute {
+        body: "{\"answer\": 42}".into(),
+        ..MockRoute::default()
+    }]);
+    let body = support::text_input(&app.harness, "Mock response body").rect();
+    let script = support::text_input(&app.harness, "Mock response script").rect();
+    assert!(
+        (body.height() - script.height()).abs() < 4.0,
+        "{body:?}, {script:?}"
+    );
+    let has_number_color = |app: &support::App| {
+        let color = imposter_ui::theme::token_color(imposter_ui::highlight::Token::Number);
+        app.harness.output().shapes.iter().any(|shape| {
+            matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.text.starts_with("{\"answer\": 42}")
+                && text.galley.job.sections.iter().any(|section| section.format.color == color))
+        })
+    };
+    assert!(has_number_color(&app));
+    app.harness.state_mut().state.mocks.form.routes[0]
+        .body
+        .push_str(&" ".repeat(imposter_ui::widgets::HIGHLIGHT_LIMIT));
+    app.harness.run_steps(2);
+    assert!(!has_number_color(&app));
 }
 
 #[test]

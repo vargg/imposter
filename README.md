@@ -171,9 +171,9 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   (the left rail, "Run…" in a collection's ⋯ menu or a folder's right-click menu, or the
   command palette), as `imposter run` does. A value a request captures reaches the requests
   after it; your variables do not change.
-- The environment is the active one unless you choose another for the run; with a red one,
-  Start asks first. The run stops at the first request that does not pass and skips the
-  rest, unless "Keep going after a failure" is ticked.
+- The environment defaults to the active one. Choose another beside **Keep going after a
+  failure**. With a red environment, **Run** asks first. The run stops at the first request
+  that does not pass and skips the rest unless **Keep going after a failure** is on.
 - Each request shows its outcome as it ends; select one to see its response, checks and the
   request as sent. The summary uses the command line's rule: a run passes when no request
   failed and at least one check ran. Every request sent is in History; the last ten runs of
@@ -181,8 +181,9 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 
 **Load tests**
 - Send one request many times from the Load screen (the left rail, a request's right-click menu,
-  or the command palette), as `ab` does: total requests, concurrency, an optional time
-  limit and ramp-up, with or without keep-alive. Every request gets fresh generated values.
+  or the command palette), as `ab` does. The toolbar button shows the selected method and
+  request. Set total requests, concurrency, optional time limit and ramp-up, and keep-alive
+  in the configuration pane. Every request gets fresh generated values.
 - The summary: requests and bytes per second, the share of errors (failed checks count),
   min, mean and percentiles of the whole exchange and of the time to the first byte, a
   "served within" table, counts by status and error, and a latency histogram. The last ten
@@ -203,8 +204,11 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Search it with the sidebar's filter language plus `status:404`, `status:4xx`,
   `status:failed` and `env:Dev`; words match the request name and URL (bodies are not
   searched).
-- Restore an execution as an unsaved draft, or copy it as a curl command.
-- Retention by number of entries and total size.
+- Use **Current request only** beside the filter to narrow the list. Select an execution to
+  inspect its response and the request as sent from one tab row. The detail header has
+  **Restore as draft** and the **Copy as curl** icon.
+- The footer shows the retained execution count and size. Hover over it for the current page
+  range and retention limits.
 
 ![History: executions, and the request as it was sent](docs/images/history.png)
 
@@ -599,7 +603,13 @@ An open request copies its current edits; navigation still resolves unsaved chan
 
 **Settings → TLS → Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.
 
-Open **Mocks** in the left rail to configure a local HTTP server on `127.0.0.1` (port 8080 by default; 0 chooses an available port). Add routes by exact method and encoded path, with a response status, headers and text body. Query strings and request bodies do not affect matching; unmatched requests return 404. Save before Start; edits to a running server apply after Stop and Start. Configuration persists, but the server never starts automatically and stops when Imposter closes.
+Open **Mocks** in the left rail to configure a local HTTP server on `127.0.0.1`. Use the
+**Port** field to choose a port (8080 by default, `auto` at 0). The plus icon adds routes by
+exact method and encoded path, with a response status, headers and body. The body highlights
+JSON. Query strings and request bodies do not affect matching, and unmatched requests return
+404. Save before pressing **Start**. The running URL and its copy icon are in the toolbar.
+Save running configuration edits, then use **Stop** and **Start** to apply them. Configuration
+persists across sessions. The server starts on demand and stops when Imposter closes.
 
 A mock answers locally from the routes and scripts you define. A passing check against
 that answer does **not verify the live API**.

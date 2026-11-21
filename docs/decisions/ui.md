@@ -7,7 +7,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - [Request Bar & Editors](#request-bar-editors)
 - [Response Viewer](#response-viewer)
 - [State, Saving & Dialogs](#state-saving-dialogs)
-- [Screens (Variables, Run, History, Settings)](#screens-variables-run-history-settings)
+- [Screens (Variables, Settings, Mocks, Load, Run, History)](#screens-variables-settings-mocks-load-run-history)
 
 ## Decisions
 
@@ -36,7 +36,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
     walks the screens, each Variables tab and scope type, every Settings category, the
     request Settings and Scripts tabs in both pane orientations, response tools and filters,
-    blocked sends and capture warnings, a History run and the dialogs. It compares each
+    blocked sends and capture warnings, Mocks lifecycle and script states, Load metrics, Run
+    progress and results, the unified History tabs, and the dialogs. It compares each
     request setting caption's bounds with its full text width.
   - **Widths:** visible controls and outlined frames stay inside the window. The lint
     checks frames in the painted shapes and checks controls against the accessible bounds of
@@ -259,10 +260,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   uses the tab height to fit the tab underline. Variables and Settings put their
   navigation columns below the toolbar. Requests uses the same row for its breadcrumb, with Copy as curl and Save
   before a separated group of view controls. Until a request opens, the title
-  is "Requests". Run keeps "Keep going after a failure" with its configuration below the
-  toolbar so the two scope pickers and Start or Stop fit at the minimum width. Mocks puts
-  the restart notice in its content so the server address and copy button fit beside
-  Start or Stop. Fixed rows keep actions in the same place as content scrolls or
+  is "Requests". Run keeps its target picker in the toolbar and the environment and
+  failure policy with its configuration. Mocks puts the port and server state on the
+  left, and Start or Stop on the right with the save actions. The restart notice stays
+  in the content. Fixed rows keep actions in the same place as content scrolls or
   changes, and reclaim vertical space at 720×480. Checked by the layout lint and
   `imposter-ui/tests/header.rs`.
 
@@ -350,8 +351,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   - **Merging:** a failed check makes the result read "· n checks failed", and a capture
     written right after a send is added to that result (" · set token") rather than
     replacing it.
-  - **The right end** links to active Mocks, Load and Run. Mocks shows the port while it
-    serves. The environment stays with the picker and Send.
+  - **The right end** links to active Mocks, Load and Run. Mocks shows the port on other
+    screens while it serves. Its own toolbar shows the running address and copy control,
+    so the status bar omits that link on Mocks. The environment stays with the picker and Send.
 
   Why: the review found it reporting an earlier request's failure after a blocked send, and
   "Ready" during a send. A status that outlives its context misleads more than no status.
@@ -754,7 +756,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   counted as a click outside and cancelled it.
 
 
-### Screens (Variables, Run, History, Settings)
+### Screens (Variables, Settings, Mocks, Load, Run, History)
 
 - **Variables and Settings share a flat navigation column** with its own scroll and a
   1-point divider. Both columns begin against the rail below the screen toolbar, share
@@ -809,14 +811,47 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     blocks, with a Plus in the section header and a two-click remove icon in each block
     header so removal stays beside the certificate it applies to.
 
+- **Mocks shows the server state in its toolbar.** The port reads `auto` at zero.
+  Start is the primary action with Play, and Stop uses the danger style with Stop. The
+  address has a green dot and a copy icon when running. Starting, stopping, stopped,
+  validation errors and the restart notice remain visible. The single state gives the
+  address room beside the port and removes the repeated state from the status bar.
+  - The editor puts the two-click Delete route trash icon beside the route title.
+    Method and path share one row, then Enabled and Status share another. This keeps the
+    route's structure visible without putting another text button above the fields.
+  - The body shares the remaining height with the script. Both editors scroll within the
+    route form and keep a useful minimum height in short windows. JSON bodies use the
+    request body's lexer and 64 KiB highlighting limit, selected by the Content-Type
+    header or an opening object or array. The script editor shares the request script
+    header pattern with its compile status, example menu and help tooltip.
+
+- **Load puts configuration and results in adjacent panes from 900 points of content
+  width.** The configuration is 320 points wide beside the results and stacks above them
+  at smaller sizes. Its two columns keep the captions and fields aligned. Seconds are
+  field suffixes, optional values use a `none` placeholder, and help lives in tooltips.
+  The toolbar's request picker shows the chosen method and name, and Play and Stop mark
+  the run actions. This groups the controls without repeating the choice or turning each
+  parameter into a sentence.
+  - The result shows requests per second, throughput, error rate and p50/p95/p99 latency in
+    equal-width outlined tiles with tabular numbers. Errors use the error tone when present.
+    Status and error counts remain as badges. The latency and Served within tables use equal
+    columns sized from the widest cell and the pane width, with 12 points between them.
+    Numeric headers and values share a right edge, and latency row labels align left.
+    This keeps adjacent values distinct and makes each value easy to match to its heading.
+    Histogram labels use the meta size and stagger when crowded.
+    The six separate captions make the metrics easier to compare than the previous summary
+    sentence. Run progress, stop reasons and script errors stay visible.
+
 - **The Run screen runs a collection or a folder in the app** (`run_screen.rs`, Run in the
   left rail, "Run…" in the collection's ⋯ menu and a folder's context menu, and the palette's
   "Run Collection" and "Go to Run"), through the same runner as `imposter run`. Its target
   is chosen by id (`profile::select_under`), so a renamed folder cannot make it run
   another. Opened with nothing chosen it takes the open collection.
-  - **Environment:** the active one by default, changeable for the run (user's choice);
-    with a red one Start asks first ("Run against Prod?"), as Load does, instead of the
-    command line's refusal: the person at the screen is the one deciding.
+  - **Configuration:** Run shares Load's adjacent panes at wide sizes and stacks the
+    environment and "Keep going after a failure" above results at narrow sizes. The active
+    environment is the default, and the user can choose another. The toolbar's Run action
+    asks first with a red environment ("Run against Prod?"), as Load does. The person at
+    the screen decides whether to proceed.
   - **Captured values stay in the run**, never written back (user's choice), as on the
     command line. Each request sent is recorded in History as the app's (`Via::App`).
   - **The open request's unsaved edits are not sent**: the run reads every request as
@@ -827,13 +862,25 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     reads every frame, as Load reads its counters; the summary uses `run_report::outcome`.
     The status bar shows "Run running" ("Run stopping…" after Stop), and Stop cancels the
     request in flight and skips the rest.
-  - **Results:** each row is the outcome word in its tone and the path; selecting one
-    shows its response, checks and request as sent in the response viewer, with its
-    JSONPath filter (`PaneKind::Run`). The last ten runs of the session are kept in
-    memory, as Load's are. The list and the details are laid out in fixed rectangles: in
-    a horizontal row the response tools measured another width and covered the tabs at
-    720 points (the layout lint).
+  - **Results:** step rows use the same pass, fail and warning icons and tones as the
+    response's check results. Each row has its outcome and full path in its accessible
+    name and hover text. Selecting one opens its response, checks and request as sent
+    in the response viewer with its JSONPath filter (`PaneKind::Run`). The last ten
+    runs stay in memory. The list and details use fixed rectangles so the response
+    tools measure the space left after the step list. The icons and the configuration
+    column give the results their own space without making the progress and outcome
+    harder to find.
   Pinned by `imposter-ui/tests/run.rs` and the layout lint's Run states.
+
+- **History has one detail header and one tab row.** The header puts the method, URL
+  with full hover text, status badge, time, size and check counts beside Restore as draft
+  and the Copy as curl icon. The Body, Headers, Tests, Request body and Request headers
+  tabs share one row with the active viewer's tools. Event streams keep their Events tab,
+  and tabs that need more room move into the row's overflow menu. This combines the two
+  levels of summaries and navigation that made it hard to see which detail was active.
+  - The filter keeps a Current request only chip beside the text field. The footer shows
+    the retained execution count and size beside the paging chevrons. Page ranges and
+    retention limits move to its tooltip, and errors and empty states remain visible.
 
 - **History opens a headless result or report** through “Open result file…” or the
   palette. It shows the command, target, environment, run ID, revision and outcome.

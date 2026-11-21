@@ -22,7 +22,7 @@ use imposter_app::core::select::Selector;
 use imposter_app::core::variables::{Scope, SecretScope};
 use imposter_app::paths::open_store;
 use imposter_app::store::{collections, environments, kv, scopes, secrets};
-use imposter_ui::app::{HistoryTab, ImposterApp, ResponseTab};
+use imposter_ui::app::{ImposterApp, ResponseTab};
 use imposter_ui::theme::ThemeChoice;
 
 struct Tour {
@@ -663,9 +663,9 @@ fn main() {
             row.click();
         }
         tour.settle();
+        tour.open_from("More History tabs", "Request headers");
         tour.shot("5-03-history-request");
-        tour.harness.state_mut().state.history.tab = HistoryTab::Response;
-        tour.settle();
+        tour.open_from("More History tabs", "Body");
         tour.shot("5-04-history-response");
         tour.click("Restore as draft");
         tour.settle();
@@ -712,6 +712,10 @@ fn main() {
             }
         }
         tour.settle();
+        tour.harness
+            .get_by_label("Response script (optional)")
+            .scroll_to_me();
+        tour.harness.run_steps(12);
         tour.shot("6-03b-mock-script");
 
         // Task 6b: a load test of the open request.
@@ -731,6 +735,23 @@ fn main() {
         }
         tour.settle();
         tour.shot("6-06-load-result");
+        tour.harness.get_by_label("Result").scroll_to_me();
+        tour.harness.run_steps(12);
+        tour.shot("6-06b-load-metrics");
+
+        tour.open_screen("Run");
+        tour.settle();
+        tour.shot("6-07-run");
+        tour.click("Start the run");
+        if tour.harness.query_by_label("Start run").is_some() {
+            tour.click("Start run");
+        }
+        tour.settle();
+        if let Some(row) = tour.harness.query_all_by_label_contains("Run step ").next() {
+            row.click();
+        }
+        tour.settle();
+        tour.shot("6-08-run-result");
 
         // Task 7: getting around.
         tour.open_screen("Requests");

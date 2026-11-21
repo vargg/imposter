@@ -36,12 +36,25 @@ fn sent_app() -> (support::App, Server, tokio::runtime::Runtime) {
     (app, server, runtime)
 }
 
+fn footer_hint(app: &support::App, executions: &str) -> String {
+    app.harness
+        .get_by_label_contains(&format!("{executions} · "))
+        .accesskit_node()
+        .description()
+        .unwrap()
+}
+
+fn assert_page(app: &support::App, usage: &str, page: &str) {
+    let hint = footer_hint(app, usage);
+    assert!(hint.starts_with(&format!("{page} · ")), "{hint}");
+}
+
 #[test]
 fn executions_are_listed_with_their_request_and_response() {
     let (mut app, server, _runtime) = sent_app();
     open_history(&mut app);
 
-    app.harness.get_by_label("Executions 1-1");
+    assert_page(&app, "1 execution", "Executions 1-1");
     let row = app.harness.get_by_label_contains("History GET");
     row.click();
     app.harness.run_steps(1);
@@ -54,31 +67,152 @@ fn executions_are_listed_with_their_request_and_response() {
     // The response first, as that is what a run is looked up for.
     assert_eq!(app.harness.state().state.history.tab, HistoryTab::Response);
     // One line: the request as sent, how it went and how long it took.
-    app.harness
-        .get_by_label_contains(&format!("GET {}/items  ·  201 Created  ·  ", server.url));
+    let header = app
+        .harness
+        .get_by_label(&format!("{}/items", server.url))
+        .rect();
+    let status = app.harness.get_by_label("201 Created").rect();
+    assert!(
+        (header.center().y - status.center().y).abs() < 3.0,
+        "{header:?}, {status:?}"
+    );
+    for label in ["Restore as draft", "Copy as curl", "7 B"] {
+        let rect = app.harness.get_by_label(label).rect();
+        assert!((header.center().y - rect.center().y).abs() < 3.0, "{label}");
+    }
+    for width in [1400.0, 720.0] {
+        app.harness.set_size(egui::vec2(width, 600.0));
+        app.harness.run_steps(3);
+        let body = app.harness.get_by_label("Body").rect();
+        for label in [
+            "Headers",
+            "Check results",
+            "Request body",
+            "Request headers",
+            "Copy body",
+            "More tools",
+        ] {
+            let rect = app.harness.get_by_label(label).rect();
+            assert!((rect.center().y - body.center().y).abs() < 1.0, "{label}");
+        }
+        assert!(app.harness.query_by_label("Response").is_none());
+        assert_eq!(app.harness.query_all_by_label("201 Created").count(), 1);
+    }
     // The request as sent: no JSON dump of empty template fields, and nothing printed as
     // code when there is nothing to show.
     click(&mut app.harness, "Request body");
     app.harness.get_by_label("No body");
     click(&mut app.harness, "Request headers");
     app.harness.get_by_label("No headers");
-    click(&mut app.harness, "Response");
+    click(&mut app.harness, "Body");
     assert_eq!(app.harness.state().state.history.tab, HistoryTab::Response);
     app.harness.get_by_label("201 Created");
     app.harness.get_by_label_contains("made it");
 }
 
 #[test]
+fn history_keeps_the_response_tools_and_checks_in_its_unified_detail() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime.block_on(Server::start(|_, _| {
+        response(
+            "200 OK",
+            &[("Content-Type", "application/json")],
+            br#"{"data":{"count":1}}"#,
+        )
+    }));
+    let url = server.url.clone();
+    let mut app = start_with(move |store| {
+        let api = collection(store, "API");
+        store
+            .call_blocking(move |db| {
+                use imposter_app::core::check::{Check, Op};
+                use imposter_app::core::select::Selector;
+                let template = RequestTemplate {
+                    name: "Data".into(),
+                    url,
+                    checks: vec![Check::new(Selector::Status, Op::Equals, "200")],
+                    ..RequestTemplate::default()
+                };
+                collections::create_request(db, api.id, None, &template)
+            })
+            .unwrap();
+    });
+    click(&mut app.harness, "GET Data");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Send");
+    settle(&mut app.harness);
+    open_history(&mut app);
+    app.harness.get_by_label_contains("History GET").click();
+    settle(&mut app.harness);
+
+    app.harness.get_by_label("Fold $.data");
+    support::viewer_tool(&mut app.harness, "Wrap");
+    assert!(!app.harness.state().state.history.response.body_view.wrap);
+    support::viewer_tool(&mut app.harness, "Collapse all");
+    assert!(
+        !app.harness
+            .state()
+            .state
+            .history
+            .response
+            .body_folds
+            .is_empty()
+    );
+    click(&mut app.harness, "Checks: 1 passed");
+    app.harness.get_by_label("Passed");
+    app.harness.get_by_label("status = 200");
+}
+
+#[test]
+fn history_keeps_whole_body_actions_next_to_the_preview_tools() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let limit = imposter_ui::viewer::PREVIEW_LIMIT;
+    let server = runtime.block_on(Server::start(move |_, _| {
+        let mut body = "a line of text\n".repeat(limit / 12);
+        body.push_str("end of the response");
+        response("200 OK", &[("Content-Type", "text/plain")], body.as_bytes())
+    }));
+    let url = server.url.clone();
+    let mut app = start_with(move |store| {
+        let api = collection(store, "API");
+        request(store, api.id, "Large", &url);
+    });
+    click(&mut app.harness, "GET Large");
+    settle(&mut app.harness);
+    click(&mut app.harness, "Send");
+    settle(&mut app.harness);
+    app.harness.set_size(egui::vec2(720.0, 480.0));
+    open_history(&mut app);
+    app.harness.get_by_label_contains("History GET").click();
+    settle(&mut app.harness);
+
+    let tab = app.harness.get_by_label("Body").rect();
+    for label in ["Copy full body", "Save body…", "More tools"] {
+        let tool = app.harness.get_by_label(label).rect();
+        assert!((tool.center().y - tab.center().y).abs() < 1.0, "{label}");
+    }
+    app.harness.get_by_label("Copy full body").click();
+    app.harness.step();
+    assert!(
+        app.harness
+            .output()
+            .platform_output
+            .commands
+            .iter()
+            .any(|command| {
+                matches!(command, egui::OutputCommand::CopyText(text)
+            if text.len() > limit && text.ends_with("end of the response"))
+            })
+    );
+}
+
+#[test]
 fn history_says_how_much_it_holds_beside_its_limits() {
     let (mut app, _server, _runtime) = sent_app();
     open_history(&mut app);
-    let pager = app
-        .harness
-        .get_by_label_contains("· 1 of 1000 executions · ")
-        .accesskit_node()
-        .value()
-        .unwrap_or_default();
-    assert!(pager.ends_with(" of 250 MiB"), "{pager}");
+    let hint = footer_hint(&app, "1 execution");
+    assert!(hint.contains("1 of 1000 executions"), "{hint}");
+    assert!(hint.ends_with(" of 250 MiB"), "{hint}");
 
     // The Settings screen; a "Settings" request tab is open too.
     app.harness
@@ -96,8 +230,11 @@ fn history_says_how_much_it_holds_beside_its_limits() {
     click(&mut app.harness, "Clear all history…");
     click_button(&mut app.harness, "Delete history");
     settle(&mut app.harness);
-    app.harness
-        .get_by_label_contains("· 0 of 1000 executions · 0 B of 250 MiB");
+    app.harness.get_by_label("0 executions · 0 B");
+    assert_eq!(
+        footer_hint(&app, "0 executions"),
+        "0 of 1000 executions · 0 B of 250 MiB"
+    );
 }
 
 #[test]
@@ -171,7 +308,7 @@ fn the_filter_shows_only_the_open_request() {
     click(&mut app.harness, "GET Other");
     settle(&mut app.harness);
     open_history(&mut app);
-    app.harness.get_by_label("Executions 1-1");
+    assert_page(&app, "1 execution", "Executions 1-1");
 
     click(&mut app.harness, "Current request only");
     settle(&mut app.harness);
@@ -234,14 +371,14 @@ fn pages_move_between_newer_and_older() {
             .unwrap();
     });
     open_history(&mut app);
-    app.harness.get_by_label("Executions 1-50");
+    assert_page(&app, "55 executions", "Executions 1-50");
 
     click(&mut app.harness, "Older");
     settle(&mut app.harness);
-    app.harness.get_by_label("Executions 51-55");
+    assert_page(&app, "55 executions", "Executions 51-55");
     click(&mut app.harness, "Newer");
     settle(&mut app.harness);
-    app.harness.get_by_label("Executions 1-50");
+    assert_page(&app, "55 executions", "Executions 1-50");
 }
 
 #[test]
@@ -288,7 +425,7 @@ fn runs_from_the_command_line_are_marked_and_found_with_via() {
     assert_eq!(marked, 1);
     type_into(&mut app.harness, "Filter history", "via:cli");
     settle(&mut app.harness);
-    app.harness.get_by_label("Matches 1-1");
+    assert_page(&app, "2 executions", "Matches 1-1");
     app.harness.get_by_label_contains("History GET http://h/1 ");
     assert_eq!(
         app.harness
@@ -320,7 +457,7 @@ fn the_filter_finds_runs_by_status_method_and_text() {
         settle(&mut app.harness);
     }
     open_history(&mut app);
-    app.harness.get_by_label("Executions 1-3");
+    assert_page(&app, "3 executions", "Executions 1-3");
 
     let shown = |app: &support::App| -> Vec<String> {
         app.harness
@@ -334,7 +471,7 @@ fn the_filter_finds_runs_by_status_method_and_text() {
     };
     type_into(&mut app.harness, "Filter history", "status:4xx");
     settle(&mut app.harness);
-    app.harness.get_by_label("Matches 1-1");
+    assert_page(&app, "3 executions", "Matches 1-1");
     assert_eq!(shown(&app), ["Users 404"]);
 
     type_into(&mut app.harness, "Filter history", " OR orders");

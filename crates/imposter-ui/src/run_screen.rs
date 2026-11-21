@@ -1,13 +1,12 @@
 //! The Run screen: a collection or a folder sent as one run (`imposter_app::runner`), as
-//! `imposter run` does. The target, environment and Start come first, so Start and Stop
-//! never move; the run's requests follow as they end, and the chosen one's response shows
+//! `imposter run` does. The target and Run share a toolbar with Stop in the same place; the run's requests follow as they end, and the chosen one's response shows
 //! in the response viewer. Values a request captures reach the requests after it and are
 //! never written to variables. The last runs of the session are a menu away.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use egui::{RichText, Ui};
+use egui::Ui;
 use imposter_app::core::check::Verdict;
 use imposter_app::core::ids::{CollectionId, EnvironmentId, FolderId};
 use imposter_app::core::run_result::RunOutcome;
@@ -15,8 +14,9 @@ use imposter_app::runner::Step;
 use imposter_app::runtime::TaskId;
 
 use crate::app::{Action, ResponsePane, State};
-use crate::theme::{Tone, palette};
-use crate::widgets::{self, name, tone_text};
+use crate::icons::Icon;
+use crate::theme::{self, Tone, palette};
+use crate::widgets::{self, ListEnd, ListIcon, Variant, name, tone_text};
 
 /// How many finished runs the screen keeps, newest first; nothing is stored.
 pub const RUNS_KEPT: usize = 10;
@@ -253,33 +253,43 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         ui.ctx().request_repaint_after(Duration::from_millis(100));
     }
     let mut actions = Vec::new();
-    let mut environment = state.run.environment;
     let mut execution = None;
     widgets::screen_toolbar(
         ui,
         "Run",
-        |ui| {
-            targets(ui, state, &mut environment, &mut actions);
-        },
-        |ui| {
-            execution = controls(ui, &state.run);
-        },
+        |ui| target_picker(ui, state, &mut actions),
+        |ui| execution = controls(ui, &state.run),
     );
-    state.run.environment = environment;
     actions.extend(execution.map(Action::Run));
-    ui.add_enabled_ui(state.run.run.is_none(), |ui| {
-        widgets::checkbox(ui, &mut state.run.keep_going, "Keep going after a failure");
+    widgets::tool_columns(ui, state, configuration, |ui, state| {
+        results(ui, &mut state.run, &mut actions);
     });
+    state.actions.extend(actions);
+}
+
+fn configuration(ui: &mut Ui, state: &mut State) {
+    let mut environment = state.run.environment;
+    ui.add_enabled_ui(state.run.run.is_none(), |ui| {
+        environment_picker(ui, state, &mut environment);
+        ui.horizontal(|ui| {
+            widgets::label_with_help(ui, "Keep going after a failure",
+                "Continue to later requests after a failure. Captured values reach later requests in this run and stay within the run.");
+            let toggle = widgets::toggle(ui, &mut state.run.keep_going);
+            name(&toggle, "Keep going after a failure");
+        });
+    });
+    state.run.environment = environment;
     if let Some(note) = unsaved_note(state) {
         ui.add(egui::Label::new(tone_text(note, Tone::Muted)).wrap());
     }
-    ui.add_space(8.0);
-    result_line(ui, &state.run, &mut actions);
-    ui.add_space(4.0);
+}
+
+fn results(ui: &mut Ui, screen: &mut RunScreen, actions: &mut Vec<Action>) {
+    result_line(ui, screen, actions);
+    ui.add_space(theme::spacing().xs);
     // Fixed rectangles, as History's split: a row nested in a horizontal layout measured its
     // width differently from the response tools, which then overlapped the tabs.
-    if state.run.steps().is_empty() {
-        state.actions.extend(actions);
+    if screen.steps().is_empty() {
         return;
     }
     let area = ui.available_rect_before_wrap();
@@ -296,16 +306,15 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     );
     ui.scope_builder(
         egui::UiBuilder::new().max_rect(list).id_salt("run list"),
-        |ui| steps_list(ui, &state.run, &mut actions),
+        |ui| steps_list(ui, screen, actions),
     );
     ui.scope_builder(
         egui::UiBuilder::new()
             .max_rect(details_rect)
             .id_salt("run details"),
-        |ui| details(ui, &mut state.run, &mut actions),
+        |ui| details(ui, screen, actions),
     );
     ui.allocate_rect(area, egui::Sense::hover());
-    state.actions.extend(actions);
 }
 
 /// When the open request has unsaved edits and the run will send it, say which version.
@@ -342,19 +351,14 @@ fn environment_label(state: &State, choice: EnvironmentChoice) -> String {
         .map_or_else(|| "No environment".to_owned(), |e| e.name.clone())
 }
 
-fn targets(
-    ui: &mut Ui,
-    state: &State,
-    environment_choice: &mut EnvironmentChoice,
-    actions: &mut Vec<Action>,
-) {
+fn target_picker(ui: &mut Ui, state: &State, actions: &mut Vec<Action>) {
     ui.add_enabled_ui(state.run.run.is_none(), |ui| {
         let selected = state
             .run
             .target
             .as_ref()
             .map_or_else(|| "Choose…".to_owned(), |t| t.label.clone());
-        let target_width = (ui.available_width() - 160.0 - crate::theme::spacing().sm).min(220.0);
+        let target_width = ui.available_width().min(280.0);
         let picker = widgets::toolbar_combo(ui, "run target", target_width, &selected, |ui| {
             let targets: Vec<RunTarget> = match state.tree.as_ref() {
                 Some(tree) => std::iter::once(None)
@@ -372,7 +376,12 @@ fn targets(
         });
         name(&picker, "What to run");
         picker.on_hover_text(selected);
+    });
+}
 
+fn environment_picker(ui: &mut Ui, state: &State, selected: &mut EnvironmentChoice) {
+    ui.horizontal(|ui| {
+        ui.label(theme::body("Environment"));
         let shown = environment_label(state, state.run.environment);
         let width = ui.available_width().min(160.0);
         let picker = widgets::toolbar_combo(ui, "run environment", width, &shown, |ui| {
@@ -391,8 +400,8 @@ fn targets(
                 ));
             }
             for (label, choice) in choices {
-                if widgets::option(ui, *environment_choice == choice, label).clicked() {
-                    *environment_choice = choice;
+                if widgets::option(ui, *selected == choice, label).clicked() {
+                    *selected = choice;
                 }
             }
         });
@@ -405,7 +414,7 @@ fn controls(ui: &mut Ui, screen: &RunScreen) -> Option<RunAction> {
     if let Some(run) = &screen.run {
         let stop = ui
             .add_enabled_ui(!run.stopping, |ui| {
-                widgets::button(ui, widgets::Variant::Danger, None, "Stop")
+                widgets::button(ui, Variant::Danger, Some(Icon::Stop), "Stop")
             })
             .inner;
         name(&stop, "Stop the run");
@@ -413,7 +422,7 @@ fn controls(ui: &mut Ui, screen: &RunScreen) -> Option<RunAction> {
     }
     let start = ui
         .add_enabled_ui(screen.target.is_some(), |ui| {
-            widgets::button(ui, widgets::Variant::Primary, None, "Start")
+            widgets::button(ui, Variant::Primary, Some(Icon::Run), "Run")
         })
         .inner
         .on_disabled_hover_text("Open a collection first");
@@ -425,59 +434,60 @@ fn controls(ui: &mut Ui, screen: &RunScreen) -> Option<RunAction> {
 
 /// The shown run's outcome and totals, or its progress, and the earlier runs.
 fn result_line(ui: &mut Ui, screen: &RunScreen, actions: &mut Vec<Action>) {
-    if screen.run.is_none() && screen.runs.is_empty() {
-        ui.add(
-            egui::Label::new(tone_text(
-                "Choose what to run and press Start. Values requests capture reach the requests after them; your variables do not change.",
-                Tone::Muted,
-            ))
-            .wrap(),
-        );
-        return;
-    }
-    ui.horizontal(|ui| {
-        if let Some(run) = &screen.run {
+    if let Some(run) = &screen.run {
+        ui.horizontal(|ui| {
             ui.spinner();
+            let ended = plural(run.steps.len(), "request");
             let text = if run.stopping {
-                format!(
-                    "Stopping… {} of the run ended",
-                    plural(run.steps.len(), "request")
-                )
+                format!("Stopping… {ended} ended")
             } else {
                 format!(
-                    "Running {} with {} · {} ended",
-                    run.target.label,
-                    run.environment,
-                    plural(run.steps.len(), "request")
+                    "Running {} with {} · {ended} ended",
+                    run.target.label, run.environment
                 )
             };
-            ui.add(egui::Label::new(tone_text(text, Tone::Muted)).truncate());
-        } else if let Some(finished) = screen.runs.get(screen.shown) {
-            let text = match &finished.error {
-                Some(error) => format!("Not run · {error}"),
-                None => summary(&finished.steps).1,
-            };
-            let tone = match &finished.error {
-                Some(_) => Tone::Error,
-                None => crate::viewer::outcome_tone(summary(&finished.steps).0),
-            };
-            ui.add(egui::Label::new(tone_text(text, tone)).truncate());
-            ui.add(
-                egui::Label::new(tone_text(
-                    format!(
-                        "{} · {} · {}",
-                        finished.target.label, finished.environment, finished.when
-                    ),
-                    Tone::Muted,
-                ))
-                .truncate(),
-            );
+            ui.add(egui::Label::new(tone_text(&text, Tone::Muted)).truncate())
+                .on_hover_text(text);
+        });
+    } else if let Some(finished) = screen.runs.get(screen.shown) {
+        ui.horizontal(|ui| {
+            if screen.runs.len() > 1 {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    runs_menu(ui, screen, actions);
+                    run_summary(ui, finished);
+                });
+            } else {
+                run_summary(ui, finished);
+            }
+        });
+        if let Some(error) = &finished.error {
+            ui.add(egui::Label::new(tone_text(error, Tone::Error)).wrap());
         }
-        if screen.runs.len() > 1 && screen.run.is_none() {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                runs_menu(ui, screen, actions);
-            });
-        }
+    } else {
+        ui.label(tone_text("No run yet", Tone::Muted));
+    }
+}
+
+fn run_summary(ui: &mut Ui, finished: &FinishedRun) {
+    let (text, tone) = if finished.error.is_some() {
+        ("Not run".to_owned(), Tone::Error)
+    } else {
+        let (outcome, text) = summary(&finished.steps);
+        (text, crate::viewer::outcome_tone(outcome))
+    };
+    let caption = format!(
+        "{} · {} · {}",
+        finished.target.label, finished.environment, finished.when
+    );
+    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        let width = widgets::text_width(ui, theme::body(&text)).min(ui.available_width() * 0.6);
+        ui.add_sized(
+            [width, theme::spacing().control],
+            egui::Label::new(tone_text(&text, tone)).truncate(),
+        )
+        .on_hover_text(text);
+        ui.add(egui::Label::new(tone_text(&caption, Tone::Muted)).truncate())
+            .on_hover_text(caption);
     });
 }
 
@@ -510,29 +520,33 @@ fn steps_list(ui: &mut Ui, screen: &RunScreen, actions: &mut Vec<Action>) {
                 };
                 let path = path_of(step);
                 let short = path.split_once('/').map_or(path, |(_, rest)| rest);
-                let mut job = egui::text::LayoutJob::default();
-                let body = egui::TextStyle::Body.resolve(ui.style());
-                job.append(
-                    word,
-                    0.0,
-                    egui::TextFormat::simple(body.clone(), palette().tone(tone)),
-                );
-                job.append(
-                    &format!("  {short}"),
-                    0.0,
-                    egui::TextFormat::simple(body.clone(), palette().text),
-                );
-                if !time.is_empty() {
-                    job.append(
-                        &format!("  {time}"),
-                        0.0,
-                        egui::TextFormat::simple(
-                            egui::TextStyle::Small.resolve(ui.style()),
-                            palette().text_muted,
-                        ),
-                    );
+                let icon = match tone {
+                    Tone::Ok => ListIcon::Status(Icon::Passed, tone),
+                    Tone::Error => ListIcon::Status(Icon::Failed, tone),
+                    Tone::Warning => ListIcon::Status(Icon::Warning, tone),
+                    _ => ListIcon::Dot(None),
+                };
+                let mut caption = short.to_owned();
+                if !matches!(
+                    step.outcome(),
+                    Some(RunOutcome::Passed | RunOutcome::Failed)
+                ) {
+                    caption.push_str(" · ");
+                    caption.push_str(word);
                 }
-                let row = widgets::option(ui, screen.selected == Some(index), job);
+                if !time.is_empty() {
+                    caption.push_str(" · ");
+                    caption.push_str(&time);
+                }
+                let hint = format!("{word} · {path} {time}");
+                let (row, _) = widgets::list_row(
+                    ui,
+                    &caption,
+                    icon,
+                    screen.selected == Some(index),
+                    ListEnd::None,
+                    Some(&hint),
+                );
                 name(&row, &format!("Run step {word} {path}"));
                 if row.clicked() {
                     actions.push(Action::Run(RunAction::Select(index)));
@@ -553,7 +567,8 @@ fn details(ui: &mut Ui, screen: &mut RunScreen, actions: &mut Vec<Action>) {
     };
     match screen.steps().get(index).cloned() {
         Some(Step::Ran { path, notes, .. }) => {
-            ui.label(RichText::new(&path).font(crate::theme::semibold(13.0)));
+            ui.add(egui::Label::new(theme::section(&path)).truncate())
+                .on_hover_text(&path);
             for note in notes {
                 ui.label(tone_text(note, Tone::Warning));
             }
@@ -564,11 +579,13 @@ fn details(ui: &mut Ui, screen: &mut RunScreen, actions: &mut Vec<Action>) {
             }
         }
         Some(Step::NotSent { path, error, .. }) => {
-            ui.label(RichText::new(&path).font(crate::theme::semibold(13.0)));
+            ui.add(egui::Label::new(theme::section(&path)).truncate())
+                .on_hover_text(&path);
             ui.add(egui::Label::new(tone_text(format!("Not sent: {error}"), Tone::Error)).wrap());
         }
         Some(Step::Skipped { path, reason }) => {
-            ui.label(RichText::new(&path).font(crate::theme::semibold(13.0)));
+            ui.add(egui::Label::new(theme::section(&path)).truncate())
+                .on_hover_text(&path);
             ui.label(tone_text(format!("Skipped: {reason}."), Tone::Muted));
         }
         None => {}

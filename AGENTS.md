@@ -157,7 +157,8 @@ Detailed decisions and their reasons are organized by subsystem in `docs/decisio
   fonts, Phosphor icons, Compact/Comfortable density, accent color conventions, request bar,
   request tabs, Body and script headers, response tools, forms, modal dialogs, left navigation
   rail, flat panes, screen toolbars, Variables scope list and tabs, Settings categories and
-  controls, and navigation guards.
+  controls, Mocks route and server controls, responsive Load and Run panes, History
+  details and paging, and navigation guards.
 - **[HTTP & Transport](docs/decisions/http.md)** (`imposter-http`):
   rustls (`ring` provider), PKCS#8/PKCS#1/SEC1 client keys, HTTP/1.1-only, server-sent
   events (SSE), wire header ordering, in-crate redirect handling, RFC 6265 cookie jar,
