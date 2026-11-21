@@ -577,11 +577,6 @@ fn route_editor(ui: &mut Ui, screen: &mut MockScreen, problems: &[RouteProblem])
                 problem_lines(ui, problems, index, field);
             }
             ui.horizontal(|ui| {
-                ui.label(theme::body("Enabled"));
-                let enabled = widgets::toggle(ui, &mut route.enabled);
-                widgets::name(&enabled, "Enabled");
-                edited |= enabled.changed();
-                ui.add_space(theme::spacing().sm);
                 ui.label("Status");
                 let response = ui.add(egui::DragValue::new(&mut route.status).range(200..=599));
                 widgets::name(&response, "Mock response status");

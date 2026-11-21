@@ -528,6 +528,11 @@ fn routes_are_a_list_beside_the_selected_routes_editor() {
     // The first route is open without a click.
     let path = text_input(&app.harness, "Mock path").rect();
     assert!(path.left() > row.right(), "the editor is beside the list");
+    // The list's box is the route's only on/off control; the editor has no second one.
+    assert!(app.harness.query_by_label("Enabled").is_none());
+    click(&mut app.harness, "Mock route 1 enabled");
+    assert!(!app.harness.state().state.mocks.form.routes[0].enabled);
+    click(&mut app.harness, "Mock route 1 enabled");
     // The method is picked from the list, as in the request bar.
     click(&mut app.harness, "HTTP method");
     click(&mut app.harness, "POST");
