@@ -49,7 +49,7 @@ impl Tour {
         println!("{}", path.display());
     }
 
-    /// Send names a colored environment ("Send to Prod"), so it is found by its start.
+    /// The accessible label keeps the full environment name when the button elides it.
     fn send(&mut self) {
         let label = self
             .harness
@@ -643,6 +643,9 @@ fn main() {
         tour.open_screen("History");
         tour.settle();
         tour.shot("5-01-history");
+        tour.harness.get_by_label("Filter history").hover();
+        tour.harness.run_steps(45);
+        tour.shot("5-01b-history-filter-help");
         tour.type_into("Filter history", "status:5xx OR status:failed");
         tour.settle();
         tour.shot("5-02-history-filtered");
@@ -756,6 +759,9 @@ fn main() {
         // Task 7: getting around.
         tour.open_screen("Requests");
         tour.settle();
+        tour.harness.get_by_label("Filter requests").hover();
+        tour.harness.run_steps(45);
+        tour.shot("7-00-sidebar-filter-help");
         tour.type_into("Filter requests", "method:GET -health");
         tour.settle();
         tour.shot("7-01-sidebar-filter");

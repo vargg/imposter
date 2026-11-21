@@ -76,9 +76,17 @@ fn assert_frame(app: &support::App, title: &str, labels: &[&str]) -> Rect {
         window.contains_rect(modal),
         "{modal:?} fits inside {window:?}"
     );
-    assert!(app.harness.output().shapes.iter().any(|s| matches!(&s.shape,
-        Shape::Rect(shape) if shape.rect == window && shape.fill.a() > 100 && shape.fill.r() == 0
-    )), "backdrop is darker than the default scrim");
+    assert!(
+        app.harness
+            .output()
+            .shapes
+            .iter()
+            .any(|s| matches!(&s.shape,
+                Shape::Rect(shape) if shape.rect == window && shape.fill == palette.modal_scrim
+                    && shape.fill.a() > 100 && shape.fill.r() == 0
+            )),
+        "the modal paints the palette's stronger scrim over the window"
+    );
 
     let inside = modal.shrink(15.99);
     let dialog = app.harness.get_by_role(Role::Dialog);

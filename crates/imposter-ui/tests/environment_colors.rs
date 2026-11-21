@@ -11,6 +11,7 @@ use imposter_app::core::model::{EnvColor, Variables};
 use imposter_app::store::environments;
 use imposter_ui::app::Screen;
 use imposter_ui::icons::Icon;
+use imposter_ui::layout::MIN_WINDOW;
 use imposter_ui::theme::env_color;
 use imposter_ui::vars::Scope;
 use support::{click, click_button, collection, request, settle, start_with};
@@ -221,6 +222,15 @@ fn send_description(app: &support::App, label: &str) -> Option<String> {
         .description()
 }
 
+fn send_geometry(app: &support::App, label: &str) -> (egui::Rect, egui::Rect) {
+    (
+        app.harness
+            .get_by_role_and_label(Role::Button, label)
+            .rect(),
+        app.harness.get_by_label("Request URL").rect(),
+    )
+}
+
 /// Painted rectangles filled with `fill`.
 fn filled(app: &support::App, fill: egui::Color32) -> Vec<egui::Rect> {
     app.harness
@@ -255,11 +265,8 @@ fn a_colored_environment_fills_the_picker_and_names_send() {
         "a stripe on the picker's left edge"
     );
     // Send says where it goes, in words; no pill or status bar name repeats it.
-    let send = app
-        .harness
-        .get_by_role_and_label(Role::Button, "Send to Prod")
-        .rect();
-    assert!(send.width() > 96.0, "wider than a plain Send: {send:?}");
+    let prod_geometry = send_geometry(&app, "Send to Prod");
+    assert!((96.0..=168.5).contains(&prod_geometry.0.width()));
     assert_eq!(
         send_description(&app, "Send to Prod").as_deref(),
         Some("Sends with the Prod environment")
@@ -282,6 +289,7 @@ fn a_colored_environment_fills_the_picker_and_names_send() {
     click(&mut app.harness, "Environment");
     click(&mut app.harness, "Dev");
     settle(&mut app.harness);
+    assert_eq!(send_geometry(&app, "Send"), prod_geometry);
     assert_eq!(painted_in(&app, red), Vec::<String>::new());
     assert_eq!(filled(&app, tint), Vec::<egui::Rect>::new(), "no tint");
     assert_eq!(
@@ -294,17 +302,18 @@ fn a_colored_environment_fills_the_picker_and_names_send() {
     click(&mut app.harness, "Environment");
     click(&mut app.harness, "Global (no environment)");
     settle(&mut app.harness);
+    assert_eq!(send_geometry(&app, "Send"), prod_geometry);
     let description = send_description(&app, "Send").unwrap_or_default();
     assert!(!description.contains("environment"), "{description}");
 }
 
 #[test]
 fn a_long_environment_name_is_cut_on_send_and_the_url_keeps_its_room() {
+    let name = "Production Europe West Primary";
     let mut app = start_with(move |store| {
         store
             .call_blocking(move |db| {
-                let long = "Production Europe West Primary";
-                let prod = environments::create_environment(db, long, &Variables::new())?;
+                let prod = environments::create_environment(db, name, &Variables::new())?;
                 environments::set_environment_color(db, prod.id, Some(EnvColor::Red))?;
                 environments::set_active_environment(db, Some(prod.id))
             })
@@ -312,20 +321,38 @@ fn a_long_environment_name_is_cut_on_send_and_the_url_keeps_its_room() {
         let api = collection(store, "API");
         request(store, api.id, "Get", "http://h");
     });
-    app.harness.set_size(imposter_ui::layout::MIN_WINDOW.into());
+    app.harness.set_size(MIN_WINDOW.into());
     click(&mut app.harness, "GET Get");
     settle(&mut app.harness);
-    let send = app
-        .harness
-        .get_by_role_and_label(Role::Button, "Send to Production Europe West Primary")
-        .rect();
+    let label = format!("Send to {name}");
+    let (send, url) = send_geometry(&app, &label);
     assert!(send.width() <= 168.5, "{send:?}");
-    let url = app.harness.get_by_label("Request URL").rect();
     assert!(url.width() >= 200.0, "{url:?}");
+    let text = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) if send.contains(text.pos) && text.galley.job.text == label => {
+                Some(text)
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert!(text.galley.elided);
+    assert_eq!(text.galley.rows[0].glyphs.last().unwrap().chr, '…');
+    assert!((text.pos.x + text.galley.size().x / 2.0 - send.center().x).abs() <= 1.0);
+    app.harness
+        .get_by_role_and_label(Role::Button, &label)
+        .hover();
+    app.harness.run_steps(45);
+    let hint =
+        imposter_ui::shortcuts::hint(&app.harness.ctx, &label, &imposter_ui::shortcuts::SEND);
+    app.harness.get_by_role_and_label(Role::Label, &hint);
 
     support::open_screen(&mut app.harness, "Variables");
     settle(&mut app.harness);
-    let name = "Production Europe West Primary";
     let row = app
         .harness
         .get_by_label("Environment · Production Europe West Primary");

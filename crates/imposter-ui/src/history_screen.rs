@@ -175,14 +175,15 @@ fn toolbar(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut V
             let width = (ui.available_width() - chip_width - gap).min(360.0);
             let field = ui.add_sized(
                 [width, theme::spacing().control],
-                egui::TextEdit::singleline(&mut history.filter)
-                    .hint_text("Filter: text, status:4xx, method:POST, env:…"),
+                egui::TextEdit::singleline(&mut history.filter).hint_text("Filter"),
             );
             name(&field, "Filter history");
-            let field = field.on_hover_text(
-            "Words match the request name and URL. status:404, status:4xx, status:failed, \
-             method:, url:, name:, env:, via:cli, OR, NOT, -word and \"phrases\". Bodies are not searched.",
-        );
+            let field = widgets::describe(
+                field,
+                "Words match the request name and URL. Use status:404, status:4xx, status:failed, \
+                 status:cancelled, method:POST, url:…, name:…, env:…, via:cli, via:app, \
+                 AND, OR, NOT, -word, \"phrases\" or parentheses.",
+            );
             if field.changed() {
                 actions.push(Action::History(HistoryAction::Filtered));
             }

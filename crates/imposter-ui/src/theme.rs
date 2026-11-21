@@ -22,6 +22,8 @@ pub struct Palette {
     pub field_border: Color32,
     /// The marker beside a selected row.
     pub selected_bar: Color32,
+    /// Backdrop separating a modal from the window behind it.
+    pub modal_scrim: Color32,
     pub text: Color32,
     pub text_muted: Color32,
     /// Disabled controls; exempt from contrast rules but still legible.
@@ -67,6 +69,7 @@ pub const DARK: Palette = Palette {
     border: Color32::from_rgb(0x30, 0x35, 0x40),
     field_border: Color32::from_rgb(0x5f, 0x68, 0x78),
     selected_bar: Color32::from_rgb(0xff, 0x6c, 0x37),
+    modal_scrim: Color32::from_black_alpha(120),
     text: Color32::from_rgb(0xea, 0xed, 0xf3),
     text_muted: Color32::from_rgb(0xa3, 0xad, 0xbf),
     text_disabled: Color32::from_rgb(0x7a, 0x83, 0x94),
@@ -102,6 +105,7 @@ pub const LIGHT: Palette = Palette {
     border: Color32::from_rgb(0xdf, 0xe2, 0xe8),
     field_border: Color32::from_rgb(0x7d, 0x85, 0x95),
     selected_bar: Color32::from_rgb(0xb8, 0x3b, 0x0a),
+    modal_scrim: Color32::from_black_alpha(132),
     text: Color32::from_rgb(0x1a, 0x1e, 0x26),
     text_muted: Color32::from_rgb(0x59, 0x62, 0x73),
     text_disabled: Color32::from_rgb(0x8a, 0x91, 0x9d),
@@ -803,12 +807,45 @@ mod tests {
 
     #[test]
     fn text_on_the_send_button_is_readable_in_both_states() {
-        for (name, palette) in BOTH {
-            // Send uses the accent fill; Cancel (while a request runs) the warning fill.
-            for fill in [palette.accent, palette.warning] {
-                let ratio = contrast(palette.on_accent, fill);
-                assert!(ratio >= AA, "{name} {fill:?}: {ratio:.2}");
+        for (name, p) in BOTH {
+            assert!(contrast(p.on_accent, p.accent) >= AA, "{name} Send label");
+            assert!(contrast(p.error, p.input) >= AA, "{name} Cancel/Stop label");
+            for background in [p.input, p.background, p.surface] {
+                for edge in [p.error, p.accent, p.text_muted] {
+                    assert!(
+                        contrast(edge, background) >= NON_TEXT,
+                        "{name} action edge {edge:?} on {background:?}"
+                    );
+                }
             }
+        }
+    }
+
+    #[test]
+    fn light_selected_rows_and_modal_backdrop_remain_distinct() {
+        let p = &LIGHT;
+        for color in [p.text, p.text_muted] {
+            assert!(
+                contrast(color, p.selected) >= AA,
+                "selected row label and glyph"
+            );
+        }
+        for background in [p.selected, p.background, p.surface] {
+            assert!(
+                contrast(p.selected_bar, background) >= NON_TEXT,
+                "selection marker or underline"
+            );
+        }
+        for background in [p.background, p.surface, p.input] {
+            let dimmed = background.blend(p.modal_scrim);
+            assert!(
+                contrast(background, dimmed) >= NON_TEXT,
+                "light backdrop on {background:?}"
+            );
+            assert!(
+                contrast(p.surface, dimmed) >= NON_TEXT,
+                "modal surface against the backdrop"
+            );
         }
     }
 

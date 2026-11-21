@@ -67,6 +67,7 @@ fn events_show_as_they_come_and_stop_keeps_them() {
     let mut app = app(Options::default());
     click(&mut app.harness, "GET Prices");
     settle(&mut app.harness);
+    let send = app.harness.get_by_label("Send").rect();
     click(&mut app.harness, "Send");
     // The stream stays open: wait for its events, not for the send to end.
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -79,6 +80,12 @@ fn events_show_as_they_come_and_stop_keeps_them() {
         .get_by_label_contains("Receiving events… 2 so far");
     app.harness
         .get_by_label_contains("Event 2: price {\"p\": 2}");
+    assert_eq!(
+        app.harness
+            .get_by_role_and_label(egui::Role::Button, "Stop")
+            .rect(),
+        send
+    );
 
     click_button(&mut app.harness, "Stop");
     settle(&mut app.harness);

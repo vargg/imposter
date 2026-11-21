@@ -650,10 +650,33 @@ fn cancelling_a_running_request_records_a_cancelled_run() {
     });
     open(&mut app, "GET Slow");
 
+    let send = app.harness.get_by_label("Send").rect();
     click(&mut app.harness, "Send");
     accepted_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    app.harness.run_steps(1);
-    app.harness.get_by_label("Cancel stops it.");
+    app.harness.hover_at(egui::pos2(700.0, 10.0));
+    app.harness.run_steps(2);
+    app.harness.get_by_label_contains("Sending…");
+    let cancel = app
+        .harness
+        .get_by_role_and_label(egui::Role::Button, "Cancel")
+        .rect();
+    assert_eq!(cancel, send);
+    app.harness.hover_at(
+        app.harness
+            .get_by_label_contains("Sending…")
+            .rect()
+            .center(),
+    );
+    app.harness.run_steps(40);
+    app.harness.get_by_label("Cancel stops the send");
+    let p = imposter_ui::theme::palette();
+    let shapes = &app.harness.output().shapes;
+    assert!(shapes.iter().any(|clipped| matches!(&clipped.shape,
+        egui::Shape::Rect(shape) if shape.rect == cancel && shape.fill == p.input && shape.stroke.color == p.error
+    )));
+    assert!(shapes.iter().any(|clipped| matches!(&clipped.shape,
+        egui::Shape::Text(text) if cancel.contains(text.pos) && text.galley.job.text == "Cancel" && text.fallback_color == p.error
+    )));
     click(&mut app.harness, "Cancel");
     settle(&mut app.harness);
 

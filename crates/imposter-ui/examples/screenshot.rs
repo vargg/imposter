@@ -49,7 +49,7 @@ fn main() {
                     &imposter_app::core::model::Variables::new(),
                 )?;
                 let users = collections::create_folder(db, api.id, None, "Users", "", 1)?;
-                collections::create_folder(db, api.id, Some(users.id), "Admin", "", 0)?;
+                let admin = collections::create_folder(db, api.id, Some(users.id), "Admin", "", 0)?;
                 let list = RequestTemplate {
                     name: "List users".into(),
                     url,
@@ -69,10 +69,10 @@ fn main() {
                     ..RequestTemplate::default()
                 };
                 collections::create_request(db, api.id, Some(users.id), &list)?;
-                for (name, method, position) in [
-                    ("Health", "GET", 0),
-                    ("Create user", "POST", 2),
-                    ("Delete user", "DELETE", 3),
+                for (name, method, folder, position) in [
+                    ("Health", "GET", None, 0),
+                    ("Create user", "POST", Some(users.id), 2),
+                    ("Delete user", "DELETE", Some(admin.id), 0),
                 ] {
                     let template = RequestTemplate {
                         name: name.into(),
@@ -80,7 +80,7 @@ fn main() {
                         position,
                         ..RequestTemplate::default()
                     };
-                    collections::create_request(db, api.id, None, &template)?;
+                    collections::create_request(db, api.id, folder, &template)?;
                 }
                 let mut saved = imposter_app::core::model::SavedValues::default();
                 saved.set("user_id", ["42".into(), "77".into(), "91".into()]);

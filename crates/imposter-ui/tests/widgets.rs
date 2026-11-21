@@ -615,7 +615,7 @@ mod controls_kit {
                             (Color32::TRANSPARENT, p.text_muted, Color32::TRANSPARENT)
                         }
                         Variant::Warning => (p.input, p.warning, Color32::TRANSPARENT),
-                        Variant::Danger => (p.input, p.error, p.field_border),
+                        Variant::Danger => (p.input, p.error, p.error),
                         Variant::DangerPrimary => (p.error, p.on_accent, p.error),
                     };
                     assert_eq!(shape.fill, fill, "{label}");

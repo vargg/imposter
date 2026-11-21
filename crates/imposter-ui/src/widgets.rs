@@ -181,11 +181,21 @@ pub(crate) fn action_width_with_icon(ui: &Ui, label: &str, icon: Option<Icon>) -
 
 /// A fixed-height action with an optional leading icon, kept out of the text font.
 pub fn button(ui: &mut Ui, variant: Variant, icon: Option<Icon>, label: &str) -> egui::Response {
-    action_button(ui, variant, icon, label, None)
+    action_button(ui, variant, icon, label, None, None)
+}
+
+/// The request bar reserves an action slot before drawing its URL field.
+pub(crate) fn request_bar_button(
+    ui: &mut Ui,
+    variant: Variant,
+    label: &str,
+    slot: egui::Vec2,
+) -> egui::Response {
+    action_button(ui, variant, None, label, None, Some(slot))
 }
 
 pub(crate) fn toggle_button(ui: &mut Ui, checked: &mut bool, label: &str) -> egui::Response {
-    let response = action_button(ui, Variant::Secondary, None, label, Some(*checked));
+    let response = action_button(ui, Variant::Secondary, None, label, Some(*checked), None);
     if response.clicked() {
         *checked = !*checked;
     }
@@ -198,19 +208,20 @@ fn action_button(
     icon: Option<Icon>,
     label: &str,
     selected: Option<bool>,
+    slot: Option<egui::Vec2>,
 ) -> egui::Response {
     let icon_width = icon.map_or(0.0, |_| 16.0 + ICON_GAP);
     let galley = control_text(
         ui,
         crate::theme::body(label),
-        ui.available_width() - icon_width - 2.0 * BUTTON_PAD,
+        slot.map_or_else(|| ui.available_width(), |size| size.x) - icon_width - 2.0 * BUTTON_PAD,
     );
     let elided = galley.elided;
     let size = egui::vec2(
         (galley.size().x + icon_width + 2.0 * BUTTON_PAD).max(24.0),
         crate::theme::spacing().control,
     );
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size(slot.unwrap_or(size), egui::Sense::click());
     response.widget_info(|| match selected {
         Some(on) => egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), on, label),
         None => egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label),
@@ -223,7 +234,7 @@ fn action_button(
             Variant::Secondary => (p.input, p.text, p.field_border),
             Variant::Ghost => (Color32::TRANSPARENT, p.text_muted, Color32::TRANSPARENT),
             Variant::Warning => (p.input, p.warning, Color32::TRANSPARENT),
-            Variant::Danger => (p.input, p.error, p.field_border),
+            Variant::Danger => (p.input, p.error, p.error),
             Variant::DangerPrimary => (p.error, p.on_accent, p.error),
         }
     } else {
@@ -231,14 +242,28 @@ fn action_button(
         (p.input, p.text, p.field_border)
     };
     if ui.is_rect_visible(rect) {
+        let corners = if slot.is_some() {
+            egui::CornerRadius {
+                nw: 0,
+                sw: 0,
+                ne: CONTROL_RADIUS,
+                se: CONTROL_RADIUS,
+            }
+        } else {
+            CONTROL_RADIUS.into()
+        };
         ui.painter().rect(
             rect,
-            CONTROL_RADIUS,
+            corners,
             fill,
             control_edge(&response, fill, edge),
             egui::StrokeKind::Inside,
         );
-        let mut left = rect.left() + BUTTON_PAD;
+        let mut left = if slot.is_some() {
+            rect.center().x - f32::midpoint(galley.size().x, icon_width)
+        } else {
+            rect.left() + BUTTON_PAD
+        };
         if let Some(icon) = icon {
             paint_glyph(
                 ui,
@@ -255,7 +280,7 @@ fn action_button(
             color,
         );
     }
-    if elided {
+    if elided && slot.is_none() {
         response.on_hover_text(label)
     } else {
         response
@@ -726,6 +751,13 @@ pub fn name(response: &egui::Response, label: &str) {
         .accesskit_node_builder(response.id, |node| node.set_label(label));
 }
 
+pub(crate) fn describe(response: egui::Response, description: &str) -> egui::Response {
+    response
+        .ctx
+        .accesskit_node_builder(response.id, |node| node.set_description(description));
+    response.on_hover_text(description)
+}
+
 pub fn tone_text(text: impl Into<String>, tone: Tone) -> RichText {
     RichText::new(text.into()).color(palette().tone(tone))
 }
@@ -1189,6 +1221,17 @@ fn tab_row<T: Copy + PartialEq>(
 /// row looks the same everywhere (the theme outlines controls, and egui would outline it too).
 pub fn option<'a>(ui: &mut Ui, selected: bool, atoms: impl egui::IntoAtoms<'a>) -> egui::Response {
     ui.add(egui::Button::selectable(selected, atoms).stroke(egui::Stroke::NONE))
+}
+
+/// A draggable tree choice fills its row and truncates its caption in place.
+pub(crate) fn tree_option(ui: &mut Ui, selected: bool, text: LayoutJob) -> egui::Response {
+    ui.add_sized(
+        [ui.available_width(), crate::theme::spacing().row],
+        egui::Button::selectable(selected, (text, egui::Atom::grow()))
+            .stroke(egui::Stroke::NONE)
+            .truncate()
+            .sense(egui::Sense::click_and_drag()),
+    )
 }
 
 pub(crate) fn list_toolbar<T>(ui: &mut Ui, draw: impl FnOnce(&mut Ui) -> T) -> T {

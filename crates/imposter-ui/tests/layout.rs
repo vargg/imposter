@@ -16,6 +16,8 @@ use imposter_ui::editor::OPTION_GROUPS;
 use imposter_ui::layout::MIN_WINDOW;
 use imposter_ui::theme::{self, Density, ThemeChoice};
 use support::{click, click_button, collection, request, settle, start_with, type_into};
+use tokio::io::AsyncWriteExt as _;
+use tokio::sync::watch;
 
 /// The status bar's own controls.
 const STATUS_BAR: [&str; 6] = [
@@ -294,6 +296,20 @@ fn appearance(app: &mut support::App, theme: ThemeChoice, density: Density) {
     app.harness.run_steps(3);
 }
 
+fn assert_tool_panes(app: &support::App, setting: Rect, result: Rect) {
+    if app.harness.ctx.content_rect().width() <= MIN_WINDOW[0] {
+        assert!(
+            result.top() >= setting.bottom(),
+            "stacked: {setting:?}, {result:?}"
+        );
+    } else {
+        assert!(
+            result.left() >= setting.right(),
+            "side by side: {setting:?}, {result:?}"
+        );
+    }
+}
+
 /// Send names the active, colored environment of the walk.
 const SEND: &str = "Send to Production EU";
 
@@ -301,19 +317,36 @@ const LONG_ENVIRONMENT: &str =
     "A very long environment name for sample requests with a scope that has to truncate";
 
 /// Walk the screens and dialogs, collecting problems at each stop.
-fn walk(app: &mut support::App, label: &str) -> Vec<String> {
+fn walk(
+    app: &mut support::App,
+    label: &str,
+    stream_url: &str,
+    send_event: &watch::Sender<bool>,
+) -> Vec<String> {
     let mut found = Vec::new();
     let mut check = |app: &mut support::App, state: &str| {
         app.harness.run_steps(3);
         found.extend(problems(app, &format!("{label} {state}")));
     };
     check(app, "start");
+    click_button(&mut app.harness, "Toggle folder Examples");
+    check(app, "closed request tree folder");
+    type_into(&mut app.harness, "Filter requests", "method:DELETE");
+    check(
+        app,
+        "filtered tree with a reopened folder and a nested request",
+    );
+    app.harness.get_by_label("DELETE Remove user");
+    click_button(&mut app.harness, "Clear the filter");
+    click_button(&mut app.harness, "Toggle folder Examples");
+    check(app, "expanded request tree");
     click(&mut app.harness, "Hide Collections");
     check(app, "no request or sidebar");
     click(&mut app.harness, "Show Collections");
     click(&mut app.harness, "GET Users");
     settle(&mut app.harness);
     check(app, "empty response");
+    walk_send_controls(app, stream_url, send_event, &mut check);
     click(&mut app.harness, "More request tabs");
     check(app, "request More menu");
     click(&mut app.harness, "Docs");
@@ -887,6 +920,11 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     click(&mut app.harness, "Stop the load test");
     settle(&mut app.harness);
     check(app, "Load result");
+    assert_tool_panes(
+        app,
+        support::text_input(&app.harness, "Total requests").rect(),
+        app.harness.get_by_label("Result").rect(),
+    );
     app.harness.get_by_label("Result").scroll_to_me();
     app.harness.run_steps(12);
     app.harness.get_by_label("Served within");
@@ -903,6 +941,11 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     support::open_screen(&mut app.harness, "Run");
     settle(&mut app.harness);
     check(app, "Run");
+    assert_tool_panes(
+        app,
+        app.harness.get_by_label("Environment for the run").rect(),
+        app.harness.get_by_label("No run yet").rect(),
+    );
     let run_target = app.harness.state().state.run.target.clone();
     let environment_name = {
         let state = &mut app.harness.state_mut().state;
@@ -941,13 +984,14 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     check(app, "History response");
     support::viewer_tool(&mut app.harness, "Wrap");
     check(app, "History response with Wrap off");
-    for tab in [
+    let history_tabs = [
         "Headers",
         "Check results",
         "Request body",
         "Request headers",
         "Body",
-    ] {
+    ];
+    for tab in history_tabs {
         if app
             .harness
             .query_by_role_and_label(Role::Button, tab)
@@ -957,6 +1001,23 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
         }
         click_button(&mut app.harness, tab);
         check(app, &format!("History {tab} tab"));
+        let y = app
+            .harness
+            .get_by_role_and_label(Role::Button, tab)
+            .rect()
+            .center()
+            .y;
+        for caption in history_tabs
+            .into_iter()
+            .chain(["More History tabs", "More tools"])
+        {
+            if let Some(button) = app.harness.query_by_role_and_label(Role::Button, caption) {
+                assert!(
+                    (button.rect().center().y - y).abs() <= 1.0,
+                    "{tab} shares a row with {caption}"
+                );
+            }
+        }
     }
     // A restored draft: its banner above the request bar, the recorded response beside it.
     click(&mut app.harness, "Restore as draft");
@@ -1003,6 +1064,60 @@ fn walk(app: &mut support::App, label: &str) -> Vec<String> {
     app.harness.state_mut().state.screen = Screen::Requests;
     walk_modals(app, &mut check);
     found
+}
+
+fn walk_send_controls(
+    app: &mut support::App,
+    stream_url: &str,
+    send_event: &watch::Sender<bool>,
+    check: &mut impl FnMut(&mut support::App, &str),
+) {
+    let state = &mut app.harness.state_mut().state;
+    let active = state.active_environment.unwrap();
+    let environment = state
+        .environments
+        .iter_mut()
+        .find(|env| env.id == active)
+        .unwrap();
+    let original_name = std::mem::replace(&mut environment.name, LONG_ENVIRONMENT.into());
+    check(app, "Send with a long environment name");
+    let state = &mut app.harness.state_mut().state;
+    state
+        .environments
+        .iter_mut()
+        .find(|env| env.id == active)
+        .unwrap()
+        .name = original_name;
+    let editor = &mut state.editor.as_mut().unwrap().editor;
+    let original_url = std::mem::replace(&mut editor.url, stream_url.into());
+    let original_response = std::mem::take(&mut state.response);
+    app.harness.run_steps(2);
+    click(&mut app.harness, SEND);
+    app.harness.get_by_role_and_label(Role::Button, "Cancel");
+    check(app, "Cancel while waiting for a response");
+
+    send_event.send_replace(true);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while app
+        .harness
+        .query_by_role_and_label(Role::Button, "Stop")
+        .is_none()
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no stream event arrived"
+        );
+        app.harness.run_steps(1);
+        std::thread::yield_now();
+    }
+    check(app, "Stop while receiving events");
+    click_button(&mut app.harness, "Stop");
+    settle(&mut app.harness);
+    send_event.send_replace(false);
+    let state = &mut app.harness.state_mut().state;
+    state.editor.as_mut().unwrap().editor.url = original_url;
+    state.response = original_response;
+    app.harness.run_steps(2);
 }
 
 fn walk_variable_scopes(app: &mut support::App, check: &mut impl FnMut(&mut support::App, &str)) {
@@ -1177,6 +1292,24 @@ fn walk_modals(app: &mut support::App, check: &mut impl FnMut(&mut support::App,
 #[test]
 fn no_control_runs_past_the_window_or_overlaps_another() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
+    let listener = runtime
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let stream_url = format!("http://{}/stream", listener.local_addr().unwrap());
+    let (send_event, mut event_requested) = watch::channel(false);
+    runtime.spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            event_requested.wait_for(|ready| *ready).await.unwrap();
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\ndata: ready\n\n",
+                )
+                .await
+                .unwrap();
+            event_requested.wait_for(|ready| !*ready).await.unwrap();
+        }
+    });
     let server = runtime.block_on(Server::start(|_, received| {
         if received.request_line.contains("/broken") {
             return response("500 Internal Server Error", &[], b"oops");
@@ -1239,6 +1372,27 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
                         "Unresolved",
                         &format!("{url}/{{{{unknown}}}}"),
                     );
+                    store
+                        .call_blocking(move |db| {
+                            use imposter_app::core::model::RequestTemplate;
+                            use imposter_app::store::collections::{create_folder, create_request};
+                            let folder = create_folder(db, api.id, None, "Examples", "", 5)?;
+                            let nested =
+                                create_folder(db, api.id, Some(folder.id), "Users", "", 0)?;
+                            create_request(
+                                db,
+                                api.id,
+                                Some(nested.id),
+                                &RequestTemplate {
+                                    name: "Remove user".into(),
+                                    method: "DELETE".into(),
+                                    url,
+                                    ..RequestTemplate::default()
+                                },
+                            )?;
+                            Ok(())
+                        })
+                        .unwrap();
                 });
                 app.harness.set_size(size);
                 appearance(&mut app, theme, density);
@@ -1250,7 +1404,7 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
                     &first_start,
                     &format!("{label} first start"),
                 ));
-                problems.extend(walk(&mut app, &label));
+                problems.extend(walk(&mut app, &label, &stream_url, &send_event));
             }
         }
     }

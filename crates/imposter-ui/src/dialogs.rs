@@ -444,14 +444,9 @@ impl Dialog {
             .corner_radius(FRAME_RADIUS)
             .fill(colors.surface)
             .stroke(egui::Stroke::new(1.0, colors.field_border));
-        let scrim = if ctx.theme() == egui::Theme::Light {
-            132
-        } else {
-            120
-        };
         let mut modal = egui::Modal::new(id)
             .frame(frame)
-            .backdrop_color(egui::Color32::from_black_alpha(scrim));
+            .backdrop_color(colors.modal_scrim);
         let top = if matches!(self, Self::Palette(_)) {
             // Centred, it would move as the list shrinks while typing.
             modal = modal.area(

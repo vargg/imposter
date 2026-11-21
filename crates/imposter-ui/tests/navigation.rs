@@ -300,7 +300,7 @@ fn deleted_requests_leave_the_recent_list() {
     assert!(!stored.contains(&b), "the stored list is pruned too");
 }
 
-/// API: Health (GET, root), Users/{List users GET, Create user POST}, Orders/{Place order POST}.
+/// API: Health at the root, Users and its Admin subfolder, and Orders.
 fn foldered() -> support::App {
     let mut app = start_with(|store| {
         store
@@ -312,10 +312,17 @@ fn foldered() -> support::App {
                 let api = create_collection(db, "API", "", &Variables::new())?;
                 let users = create_folder(db, api.id, None, "Users", "", 1)?;
                 let orders = create_folder(db, api.id, None, "Orders", "", 2)?;
+                let admin = create_folder(db, api.id, Some(users.id), "Admin", "", 3)?;
                 for (folder, name, method, url) in [
                     (None, "Health", "GET", "http://h/health"),
                     (Some(users.id), "List users", "GET", "http://h/users"),
                     (Some(users.id), "Create user", "POST", "http://h/users"),
+                    (
+                        Some(admin.id),
+                        "Remove user",
+                        "DELETE",
+                        "http://h/admin/users",
+                    ),
                     (
                         Some(orders.id),
                         "Place order",
@@ -347,6 +354,85 @@ fn shown(app: &support::App, label: &str) -> bool {
 fn filter(app: &mut support::App, text: &str) {
     app.harness.state_mut().state.sidebar_filter = text.into();
     app.harness.run_steps(2);
+}
+
+/// The visible glyphs of a tree row, in window coordinates.
+fn tree_glyphs(app: &support::App, label: &str) -> Vec<(char, f32)> {
+    let bounds = app.harness.get_by_label(label).rect();
+    let text = app
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if bounds.contains(text.pos) => Some(text),
+            _ => None,
+        })
+        .unwrap();
+    let row = &text.galley.rows[0];
+    row.glyphs
+        .iter()
+        .map(|glyph| (glyph.chr, text.pos.x + row.pos.x + glyph.pos.x))
+        .collect()
+}
+
+#[test]
+fn methods_and_folder_icons_share_a_gutter_while_names_show_depth() {
+    use imposter_ui::icons::Icon;
+
+    let mut app = foldered();
+    let root = tree_glyphs(&app, "GET Health");
+    let child = tree_glyphs(&app, "POST Create user");
+    let nested = tree_glyphs(&app, "DELETE Remove user");
+    let open = tree_glyphs(&app, "Folder Users");
+    assert_eq!([root[0].0, child[0].0, nested[0].0], ['G', 'P', 'D']);
+    assert_eq!(open[0].0, Icon::FolderOpen.glyph());
+    for gutter in [child[0].1, nested[0].1, open[0].1] {
+        assert!(
+            (gutter - root[0].1).abs() <= 1.0,
+            "{} vs {gutter}",
+            root[0].1
+        );
+    }
+    assert!(root[3].1 < child[4].1 && child[4].1 < nested[6].1);
+
+    click(&mut app.harness, "Toggle folder Users");
+    app.harness.run_steps(12);
+    assert_eq!(tree_glyphs(&app, "Folder Users")[0].0, Icon::Folder.glyph());
+    assert!(!shown(&app, "DELETE Remove user"));
+}
+
+#[test]
+fn both_filters_show_a_short_hint_and_expose_their_own_syntax() {
+    let mut app = foldered();
+    for (label, syntax) in [
+        (
+            "Filter requests",
+            &["method:POST", "url:…", "name:…", "parentheses"][..],
+        ),
+        (
+            "Filter history",
+            &["status:4xx", "env:…", "via:cli", "parentheses"][..],
+        ),
+    ] {
+        let field = app.harness.get_by_label(label);
+        let rect = field.rect();
+        assert!(app.harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
+            egui::Shape::Text(text) if rect.contains(text.pos) && text.galley.job.text == "Filter"
+        )));
+        let help = field.accesskit_node().description().unwrap();
+        for term in syntax {
+            assert!(help.contains(term), "{label} help should include {term}");
+        }
+        assert_eq!(help.contains("status:"), label == "Filter history");
+        field.hover();
+        app.harness.run_steps(45);
+        app.harness.get_by_label(&help);
+        if label == "Filter requests" {
+            support::open_screen(&mut app.harness, "History");
+            settle(&mut app.harness);
+        }
+    }
 }
 
 #[test]

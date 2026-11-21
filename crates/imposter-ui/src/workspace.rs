@@ -337,6 +337,7 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
         .id_salt("tree")
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            widgets::scroll_view_bounds(ui);
             let Some(tree) = &state.tree else {
                 ui.label(tone_text("Loading…", Tone::Muted));
                 return;
@@ -354,6 +355,7 @@ fn sidebar(state: &mut State, ui: &mut Ui) {
                 filtering,
                 dragged: egui::DragAndDrop::payload::<NodeId>(ui.ctx()).map(|node| *node),
                 within_dragged: false,
+                name_indent: 0.0,
             };
             // Rows as tall as the density says, with a hairline between them.
             ui.spacing_mut().interact_size.y = crate::theme::spacing().row;
@@ -502,6 +504,7 @@ struct NodesView<'a> {
     dragged: Option<NodeId>,
     /// Drawing the inside of the dragged folder, where nothing may be dropped.
     within_dragged: bool,
+    name_indent: f32,
 }
 
 /// Where a dragged node would go, by the part of a row under the pointer.
@@ -628,18 +631,25 @@ fn scroll_while_dragging(ui: &mut Ui) {
 fn sidebar_filter(state: &mut State, ui: &mut Ui) {
     let over_sidebar = ui.rect_contains_pointer(ui.max_rect());
     let find = over_sidebar && ui.input_mut(|i| i.consume_shortcut(&crate::shortcuts::FIND));
-    let field = ui.add(
+    let spacing = crate::theme::spacing();
+    let field = ui.add_sized(
+        [ui.available_width(), spacing.control],
         egui::TextEdit::singleline(&mut state.sidebar_filter)
-            .hint_text("Filter: text, method:POST, url:…")
-            .margin(egui::Margin {
-                left: 4,
-                right: 26,
-                top: 2,
-                bottom: 2,
+            .hint_text("Filter")
+            .margin(egui::epaint::MarginF32 {
+                left: spacing.xs,
+                right: spacing.control + 2.0,
+                top: 2.0,
+                bottom: 2.0,
             })
             .desired_width(f32::INFINITY),
     );
     name(&field, "Filter requests");
+    let field = widgets::describe(
+        field,
+        "Words match the folder path, request name and URL. Use method:POST, url:…, name:…, \
+         AND, OR, NOT, -word, \"phrases\" or parentheses.",
+    );
     if find {
         field.request_focus();
     }
@@ -648,11 +658,14 @@ fn sidebar_filter(state: &mut State, ui: &mut Ui) {
         state.sidebar_filter.clear();
     }
     if !state.sidebar_filter.is_empty() {
-        // A square as tall as the field at its right end: a full-size target inside it.
-        let side = field.rect.height();
-        let spot = Rect::from_min_size(field.rect.right_top() - vec2(side, 0.0), vec2(side, side));
-        let clear = ui.put(spot, egui::Button::new("×").frame(false));
-        name(&clear, "Clear the filter");
+        // The icon stays inside the field's reserved padding even when it first appears.
+        let side = icons::size();
+        let spot = Rect::from_center_size(
+            egui::pos2(field.rect.right() - side / 2.0, field.rect.center().y),
+            egui::Vec2::splat(side),
+        );
+        let mut overlay = ui.new_child(UiBuilder::new().max_rect(spot).id_salt("clear filter"));
+        let clear = icons::button(&mut overlay, Icon::Close, "Clear the filter", false);
         if clear.clicked() {
             state.sidebar_filter.clear();
         }
@@ -820,6 +833,53 @@ fn request_bar_height() -> f32 {
     crate::theme::spacing().control + 8.0
 }
 
+const TREE_METHOD_CHARS: usize = 7;
+
+fn tree_caption(
+    ui: &Ui,
+    badge: RichText,
+    name: &str,
+    name_indent: f32,
+    folder: bool,
+) -> egui::text::LayoutJob {
+    let spacing = crate::theme::spacing();
+    let gutter = widgets::text_width(
+        ui,
+        crate::theme::meta("M".repeat(TREE_METHOD_CHARS)).monospace(),
+    );
+    let badge_width = widgets::text_width(ui, badge.clone());
+    // Deep trees still leave room for part of the name in the narrow sidebar.
+    let indent = name_indent.min(ui.available_width() * 0.25);
+    let mut gap = gutter - badge_width + spacing.xs + indent;
+    let mut text = egui::text::LayoutJob::default();
+    badge.append_to(
+        &mut text,
+        ui.style(),
+        egui::FontSelection::Default,
+        Align::Center,
+    );
+    let font = if folder {
+        crate::theme::semibold(crate::theme::BODY)
+    } else {
+        egui::FontId::proportional(crate::theme::BODY)
+    };
+    let mut part = |piece: &str, color| {
+        if !piece.is_empty() {
+            let mut format = egui::TextFormat::simple(font.clone(), color);
+            format.valign = Align::Center;
+            text.append(piece, std::mem::take(&mut gap), format);
+        }
+    };
+    let mut at = 0;
+    for token in crate::vars::tokens(name) {
+        part(&name[at..token.range.start], palette().text);
+        part(&name[token.range.clone()], palette().accent);
+        at = token.range.end;
+    }
+    part(&name[at..], palette().text);
+    text
+}
+
 fn nodes(
     ui: &mut Ui,
     list: &[Node],
@@ -855,11 +915,13 @@ fn nodes(
                 open = collapsing.is_open();
                 let inner = NodesView {
                     within_dragged: view.within_dragged || view.dragged == Some(id),
+                    name_indent: view.name_indent + crate::theme::spacing().md,
                     ..view
                 };
                 let header = ui.horizontal(|ui| {
-                    let gap = ui.spacing().item_spacing.x;
                     ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.spacing_mut().indent = icons::size();
+                    ui.spacing_mut().icon_width = crate::theme::spacing().row;
                     let toggle = collapsing.show_toggle_button(ui, widgets::collapsing_icon);
                     toggle.widget_info(|| {
                         egui::WidgetInfo::labeled(
@@ -871,71 +933,58 @@ fn nodes(
                     ui.ctx().accesskit_node_builder(toggle.id, |node| {
                         node.set_expanded(collapsing.is_open());
                     });
-                    ui.spacing_mut().item_spacing.x = gap;
-                    let button = egui::Button::selectable(
-                        selected == Some(id),
-                        RichText::new(&folder.name).strong(),
-                    )
-                    .stroke(egui::Stroke::NONE)
-                    .sense(Sense::click_and_drag());
-                    let response = ui.add(button);
+                    let icon = if collapsing.is_open() {
+                        Icon::FolderOpen
+                    } else {
+                        Icon::Folder
+                    };
+                    let text = tree_caption(
+                        ui,
+                        icons::glyph_text(icon, 16.0).color(palette().text_muted),
+                        &folder.name,
+                        view.name_indent,
+                        true,
+                    );
+                    let response = widgets::tree_option(ui, selected == Some(id), text);
                     name(&response, &format!("Folder {}", folder.name));
                     if !folder.scripts.is_empty() {
                         ui.ctx().accesskit_node_builder(response.id, |node| {
                             node.set_description("Has scripts");
                         });
                     }
-                    response
+                    response.on_hover_text(&folder.name)
                 });
-                collapsing.show_body_indented(&header.response, ui, |ui| {
+                collapsing.show_body_unindented(ui, |ui| {
                     nodes(ui, children, Some(folder.id), inner, actions);
                 });
                 header.inner
             }
             Node::Request(request) => {
-                let mut text = egui::text::LayoutJob::default();
-                text.append(
-                    &format!("{:<7}", request.method),
-                    0.0,
-                    egui::TextFormat {
-                        font_id: egui::FontId::monospace(11.0),
-                        color: method_color(&request.method),
-                        ..Default::default()
-                    },
-                );
-                // `{{variables}}` in a name are marked as in the editor.
-                let font = egui::FontId::proportional(13.0);
-                let mut at = 0;
-                let mut gap = 4.0;
-                let mut part = |text: &mut egui::text::LayoutJob, piece: &str, color| {
-                    if !piece.is_empty() {
-                        text.append(piece, gap, egui::TextFormat::simple(font.clone(), color));
-                        gap = 0.0;
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.add_space(icons::size());
+                    let mut method = request.method.chars();
+                    let mut badge: String = method.by_ref().take(TREE_METHOD_CHARS).collect();
+                    let elided = method.next().is_some();
+                    if elided {
+                        badge.pop();
+                        badge.push('…');
                     }
-                };
-                for token in crate::vars::tokens(&request.name) {
-                    part(
-                        &mut text,
-                        &request.name[at..token.range.start],
-                        palette().text,
+                    let text = tree_caption(
+                        ui,
+                        crate::theme::meta(badge)
+                            .monospace()
+                            .color(method_color(&request.method)),
+                        &request.name,
+                        view.name_indent,
+                        false,
                     );
-                    part(
-                        &mut text,
-                        &request.name[token.range.clone()],
-                        palette().accent,
-                    );
-                    at = token.range.end;
-                }
-                part(&mut text, &request.name[at..], palette().text);
-                let response = ui.add_sized(
-                    [ui.available_width(), crate::theme::spacing().row],
-                    egui::Button::selectable(selected == Some(id), (text, egui::Atom::grow()))
-                        .stroke(egui::Stroke::NONE)
-                        .truncate()
-                        .sense(Sense::click_and_drag()),
-                );
-                name(&response, &format!("{} {}", request.method, request.name));
-                response.on_hover_text(&request.name)
+                    let response = widgets::tree_option(ui, selected == Some(id), text);
+                    let label = format!("{} {}", request.method, request.name);
+                    name(&response, &label);
+                    response.on_hover_text(if elided { &label } else { &request.name })
+                })
+                .inner
             }
         };
         if selected == Some(id) {
@@ -1376,6 +1425,16 @@ fn layout_switch(ui: &mut Ui, current: Orientation) -> bool {
     switched
 }
 
+fn send_slot_width(ui: &Ui) -> f32 {
+    // Reserve enough space for the usual environment names and keep most of the bar for the URL.
+    let limit = (ui.available_width() * 0.3).clamp(96.0, 168.0);
+    ["Send to Production", "Cancel", "Stop"]
+        .into_iter()
+        .map(|label| widgets::action_width(ui, label))
+        .fold(96.0, f32::max)
+        .min(limit)
+}
+
 fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
     let streaming = executing && !state.response.live_events.is_empty();
     let environment = active_environment(state).map(|e| e.name.clone());
@@ -1416,27 +1475,14 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 edited |=
                     widgets::method_picker(ui, &mut pane.editor.method, &mut pane.custom_method);
                 divider(ui, height - 2.0);
-                let (label, fill) = match (&target, executing) {
+                let label = match (&target, executing) {
                     // A stream is listened to until stopped; nothing is called off.
-                    (_, true) if streaming => ("Stop".to_owned(), palette().warning),
-                    (_, true) => ("Cancel".to_owned(), palette().warning),
-                    (Some(name), false) => (format!("Send to {name}"), palette().accent),
-                    (None, false) => ("Send".to_owned(), palette().accent),
+                    (_, true) if streaming => "Stop".to_owned(),
+                    (_, true) => "Cancel".to_owned(),
+                    (Some(name), false) => format!("Send to {name}"),
+                    (None, false) => "Send".to_owned(),
                 };
-                let label_width = ui
-                    .fonts_mut(|f| {
-                        f.layout_no_wrap(
-                            label.clone(),
-                            egui::TextStyle::Button.resolve(ui.style()),
-                            egui::Color32::WHITE,
-                        )
-                    })
-                    .size()
-                    .x;
-                // As wide as its words up to a limit, past which the name is cut; in a
-                // narrow window the URL keeps most of the bar.
-                let limit = (ui.available_width() * 0.3).clamp(96.0, 168.0);
-                let send_width = (label_width + 28.0).clamp(96.0, limit);
+                let send_width = send_slot_width(ui);
                 // Narrow only while a custom method is typed beside it at the smallest size.
                 let width = (ui.available_width() - send_width).max(48.0);
                 let url_id = widgets::var_edit_id(ui, "Request URL");
@@ -1460,23 +1506,20 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 }
                 url_edited = url.changed();
                 url_focused = url.has_focus();
-                let inner = BAR_RADIUS - 1;
-                let send = ui.add_sized(
+                let variant = if executing {
+                    Variant::Danger
+                } else {
+                    Variant::Primary
+                };
+                let send = widgets::request_bar_button(
+                    ui,
+                    variant,
+                    &label,
                     vec2(send_width, height - 2.0),
-                    egui::Button::new(RichText::new(&label).color(palette().on_accent).strong())
-                        .truncate()
-                        .fill(fill)
-                        .corner_radius(egui::CornerRadius {
-                            nw: 0,
-                            sw: 0,
-                            ne: inner,
-                            se: inner,
-                        }),
                 );
-                // Where it goes, for the pointer and for screen readers.
-                let action = match (&environment, executing) {
-                    (Some(name), false) => format!("Send with {name}"),
-                    _ => label.clone(),
+                let action = match (&environment, &target, executing) {
+                    (Some(name), None, false) => format!("Send with {name}"),
+                    _ => label,
                 };
                 if !executing && let Some(name) = &environment {
                     let description = format!("Sends with the {name} environment");
@@ -2254,8 +2297,8 @@ fn response_pane(state: &mut State, ui: &mut Ui) {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| {
                 ui.add(egui::Spinner::new().size(20.0));
-                ui.label(RichText::new(sending).strong());
-                ui.label(tone_text("Cancel stops it.", Tone::Muted));
+                ui.label(RichText::new(sending).strong())
+                    .on_hover_text("Cancel stops the send");
             });
             return;
         }

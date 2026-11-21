@@ -6,7 +6,7 @@
 mod support;
 
 use egui::accesskit::Role;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::store::kv;
 use imposter_ui::app::{Action, Appearance};
 use imposter_ui::layout::MIN_WINDOW;
@@ -237,6 +237,46 @@ fn a_selected_row_is_filled_and_marked_but_not_outlined() {
                 || frame.stroke.color == egui::Color32::TRANSPARENT),
         "no outline: {frames:?}"
     );
+}
+
+#[test]
+fn light_scope_and_category_rows_paint_the_selected_fill_and_bar_in_both_densities() {
+    let mut app = support::start();
+    for density in [Density::Compact, Density::Comfortable] {
+        app.harness
+            .state_mut()
+            .state
+            .actions
+            .push(Action::SetAppearance(Appearance {
+                theme: ThemeChoice::Light,
+                density,
+            }));
+        app.harness.run_steps(3);
+        for (screen, row) in [("Variables", "Global"), ("Settings", "Network settings")] {
+            support::open_screen(&mut app.harness, screen);
+            settle(&mut app.harness);
+            support::click_button(&mut app.harness, row);
+            let node = app.harness.get_by_role_and_label(Role::Button, row);
+            assert_eq!(node.accesskit_node().is_selected(), Some(true), "{row}");
+            let rect = node.rect();
+            assert_eq!(rect.height(), density.spacing().row);
+            let palette = imposter_ui::theme::LIGHT;
+            let shapes = shapes_in(&app, rect);
+            assert!(
+                shapes.iter().any(|shape| matches!(shape,
+                    egui::Shape::Rect(shape) if shape.rect == rect && shape.fill == palette.selected
+                )),
+                "{row} selected fill"
+            );
+            assert!(
+                shapes.iter().any(|shape| matches!(shape,
+                    egui::Shape::Rect(shape) if (shape.rect.left() - rect.left()).abs() <= 0.5
+                        && (shape.rect.width() - 2.0).abs() <= 0.5 && shape.fill == palette.selected_bar
+                )),
+                "{row} selection bar"
+            );
+        }
+    }
 }
 
 /// Where the text `exactly` was painted last frame, every time.

@@ -22,6 +22,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Any method, custom methods included; query parameters kept in sync with the URL.
 - Headers, cookies, and bodies as JSON, plain text, URL-encoded form, multipart (text fields
   and file uploads) or a binary file. Uploads are streamed from disk.
+- Type into the empty trailing row to add a query parameter, header, cookie or form field.
 - Authentication: Basic, Bearer, Digest (MD5, SHA-256, SHA-512, `-sess`), an API key in
   a header or the query, and OAuth 2.0: client credentials (the token is fetched when you
   send) or authorization code with PKCE (you **Sign in** in your browser, and the app
@@ -52,13 +53,16 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 **Variables**
 - `{{name}}` placeholders in the URL, headers, body, auth and settings.
 - Open **Variables** from the rail and pick **Global**, an environment or a collection
-  from the scope list. The active environment has a check and overrides the collection,
-  which overrides globals. The toolbar's info icon explains the selected scope.
+  from the scope list on the left. Global and environment scopes have **Variables**,
+  **Secrets** and **Cookies** tabs. Collections have **Variables**. Type into the empty
+  trailing row to add a variable or secret. The active environment has a check and
+  overrides collection values, which override globals.
 - Use the Plus beside **Environments** to create one. Right-click or press Shift+F10 on
   an environment to edit its name and color or delete it.
 - Give an environment a color (a new one named "prod", "production" or "live" is offered
   red). Its name appears in the header's environment picker, tinted in its color, and Send
   names a colored environment (for example, **Send to Prod**) before anything goes out.
+  Hover over Send for the full name if it is shortened.
 - Placeholders are highlighted: defined names in orange, unknown ones in red. Typing `{{`
   suggests names. Clicking a placeholder, or pressing Alt+Enter, shows where its value comes
   from. Values from password fields stay masked until revealed.
@@ -103,7 +107,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Earlier runs of the same request stay one click away.
 
 **Checks**
-- Each request can carry checks, edited under **More → Tests** and run after every response: the
+- Add checks with the Plus in **More → Tests**. They run after every response and can check the
   status (`= 200`, `= 2xx`), a header, a JSONPath into the body, the body text, the duration
   or the size, compared with `=`, `≠`, `<`, `≤`, `>`, `≥`, contains, matches (a regular
   expression), exists or is of type. Expected values can use `{{variables}}`.
@@ -112,8 +116,9 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   An unchecked result shows the reason beside a warning icon.
 - Right-click a JSON value and choose Add check to check for it. OpenAPI import adds a status
   check for each operation's documented success.
-- Set variables from a response, for example a login's `token` from `$.access_token` or a
-  created item's id: the value goes to the scope that defines the variable, or to the active
+- Use the Plus in **More → Captures** to set variables from a response, such as a login's
+  `token` from `$.access_token` or a created item's ID. The value goes to the scope that
+  defines the variable, or to the active
   environment, and the next request uses it. Right-click a JSON value and choose Set variable
   to add one. If the scope has unsaved edits, the response shows a **not set** badge.
   Hover for the affected names and click to open the scope in Variables.
@@ -201,9 +206,8 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 **History**
 - Every execution with its environment, the request exactly as it was sent, and the
   captured response, subject to the configured capture and history limits.
-- Search it with the sidebar's filter language plus `status:404`, `status:4xx`,
-  `status:failed` and `env:Dev`; words match the request name and URL (bodies are not
-  searched).
+- Hover over **Filter** for syntax such as `status:4xx`, `env:Dev` and `via:cli`.
+  Plain words match the request name and URL.
 - Use **Current request only** beside the filter to narrow the list. Select an execution to
   inspect its response and the request as sent from one tab row. The detail header has
   **Restore as draft** and the **Copy as curl** icon.
@@ -259,7 +263,8 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   running tool in the status bar to return to its screen.
 - Command palette (Cmd/Ctrl+K) over actions, the requests of every collection and
   environments; recent requests with Cmd/Ctrl+P, and Ctrl+Tab back to the previous one.
-- Sidebar filter: text, `"phrases"`, `method:POST`, `url:users`, `name:…`, `-word`, OR.
+- Hover over the Requests sidebar's **Filter** for syntax such as `method:POST`,
+  `url:users` and `-word`.
 - Side-by-side or stacked request and response, switched from the Requests toolbar. Collections
   sidebar can be hidden. Splitter positions, window size and the last selection are restored.
 - Dark, light or system theme, and Compact or Comfortable density (Settings → Appearance).
@@ -311,7 +316,11 @@ and xkbcommon. File dialogs go through the XDG desktop portal
 
 1. Create a collection with **+ → New Collection**, then add requests with **+ → New
    Request** (or Cmd/Ctrl+N).
-2. Enter a URL, choose a method, add what the request needs in the tabs below, and **Send**.
+2. Enter a URL, choose a method and **Send**. Use **Body**, **Auth**, **Query** and
+   **Headers** for common edits. **More** opens Cookies, Settings, Docs, Tests, Captures
+   and Scripts, plus any tabs that cannot fit. Hover over **More** to see which hidden
+   tabs have content. Choose the body type in the **Body** header, alongside JSON
+   validation and the **Format body** icon.
 3. Put shared values on the **Variables** screen (globals, an environment, or the
    collection) and use them as `{{name}}`. Choose the active environment at the top right.
 4. Run a whole folder in order with **Run…** in its right-click menu, or open **Run** from
@@ -585,18 +594,10 @@ Further reading:
 `cargo run -p imposter-ui --example screenshot -- <dir>` renders the app with sample data to
 PNG files, without a display.
 
-Requests open on **Body**, followed by **Auth**, **Query** and **Headers**. **More** holds
-Cookies, Settings, Docs, Tests, Captures and Scripts, plus any primary tabs that are too
-wide for the pane. The selected tab appears in the strip. Hover over **More** when it
-shows a dot to see which hidden tabs have content. Use **More → Docs** to edit the request
-description, which saves and exports with the request.
-
-The **Body** header contains the body type picker and, for a nonempty JSON body, the
-validation status and **Format body** action. Hover over a parse error for the full message.
-
 In **More → Settings**, choose **Default**, **On** or **Off** for on/off overrides.
 Hover over **Default** to see the application setting. Text fields show the inherited
 value until you enter an override, which you can clear with the reset icon.
+Use **More → Docs** to edit the request description that saves and exports with it.
 
 Right-click a request and choose **Duplicate** to create and open a saved sibling copy.
 An open request copies its current edits; navigation still resolves unsaved changes.
@@ -604,8 +605,8 @@ An open request copies its current edits; navigation still resolves unsaved chan
 **Settings → TLS → Host client certificates** assigns a client certificate, optional key and password to an exact HTTPS host and port (default 443). Request overrides take priority. Redirects select credentials again for their destination. Copy as curl uses the initial identity and cannot reproduce identity switching across redirects.
 
 Open **Mocks** in the left rail to configure a local HTTP server on `127.0.0.1`. Use the
-**Port** field to choose a port (8080 by default, `auto` at 0). The plus icon adds routes by
-exact method and encoded path, with a response status, headers and body. The body highlights
+**Port** field to choose a port (8080 by default, `auto` at 0). Use the Plus in the **Routes**
+header to add a route by exact method and encoded path. The body highlights
 JSON. Query strings and request bodies do not affect matching, and unmatched requests return
 404. Save before pressing **Start**. The running URL and its copy icon are in the toolbar.
 Save running configuration edits, then use **Stop** and **Start** to apply them. Configuration

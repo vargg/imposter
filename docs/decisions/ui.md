@@ -36,6 +36,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   - **Coverage:** at the minimum and a wide window, in both themes and both densities, it
     walks the screens, each Variables tab and scope type, every Settings category, the
     request Settings and Scripts tabs in both pane orientations, response tools and filters,
+    the collapsed and filtered request tree, long environment names, Cancel and Stop,
     blocked sends and capture warnings, Mocks lifecycle and script states, Load metrics, Run
     progress and results, the unified History tabs, and the dialogs. It compares each
     request setting caption's bounds with its full text width.
@@ -89,6 +90,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
       `{{variables}}` inside a body are marked in the accent; light strings are green.
   - **Light accent:** the light theme's accent is a darker orange (#b83b0a), because
     #ff6c37 on white is below 3:1.
+  - **Light selection and backdrop:** the filled scope and category rows keep readable
+    labels and icons on the selected fill. The accent bar also contrasts with both the
+    selected fill and the surrounding pane. A stronger light modal scrim gives the dialog
+    a visible boundary against the bright window behind it. The theme tests check the
+    selected row and the composited scrim with the same tokens the controls use.
 
 - **Bundled fonts: Inter (Regular, SemiBold) for the interface, JetBrains Mono for data,
   Phosphor Regular for icons.**
@@ -163,7 +169,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **One controls kit defines action hierarchy** (`widgets::button`, `Variant`): Primary
   uses accent fill and `on_accent` text. Secondary uses input fill and a `field_border`
   edge. Ghost has no fill or edge at rest. Warning badges use neutral input fill and
-  warning-colored text and glyphs. Danger is neutral with red text. DangerPrimary
+  warning-colored text and glyphs. Danger uses a neutral input fill with error-colored
+  text and a resting edge. DangerPrimary
   uses the error fill and `on_accent` text for a dialog's main destructive action. Disabled
   actions are neutral and readable. Buttons use the density's control height, 6 pt radius, 10 pt horizontal
   padding and an optional 16 pt Phosphor icon with a 6 pt gap. Labels are sentence case
@@ -176,7 +183,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   picker uses `widgets::combo`, with a muted 14 pt caret at the right. `widgets::checkbox`
   draws a 14 pt square with 4 pt corners and a control-edge border; checked uses accent
   fill and an `on_accent` check glyph. Its target remains at least 24 pt, with checkbox
-  role and toggled state. Sidebar folders and collapsing headers share
+  role and toggled state. The sidebar's folder toggles and other collapsing headers share
   `widgets::collapsing_icon`, switching between right and down carets. The folder toggle
   also reports whether the folder is expanded. Icons are always
   laid out through the isolated icon family. Global stock controls have 6 pt corners,
@@ -204,6 +211,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   Existing persistent help migrates with its screen; errors and empty states stay visible.
   Why: the owner's review found persistent explanations noisy; hover and accessible
   descriptions retain guidance without another line in every form.
+
+- **Interface copy uses the single-character ellipsis (`…`).** Labels, menu items,
+  placeholders, progress text and truncation use the same mark. Mixing three periods and
+  an ellipsis made adjacent controls look inconsistent. Code samples and protocol text
+  keep their own syntax.
 
   The controls kit's paint geometry, state, glyph families and help semantics are checked
   by `tests/widgets.rs`, which also rejects stock picker and checkbox constructors at
@@ -422,7 +434,15 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   over the sidebar focuses the filter,
   as Find elsewhere applies to what is under the pointer. The clear button sits inside the
   field's right padding, so typing never changes the field's or the sidebar's width (the
-  review's #52), and "5 of 9 requests" shows under it while filtering.
+  review's #52), and "5 of 9 requests" shows under it while filtering. The placeholder is
+  "Filter". The syntax is in the field's tooltip and accessible description because an
+  inline list of operators crowded the narrow sidebar.
+
+- **The request tree keeps one method gutter at every depth.** Closed and open folder
+  glyphs start in the same gutter as request methods. Folder carets have a separate target
+  to the left for expand and collapse. Only names are indented, so the hierarchy stays
+  visible without shifting GET, POST or DELETE as folders nest. Long custom methods
+  truncate in the gutter and keep the full method in hover text and the accessible name.
 
 - **The tree is refreshed after a save that changed a request's method or name**, so it never
   shows a stale name.
@@ -455,7 +475,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
 - **The request bar is one control:** method, URL and Send share one edge
   (`field_border`) on the input fill, with a divider after the method and Send filling the
-  right end; the fields inside draw no frame of their own (`workspace::frameless`), and the
+  right end. The fields inside draw no frame of their own (`workspace::frameless`), and the
   focus ring goes around the whole bar. Single-line variable fields centre their text
   vertically. A custom method being typed takes the method picker's place, so the URL
   keeps its room at 720 points. Save's icon is in the text color while there is something
@@ -463,6 +483,14 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   a frame in a frame in a card, its URL text sat 6 points above centre, and enabled and
   disabled Save looked alike (the review's #22–#24). Checked by
   `imposter-ui/tests/request_bar.rs` and the layout lint's custom-method state.
+  - Send, Cancel and Stop share one slot with centred labels. Its width is measured from
+    "Send to Production", "Cancel" and "Stop", with a 96-point minimum and a ceiling
+    based on 30% of the space beside the method, capped at 168 points. Measuring the
+    current label made the button and URL field jump when the environment changed.
+    Long environment labels end in an ellipsis and keep the full action on hover and
+    in the accessible name.
+  - Cancel and Stop use Danger. The neutral fill and red label and edge distinguish them
+    from Send. A solid warning fill made cancelling look like the main action.
 
 - **Requests open on Body** because body editing is the primary workflow. The Docs tab
   edits the plain-text description through the normal save guard and includes it in exports.
@@ -738,8 +766,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     buttons and adds the free width before laying them out left to right. A right-to-left
     row in an auto-sized modal put its buttons outside the modal, where clicks missed.
   - Cancel and secondary choices use Secondary. The main action uses Primary or, for a
-    destructive action, DangerPrimary. The guard's Discard uses Danger, a neutral fill with
-    red text, because filled red beside filled orange differ only in hue (1.02:1).
+    destructive action, DangerPrimary. The guard's Discard uses Danger with a neutral fill
+    and red label and edge because filled red beside filled orange differ only in hue (1.02:1).
     Disabled buttons stay neutral.
   - Enter presses the main action by default. Focused buttons and other clickable controls
     handle Enter themselves. Curl and script editors use Enter for newlines. The dialog
@@ -878,7 +906,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   tabs share one row with the active viewer's tools. Event streams keep their Events tab,
   and tabs that need more room move into the row's overflow menu. This combines the two
   levels of summaries and navigation that made it hard to see which detail was active.
-  - The filter keeps a Current request only chip beside the text field. The footer shows
+  - The filter keeps a Current request only chip beside the text field. The placeholder is
+    "Filter" and History's query syntax lives in the tooltip and accessible description,
+    leaving room for the chip as the window narrows. The footer shows
     the retained execution count and size beside the paging chevrons. Page ranges and
     retention limits move to its tooltip, and errors and empty states remain visible.
 
