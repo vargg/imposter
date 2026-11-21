@@ -138,21 +138,22 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing SQLite
     five; radio buttons to screen readers). A new environment's color follows its name until
     the user picks one, and says "Suggested for production environments" meanwhile; editing
     never changes it by itself. On the Variables screen, "⋯ → Edit name and color…".
-  - **Showing:** the header's picker is the one place the active environment is named. A
+  - **Showing:** the header's picker names the active environment on screen. A
     colored one fills it with its color's tint, its name semibold in that color after a
-    "●" and a 3-point stripe of the full color on its left edge; Send then names it in
-    words ("Send to Prod", as wide as its words up to 168 points and 30% of the bar,
-    past which the name is cut). Without a color the picker is plain and Send reads
-    "Send". Send's accessible description names the environment either way ("Sends with
-    the Prod environment"). The picker's options and the palette's environment rows have
-    the dot. Every shade is ≥4.5:1 on every background and on its own tint (`theme.rs`
-    tests). Why: the name was shown three times (a pill above Send, the picker and the
-    status bar) and a small dot still did not read as a sure sign (user's note). Send
-    keeps the accent: colored by environment it would break "orange means primary", and a
-    red Send read as an error. A colored rim around the request bar was rejected too: the
-    shades are the status tones, so a green rim read as success and a red one as an
-    error, and hue alone failed colour-blind users (Q17, Q18). Not done: an imported or
-    migrated "Production" still arrives without a color.
+    "●" and a 3-point stripe of the full color on its left edge. Without a color the
+    picker is plain. The idle button always reads "Send". Its hover text ("Send with Prod"
+    with the shortcut hint) and accessible description ("Sends with the Prod environment")
+    name the active environment with or without a color. The picker's options and the
+    palette's environment rows have the dot. Every shade is ≥4.5:1 on every background
+    and on its own tint (`theme.rs` tests). Why: few people read the button's words, and a
+    long name cut the label or squeezed the URL field. A pill above Send repeated the name
+    already shown in the picker and status bar, and a small dot still did not read as a sure
+    sign (user's note). Send keeps the accent because coloring it by environment would
+    break "orange means primary", and a red Send read as an error. A colored rim around
+    the request bar was rejected because the shades also serve as status tones. A green
+    rim read as success and a red one as an error. Hue alone failed colour-blind users
+    (Q17, Q18). Not done: an imported or migrated "Production" still arrives without a
+    color.
   - **Managing:** the picker ends with "Manage environments…", which opens Variables on the
     active environment (Global without one), through the Variables guard.
 

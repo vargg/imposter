@@ -314,8 +314,7 @@ fn assert_tool_panes(app: &support::App, setting: Rect, result: Rect) {
     }
 }
 
-/// Send names the active, colored environment of the walk.
-const SEND: &str = "Send to Production EU";
+const SEND: &str = "Send";
 
 const LONG_ENVIRONMENT: &str =
     "A very long environment name for sample requests with a scope that has to truncate";
@@ -1079,6 +1078,7 @@ fn walk_send_controls(
     send_event: &watch::Sender<bool>,
     check: &mut impl FnMut(&mut support::App, &str),
 ) {
+    let send = app.harness.get_by_role_and_label(Role::Button, SEND).rect();
     let state = &mut app.harness.state_mut().state;
     let active = state.active_environment.unwrap();
     let environment = state
@@ -1087,7 +1087,11 @@ fn walk_send_controls(
         .find(|env| env.id == active)
         .unwrap();
     let original_name = std::mem::replace(&mut environment.name, LONG_ENVIRONMENT.into());
-    check(app, "Send with a long environment name");
+    check(app, "request bar with a long active environment name");
+    assert_eq!(
+        app.harness.get_by_role_and_label(Role::Button, SEND).rect(),
+        send
+    );
     let state = &mut app.harness.state_mut().state;
     state
         .environments
@@ -1339,7 +1343,6 @@ fn no_control_runs_past_the_window_or_overlaps_another() {
             for density in [Density::Compact, Density::Comfortable] {
                 let url = url.clone();
                 let mut app = start_with(move |store| {
-                    // Active and colored, so the picker is tinted and Send names it.
                     store
                         .call_blocking(|db| {
                             use imposter_app::store::environments as env;

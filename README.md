@@ -66,9 +66,8 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Use the Plus beside **Environments** to create one. Right-click or press Shift+F10 on
   an environment to edit its name and color or delete it.
 - Give an environment a color (a new one named "prod", "production" or "live" is offered
-  red). Its name appears in the header's environment picker, tinted in its color, and Send
-  names a colored environment (for example, **Send to Prod**) before anything goes out.
-  Hover over Send for the full name if it is shortened.
+  red). The header's environment picker shows the active environment and uses its color.
+  Hover over **Send** for the full name of the active environment.
 - Placeholders are highlighted: defined names in orange, unknown ones in red. Typing `{{`
   suggests names. Clicking a placeholder, or pressing Alt+Enter, shows where its value comes
   from. Values from password fields stay masked until revealed.

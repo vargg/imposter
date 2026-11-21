@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use egui_kittest::Harness;
-use egui_kittest::kittest::{NodeT, Queryable};
+use egui_kittest::kittest::Queryable;
 use imposter_app::core::capture::Capture;
 use imposter_app::core::check::{Check, Op};
 use imposter_app::core::mock::{MockConfig, MockRoute};
@@ -47,21 +47,6 @@ impl Tour {
         let path = self.out.join(format!("{}-{name}.png", self.size));
         self.harness.render().unwrap().save(&path).unwrap();
         println!("{}", path.display());
-    }
-
-    /// The accessible label keeps the full environment name when the button elides it.
-    fn send(&mut self) {
-        let label = self
-            .harness
-            .query_all_by_role(egui::accesskit::Role::Button)
-            .filter_map(|node| node.accesskit_node().label())
-            .find(|label| label == "Send" || label.starts_with("Send to "));
-        match label {
-            Some(label) => {
-                self.click(&label);
-            }
-            None => eprintln!("tour ({}): no Send button", self.size),
-        }
     }
 
     fn click(&mut self, label: &str) -> bool {
@@ -435,13 +420,13 @@ fn main() {
         tour.shot("2-03b-request-settings");
         tour.click("GET Slow report");
         tour.settle();
-        tour.send();
+        tour.click("Send");
         tour.harness.run_steps(3);
         tour.shot("2-04-in-progress");
         tour.settle();
         tour.click("GET List users");
         tour.settle();
-        tour.send();
+        tour.click("Send");
         tour.settle();
         tour.shot("2-05-json-response");
         tour.click("More request tabs");
@@ -458,22 +443,22 @@ fn main() {
         tour.harness.state_mut().state.response.tab = ResponseTab::Body;
         tour.click("DELETE Broken endpoint");
         tour.settle();
-        tour.send();
+        tour.click("Send");
         tour.settle();
         tour.shot("2-07-server-error");
         tour.click("GET Offline service");
         tour.settle();
-        tour.send();
+        tour.click("Send");
         tour.settle();
         tour.shot("2-08-connection-failure");
         tour.click("GET Order {{user_id}}");
         tour.settle();
-        tour.send();
+        tour.click("Send");
         tour.settle();
         tour.shot("2-09-unresolved-variable");
         tour.click("GET Export everything");
         tour.settle();
-        tour.send();
+        tour.click("Send");
         tour.settle();
         tour.shot("2-10-large-response");
 
@@ -560,7 +545,7 @@ fn main() {
         tour.open_screen("Requests");
         tour.settle();
         tour.open_tab("Tests");
-        tour.send();
+        tour.click("Send");
         tour.settle();
         tour.open_from("More response tabs", "Check results");
         tour.settle();
@@ -589,7 +574,7 @@ fn main() {
         tour.shot("4-01c-script-examples");
         tour.harness.key_press(egui::Key::Escape);
         tour.settle();
-        tour.send();
+        tour.click("Send");
         tour.settle();
         tour.harness.state_mut().state.response.tab = ResponseTab::Tests;
         tour.settle();

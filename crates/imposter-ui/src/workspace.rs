@@ -1478,23 +1478,15 @@ fn layout_switch(ui: &mut Ui, current: Orientation) -> bool {
 }
 
 fn send_slot_width(ui: &Ui) -> f32 {
-    // Reserve enough space for the usual environment names and keep most of the bar for the URL.
-    let limit = (ui.available_width() * 0.3).clamp(96.0, 168.0);
-    ["Send to Production", "Cancel", "Stop"]
+    ["Send", "Cancel", "Stop"]
         .into_iter()
         .map(|label| widgets::action_width(ui, label))
         .fold(96.0, f32::max)
-        .min(limit)
 }
 
 fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
     let streaming = executing && !state.response.live_events.is_empty();
     let environment = active_environment(state).map(|e| e.name.clone());
-    // A colored environment is named on Send itself ("Send to Prod"): the words on the
-    // button clicked say where the request goes.
-    let target = active_environment(state)
-        .filter(|e| e.color.is_some())
-        .map(|e| e.name.clone());
     let State {
         editor,
         snapshot,
@@ -1527,12 +1519,11 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 edited |=
                     widgets::method_picker(ui, &mut pane.editor.method, &mut pane.custom_method);
                 divider(ui, height - 2.0);
-                let label = match (&target, executing) {
+                let label = match (executing, streaming) {
                     // A stream is listened to until stopped; nothing is called off.
-                    (_, true) if streaming => "Stop".to_owned(),
-                    (_, true) => "Cancel".to_owned(),
-                    (Some(name), false) => format!("Send to {name}"),
-                    (None, false) => "Send".to_owned(),
+                    (true, true) => "Stop",
+                    (true, false) => "Cancel",
+                    (false, _) => "Send",
                 };
                 let send_width = send_slot_width(ui);
                 // Narrow only while a custom method is typed beside it at the smallest size.
@@ -1563,21 +1554,16 @@ fn command_bar(state: &mut State, ui: &mut Ui, executing: bool) {
                 } else {
                     Variant::Primary
                 };
-                let send = widgets::request_bar_button(
-                    ui,
-                    variant,
-                    &label,
-                    vec2(send_width, height - 2.0),
-                );
-                let action = match (&environment, &target, executing) {
-                    (Some(name), None, false) => format!("Send with {name}"),
-                    _ => label,
-                };
-                if !executing && let Some(name) = &environment {
+                let send =
+                    widgets::request_bar_button(ui, variant, label, vec2(send_width, height - 2.0));
+                let action = if !executing && let Some(name) = &environment {
                     let description = format!("Sends with the {name} environment");
                     ui.ctx()
                         .accesskit_node_builder(send.id, |node| node.set_description(description));
-                }
+                    format!("Send with {name}")
+                } else {
+                    label.to_owned()
+                };
                 let send = send.on_hover_text(crate::shortcuts::hint(
                     ui.ctx(),
                     &action,

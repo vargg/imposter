@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use egui_kittest::Harness;
-use egui_kittest::kittest::{NodeT, Queryable};
+use egui_kittest::kittest::Queryable;
 use imposter_app::core::capture::Capture;
 use imposter_app::core::check::{Check, Op};
 use imposter_app::core::model::{BodyType, ParamItem, RequestTemplate};
@@ -139,13 +139,7 @@ fn main() {
         harness.get_by_label("GET List users").click();
         settle(&mut harness);
         harness
-            .query_all_by_role(egui::accesskit::Role::Button)
-            .find(|node| {
-                node.accesskit_node()
-                    .label()
-                    .is_some_and(|label| label == "Send" || label.starts_with("Send to "))
-            })
-            .expect("a Send button")
+            .get_by_role_and_label(egui::accesskit::Role::Button, "Send")
             .click();
         settle(&mut harness);
         let image = harness.render().unwrap();

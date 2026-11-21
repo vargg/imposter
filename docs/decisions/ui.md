@@ -379,7 +379,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     replacing it.
   - **The right end** links to active Mocks, Load and Run. Mocks shows the port on other
     screens while it serves. Its own toolbar shows the running address and copy control,
-    so the status bar omits that link on Mocks. The environment stays with the picker and Send.
+    so the status bar omits that link on Mocks. The header picker shows the active environment.
 
   Why: the review found it reporting an earlier request's failure after a blocked send, and
   "Ready" during a send. A status that outlives its context misleads more than no status.
@@ -501,11 +501,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   (the review's #22–#24). Checked by
   `imposter-ui/tests/request_bar.rs` and the layout lint's custom-method state.
   - Send, Cancel and Stop share one slot with centred labels. Its width is measured from
-    "Send to Production", "Cancel" and "Stop", with a 96-point minimum and a ceiling
-    based on 30% of the space beside the method, capped at 168 points. Measuring the
-    current label made the button and URL field jump when the environment changed.
-    Long environment labels end in an ellipsis and keep the full action on hover and
-    in the accessible name.
+    "Send", "Cancel" and "Stop", with a 96-point minimum, so the button and URL field
+    hold their positions as a request starts, streams or finishes.
   - Cancel and Stop use Danger. The neutral fill and red label and edge distinguish them
     from Send. A solid warning fill made cancelling look like the main action.
 
