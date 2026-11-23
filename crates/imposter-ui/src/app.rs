@@ -1727,10 +1727,7 @@ impl ImposterApp {
             Message::MockStopped { generation, result } => {
                 if generation == self.state.mocks.generation {
                     self.state.mocks.run = None;
-                    self.state.mocks.notice = Some(match result {
-                        Ok(()) => "Stopped".into(),
-                        Err(error) => error,
-                    });
+                    self.state.mocks.notice = result.err();
                 }
             }
             Message::Done | Message::FolderPicked(None) => {}

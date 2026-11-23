@@ -107,6 +107,11 @@ pub fn status_bar(app: &App) -> egui::Rect {
         .rect()
 }
 
+pub fn blur_text_field(app: &mut App) {
+    app.harness.click_at(status_bar(app).center());
+    app.harness.run_steps(2);
+}
+
 pub fn click(harness: &mut Harness<'_, ImposterApp>, label: &str) {
     harness.get_by_label(label).click();
     harness.run_steps(2);

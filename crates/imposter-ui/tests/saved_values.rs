@@ -224,6 +224,56 @@ fn enter_adds_or_selects_a_value_and_escape_clears_the_draft() {
 }
 
 #[test]
+fn empty_values_have_distinct_labels_and_placeholder_styling() {
+    let mut app = start_with(|store| {
+        store
+            .call_blocking(|db| {
+                scopes::write(
+                    db,
+                    Scope::Global,
+                    &vars(&[("blank", ""), ("literal", "Empty value")]),
+                    &saved("blank", &["", "other"]),
+                )
+            })
+            .unwrap();
+        let api = collection(store, "API");
+        request(store, api.id, "Example", "http://h/{{blank}}");
+    });
+    click(&mut app.harness, "GET Example");
+    settle(&mut app.harness);
+    inspect(&mut app, "blank", false);
+    app.harness.get_by_label("Defined in Global (empty)");
+    app.harness.get_by_label("Use saved value 1 (empty)");
+    app.harness.get_by_label("Use saved value 2: other");
+    press(&mut app, egui::Key::Escape);
+    support::open_screen(&mut app.harness, "Variables");
+    settle(&mut app.harness);
+    app.harness.get_by_label("Variable 1 value 1 (empty)");
+    app.harness.get_by_label("Variable 2 value 1: Empty value");
+
+    let formats = |label| {
+        app.harness
+            .output()
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(shape) if shape.galley.job.text == label => {
+                    Some(shape.galley.job.sections[0].format.clone())
+                }
+                _ => None,
+            })
+            .unwrap()
+    };
+    let empty = formats("empty");
+    assert_eq!(empty.font_id.family, egui::FontFamily::Proportional);
+    assert_eq!(empty.color, imposter_ui::theme::palette().text_muted);
+    assert!(empty.italics);
+    let literal = formats("Empty value");
+    assert_eq!(literal.font_id.family, egui::FontFamily::Monospace);
+    assert!(!literal.italics);
+}
+
+#[test]
 fn unsaved_edits_to_the_scope_block_choosing_and_a_clean_screen_follows_the_choice() {
     let mut app = with_saved_user("http://h".into());
     support::open_screen(&mut app.harness, "Variables");

@@ -402,10 +402,29 @@ fn route_editing_validation_two_click_removal_and_save_shortcut() {
 }
 
 #[test]
+fn revert_is_available_only_with_unsaved_mock_edits() {
+    let mut app = open_with_port(0, manual_save);
+    let disabled = |app: &support::App| {
+        app.harness
+            .get_by_label("Revert to saved mocks")
+            .accesskit_node()
+            .is_disabled()
+    };
+    assert!(disabled(&app));
+    type_into(&mut app.harness, "Mock response body", "-edited");
+    assert!(!disabled(&app));
+    click(&mut app.harness, "Save mocks");
+    settle(&mut app.harness);
+    assert_eq!(stored_mocks(&app).routes[0].body, "first-edited");
+    assert!(disabled(&app));
+}
+
+#[test]
 fn pending_reload_disables_fields_until_the_database_reply_arrives() {
     use egui_kittest::kittest::NodeT as _;
-    let mut app = opened(0);
+    let mut app = open_with_port(0, manual_save);
     click(&mut app.harness, "Mock route 1");
+    type_into(&mut app.harness, "Mock response body", "-edited");
     let store = app.harness.state().store().clone();
     let (entered_tx, entered_rx) = std::sync::mpsc::channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();
@@ -420,6 +439,7 @@ fn pending_reload_disables_fields_until_the_database_reply_arrives() {
     });
     entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     click(&mut app.harness, "Revert to saved mocks");
+    click(&mut app.harness, "Discard");
     let port_disabled = app
         .harness
         .get_by_label("Mock port")
@@ -437,6 +457,7 @@ fn pending_reload_disables_fields_until_the_database_reply_arrives() {
         "loading must not overwrite fresh edits"
     );
     settle(&mut app.harness);
+    assert_eq!(app.harness.state().state.mocks.form.routes[0].body, "first");
     assert!(
         !app.harness
             .get_by_label("Mock path")
@@ -519,6 +540,8 @@ fn the_server_state_reads_in_words_and_its_controls_stay_put() {
     assert_eq!(copied, [url]);
     click(&mut app.harness, "Stop mock server");
     wait_for(&mut app, |app| app.state.mocks.run.is_none());
+    assert_eq!(app.harness.query_all_by_label("Stopped").count(), 1);
+    assert!(app.harness.state().state.mocks.notice.is_none());
 }
 
 #[test]

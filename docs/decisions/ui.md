@@ -904,9 +904,13 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
 - **Mocks shows the server state in its toolbar.** The port reads `auto` at zero.
   Start is the primary action with Play, and Stop uses the danger style with Stop. The
-  address has a green dot and a copy icon when running. Starting, stopping, stopped,
-  validation errors and the restart notice remain visible. The single state gives the
-  address room beside the port and removes the repeated state from the status bar.
+  address has a green dot and a copy icon when running. Starting, stopping and stopped
+  appear in the toolbar. The server notice below it shows errors and clears on a clean
+  stop. Validation errors and the restart notice remain visible. Why: the single state
+  gives the address room beside the port, removes the repeated state from the status bar,
+  and a "Stopped" notice under the toolbar's "Stopped" said the same thing twice.
+  Enforced by `the_server_state_reads_in_words_and_its_controls_stay_put` and
+  `occupied_ports_report_an_error_and_mock_controls_fit_the_minimum_window`.
   - Drag the route list's divider grip to resize it from 200 to 480 points. The list
     defaults to 260 points and keeps its preferred width across restarts. The window can
     constrain the list so the route editor always has at least 372 points, the space it

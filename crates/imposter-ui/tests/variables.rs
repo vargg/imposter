@@ -261,10 +261,52 @@ fn global_edits_autosave_after_the_last_edit() {
     assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
     assert!(app.harness.query_by_label("Unsaved").is_none());
 
+    support::blur_text_field(&mut app);
     advance_time(&mut app.harness, 0.4);
+    assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
+    advance_time(&mut app.harness, 0.2);
     settle(&mut app.harness);
     assert_eq!(stored_globals(&app), vars(&[("a", "12"), ("token", "")]));
     assert_eq!(save_state(&app.harness, "Save variables"), "Saved");
+}
+
+#[test]
+fn autosave_leaves_a_focused_variable_value_in_the_composer_until_blur() {
+    let mut app = globals_with_collection();
+    type_into(&mut app.harness, "Add value to variable 1", "half");
+    advance_time(&mut app.harness, 0.6);
+    settle(&mut app.harness);
+    assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
+    assert_eq!(app.harness.state().state.variables.rows[0].draft, "half");
+    assert!(app.harness.query_by_label("Variable 1 value 2: half").is_none());
+    support::blur_text_field(&mut app);
+    advance_time(&mut app.harness, 0.4);
+    settle(&mut app.harness);
+    assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
+    advance_time(&mut app.harness, 0.2);
+    settle(&mut app.harness);
+    assert_eq!(stored_globals(&app), vars(&[("a", "half")]));
+    app.harness.get_by_label("Variable 1 value 2: half");
+}
+
+#[test]
+fn moving_from_a_new_variable_name_to_its_value_does_not_save_an_empty_value() {
+    let mut app = globals_with_collection();
+    type_into(&mut app.harness, "New variable name", "token");
+    advance_time(&mut app.harness, 0.4);
+    support::text_input(&app.harness, "Add value to variable 2").click();
+    app.harness.run_steps(2);
+    assert!(support::text_input(&app.harness, "Add value to variable 2").is_focused());
+    advance_time(&mut app.harness, 0.6);
+    settle(&mut app.harness);
+    assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
+    assert!(app.harness.state().state.variables.rows[1].values().is_empty());
+    type_into(&mut app.harness, "Add value to variable 2", "ready");
+    support::blur_text_field(&mut app);
+    advance_time(&mut app.harness, 0.6);
+    settle(&mut app.harness);
+    assert_eq!(stored_globals(&app), vars(&[("a", "1"), ("token", "ready")]));
+    assert_eq!(app.harness.state().state.variables.rows[1].values(), ["ready"]);
 }
 
 #[test]
@@ -273,7 +315,8 @@ fn entering_a_value_at_the_autosave_deadline_keeps_it_selected() {
     type_into(&mut app.harness, "Add value to variable 1", "12");
     app.harness.key_press(egui::Key::Enter);
     advance_time(&mut app.harness, imposter_ui::app::AUTOSAVE_DELAY);
-    advance_time(&mut app.harness, imposter_ui::app::AUTOSAVE_DELAY);
+    support::blur_text_field(&mut app);
+    advance_time(&mut app.harness, 0.6);
     settle(&mut app.harness);
 
     assert_eq!(stored_globals(&app), vars(&[("a", "12")]));
@@ -288,6 +331,7 @@ fn entering_a_value_at_the_autosave_deadline_keeps_it_selected() {
 fn invalid_global_edits_stay_unsaved_and_guard_navigation() {
     let mut app = globals_with_collection();
     type_into(&mut app.harness, "New variable name", "a");
+    support::blur_text_field(&mut app);
     advance_time(&mut app.harness, 0.6);
     settle(&mut app.harness);
     assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
