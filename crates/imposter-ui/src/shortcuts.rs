@@ -272,13 +272,16 @@ fn specificity(shortcut: KeyboardShortcut) -> usize {
         .count()
 }
 
+pub(crate) fn text_field_focused(ctx: &egui::Context) -> bool {
+    // Any focused widget wants the keyboard in egui's terms; only text fields keep an edit state.
+    ctx.memory(egui::Memory::focused)
+        .is_some_and(|id| egui::TextEdit::load_state(ctx, id).is_some())
+}
+
 /// The app-owned shortcuts pressed this frame, consumed most specific first.
 fn pressed(ctx: &egui::Context) -> Vec<Command> {
-    // Alt+arrows belong to a focused text field, which moves its cursor with them. Any
-    // focused widget wants the keyboard in egui's terms; only text fields keep an edit state.
-    let typing = ctx
-        .memory(egui::Memory::focused)
-        .is_some_and(|id| egui::TextEdit::load_state(ctx, id).is_some());
+    // Alt+arrows belong to a focused text field, which moves its cursor with them.
+    let typing = text_field_focused(ctx);
     let mut keys: Vec<(KeyboardShortcut, Command)> = ALL
         .iter()
         .filter(|s| s.command.is_global())
@@ -307,7 +310,7 @@ pub fn handle(state: &mut State, ctx: &egui::Context) {
     }
 }
 
-fn run(state: &mut State, command: Command) {
+pub(crate) fn run(state: &mut State, command: Command) {
     let requests = state.screen == Screen::Requests;
     let open = state.editor.as_ref().and_then(|p| p.editor.id());
     match command {

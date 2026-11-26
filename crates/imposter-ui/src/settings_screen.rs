@@ -74,7 +74,15 @@ impl SettingsForm {
             certificate_path: self.certificate_path.clone(),
             key_file: self.key_file.clone(),
             password: self.password.clone(),
-            host_identities: self.host_identities.clone(),
+            host_identities: self
+                .host_identities
+                .iter()
+                .cloned()
+                .map(|mut identity| {
+                    identity.name = identity.name.trim().to_owned();
+                    identity
+                })
+                .collect(),
             history_max_entries: self.history_max_entries,
             history_max_bytes: self.history_mib * MIB,
             allow_production_from_cli: self.allow_production_from_cli,
@@ -269,14 +277,19 @@ fn path(
 }
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
-    widgets::list_toolbar(ui, |ui| draw_toolbar(state, ui));
-    state.layout.list_width =
-        widgets::list_column(ui, "Settings categories", state.layout.list_width, |ui| {
-            categories(state, ui);
-        });
-    egui::CentralPanel::default()
-        .frame(workspace::screen_frame())
-        .show(ui, |ui| {
+    workspace::list_screen(
+        state,
+        ui,
+        |state, ui| {
+            let (width, list) =
+                widgets::list_column(ui, "Settings categories", state.layout.list_width);
+            state.layout.list_width = width;
+            list
+        },
+        |state, ui, list| {
+            draw_toolbar(state, ui);
+            widgets::scroll_list(list, |ui| categories(state, ui));
+            ui.add_space(theme::spacing().lg);
             let category = state.settings_screen.category;
             egui::ScrollArea::vertical()
                 .id_salt(("settings group", category))
@@ -286,7 +299,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
                     ui.set_max_width(ui.available_width().min(widgets::SETTINGS_WIDTH));
                     draw_category(state, ui, category);
                 });
-        });
+        },
+    );
 }
 
 fn draw_toolbar(state: &mut State, ui: &mut Ui) {
@@ -309,9 +323,8 @@ fn draw_toolbar(state: &mut State, ui: &mut Ui) {
         enabled: screen.dirty() && !screen.is_saving(),
     };
     let mut save = false;
-    widgets::screen_toolbar(
+    widgets::toolbar_row(
         ui,
-        "Settings",
         |_| {},
         |ui| {
             save = widgets::save_controls(ui, &status, "Save settings");
@@ -630,16 +643,35 @@ fn host_certificate(
     actions: &mut Vec<Action>,
 ) -> (bool, bool) {
     let prefix = format!("Host certificate {}", index + 1);
+    let title = if !identity.name.trim().is_empty() {
+        identity.name.trim().to_owned()
+    } else if !identity.host.trim().is_empty() {
+        format!("{}:{}", identity.host.trim(), identity.port)
+    } else {
+        prefix.clone()
+    };
     let remove = ui
-        .horizontal(|ui| {
-            ui.label(theme::section(&prefix));
-            ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                widgets::remove_icon_button(ui, ui.scope_id().with("remove"), &prefix)
-            })
-            .inner
+        .with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
+            let remove = widgets::remove_icon_button(ui, ui.scope_id().with("remove"), &prefix);
+            ui.with_layout(egui::Layout::left_to_right(Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(theme::section(&title))
+                        .truncate()
+                        .show_tooltip_when_elided(false),
+                )
+                .on_hover_text(&title);
+            });
+            remove
         })
         .inner;
     let mut edited = named_row(
+        ui,
+        "Name",
+        "An optional name for this certificate entry.",
+        &format!("{prefix} Name"),
+        |ui| text(ui, &mut identity.name, "e.g. Staging API", false),
+    );
+    edited |= named_row(
         ui,
         "Host",
         "The exact HTTPS host this certificate applies to.",

@@ -3,6 +3,8 @@
 //! files are written when the command commits. Ids are the stable numbers the profile
 //! keeps for each file's id.
 
+use std::collections::HashMap;
+
 use imposter_core::ids::{CollectionId, FolderId, RequestId};
 use imposter_core::model::{Request, RequestTemplate, SavedValues, Scripts, Variables};
 
@@ -345,6 +347,50 @@ pub fn request_index(db: &Tx<'_>) -> Result<Vec<IndexedRequest>, StoreError> {
         });
         index.into_iter().map(|(_, r)| r).collect()
     }))
+}
+
+/// A collection or folder as the Run picker lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexedRunTarget {
+    pub collection_id: CollectionId,
+    pub collection: String,
+    pub folder_id: Option<FolderId>,
+    pub folders: Vec<String>,
+}
+
+/// Every collection and folder in sidebar order, including empty ones.
+pub fn run_targets(db: &Tx<'_>) -> Result<Vec<IndexedRunTarget>, StoreError> {
+    let mut targets = Vec::new();
+    for collection in collections(db)? {
+        let folders = folders(db, collection.id)?;
+        let mut children: HashMap<_, Vec<_>> = HashMap::new();
+        for folder in &folders {
+            children.entry(folder.parent_id).or_default().push(folder);
+        }
+        let root = IndexedRunTarget {
+            collection_id: collection.id,
+            collection: collection.name,
+            folder_id: None,
+            folders: Vec::new(),
+        };
+        let mut pending = vec![root];
+        while let Some(target) = pending.pop() {
+            if let Some(folders) = children.get(&target.folder_id) {
+                pending.extend(folders.iter().rev().map(|folder| {
+                    let mut path = target.folders.clone();
+                    path.push(folder.name.clone());
+                    IndexedRunTarget {
+                        folder_id: Some(folder.id),
+                        folders: path,
+                        collection: target.collection.clone(),
+                        collection_id: target.collection_id,
+                    }
+                }));
+            }
+            targets.push(target);
+        }
+    }
+    Ok(targets)
 }
 
 // ---- folders ---------------------------------------------------------------------------

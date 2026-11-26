@@ -143,9 +143,44 @@ pub fn where_defined(source: &Source) -> String {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValueLabel {
+    Empty,
+    Masked,
+    Text(String),
+}
+
+impl ValueLabel {
+    pub fn preview(value: &str, masked: bool, text: impl FnOnce(&str) -> String) -> Self {
+        if masked {
+            Self::Masked
+        } else if value.is_empty() {
+            Self::Empty
+        } else {
+            Self::Text(text(value))
+        }
+    }
+
+    pub fn display(&self) -> &str {
+        match self {
+            Self::Empty => "empty",
+            Self::Masked => "••••••••",
+            Self::Text(text) => text,
+        }
+    }
+
+    pub fn accessible_name(&self, title: &str) -> String {
+        if *self == Self::Empty {
+            format!("{title} (empty)")
+        } else {
+            format!("{title}: {}", self.display())
+        }
+    }
+}
+
 /// One heading and value per definition for the inspector, highest precedence first: "Defined
 /// in the Dev environment (overrides Global)", then "Overridden in Global" for each other.
-pub fn describe(definitions: &[Definition], masked: bool) -> Vec<(String, String)> {
+pub fn describe(definitions: &[Definition], masked: bool) -> Vec<(String, ValueLabel)> {
     const PREVIEW: usize = 4096;
     let overridden: Vec<String> = definitions
         .iter()
@@ -167,16 +202,14 @@ pub fn describe(definitions: &[Definition], masked: bool) -> Vec<(String, String
                     join_and(&overridden)
                 )
             };
-            let value = if masked {
-                "••••••••".to_owned()
-            } else if definition.value.is_empty() {
-                "Empty value".to_owned()
-            } else if definition.value.chars().count() > PREVIEW {
-                let cut: String = definition.value.chars().take(PREVIEW).collect();
-                format!("{cut}\n… Value preview limited to 4096 characters")
-            } else {
-                definition.value.clone()
-            };
+            let value = ValueLabel::preview(&definition.value, masked, |value| {
+                if value.chars().count() > PREVIEW {
+                    let cut: String = value.chars().take(PREVIEW).collect();
+                    format!("{cut}\n… Value preview limited to 4096 characters")
+                } else {
+                    value.to_owned()
+                }
+            });
             (heading, value)
         })
         .collect()
@@ -607,10 +640,13 @@ mod tests {
             lines[0],
             (
                 "Defined in the Dev environment (overrides Global)".into(),
-                "Empty value".into()
+                ValueLabel::Empty
             )
         );
-        assert_eq!(lines[1], ("Overridden in Global".into(), "g".into()));
+        assert_eq!(
+            lines[1],
+            ("Overridden in Global".into(), ValueLabel::Text("g".into()))
+        );
         let api = Definition {
             value: "c".into(),
             source: Source::Collection {
@@ -632,7 +668,7 @@ mod tests {
         );
         assert_eq!(
             describe(&snapshot.definitions["token"], true)[0].1,
-            "••••••••"
+            ValueLabel::Masked
         );
         let long = Definition {
             value: "x".repeat(5000),
@@ -642,6 +678,7 @@ mod tests {
         assert!(
             describe(&[long], false)[0]
                 .1
+                .display()
                 .ends_with("… Value preview limited to 4096 characters")
         );
         assert_eq!(Scope::of(&Source::Captured), None);

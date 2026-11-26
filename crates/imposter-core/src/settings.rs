@@ -8,6 +8,8 @@ use crate::model::Options;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HostIdentity {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
     pub host: String,
     pub port: u16,
     pub certificate_path: String,
@@ -18,6 +20,7 @@ pub struct HostIdentity {
 impl Default for HostIdentity {
     fn default() -> Self {
         Self {
+            name: String::new(),
             host: String::new(),
             port: 443,
             certificate_path: String::new(),
@@ -230,6 +233,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn host_identity_names_are_optional_in_settings_and_do_not_affect_matching() {
+        let legacy = serde_json::json!({"host": "example.com", "port": 8443, "certificate_path": "client.pem"});
+        let mut identity: HostIdentity = serde_json::from_value(legacy).unwrap();
+        assert_eq!(identity.name, "");
+        assert!(
+            serde_json::to_value(&identity)
+                .unwrap()
+                .get("name")
+                .is_none()
+        );
+        identity.name = "Staging API".into();
+        let saved: HostIdentity =
+            serde_json::from_value(serde_json::to_value(&identity).unwrap()).unwrap();
+        assert_eq!(saved, identity);
+        let settings = AppSettings {
+            host_identities: vec![saved],
+            ..Default::default()
+        };
+        assert_eq!(
+            settings.identity_for_url("https://example.com:8443/"),
+            Some(&identity)
+        );
+        assert!(
+            settings
+                .identity_for_url("https://staging-api:8443/")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn host_identities_normalize_and_override_as_a_set_then_by_field() {
         let identity = HostIdentity {
             host: "EXAMPLE.com.".into(),
@@ -291,6 +324,7 @@ mod tests {
         );
         settings.host_identities.push(HostIdentity {
             host: "example.com".into(),
+            name: "Another label".into(),
             ..identity
         });
         assert_eq!(

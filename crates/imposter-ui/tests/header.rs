@@ -24,6 +24,16 @@ const RAIL: [(Screen, &str, Icon); 7] = [
     (Screen::Run, "Run", Icon::Run),
     (Screen::Settings, "Settings", Icon::Settings),
 ];
+const RAIL_ORDER: [&str; 8] = [
+    "Requests",
+    "Variables",
+    "History",
+    "Mocks",
+    "Load",
+    "Run",
+    "Command palette",
+    "Settings",
+];
 
 fn item<'a>(app: &'a App, label: &'a str) -> egui_kittest::Node<'a> {
     app.harness.get_by_role_and_label(Role::Button, label)
@@ -79,9 +89,6 @@ fn the_rail_selects_each_screen_and_paints_its_glyphs_and_selection_bar() {
         open_screen(&mut app.harness, label);
         settle(&mut app.harness);
         assert_eq!(app.harness.state().state.screen, screen);
-        if matches!(screen, Screen::Mocks | Screen::Load | Screen::Run) {
-            app.harness.get_by_role_and_label(Role::Label, label);
-        }
         assert!(!egui::Popup::is_any_open(&app.harness.ctx));
         app.harness.hover_at(egui::pos2(300.0, 20.0));
         app.harness.run_steps(2);
@@ -131,11 +138,14 @@ fn the_rail_works_from_the_keyboard_and_preserves_palette_actions() {
     let mut app = start();
     item(&app, "Requests").focus();
     app.harness.run_steps(2);
-    for (_, label, _) in &RAIL[1..] {
+    for label in &RAIL_ORDER[1..] {
         app.harness.key_press(Key::Tab);
         app.harness.run_steps(2);
         assert!(item(&app, label).is_focused(), "Tab should reach {label}");
     }
+    app.harness.key_press_modifiers(Modifiers::SHIFT, Key::Tab);
+    app.harness.run_steps(2);
+    assert!(item(&app, "Command palette").is_focused());
     app.harness.key_press_modifiers(Modifiers::SHIFT, Key::Tab);
     app.harness.run_steps(2);
     assert!(item(&app, "Run").is_focused());
@@ -167,6 +177,43 @@ fn the_rail_works_from_the_keyboard_and_preserves_palette_actions() {
         settle(&mut app.harness);
         assert_eq!(app.harness.state().state.screen, screen);
     }
+}
+
+#[test]
+fn the_rail_opens_the_command_palette_and_displays_both_shortcuts() {
+    use imposter_ui::shortcuts;
+    let mut app = start();
+    let button = app
+        .harness
+        .query_by_role_and_label(Role::Button, "Command palette")
+        .expect("the rail exposes the command palette");
+    assert!(!button.accesskit_node().is_selected().unwrap_or_default());
+    assert!(button.rect().bottom() < item(&app, "Settings").rect().top());
+    let palette_hint = shortcuts::hint(&app.harness.ctx, "Command palette", &shortcuts::PALETTE);
+    let recent_hint = shortcuts::hint(&app.harness.ctx, "Requests only", &shortcuts::RECENT);
+    let hint = format!("{palette_hint}\n{recent_hint}");
+    assert_markers(&app, "Command palette", Some(&hint), &[]);
+    app.harness
+        .ctx
+        .global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+    item(&app, "Command palette").hover();
+    app.harness.run_steps(5);
+    assert!(painted_text(&app, &hint));
+
+    support::click_button(&mut app.harness, "Command palette");
+    settle(&mut app.harness);
+    app.harness
+        .get_by_role_and_label(Role::Label, "Command palette");
+    app.harness.get_by_label("Go to History");
+    assert_eq!(app.harness.state().state.screen, Screen::Requests);
+    assert_eq!(
+        item(&app, "Requests").accesskit_node().is_selected(),
+        Some(true)
+    );
+    assert_eq!(
+        item(&app, "Command palette").accesskit_node().is_selected(),
+        Some(false)
+    );
 }
 
 #[test]
@@ -373,7 +420,7 @@ fn branding_and_the_rail_fit_with_a_long_environment_in_both_densities() {
                 assert!(logo.right() < environment.left() && environment.right() > size.x - 32.0);
                 assert!(environment.width() >= 24.0 && environment.height() >= 24.0);
 
-                let rects = RAIL.map(|(_, label, _)| {
+                let rects = RAIL_ORDER.map(|label| {
                     support::assert_icon_button_in_range(&app.harness, label, 32.0..=36.0);
                     let rect = item(&app, label).rect();
                     assert!(window.contains_rect(rect), "{label}: {rect:?}");
@@ -388,9 +435,96 @@ fn branding_and_the_rail_fit_with_a_long_environment_in_both_densities() {
                 );
                 assert!(rects[3].top() - rects[2].bottom() > rects[2].top() - rects[1].bottom());
                 let status_top = support::status_bar(&app).top();
-                assert!((8.0..=16.0).contains(&(status_top - rects[6].bottom())));
+                assert!((8.0..=16.0).contains(&(status_top - rects[7].bottom())));
             }
         }
+    }
+}
+
+#[test]
+fn side_lists_span_the_screen_body_and_the_toolbar_starts_to_their_right() {
+    let mut app = start();
+    app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
+    app.harness.run_steps(2);
+    for (screen, label) in [
+        ("Variables", "Variable scopes"),
+        ("Settings", "Settings categories"),
+        ("Mocks", "Mock routes"),
+        ("Requests", "Collections sidebar"),
+    ] {
+        open_screen(&mut app.harness, screen);
+        settle(&mut app.harness);
+        let rail = support::rail_bounds(&app);
+        let list = app.harness.get_by_role_and_label(Role::Group, label).rect();
+        let toolbar = app.harness.get_by_role(Role::Toolbar).rect();
+        assert!(
+            (rail.right() - list.left()).abs() <= 0.5,
+            "{screen}: {rail:?}, {list:?}"
+        );
+        assert!(
+            (rail.top() - list.top()).abs() <= 0.5,
+            "{screen}: {rail:?}, {list:?}"
+        );
+        assert!(
+            (rail.bottom() - list.bottom()).abs() <= 0.5,
+            "{screen}: {rail:?}, {list:?}"
+        );
+        assert!(
+            toolbar.left() > list.right(),
+            "{screen}: {toolbar:?}, {list:?}"
+        );
+    }
+}
+
+#[test]
+fn tab_traversal_visits_the_toolbar_before_the_full_height_list() {
+    let mut app = start();
+    open_screen(&mut app.harness, "Settings");
+    settle(&mut app.harness);
+    support::open_settings_category(&mut app.harness, "General");
+    app.harness
+        .get_by_role_and_label(Role::CheckBox, "Automatically save changes")
+        .click();
+    app.harness.run_steps(2);
+    for (screen, first_list_control) in [
+        ("Settings", "Appearance settings"),
+        ("Variables", "Global"),
+        ("Mocks", "Add mock route"),
+    ] {
+        open_screen(&mut app.harness, screen);
+        settle(&mut app.harness);
+        item(&app, first_list_control).focus();
+        app.harness.run_steps(2);
+        app.harness.key_press_modifiers(Modifiers::SHIFT, Key::Tab);
+        app.harness.run_steps(2);
+        let toolbar = app.harness.get_by_role(Role::Toolbar).rect();
+        let focused = app.harness.ctx.memory(egui::Memory::focused).unwrap();
+        let rect = app.harness.ctx.read_response(focused).unwrap().rect;
+        assert!(
+            toolbar.contains_rect(rect),
+            "{screen}: {rect:?} outside {toolbar:?}"
+        );
+    }
+}
+
+#[test]
+fn the_selected_rail_item_identifies_each_screen_without_a_visible_page_title() {
+    let mut app = start();
+    for (_, label, _) in RAIL {
+        open_screen(&mut app.harness, label);
+        settle(&mut app.harness);
+        assert_eq!(item(&app, label).accesskit_node().is_selected(), Some(true));
+        let toolbar = app.harness.get_by_role(Role::Toolbar);
+        assert!(
+            toolbar
+                .query_by_role_and_label(Role::Label, label)
+                .is_none(),
+            "{label} repeats its screen name in the toolbar"
+        );
+        assert!(!app.harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, Shape::Text(text)
+                if text.galley.job.text == label && text.galley.job.sections[0].format.font_id == theme::semibold(theme::PAGE_TITLE))
+        }), "{label} paints a page title");
     }
 }
 
@@ -417,8 +551,8 @@ fn every_screen_has_one_toolbar_above_its_content_and_the_status_bar_is_status_o
         (
             Screen::Mocks,
             "Mocks",
-            Role::Button,
-            "Add mock route",
+            Role::Label,
+            "Add a route to answer requests with a fixed response.",
             "Save mocks",
         ),
         (
@@ -448,25 +582,31 @@ fn every_screen_has_one_toolbar_above_its_content_and_the_status_bar_is_status_o
         assert_eq!(app.harness.state().state.screen, screen);
         let toolbar = app.harness.get_by_role(Role::Toolbar);
         let row = toolbar.rect();
-        let (heading_role, heading_name, height) = if screen == Screen::Variables {
-            (
-                Role::Button,
-                "Variables tab",
-                imposter_ui::widgets::tab_height(),
-            )
-        } else {
-            (Role::Label, title, theme::spacing().control)
+        let leading = match screen {
+            Screen::Variables => Some("Variables tab"),
+            Screen::History => Some("Filter history"),
+            Screen::Mocks => Some("Mock port"),
+            Screen::Load => Some("Choose the request to load-test"),
+            Screen::Run => Some("What to run"),
+            Screen::Requests | Screen::Settings => None,
         };
-        let heading = toolbar.get_by_role_and_label(heading_role, heading_name);
+        let height = if screen == Screen::Variables {
+            imposter_ui::widgets::tab_height()
+        } else {
+            theme::spacing().control
+        };
         let action = toolbar.get_by_role_and_label(Role::Button, action);
         let content = app
             .harness
             .get_by_role_and_label(content_role, content)
             .rect();
-        assert!(row.contains_rect(heading.rect()), "{title}");
+        if let Some(leading) = leading {
+            let leading = toolbar.get_by_label(leading).rect();
+            assert!(row.contains_rect(leading), "{title}");
+            assert!(leading.right() < action.rect().left(), "{title}");
+        }
         assert!(row.contains_rect(action.rect()), "{title}");
         assert!((row.height() - height).abs() <= 1.0, "{title}: {row:?}");
-        assert!(heading.rect().right() < action.rect().left(), "{title}");
         assert!(
             row.bottom() < content.top(),
             "{title}: {row:?}, {content:?}"

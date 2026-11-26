@@ -92,18 +92,24 @@ pub fn explanation(state: &State, scope: Scope) -> (String, &'static str) {
 }
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
-    let mut actions = Vec::new();
-    let highlight = widgets::list_toolbar(ui, |ui| scope_toolbar(state, ui, &mut actions));
-    state.layout.list_width =
-        widgets::list_column(ui, "Variable scopes", state.layout.list_width, |ui| {
-            scope_list(state, ui, &mut actions);
-        });
-    egui::CentralPanel::default()
-        .frame(workspace::screen_frame())
-        .show(ui, |ui| {
+    workspace::list_screen(
+        state,
+        ui,
+        |state, ui| {
+            let (width, list) =
+                widgets::list_column(ui, "Variable scopes", state.layout.list_width);
+            state.layout.list_width = width;
+            list
+        },
+        |state, ui, list| {
+            let mut actions = Vec::new();
+            let highlight = scope_toolbar(state, ui, &mut actions);
+            widgets::scroll_list(list, |ui| scope_list(state, ui, &mut actions));
+            ui.add_space(theme::spacing().lg);
             scope_content(state, ui, &mut actions, highlight.as_deref());
-        });
-    state.actions.extend(actions);
+            state.actions.extend(actions);
+        },
+    );
 }
 
 fn scope_list(state: &State, ui: &mut Ui, actions: &mut Vec<Action>) {
@@ -779,19 +785,10 @@ fn value_chip(
 ) -> Option<ChipAction> {
     let label = saved_label(value, false);
     let capture = choice == Choice::Capture;
-    let text = if capture {
-        format!("Latest capture · {label}")
-    } else {
-        label.clone()
-    };
+    let prefix = if capture { "Latest capture · " } else { "" };
+    let text = widgets::value_text(&label, prefix);
     let height = icons::size();
-    let font = egui::TextStyle::Monospace.resolve(ui.style());
-    let text_width = ui.fonts_mut(|fonts| {
-        fonts
-            .layout_no_wrap(text.clone(), font, palette().text)
-            .size()
-            .x
-    });
+    let text_width = widgets::text_width(ui, text.clone());
     let width = (text_width + 2.0 * ui.spacing().button_padding.x)
         .ceil()
         .clamp(REMOVE_WIDTH, line_width);
@@ -804,7 +801,7 @@ fn value_chip(
             .layout(Layout::left_to_right(Align::Center)),
     );
     let current = row.current() == Some(value);
-    let button = egui::Button::selectable(current, egui::RichText::new(text).monospace())
+    let button = egui::Button::selectable(current, text)
         .small()
         .frame_when_inactive(true)
         .min_size(vec2(width, height))
@@ -815,7 +812,7 @@ fn value_chip(
         button
     };
     let chip = chip_ui.add_sized([width, height], button);
-    name(&chip, &format!("{title}: {label}"));
+    name(&chip, &label.accessible_name(title));
     let menu_action = egui::accesskit::Action::ShowContextMenu;
     chip.ctx.accesskit_node_builder(chip.id, |node| {
         node.add_action(menu_action);
@@ -842,7 +839,10 @@ fn value_chip(
     let mut action = chip.clicked().then_some(ChipAction::Select);
     egui::Popup::menu(&chip).open_memory(open).show(|ui| {
         ui.set_max_width(280.0);
-        ui.add(egui::Label::new(tone_text(&label, Tone::Muted).monospace()).truncate());
+        ui.add(
+            egui::Label::new(widgets::value_text(&label, "").color(palette().text_muted))
+                .truncate(),
+        );
         let copy = ui.button("Copy value");
         if keyboard || assistive {
             copy.request_focus();

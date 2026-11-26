@@ -289,9 +289,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
         .as_ref()
         .filter(|p| p.editor.id() == state.load.target.as_ref().map(|t| t.id))
         .is_some_and(|p| !p.editor.scripts.is_empty());
-    widgets::screen_toolbar(
+    widgets::toolbar_row(
         ui,
-        "Load",
         |ui| target_row(ui, &state.load, scripted, &mut actions),
         |ui| execution = controls(ui, &state.load, &plan),
     );

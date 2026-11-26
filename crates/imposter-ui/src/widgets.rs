@@ -36,23 +36,6 @@ const BUTTON_PAD: f32 = 10.0;
 const ICON_GAP: f32 = 6.0;
 const CONTROL_RADIUS: u8 = 6;
 
-/// The right-hand actions are drawn from the edge inward, primary action first.
-pub fn screen_toolbar(
-    ui: &mut Ui,
-    title: &str,
-    left: impl FnOnce(&mut Ui),
-    right: impl FnOnce(&mut Ui),
-) {
-    toolbar_row(
-        ui,
-        |ui| {
-            ui.label(crate::theme::page_title(title));
-            left(ui);
-        },
-        right,
-    );
-}
-
 /// A section title and its single add action share a row.
 pub(crate) fn add_row_header(ui: &mut Ui, title: &str, action: &str, hint: Option<&str>) -> bool {
     ui.horizontal(|ui| {
@@ -71,7 +54,7 @@ pub(crate) fn add_row_header(ui: &mut Ui, title: &str, action: &str, hint: Optio
     .inner
 }
 
-/// For screens that supply their own left-hand contents in place of a page title.
+/// The right-hand actions are drawn from the edge inward, primary action first.
 pub(crate) fn toolbar_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
     toolbar_row_at_height(ui, crate::theme::spacing().control, left, right);
 }
@@ -148,7 +131,11 @@ pub(crate) fn toolbar_row_at_height(
 
 /// egui provides automatic bounds for interactive widgets but omits them for container UIs.
 pub(crate) fn region_bounds(ui: &Ui, rect: egui::Rect) {
-    ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
+    set_region_bounds(ui.ctx(), ui.unique_id(), rect);
+}
+
+pub(crate) fn set_region_bounds(ctx: &egui::Context, id: egui::Id, rect: egui::Rect) {
+    ctx.accesskit_node_builder(id, |node| {
         node.set_bounds(egui::accesskit::Rect {
             x0: rect.left().into(),
             y0: rect.top().into(),
@@ -1269,45 +1256,46 @@ pub(crate) fn tree_option_with(
     )
 }
 
-pub(crate) fn list_toolbar<T>(ui: &mut Ui, draw: impl FnOnce(&mut Ui) -> T) -> T {
-    let inset = crate::theme::spacing().lg;
-    egui::Frame::new()
-        .inner_margin(egui::epaint::MarginF32 {
-            left: inset,
-            right: inset,
-            top: inset,
-            bottom: 0.0,
-        })
-        .show(ui, draw)
-        .inner
-}
-
 /// The Variables and Settings lists share the workspace background and preferred width.
 pub(crate) fn list_column(
     ui: &mut Ui,
     label: &'static str,
     preferred: Option<f32>,
-    draw: impl FnOnce(&mut Ui),
-) -> Option<f32> {
+) -> (Option<f32>, Ui) {
     let (min, max) = crate::layout::LIST_WIDTH;
     let width =
         preferred.unwrap_or_else(|| (ui.available_width() * 0.22).clamp(min, 192.0).round());
-    resizable_list_panel(ui, label, egui::Frame::new(), width, min..=max, |ui| {
-        let area = ui.max_rect();
-        let group = egui::UiBuilder::new()
-            .accessibility_role(egui::Role::Group)
-            .accessibility_label(label);
-        ui.scope_builder(group, |ui| {
-            region_bounds(ui, area);
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    scroll_view_bounds(ui);
-                    draw(ui);
-                });
+    let frame = egui::Frame::new()
+        .fill(palette().background)
+        .inner_margin(egui::Margin {
+            top: 12,
+            ..egui::Margin::ZERO
         });
+    let (resized, list) = resizable_list_panel(ui, label, frame, width, min..=max);
+    (resized.or(preferred), list)
+}
+
+pub(crate) fn scroll_list(ui: &mut Ui, draw: impl FnOnce(&mut Ui)) {
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            scroll_view_bounds(ui);
+            draw(ui);
+        });
+}
+
+fn list_group_builder(label: &str) -> egui::UiBuilder {
+    egui::UiBuilder::new()
+        .accessibility_role(egui::Role::Group)
+        .accessibility_label(label)
+}
+
+pub(crate) fn list_group(ui: &mut Ui, label: &str, draw: impl FnOnce(&mut Ui)) -> egui::Id {
+    ui.scope_builder(list_group_builder(label), |ui| {
+        draw(ui);
+        ui.unique_id()
     })
-    .or(preferred)
+    .inner
 }
 
 pub(crate) fn resizable_list_panel(
@@ -1316,8 +1304,7 @@ pub(crate) fn resizable_list_panel(
     frame: egui::Frame,
     width: f32,
     range: RangeInclusive<f32>,
-    draw: impl FnOnce(&mut Ui),
-) -> Option<f32> {
+) -> (Option<f32>, Ui) {
     // The caller owns the preference, so a panel's cache cannot hide a resize on
     // another screen or keep a width imposed by a narrow window.
     ui.ctx().data_mut(|data| {
@@ -1330,9 +1317,10 @@ pub(crate) fn resizable_list_panel(
         .size_range(range)
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
-            draw(ui);
+            ui.new_child(list_group_builder(id))
         });
     let edge = panel.response.rect;
+    set_region_bounds(ui.ctx(), panel.inner.unique_id(), edge);
     let center = edge.right_center();
     let near = ui
         .ctx()
@@ -1340,7 +1328,10 @@ pub(crate) fn resizable_list_panel(
         .is_some_and(|pos| (pos.x - center.x).abs() < 6.0 && edge.y_range().contains(pos.y));
     paint_split_grip(ui, center, true, near);
     let resized = edge.width().round();
-    ((resized - width).abs() >= 1.0).then_some(resized)
+    (
+        ((resized - width).abs() >= 1.0).then_some(resized),
+        panel.inner,
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -2113,13 +2104,9 @@ pub enum InspectorAction {
 }
 
 /// One line of a saved value, shortened: the list is for recognizing values, not reading them.
-pub fn saved_label(value: &str, masked: bool) -> String {
+pub fn saved_label(value: &str, masked: bool) -> vars::ValueLabel {
     const PREVIEW: usize = 60;
-    if masked {
-        "••••••••".to_owned()
-    } else if value.is_empty() {
-        "Empty value".to_owned()
-    } else {
+    vars::ValueLabel::preview(value, masked, |value| {
         let line = value.lines().next().unwrap_or_default();
         if line.chars().count() > PREVIEW || line.len() < value.len() {
             let cut: String = line.chars().take(PREVIEW).collect();
@@ -2127,6 +2114,17 @@ pub fn saved_label(value: &str, masked: bool) -> String {
         } else {
             line.to_owned()
         }
+    })
+}
+
+pub(crate) fn value_text(label: &vars::ValueLabel, prefix: &str) -> RichText {
+    let text = RichText::new(format!("{prefix}{}", label.display()));
+    if *label == vars::ValueLabel::Empty {
+        text.family(egui::FontFamily::Proportional)
+            .italics()
+            .color(palette().text_muted)
+    } else {
+        text.monospace()
     }
 }
 
@@ -2179,8 +2177,14 @@ pub fn inspector(
                     (Some(definitions), None) => {
                         egui::ScrollArea::vertical().max_height(230.0).show(ui, |ui| {
                             for (heading, value) in vars::describe(definitions, current.masked && !revealed) {
-                                ui.label(tone_text(heading, Tone::Muted).small());
-                                ui.add(egui::Label::new(RichText::new(value).monospace()).selectable(true));
+                                ui.label(tone_text(&heading, Tone::Muted).small());
+                                let empty = value == vars::ValueLabel::Empty;
+                                let line = ui.add(egui::Label::new(value_text(&value, "")).selectable(!empty));
+                                if empty {
+                                    ui.ctx().accesskit_node_builder(line.id, |node| {
+                                        node.set_value(value.accessible_name(&heading));
+                                    });
+                                }
                                 ui.add_space(6.0);
                             }
                         });
@@ -2228,8 +2232,8 @@ pub fn inspector(
                             for (index, value) in effective.saved.iter().enumerate() {
                                 let chosen = *value == effective.value;
                                 let text = saved_label(value, masked);
-                                let row = option(ui, chosen, RichText::new(&text).monospace());
-                                name(&row, &format!("Use saved value {}: {text}", index + 1));
+                                let row = option(ui, chosen, value_text(&text, ""));
+                                name(&row, &text.accessible_name(&format!("Use saved value {}", index + 1)));
                                 if row.clicked() && !chosen {
                                     open = Some(InspectorAction::Choose { scope, value: value.clone() });
                                     close = true;
@@ -4244,13 +4248,22 @@ mod tests {
 
     #[test]
     fn saved_values_are_labelled_by_their_first_line_shortened() {
-        assert_eq!(saved_label("42", false), "42");
-        assert_eq!(saved_label("", false), "Empty value");
-        assert_eq!(saved_label("secret", true), "••••••••");
-        assert_eq!(saved_label("line one\nline two", false), "line one…");
+        assert_eq!(saved_label("42", false).display(), "42");
+        assert_eq!(saved_label("", false), vars::ValueLabel::Empty);
+        assert_eq!(saved_label("secret", true).display(), "••••••••");
+        assert_eq!(
+            saved_label("line one\nline two", false).display(),
+            "line one…"
+        );
         let long = "x".repeat(61);
-        assert_eq!(saved_label(&long, false), format!("{}…", "x".repeat(60)));
-        assert_eq!(saved_label(&"x".repeat(60), false), "x".repeat(60));
+        assert_eq!(
+            saved_label(&long, false).display(),
+            format!("{}…", "x".repeat(60))
+        );
+        assert_eq!(
+            saved_label(&"x".repeat(60), false).display(),
+            "x".repeat(60)
+        );
     }
 
     #[test]

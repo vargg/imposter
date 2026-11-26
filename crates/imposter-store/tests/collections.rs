@@ -570,6 +570,44 @@ fn the_request_index_lists_every_collection_with_folder_paths() {
 }
 
 #[test]
+fn the_run_target_index_includes_empty_collections_and_folders_in_tree_order() {
+    let (_dir, store) = store();
+    store
+        .call_blocking(|db| {
+            let spare = create_collection(db, "Spare", "", &Variables::new())?;
+            let shop = create_collection(db, "Shop", "", &Variables::new())?;
+            let archive = create_folder(db, shop.id, None, "Archive", "", 1)?;
+            let users = create_folder(db, shop.id, None, "Users", "", 0)?;
+            let roles = create_folder(db, shop.id, Some(users.id), "Roles", "", 0)?;
+            create_request(db, shop.id, Some(roles.id), &template("List"))?;
+            let rows = run_targets(db)?;
+            let actual: Vec<_> = rows
+                .iter()
+                .map(|row| {
+                    (
+                        row.collection_id,
+                        row.folder_id,
+                        row.collection.as_str(),
+                        row.folders.join(" / "),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                actual,
+                [
+                    (shop.id, None, "Shop", String::new()),
+                    (shop.id, Some(users.id), "Shop", "Users".into()),
+                    (shop.id, Some(roles.id), "Shop", "Users / Roles".into()),
+                    (shop.id, Some(archive.id), "Shop", "Archive".into()),
+                    (spare.id, None, "Spare", String::new()),
+                ]
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
 fn collections_and_folders_keep_their_scripts() {
     let (_dir, store) = store();
     let scripts = imposter_core::model::Scripts {

@@ -10,7 +10,7 @@ use imposter_app::core::model::EnvColor;
 pub struct Palette {
     /// Window and panel background.
     pub background: Color32,
-    /// Raised areas: side panel, popups, tables.
+    /// Raised areas: window chrome, popups, tables.
     pub surface: Color32,
     /// Text inputs and code areas.
     pub input: Color32,
@@ -645,7 +645,7 @@ mod tests {
                     "{name} field edge on {background:?}: {ratio:.2}"
                 );
             }
-            for background in [palette.selected, palette.surface] {
+            for background in [palette.selected, palette.surface, palette.background] {
                 let ratio = contrast(palette.selected_bar, background);
                 assert!(ratio >= NON_TEXT, "{name} selection marker: {ratio:.2}");
             }

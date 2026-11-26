@@ -56,8 +56,9 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
 - Right-click a request and choose **Duplicate** to create and open a saved sibling copy.
   An open request copies its current edits; navigation still resolves unsaved changes.
 - **Settings → General → Automatically save changes** is on by default and covers
-  requests, variables and mocks. Valid edits save half a second after you stop editing,
-  or sooner when navigation would replace the editor. If the changes are invalid or
+  requests, variables and mocks. Valid edits save after half a second. If you are typing
+  in a text field, the delay starts when focus leaves the field or window. Navigation
+  that replaces the editor saves sooner. If the changes are invalid or
   saving fails, the editor keeps your edits and asks what to do before continuing.
   You can also use **Save** or Cmd/Ctrl+S.
 
@@ -187,6 +188,7 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   (the left rail, "Run…" in a collection's ⋯ menu or a folder's right-click menu, or the
   command palette), as `imposter run` does. A value a request captures reaches the requests
   after it; your variables do not change.
+- **What to run** searches every collection and folder.
 - The environment defaults to the active one. Choose another beside **Keep going after a
   failure**. With a red environment, **Run** asks first. The run stops at the first request
   that does not pass and skips the rest unless **Keep going after a failure** is on.
@@ -303,8 +305,9 @@ response.send_json(#{ calls: state.calls, item: request.json().item });
   Settings at the bottom. Amber dots mark unsaved changes in Variables, Mocks and Settings.
   Running tools show a green dot, which turns muted while stopping. You can also click a
   running tool in the status bar to return to its screen.
-- Command palette (Cmd/Ctrl+Shift+P) over actions, the requests of every collection and
-  environments; recent requests with Cmd/Ctrl+P, and Ctrl+Tab back to the previous one.
+- Command palette (search icon above Settings or Cmd/Ctrl+Shift+P) over actions, the requests
+  of every collection and environments. Use Cmd/Ctrl+P for recent requests and Ctrl+Tab to
+  go back to the previous one.
 - Hover over the Requests sidebar's **Filter** for syntax such as `method:POST`,
   `url:users` and `-word`.
 - Side-by-side or stacked request and response, switched from the Requests toolbar. Collections
@@ -320,7 +323,8 @@ response.send_json(#{ calls: state.calls, item: request.json().item });
   the left; amber dots mark edited ones, and **Save settings** saves across all of them.
   Hover an info icon for help.
 - **Settings → TLS → Host client certificates** assigns a client certificate, optional key
-  and password to an exact HTTPS host and port (default 443). Request overrides take
+  and password to an exact HTTPS host and port (default 443). Add an optional name to
+  identify the certificate in Settings. Request overrides take
   priority. Redirects select credentials again for their destination. Copy as curl uses the
   initial identity and cannot reproduce identity switching across redirects.
 

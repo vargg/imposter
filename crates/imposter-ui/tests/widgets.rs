@@ -9,7 +9,9 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use imposter_app::core::model::{ApiKeyIn, AuthKind, BodyType, FormKind, RequestAuth};
 use imposter_app::store::collections;
 use imposter_ui::app::EditorTab;
-use support::{click, collection, request, settle, start_with, type_into};
+use support::{
+    advance_time, blur_text_field, click, collection, request, settle, start_with, type_into,
+};
 
 fn opened() -> support::App {
     let mut app = start_with(|store| {
@@ -27,9 +29,9 @@ fn tab(app: &mut support::App, tab: EditorTab) {
 }
 
 fn saved(app: &mut support::App) -> imposter_app::core::model::Request {
-    for _ in 0..4 {
-        app.harness.step();
-    }
+    advance_time(&mut app.harness, 0.0);
+    blur_text_field(app);
+    advance_time(&mut app.harness, 0.6);
     settle(&mut app.harness);
     let id = app
         .harness

@@ -107,9 +107,30 @@ pub fn status_bar(app: &App) -> egui::Rect {
         .rect()
 }
 
+pub fn rail_bounds(app: &App) -> egui::Rect {
+    app.harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|clipped| {
+            let egui::Shape::Rect(shape) = &clipped.shape else {
+                return None;
+            };
+            (shape.fill == imposter_ui::theme::palette().surface
+                && shape.rect.left().abs() < 0.5
+                && (shape.rect.width() - imposter_ui::layout::RAIL_WIDTH).abs() <= 1.0)
+                .then(|| {
+                    egui::Rect::from_min_max(
+                        shape.rect.min,
+                        egui::pos2(imposter_ui::layout::RAIL_WIDTH, shape.rect.bottom()),
+                    )
+                })
+        })
+        .expect("the full-height rail is painted")
+}
+
 pub fn blur_text_field(app: &mut App) {
-    app.harness.click_at(status_bar(app).center());
-    app.harness.run_steps(2);
+    click(&mut app.harness, "Status bar");
 }
 
 pub fn click(harness: &mut Harness<'_, ImposterApp>, label: &str) {

@@ -24,7 +24,7 @@ use imposter_app::http::cookies::StoredCookie;
 use imposter_app::oauth::TokenState;
 use imposter_app::runtime::{Bridge, TaskId};
 use imposter_app::saver::{Saver, State as SaveState};
-use imposter_app::store::collections::{self, Collection, IndexedRequest, Tree};
+use imposter_app::store::collections::{self, Collection, IndexedRequest, IndexedRunTarget, Tree};
 use imposter_app::store::environments::{self, Environment};
 use imposter_app::store::executions::{self, ExecutionSummary};
 use imposter_app::store::kv::{self, Table};
@@ -363,6 +363,7 @@ pub enum Message {
         got: bool,
     },
     RequestIndex(Result<Vec<IndexedRequest>, Failure>),
+    RunTargets(Result<Vec<IndexedRunTarget>, Failure>),
     SettingsLoaded(Result<AppSettings, Failure>),
     SettingsSaved {
         form: SettingsForm,
@@ -1393,6 +1394,7 @@ pub struct ImposterApp {
     watching: Option<imposter_app::watch::Watching>,
     /// Whether the window had focus last frame, to check the folder when it comes back.
     focused: Option<bool>,
+    autosave_held: bool,
 }
 
 impl ImposterApp {
@@ -1474,6 +1476,7 @@ impl ImposterApp {
             applied: None,
             watching: None,
             focused: None,
+            autosave_held: false,
         };
         app.state.response.clear();
         app.task(
@@ -2148,13 +2151,25 @@ impl ImposterApp {
                 if self.state.recent.len() != before {
                     self.write_recent();
                 }
-                if let Some(Dialog::Palette(palette)) = &mut self.state.dialog {
+                if let Some(Dialog::Palette(palette)) = &mut self.state.dialog
+                    && palette.mode != crate::palette::Mode::RunTarget
+                {
                     palette.recent.clone_from(&self.state.recent);
                     palette.index = Some(index);
                 }
             }
             Message::RequestIndex(Err(error)) => {
                 tracing::warn!(%error, "loading the request index failed");
+            }
+            Message::RunTargets(result) => {
+                if let Some(Dialog::Palette(palette)) = &mut self.state.dialog
+                    && palette.mode == crate::palette::Mode::RunTarget
+                {
+                    palette.targets = Some(result.unwrap_or_else(|error| {
+                        tracing::warn!(%error, "loading run targets failed");
+                        Vec::new()
+                    }));
+                }
             }
             Message::SettingsSaved { form, result } => self.settings_saved(form, result),
             Message::Exported(Ok(path)) => {
@@ -3059,7 +3074,10 @@ impl ImposterApp {
                 self.pump_saves(Some(id));
             }
             self.check_guard_save(id);
-        } else if self.state.saver.has_pending() && self.state.saver.failures().next().is_none() {
+        } else if self.state.autosave_due.is_none()
+            && self.state.saver.has_pending()
+            && self.state.saver.failures().next().is_none()
+        {
             self.pump_saves(None);
         }
     }
@@ -3170,14 +3188,30 @@ impl ImposterApp {
         }
     }
 
-    fn autosave_tick(&mut self, ctx: &egui::Context) {
-        let now = ctx.input(|i| i.time);
-        if Self::autosave_ready(ctx, now, &mut self.state.autosave_due) {
+    fn autosave_tick(&mut self, ctx: &egui::Context, now: f64) {
+        let held = ctx.input(|i| i.viewport().focused.unwrap_or(i.focused))
+            && crate::shortcuts::text_field_focused(ctx);
+        let was_held = std::mem::replace(&mut self.autosave_held, held);
+        if held {
+            return;
+        }
+        if was_held {
+            for due in [
+                &mut self.state.autosave_due,
+                &mut self.state.variables.autosave_due,
+                &mut self.state.mocks.autosave_due,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                *due = now + AUTOSAVE_DELAY;
+            }
+        }
+        if !self.state.saver.is_writing()
+            && Self::autosave_ready(ctx, now, &mut self.state.autosave_due)
+        {
             self.pump_saves(None);
         }
-    }
-
-    fn autosave_editors_tick(&mut self, ctx: &egui::Context, now: f64) {
         // A confirmation may discard the draft. An in-flight write wakes the UI on reply,
         // so a newer edit can keep its deadline without polling the store.
         if self.state.close != CloseState::Open || self.state.dialog.is_some() {
@@ -3669,8 +3703,14 @@ impl ImposterApp {
                 self.navigate(Navigation::Duplicate { id, edited });
             }
             Action::Prompt(dialog) => {
-                if matches!(dialog, Dialog::Palette(_)) {
-                    self.load_request_index();
+                if let Dialog::Palette(palette) = &dialog {
+                    if palette.mode == crate::palette::Mode::RunTarget {
+                        self.task(collections::run_targets, |result| {
+                            Message::RunTargets(result.map_err(failure))
+                        });
+                    } else {
+                        self.load_request_index();
+                    }
                 }
                 self.state.dialog = Some(dialog);
             }
@@ -5769,7 +5809,6 @@ impl eframe::App for ImposterApp {
             self.focused = focused;
         }
         self.remember_window(ctx);
-        self.autosave_tick(ctx);
         self.close_tick(ctx);
     }
 
@@ -5797,8 +5836,8 @@ impl eframe::App for ImposterApp {
             let outcome = dialog.show(ui.ctx());
             self.dialog_outcome(outcome, now);
         }
-        // Handle this frame's edits before committing a draft whose deadline just passed.
-        self.autosave_editors_tick(ui.ctx(), now);
+        // Draw the fields and handle input before checking for edits or a change in focus.
+        self.autosave_tick(ui.ctx(), now);
         if let Some(text) = self.state.clipboard.take() {
             ui.ctx().copy_text(text);
         }

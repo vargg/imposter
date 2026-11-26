@@ -5,10 +5,11 @@
 use egui::{Key, Ui};
 use imposter_app::core::ids::{CollectionId, RequestId};
 use imposter_app::core::model::EnvColor;
-use imposter_app::store::collections::IndexedRequest;
+use imposter_app::store::collections::{IndexedRequest, IndexedRunTarget};
 
 use crate::app::{Action, Screen, State};
 use crate::dialogs::{self, Dialog, NamePurpose, Outcome};
+use crate::run_screen::{RunAction, RunTarget};
 use crate::shortcuts;
 use crate::theme::{Tone, palette};
 use crate::tree::NodeId;
@@ -41,6 +42,8 @@ pub enum Mode {
     Requests,
     /// Requests only, chosen as the Load screen's target rather than opened.
     LoadTarget,
+    /// Collections and folders, chosen as the Run screen's target.
+    RunTarget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -48,6 +51,7 @@ pub enum Group {
     Actions,
     Requests,
     Environments,
+    Targets,
 }
 
 impl Group {
@@ -56,6 +60,7 @@ impl Group {
             Self::Actions => "Actions",
             Self::Requests => "Requests",
             Self::Environments => "Environments",
+            Self::Targets => "Collections and folders",
         }
     }
 }
@@ -84,6 +89,8 @@ pub struct Palette {
     pub recent: Vec<RequestId>,
     /// Every request; `None` until the database answers.
     pub index: Option<Vec<IndexedRequest>>,
+    /// Every collection and folder, when opened as the Run picker.
+    pub targets: Option<Vec<IndexedRunTarget>>,
     /// What the user chose, taken by the app with [`Outcome::Palette`].
     pub chosen: Option<Action>,
     /// Opened by Ctrl+Tab: Tab steps while Ctrl is held, releasing Ctrl opens the selection.
@@ -103,6 +110,7 @@ impl Palette {
             fixed: fixed_items(state),
             recent: state.recent.clone(),
             index: None,
+            targets: None,
             chosen: None,
             switcher: false,
             start: None,
@@ -157,9 +165,14 @@ impl Palette {
         let candidates = self
             .fixed
             .iter()
-            .filter(|item| self.mode == Mode::All || item.group == Group::Requests)
+            .filter(|item| match self.mode {
+                Mode::All => true,
+                Mode::Requests | Mode::LoadTarget => item.group == Group::Requests,
+                Mode::RunTarget => false,
+            })
             .cloned()
-            .chain(self.requests());
+            .chain(self.requests())
+            .chain(self.run_targets());
         for (order, item) in candidates.enumerate() {
             let haystack = match &item.method {
                 Some(method) => format!("{method} {}", item.label),
@@ -179,19 +192,24 @@ impl Palette {
                 .max()
                 .unwrap_or(i64::MIN)
         };
-        let rank: Vec<(Group, i64)> = [Group::Actions, Group::Requests, Group::Environments]
-            .into_iter()
-            .map(|g| {
-                (
-                    g,
-                    if self.query.trim().is_empty() {
-                        0
-                    } else {
-                        best(g)
-                    },
-                )
-            })
-            .collect();
+        let rank: Vec<(Group, i64)> = [
+            Group::Actions,
+            Group::Requests,
+            Group::Environments,
+            Group::Targets,
+        ]
+        .into_iter()
+        .map(|g| {
+            (
+                g,
+                if self.query.trim().is_empty() {
+                    0
+                } else {
+                    best(g)
+                },
+            )
+        })
+        .collect();
         let group_rank = |group: Group| {
             rank.iter()
                 .find(|(g, _)| *g == group)
@@ -208,12 +226,19 @@ impl Palette {
         scored
             .into_iter()
             .map(|(.., item)| item)
-            .take(SHOWN)
+            .take(if self.mode == Mode::RunTarget {
+                usize::MAX
+            } else {
+                SHOWN
+            })
             .collect()
     }
 
     /// Requests in index order, recent ones first.
     fn requests(&self) -> Vec<Item> {
+        if self.mode == Mode::RunTarget {
+            return Vec::new();
+        }
         let Some(index) = &self.index else {
             return Vec::new();
         };
@@ -227,14 +252,36 @@ impl Palette {
         requests.sort_by_key(|r| rank(r.id));
         requests
             .into_iter()
-            .map(|request| match self.mode {
-                Mode::LoadTarget => Item {
-                    action: Action::LoadTarget(crate::load_screen::Target::from_index(request)),
-                    ..request_item(request)
-                },
-                Mode::All | Mode::Requests => request_item(request),
+            .map(|request| {
+                let mut item = request_item(request);
+                if self.mode == Mode::LoadTarget {
+                    item.action =
+                        Action::LoadTarget(crate::load_screen::Target::from_index(request));
+                }
+                item
             })
             .collect()
+    }
+
+    fn run_targets(&self) -> impl Iterator<Item = Item> + '_ {
+        self.targets.iter().flatten().map(|row| {
+            let label = std::iter::once(row.collection.as_str())
+                .chain(row.folders.iter().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" / ");
+            Item {
+                group: Group::Targets,
+                action: Action::Run(RunAction::Choose(RunTarget {
+                    collection: row.collection_id,
+                    folder: row.folder_id,
+                    label: label.clone(),
+                })),
+                label,
+                method: None,
+                hint: None,
+                color: None,
+            }
+        })
     }
 
     pub(crate) const fn title(&self) -> &'static str {
@@ -242,6 +289,7 @@ impl Palette {
             Mode::All => "Command palette",
             Mode::Requests => "Recent requests",
             Mode::LoadTarget => "Choose a request",
+            Mode::RunTarget => "Choose what to run",
         }
     }
 
@@ -270,6 +318,7 @@ impl Palette {
             Mode::All => "Search actions, requests and environments",
             Mode::Requests => "Search requests",
             Mode::LoadTarget => "Choose a request to load-test",
+            Mode::RunTarget => "Choose a collection or folder to run",
         };
         let field = ui.add(
             egui::TextEdit::singleline(&mut self.query)
@@ -300,10 +349,12 @@ impl Palette {
                 }
             }
             if items.is_empty() {
-                let text = if self.index.is_none() && self.mode != Mode::All {
-                    "Loading requests…"
-                } else {
-                    "Nothing matches"
+                let text = match self.mode {
+                    Mode::RunTarget if self.targets.is_none() => "Loading collections and folders…",
+                    Mode::Requests | Mode::LoadTarget if self.index.is_none() => {
+                        "Loading requests…"
+                    }
+                    _ => "Nothing matches",
                 };
                 ui.label(tone_text(text, Tone::Muted));
             }
@@ -573,7 +624,7 @@ fn fixed_items(state: &State) -> Vec<Item> {
             action("Load Test This Request", None, Action::LoadTarget(target));
         }
     }
-    if let Some(target) = crate::run_screen::RunTarget::from_tree(state, None) {
+    if let Some(target) = RunTarget::from_tree(state, None) {
         action("Run Collection", None, Action::RunTarget(target));
     }
     action(
@@ -838,12 +889,46 @@ mod tests {
                 indexed(2, "API", &["Users"], "List users"),
                 indexed(3, "Admin", &[], "Stats"),
             ]),
+            targets: None,
             chosen: None,
         }
     }
 
     fn labels(palette: &Palette) -> Vec<String> {
         palette.items().into_iter().map(|i| i.label).collect()
+    }
+
+    #[test]
+    fn run_targets_keep_tree_order_and_filter_by_the_full_path() {
+        use imposter_app::core::ids::FolderId;
+        let mut picker = palette(Mode::RunTarget);
+        assert_eq!(picker.items(), []);
+        let root = IndexedRunTarget {
+            collection_id: CollectionId(2),
+            collection: "Shop".into(),
+            folder_id: None,
+            folders: Vec::new(),
+        };
+        picker.targets = Some(vec![
+            root.clone(),
+            IndexedRunTarget {
+                folder_id: Some(FolderId(3)),
+                folders: vec!["Orders".into(), "Archive".into()],
+                ..root
+            },
+        ]);
+        assert_eq!(labels(&picker), ["Shop", "Shop / Orders / Archive"]);
+        picker.query = "shop archive".into();
+        let items = picker.items();
+        assert_eq!(items.len(), 1);
+        assert_eq!(
+            items[0].action,
+            Action::Run(RunAction::Choose(RunTarget {
+                collection: CollectionId(2),
+                folder: Some(FolderId(3)),
+                label: "Shop / Orders / Archive".into(),
+            }))
+        );
     }
 
     #[test]

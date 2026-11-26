@@ -113,7 +113,7 @@ fn start(app: &mut support::App) {
 }
 
 #[test]
-fn route_edits_autosave_after_the_last_edit() {
+fn route_edits_autosave_after_the_field_loses_focus() {
     let mut app = opened(0);
     advance_time(&mut app.harness, 0.0);
     type_into(&mut app.harness, "Mock path", "health");
@@ -124,7 +124,14 @@ fn route_edits_autosave_after_the_last_edit() {
     assert_eq!(stored_mocks(&app).routes[0].path, "/");
     assert!(app.harness.query_by_label("Unsaved").is_none());
 
+    advance_time(&mut app.harness, 0.6);
+    settle(&mut app.harness);
+    assert_eq!(stored_mocks(&app).routes[0].body, "first");
+    assert!(text_input(&app.harness, "Mock response body").is_focused());
+    support::blur_text_field(&mut app);
     advance_time(&mut app.harness, 0.4);
+    assert_eq!(stored_mocks(&app).routes[0].path, "/");
+    advance_time(&mut app.harness, 0.2);
     settle(&mut app.harness);
     let saved = stored_mocks(&app);
     assert_eq!(saved.routes[0].path, "/health");

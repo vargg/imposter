@@ -71,8 +71,8 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing Rhai r
     environment, else Global), after the captures, so a scope with unsaved edits on the
     Variables screen is protected exactly as for captures.
   - **The Scripts tab** (`scripts_tab.rs`, after Captures, a dot when either is set) holds
-    both scripts one under the other, not as sub-tabs (two levels of tabs were removed from
-    History, the review's #46). Each editor is highlighted by a small hand-written Rhai
+    both scripts in one view (two levels of tabs were removed from History, the review's #46).
+    Each editor is highlighted by a small hand-written Rhai
     tokenizer (`highlight::rhai`) and gets the body editor's typing aids (`widgets::Typing`).
     The [shared script header](ui.md#request-bar--editors) holds compile status and
     phase-specific examples. Script reference opens a sheet drawn from
@@ -83,10 +83,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing Rhai r
     "Collection Scripts…" in the collection's "⋯" menu and "Scripts…" in a folder's), with
     the same two editors and Save; the request's Scripts tab lists the levels that also run
     ("Also runs, before this request's:", outer first), each a button opening its dialog,
-    and a folder with scripts is described "Has scripts" to screen readers. Why: folders and
-    collections have no editor of their own, and a pane for them would need the navigation
-    guard and the saver; a dialog saves in one command. The label sits on its own line, as
-    beside the buttons it ran into them at 720 points (the layout lint).
+    and a folder with scripts is described "Has scripts" to screen readers. The caption and
+    buttons use shorter labels in narrow panes with their full meaning available to screen
+    readers and on hover. Why: the inherited script controls compete with editing space at
+    720 points, and the dialog saves collection or folder scripts in one command.
+    Enforced by `script_editors_fit_and_reveal_the_last_line_in_every_layout`.
   - **Results:** the response's Tests tab lists the script's error, failed tests, checks,
     passed tests, captures, then the console; script failures count with failed checks in
     the tab's badge, the status line's "✗n" and "n checks failed".

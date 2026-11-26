@@ -166,9 +166,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
 /// the end, away from them.
 fn toolbar(ui: &mut Ui, history: &mut crate::app::HistoryScreen, actions: &mut Vec<Action>) {
     let mut right_actions = Vec::new();
-    widgets::screen_toolbar(
+    widgets::toolbar_row(
         ui,
-        "History",
         |ui| {
             let gap = theme::spacing().sm;
             let chip_width = widgets::action_width(ui, "Current request only");

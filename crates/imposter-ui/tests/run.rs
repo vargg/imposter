@@ -155,7 +155,7 @@ fn a_folder_runs_from_its_menu_carrying_values_into_history_but_not_variables() 
         .harness
         .get_by_label("What to run")
         .accesskit_node()
-        .value();
+        .description();
     assert_eq!(target.as_deref(), Some("API / Flow"));
     start(&mut f.app);
 
@@ -191,11 +191,94 @@ fn a_folder_runs_from_its_menu_carrying_values_into_history_but_not_variables() 
 }
 
 #[test]
+fn picker_lists_all_collections_and_folders_and_runs_the_selected_folder() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime.block_on(Server::start(reply));
+    let base = server.url.clone();
+    let mut app = start_with(move |store| {
+        let shop = support::collection(store, "Shop");
+        let admin = support::collection(store, "Admin");
+        support::collection(store, "Spare");
+        support::request(store, admin.id, "Status", &format!("{base}/admin"));
+        support::request(store, shop.id, "Home", &format!("{base}/shop"));
+        store
+            .call_blocking(move |db| {
+                let orders = collections::create_folder(db, shop.id, None, "Orders", "", 0)?;
+                let pending =
+                    collections::create_folder(db, shop.id, Some(orders.id), "Pending", "", 0)?;
+                collections::create_folder(db, shop.id, None, "Archive", "", 1)?;
+                collections::create_folder(db, admin.id, None, "Reports", "", 0)?;
+                collections::create_request(
+                    db,
+                    shop.id,
+                    Some(pending.id),
+                    &imposter_app::core::model::RequestTemplate {
+                        name: "List".into(),
+                        url: format!("{base}/pending"),
+                        ..Default::default()
+                    },
+                )
+                .map(drop)
+            })
+            .unwrap();
+    });
+    click(&mut app.harness, "GET Status");
+    settle(&mut app.harness);
+    support::open_screen(&mut app.harness, "Run");
+    settle(&mut app.harness);
+    assert_eq!(
+        app.harness.state().state.run.target.as_ref().unwrap().label,
+        "Admin"
+    );
+    click(&mut app.harness, "What to run");
+    settle(&mut app.harness);
+    let row_y = [
+        "Admin",
+        "Admin / Reports",
+        "Shop",
+        "Shop / Orders",
+        "Shop / Orders / Pending",
+        "Shop / Archive",
+        "Spare",
+    ]
+    .map(|label| {
+        app.harness
+            .query_by_label(label)
+            .unwrap_or_else(|| panic!("missing run target {label}"))
+            .rect()
+            .top()
+    });
+    assert!(row_y.windows(2).all(|pair| pair[0] < pair[1]));
+    support::type_into(&mut app.harness, "Command palette search", "pending");
+    assert!(app.harness.query_by_label("Shop / Archive").is_none());
+    click(&mut app.harness, "Shop / Orders / Pending");
+    assert!(
+        app.harness
+            .query_by_label("Command palette search")
+            .is_none()
+    );
+    start(&mut app);
+    assert_eq!(targets(&server), ["GET /pending"]);
+    app.harness
+        .get_by_label("Run step No checks Shop/Orders/Pending/List");
+    let history = app
+        .harness
+        .state()
+        .store()
+        .call_blocking(|db| executions::page(db, None, 0, 10))
+        .unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].via, Via::App);
+    assert!(history[0].url.ends_with("/pending"));
+}
+
+#[test]
 fn a_failure_stops_the_run_unless_it_keeps_going() {
     let mut f = fixture();
     support::open_screen(&mut f.app.harness, "Run");
     settle(&mut f.app.harness);
     click(&mut f.app.harness, "What to run");
+    settle(&mut f.app.harness);
     click(&mut f.app.harness, "API / Broken");
     start(&mut f.app);
     assert_eq!(targets(&f.server), ["GET /fail"]);

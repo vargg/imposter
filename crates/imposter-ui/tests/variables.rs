@@ -278,7 +278,11 @@ fn autosave_leaves_a_focused_variable_value_in_the_composer_until_blur() {
     settle(&mut app.harness);
     assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
     assert_eq!(app.harness.state().state.variables.rows[0].draft, "half");
-    assert!(app.harness.query_by_label("Variable 1 value 2: half").is_none());
+    assert!(
+        app.harness
+            .query_by_label("Variable 1 value 2: half")
+            .is_none()
+    );
     support::blur_text_field(&mut app);
     advance_time(&mut app.harness, 0.4);
     settle(&mut app.harness);
@@ -300,13 +304,22 @@ fn moving_from_a_new_variable_name_to_its_value_does_not_save_an_empty_value() {
     advance_time(&mut app.harness, 0.6);
     settle(&mut app.harness);
     assert_eq!(stored_globals(&app), vars(&[("a", "1")]));
-    assert!(app.harness.state().state.variables.rows[1].values().is_empty());
+    assert_eq!(
+        app.harness.state().state.variables.rows[1].values(),
+        Vec::<String>::new()
+    );
     type_into(&mut app.harness, "Add value to variable 2", "ready");
     support::blur_text_field(&mut app);
     advance_time(&mut app.harness, 0.6);
     settle(&mut app.harness);
-    assert_eq!(stored_globals(&app), vars(&[("a", "1"), ("token", "ready")]));
-    assert_eq!(app.harness.state().state.variables.rows[1].values(), ["ready"]);
+    assert_eq!(
+        stored_globals(&app),
+        vars(&[("a", "1"), ("token", "ready")])
+    );
+    assert_eq!(
+        app.harness.state().state.variables.rows[1].values(),
+        ["ready"]
+    );
 }
 
 #[test]
@@ -322,7 +335,7 @@ fn entering_a_value_at_the_autosave_deadline_keeps_it_selected() {
     assert_eq!(stored_globals(&app), vars(&[("a", "12")]));
     assert!(
         app.harness
-            .query_by_label("Variable 1 value 3: Empty value")
+            .query_by_label("Variable 1 value 3 (empty)")
             .is_none()
     );
 }
@@ -1060,17 +1073,48 @@ fn list_column(app: &support::App, name: &str) -> (egui::Rect, f32) {
     use egui::accesskit::Role;
     let column = app.harness.get_by_role_and_label(Role::Group, name).rect();
     let toolbar = app.harness.get_by_role(Role::Toolbar).rect();
-    let gap = column.top() - toolbar.bottom();
-    assert!(gap > 0.0, "{name} must begin below the toolbar");
-    let rail = app.harness.ctx.content_rect().left() + imposter_ui::layout::RAIL_WIDTH;
+    let gap = toolbar.left() - column.right();
+    assert!(gap > 0.0, "{name} must sit to the left of the toolbar");
+    let rail = support::rail_bounds(app);
     assert!(
-        (column.left() - rail).abs() <= 0.5,
+        (column.left() - rail.right()).abs() <= 0.5,
         "{name} must touch the rail"
+    );
+    assert_eq!(
+        column.y_range(),
+        rail.y_range(),
+        "{name} spans the screen body"
     );
     let palette = imposter_ui::theme::palette();
     let sample = column.center_bottom() - egui::vec2(0.0, 4.0);
-    let shapes = &app.harness.output().shapes;
-    let background = shapes
+    assert_eq!(
+        background_at(app, sample),
+        Some(palette.background),
+        "{name} background"
+    );
+    assert!(
+        app.harness
+            .output()
+            .shapes
+            .iter()
+            .any(|clipped| matches!(clipped.shape,
+                egui::Shape::LineSegment { points: [a, b], stroke }
+                    if (a.x - column.right()).abs() <= 1.0
+                        && (a.x - b.x).abs() < 0.5
+                        && (a.y - column.top()).abs() < 0.5
+                        && (b.y - column.bottom()).abs() < 0.5
+                        && (stroke.width - 1.0).abs() < 0.001
+                        && stroke.color == palette.border
+            )),
+        "{name} divider"
+    );
+    (column, gap)
+}
+
+fn background_at(app: &support::App, sample: egui::Pos2) -> Option<egui::Color32> {
+    app.harness
+        .output()
+        .shapes
         .iter()
         .rev()
         .find_map(|clipped| match &clipped.shape {
@@ -1082,21 +1126,28 @@ fn list_column(app: &support::App, name: &str) -> (egui::Rect, f32) {
                 Some(rect.fill)
             }
             _ => None,
-        });
-    assert_eq!(background, Some(palette.background), "{name} background");
-    assert!(
-        shapes.iter().any(|clipped| matches!(clipped.shape,
-            egui::Shape::LineSegment { points: [a, b], stroke }
-                if (a.x - column.right()).abs() <= 1.0
-                    && (a.x - b.x).abs() < 0.5
-                    && (a.y - column.top()).abs() < 0.5
-                    && (b.y - column.bottom()).abs() < 0.5
-                    && (stroke.width - 1.0).abs() < 0.001
-                    && stroke.color == palette.border
-        )),
-        "{name} divider"
-    );
-    (column, gap)
+        })
+}
+
+#[test]
+fn requests_and_variables_side_lists_share_the_background_in_both_themes() {
+    use imposter_ui::theme::{self, ThemeChoice};
+    let mut app = with_scopes();
+    for appearance in [ThemeChoice::Dark, ThemeChoice::Light] {
+        app.harness.state_mut().state.appearance.theme = appearance;
+        open_screen(&mut app);
+        let column = app.harness.get_by_label("Variable scopes").rect();
+        let sample = column.center_bottom() - egui::vec2(0.0, 8.0);
+        let variables = background_at(&app, sample);
+        assert_eq!(variables, Some(theme::palette().background));
+        support::open_screen(&mut app.harness, "Requests");
+        settle(&mut app.harness);
+        assert_eq!(
+            background_at(&app, sample),
+            variables,
+            "{appearance:?} sidebar fill"
+        );
+    }
 }
 
 fn list_label_left(app: &support::App, row_name: &str, label: &str) -> f32 {
@@ -1166,7 +1217,7 @@ fn scope_names_and_settings_categories_align_in_matching_columns() {
             let bounds = app.harness.get_by_label(&row).rect();
             assert_eq!(
                 bounds.x_range(),
-                categories.x_range(),
+                egui::Rangef::new(categories.left(), categories.right() - 1.0),
                 "{row} spans the column"
             );
         }

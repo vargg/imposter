@@ -36,6 +36,7 @@ fn identity(pki: &Pki, url: &str) -> HostIdentity {
         certificate_path: pki.client_cert_pem.display().to_string(),
         key_file: pki.client_key_pem.display().to_string(),
         password: String::new(),
+        ..HostIdentity::default()
     }
 }
 

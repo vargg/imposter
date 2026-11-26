@@ -12,7 +12,8 @@ use imposter_app::store::{collections, executions, kv};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::CloseState;
 use support::{
-    answer_name, click, collection, request, save_state, settle, start, start_with, type_into,
+    advance_time, answer_name, click, collection, request, save_state, settle, start, start_with,
+    type_into,
 };
 
 #[test]
@@ -74,7 +75,7 @@ fn an_empty_database_offers_to_create_a_collection() {
 }
 
 #[test]
-fn new_requests_open_in_the_editor_and_autosave_edits() {
+fn new_requests_open_in_the_editor_and_autosave_after_window_focus_leaves() {
     let mut app = start_with(|store| {
         collection(store, "API");
     });
@@ -84,15 +85,23 @@ fn new_requests_open_in_the_editor_and_autosave_edits() {
     answer_name(&mut app.harness, "Health");
     app.harness.get_by_label("API / Health");
 
+    advance_time(&mut app.harness, 0.0);
     type_into(
         &mut app.harness,
         "Request URL",
         "https://example.com/health?verbose=1",
     );
     assert_eq!(save_state(&app.harness, "Save request"), "Unsaved");
-    for _ in 0..4 {
-        app.harness.step();
-    }
+    assert!(support::text_input(&app.harness, "Request URL").is_focused());
+    advance_time(&mut app.harness, 0.6);
+    settle(&mut app.harness);
+    assert_eq!(save_state(&app.harness, "Save request"), "Unsaved");
+    app.harness.input_mut().focused = false;
+    advance_time(&mut app.harness, 0.0);
+    advance_time(&mut app.harness, 0.4);
+    settle(&mut app.harness);
+    assert_eq!(save_state(&app.harness, "Save request"), "Unsaved");
+    advance_time(&mut app.harness, 0.2);
     settle(&mut app.harness);
 
     assert_eq!(save_state(&app.harness, "Save request"), "Saved");

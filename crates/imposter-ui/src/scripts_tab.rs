@@ -78,10 +78,19 @@ const HIGHLIGHT_LIMIT: usize = 64 * 1024;
 /// A collection's or folder's scripts that also run around the open request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outer {
-    /// `Collection "API"`, `Folder "Users"`.
-    pub owner: String,
+    pub name: String,
     pub target: crate::dialogs::ScriptTarget,
     pub scripts: Scripts,
+}
+
+impl Outer {
+    fn owner(&self) -> String {
+        let kind = match self.target {
+            crate::dialogs::ScriptTarget::Collection(_) => "Collection",
+            crate::dialogs::ScriptTarget::Folder(_) => "Folder",
+        };
+        format!("{kind} \"{}\"", self.name)
+    }
 }
 
 /// What a collection's or folder's scripts do to the requests inside, in a sentence; empty
@@ -101,10 +110,10 @@ pub fn runs(scripts: &Scripts) -> &'static str {
 /// The Scripts tab's badge description when outer levels run scripts: "Collection \"API\"
 /// and Folder \"Users\" scripts also run".
 pub fn also_run(outer: &[Outer]) -> Option<String> {
-    let owners: Vec<&str> = outer.iter().map(|level| level.owner.as_str()).collect();
+    let owners: Vec<_> = outer.iter().map(Outer::owner).collect();
     let (last, rest) = owners.split_last()?;
     let joined = if rest.is_empty() {
-        (*last).to_owned()
+        last.clone()
     } else {
         format!("{} and {last}", rest.join(", "))
     };
@@ -121,29 +130,37 @@ pub fn draw(
     egui::ScrollArea::vertical()
         .id_salt("request scripts")
         .max_height(height)
+        .min_scrolled_height(height)
         .auto_shrink([false, false])
         .show(ui, |ui| {
             widgets::scroll_view_bounds(ui);
             let top = ui.cursor().top();
             if !outer.is_empty() {
-                ui.label(
-                    theme::meta("Also runs, before this request's:")
-                        .color(theme::palette().text_muted),
-                );
+                const INHERITED: &str = "Also runs, before this request's:";
+                let narrow = ui.available_width() < 480.0;
                 ui.horizontal_wrapped(|ui| {
+                    let caption = if narrow { "Also runs:" } else { INHERITED };
+                    let heading = ui.label(theme::meta(caption).color(theme::palette().text_muted));
+                    if narrow {
+                        ui.ctx()
+                            .accesskit_node_builder(heading.id, |node| node.set_value(INHERITED));
+                        heading.on_hover_text(INHERITED);
+                    }
                     for level in outer {
-                        let open = widgets::button(ui, Variant::Ghost, None, &level.owner);
-                        name(&open, &format!("Open the scripts of {}", level.owner));
+                        let owner = level.owner();
+                        let caption = if narrow { &level.name } else { &owner };
+                        let open = widgets::button(ui, Variant::Ghost, None, caption)
+                            .on_hover_text(&owner);
+                        name(&open, &format!("Open the scripts of {owner}"));
                         if open.clicked() {
                             actions.push(Action::Prompt(Dialog::Scripts {
                                 target: level.target,
-                                owner: level.owner.clone(),
+                                owner,
                                 scripts: level.scripts.clone(),
                             }));
                         }
                     }
                 });
-                ui.add_space(theme::spacing().xs);
             }
             // Both coordinates scroll together, so scrolling never grows either editor.
             let remaining = height - (ui.cursor().top() - top);
@@ -161,9 +178,18 @@ pub(crate) fn script_pair(
 ) -> bool {
     let spacing = theme::spacing();
     let row_gap = ui.spacing().item_spacing.y;
-    let editor_height = ((height - spacing.sm.max(row_gap) - 2.0 * (spacing.control + row_gap))
-        / 2.0)
-        .max(spacing.control);
+    let header = header_height(ui) + row_gap;
+    let gap = spacing.sm.max(row_gap);
+    let minimum_editor =
+        ui.fonts_mut(|fonts| fonts.row_height(&script_font())) + SCRIPT_MARGIN.sum().y;
+    let adjacent = owner.is_none()
+        && ui.available_width() >= 360.0
+        && height < 2.0 * (header + minimum_editor) + gap;
+    let editor_height = if adjacent {
+        (height - header).max(minimum_editor)
+    } else {
+        ((height - gap) / 2.0 - header).max(minimum_editor)
+    };
     let before = owner.map_or_else(
         || BEFORE_EDITOR.to_owned(),
         |owner| format!("{owner} before-sending script"),
@@ -172,38 +198,68 @@ pub(crate) fn script_pair(
         || AFTER_EDITOR.to_owned(),
         |owner| format!("{owner} after-response script"),
     );
-    let mut changed = script_editor(
-        ui,
-        Phase::Before,
-        "Before sending",
-        if owner.is_some() {
-            "Runs on every request inside. Outer scripts run first, then the request's own."
-        } else {
-            "Runs with variables filled in. Its changes are sent and kept in History."
-        },
-        &before,
-        &mut scripts.before,
-        editor_height,
-    );
-    ui.add_space((spacing.sm - row_gap).max(0.0));
-    changed |= script_editor(
-        ui,
-        Phase::After,
-        "After response",
-        if owner.is_some() {
-            "Runs on every response. Its tests show with the request's."
-        } else {
-            "Runs on the response to test it, set variables or log values."
-        },
-        &after,
-        &mut scripts.after,
-        editor_height,
-    );
-    changed
+    let mut draw_before = |ui: &mut Ui| {
+        script_editor(
+            ui,
+            Phase::Before,
+            "Before sending",
+            if owner.is_some() {
+                "Runs on every request inside. Outer scripts run first, then the request's own."
+            } else {
+                "Runs with variables filled in. Its changes are sent and kept in History."
+            },
+            &before,
+            &mut scripts.before,
+            editor_height,
+        )
+    };
+    let mut draw_after = |ui: &mut Ui| {
+        script_editor(
+            ui,
+            Phase::After,
+            "After response",
+            if owner.is_some() {
+                "Runs on every response. Its tests show with the request's."
+            } else {
+                "Runs on the response to test it, set variables or log values."
+            },
+            &after,
+            &mut scripts.after,
+            editor_height,
+        )
+    };
+    if adjacent {
+        ui.columns_const(|[before, after]| {
+            for column in [&mut *before, &mut *after] {
+                let mut clip = column.clip_rect();
+                clip.min.x = clip.min.x.max(column.max_rect().left());
+                clip.max.x = clip.max.x.min(column.max_rect().right());
+                column.set_clip_rect(clip);
+            }
+            draw_before(before) | draw_after(after)
+        })
+    } else {
+        let before = draw_before(ui);
+        ui.add_space((spacing.sm - row_gap).max(0.0));
+        before | draw_after(ui)
+    }
+}
+
+fn header_height(ui: &Ui) -> f32 {
+    theme::spacing()
+        .control
+        .max(icons::size())
+        .max(widgets::HELP_SIZE)
+        .max(ui.spacing().interact_size.y)
 }
 
 const RHAI_HELP: &str =
     "Rhai scripts. They read and change only this request and its variables: no files or network.";
+const SCRIPT_MARGIN: egui::Margin = egui::Margin::symmetric(4, 2);
+
+fn script_font() -> FontId {
+    FontId::monospace(theme::BODY)
+}
 
 /// One script with a fixed header above an independently scrollable code editor.
 /// The accessible name also keeps its cursor apart from other editors'.
@@ -219,6 +275,7 @@ pub fn script_editor(
     let id = ui.make_persistent_id(("script", label));
     let compiled = (!text.trim().is_empty()).then(|| script::check(text));
     let mut inserted = None;
+    let header_height = header_height(ui);
     ui.horizontal(|ui| {
         let spacing = theme::spacing();
         ui.spacing_mut().item_spacing.x = spacing.xs;
@@ -240,7 +297,7 @@ pub fn script_editor(
         ui.add_sized(
             [
                 widgets::text_width(ui, caption.clone()).min(caption_space),
-                spacing.control,
+                header_height,
             ],
             egui::Label::new(caption)
                 .truncate()
@@ -297,32 +354,39 @@ pub fn script_editor(
         } else {
             vec![(0..content.len(), highlight::Token::Plain)]
         };
-        let job = widgets::spans_job(content, &spans, &FontId::monospace(13.0), wrap);
+        let job = widgets::spans_job(content, &spans, &script_font(), wrap);
         ui.fonts_mut(|fonts| fonts.layout_job(job))
     };
-    let mut changed = egui::ScrollArea::vertical()
-        .id_salt(id)
-        .max_height(editor_height)
-        .min_scrolled_height(editor_height)
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            widgets::scroll_view_bounds(ui);
-            let response = ui.add(
-                egui::TextEdit::multiline(text)
-                    .id(id)
-                    .code_editor()
-                    .desired_rows(1)
-                    .min_size(egui::vec2(0.0, editor_height))
-                    .desired_width(ui.available_width())
-                    .hint_text("// Rhai")
-                    .layouter(&mut layouter),
-            );
-            name(&response, label);
-            let changed = response.changed();
-            if let Some(typing) = typing {
-                typing.help(ui, id, text, changed);
-            }
-            changed
+    let mut changed = ui
+        .scope(|ui| {
+            // A cursor in a one-line viewport has no room for extra scroll-to-cursor padding.
+            ui.spacing_mut().item_spacing.y = 0.0;
+            egui::ScrollArea::vertical()
+                .id_salt(id)
+                .max_height(editor_height)
+                .min_scrolled_height(editor_height)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    widgets::scroll_view_bounds(ui);
+                    let response = ui.add(
+                        egui::TextEdit::multiline(text)
+                            .id(id)
+                            .code_editor()
+                            .margin(SCRIPT_MARGIN)
+                            .desired_rows(1)
+                            .min_size(egui::vec2(0.0, editor_height))
+                            .desired_width(ui.available_width())
+                            .hint_text("// Rhai")
+                            .layouter(&mut layouter),
+                    );
+                    name(&response, label);
+                    let changed = response.changed();
+                    if let Some(typing) = typing {
+                        typing.help(ui, id, text, changed);
+                    }
+                    changed
+                })
+                .inner
         })
         .inner;
     if let Some(code) = inserted {
@@ -371,7 +435,7 @@ mod tests {
 
     fn folder(name: &str) -> Outer {
         Outer {
-            owner: format!("Folder \"{name}\""),
+            name: name.to_owned(),
             target: ScriptTarget::Folder(FolderId(1)),
             scripts: Scripts {
                 before: "let a = 1;".into(),

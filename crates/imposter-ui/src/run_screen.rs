@@ -14,7 +14,9 @@ use imposter_app::runner::Step;
 use imposter_app::runtime::TaskId;
 
 use crate::app::{Action, ResponsePane, State};
+use crate::dialogs::Dialog;
 use crate::icons::Icon;
+use crate::palette::{Mode, Palette};
 use crate::theme::{self, Tone, palette};
 use crate::widgets::{self, ListEnd, ListIcon, Variant, name, tone_text};
 
@@ -254,9 +256,8 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     }
     let mut actions = Vec::new();
     let mut execution = None;
-    widgets::screen_toolbar(
+    widgets::toolbar_row(
         ui,
-        "Run",
         |ui| target_picker(ui, state, &mut actions),
         |ui| execution = controls(ui, &state.run),
     );
@@ -352,31 +353,25 @@ fn environment_label(state: &State, choice: EnvironmentChoice) -> String {
 }
 
 fn target_picker(ui: &mut Ui, state: &State, actions: &mut Vec<Action>) {
-    ui.add_enabled_ui(state.run.run.is_none(), |ui| {
-        let selected = state
-            .run
-            .target
-            .as_ref()
-            .map_or_else(|| "Choose…".to_owned(), |t| t.label.clone());
-        let target_width = ui.available_width().min(280.0);
-        let picker = widgets::toolbar_combo(ui, "run target", target_width, &selected, |ui| {
-            let targets: Vec<RunTarget> = match state.tree.as_ref() {
-                Some(tree) => std::iter::once(None)
-                    .chain(tree.destinations().into_iter().skip(1).map(|(_, f)| f))
-                    .filter_map(|folder| RunTarget::from_tree(state, folder))
-                    .collect(),
-                None => Vec::new(),
-            };
-            for target in targets {
-                let chosen = state.run.target.as_ref() == Some(&target);
-                if widgets::option(ui, chosen, &target.label).clicked() {
-                    actions.push(Action::Run(RunAction::Choose(target)));
-                }
-            }
-        });
-        name(&picker, "What to run");
-        picker.on_hover_text(selected);
-    });
+    let selected = state
+        .run
+        .target
+        .as_ref()
+        .map_or("Choose…", |t| t.label.as_str());
+    let picker = ui
+        .add_enabled_ui(state.run.run.is_none(), |ui| {
+            ui.set_max_width(ui.available_width().min(280.0));
+            widgets::button(ui, Variant::Secondary, None, selected)
+        })
+        .inner;
+    name(&picker, "What to run");
+    let picker = widgets::describe(picker, selected);
+    if picker.clicked() {
+        actions.push(Action::Prompt(Dialog::Palette(Box::new(Palette::open(
+            state,
+            Mode::RunTarget,
+        )))));
+    }
 }
 
 fn environment_picker(ui: &mut Ui, state: &State, selected: &mut EnvironmentChoice) {

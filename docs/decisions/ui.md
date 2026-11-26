@@ -111,8 +111,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     layout sections in the icon family.
   - **Type scale:** `theme::page_title` is 18 pt SemiBold, `theme::section` is 14 pt
     SemiBold, `theme::body` is 13 pt and `theme::meta` is 12 pt. Dialog titles and Settings
-    section headings use these helpers; existing 15 pt screen titles and breadcrumbs migrate
-    when their screens are restyled. `theme::semibold` remains available for selected labels.
+    section headings use these helpers. `theme::semibold` remains available for selected labels.
     Single-line variable fields (URL, headers, paths, values) are monospace. Why: a small,
     explicit scale gives headings hierarchy without competing sizes across screens.
   - **Size:** Inter and JetBrains Mono add about 1.1 MiB to the release binary; Inter
@@ -254,13 +253,17 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   and take the text color on hover. The screen name is the accessible name and the tooltip
   includes its shortcut when one exists. The design review found that the old Tools menu
   lighting up like a tab confused navigation.
+  - The search icon immediately above Settings opens the command palette. Its tooltip
+    shows both the full palette shortcut and the requests-only shortcut. Why: shortcuts
+    alone gave new users no visible way to find the palette. Enforced by
+    `the_rail_opens_the_command_palette_and_displays_both_shortcuts`.
   - Variables, Mocks and Settings mark unsaved edits with an amber corner dot
     (`widgets::corner_dot`). Mocks, Load and Run mark active work with a green dot or a
     muted dot while stopping. Mocks can show both dots together. Accessible descriptions
     and tooltips name those states. The marks leave each button's position fixed and
     distinguish changes from activity.
-  - The header pairs the app icon with the full wordmark. At narrow widths the icon stands
-    on its own and keeps the full accessible brand name. The environment picker stays at
+  - The header pairs the window and Dock icon with the full wordmark. At narrow widths the
+    icon stands on its own and keeps the full accessible brand name. The environment picker stays at
     the right and truncates long names with the full name on hover.
   - Running tools are clickable in the status bar, including while starting or stopping.
     They reserve room before the latest result, which truncates with its full text on hover.
@@ -269,19 +272,21 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 
   Checked by `imposter-ui/tests/header.rs`, the load, run and mock UI tests, and the layout lint.
 
-- **Every screen has one toolbar above its content** (`widgets::screen_toolbar`), at
-  the density's control height, with a 1-point control-edge divider underneath. The page
-  title and scope controls sit at the left, and actions are reserved at the right with the
-  primary action rightmost. Variables puts its tabs in the title position. Its toolbar
-  uses the tab height to fit the tab underline. Variables and Settings put their
-  navigation columns below the toolbar. Requests uses the same row for its breadcrumb, with Copy as curl and Save
-  before a separated group of view controls. Until a request opens, the title
-  is "Requests". Run keeps its target picker in the toolbar and the environment and
+- **Every screen has one toolbar above its content** (`widgets::toolbar_row`), at
+  the density's control height, with a 1-point control-edge divider underneath. Toolbars
+  hold controls. The selected rail item names the screen. Screen controls start at the
+  left, and the primary action sits rightmost. Variables uses the tab height for its
+  tab underline. On screens with a side list, the toolbar starts to its right. Requests
+  shows the open request's breadcrumb, with Copy as curl and Save before a separated
+  group of view controls. Run keeps its target picker in the toolbar and the environment and
   failure policy with its configuration. Mocks puts the port and server state on the
   left, and Start or Stop on the right with the save actions. The restart notice stays
   in the content. Fixed rows keep actions in the same place as content scrolls or
-  changes, and reclaim vertical space at 720×480. Checked by the layout lint and
-  `imposter-ui/tests/header.rs`.
+  changes, and reclaim vertical space at 720×480. Why: the selected rail item already
+  names the screen, and repeating a title on some toolbars made their layout inconsistent.
+  Enforced by `the_selected_rail_item_identifies_each_screen_without_a_visible_page_title`,
+  `every_screen_has_one_toolbar_above_its_content_and_the_status_bar_is_status_only`, and
+  the layout lint.
 
 - **The layout is a user-controlled switch**, side by side or stacked. The Requests
   toolbar's two layout buttons, the command palette and the keyboard shortcut change it.
@@ -301,9 +306,20 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   message and empty response are centred in their available area. The layout and fit
   tests check the flat pane bounds, and the workflow and fit tests check the empty states.
 
+- **Side lists run from the header to the status bar beside the rail.** Requests,
+  Variables, Settings and Mocks share the window background, with a 1-point divider and
+  split grip at the list edge. Each toolbar spans its content column. Keyboard traversal
+  reaches the toolbar before the list. Why: the raised
+  fill made the Requests sidebar look separate, and the shorter lists gave the other
+  screens a different layout. Enforced by
+  `requests_and_variables_side_lists_share_the_background_in_both_themes` and
+  `side_lists_span_the_screen_body_and_the_toolbar_starts_to_their_right`, and
+  `tab_traversal_visits_the_toolbar_before_the_full_height_list`.
+
 - **Split panes keep a minimum in points** (`layout::split`): request and response 220 wide
   or 160 tall, the History list 110 and its details 160; when both minimums do not fit,
-  they share in proportion. A drag starts from the size as drawn, not the stored ratio, so
+  they share in proportion. Short stacked layouts give the Scripts tab more height for
+  its two editors. A drag starts from the size as drawn, not the stored ratio, so
   dragging back from a held minimum responds at once. Each split has a grip in the
   control-edge color (`widgets::split_grip`, ≥3:1), History's included. Why: a ratio alone left a pane with
   only its tab row at 720×480 (the review's #10, #14). At narrow widths the sidebar
@@ -572,10 +588,13 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   check glyph and "Compiles". An error shows its location and full text on hover when
   clipped. Script reference sits in the request tab row with an info glyph. The request
   and collection or folder dialog editors share the remaining height evenly, with their
-  own scrolling. The mock response script uses the same header and fills its tab, with
-  a minimum height for editing in short windows. Stacked help, example buttons and status
-  lines made the forms hard to scan. The headers keep feedback near the code and give
-  the space below to editing.
+  own scrolling. The height budget includes the header controls, spacing and inherited
+  script chips. Short request panes can place the two editors side by side. The mock
+  response script uses the same header and fills its tab, with a minimum height for
+  editing in short windows. Why: an editor viewport could extend below the padded
+  request pane and hide the last line. Enforced by
+  `script_editors_fit_and_reveal_the_last_line_in_every_layout` and
+  `a_folders_scripts_are_edited_in_a_dialog_and_run_around_its_requests`.
 
 - **The egui `TextEdit` highlights `{{var}}` and JSON up to 64 KiB.** Above that limit
   the editor's tooltip explains that highlighting is off. Per interactive frame the editor
@@ -768,10 +787,15 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 - **Every screen saves the same way.** A disk icon at the top right shows a word when the
   icon alone cannot communicate its state (`widgets::save_controls`). Variables and Mocks
   also offer Revert. Settings → General has one **Automatically save changes** option for
-  requests, variables and mocks. Each editor waits half a second after its latest edit and
-  uses its save validation. Why: the user asked for autosave in Variables and Mocks, and
-  one setting makes the save behavior consistent across editors. The header logo is the
-  app icon drawing, like the window and Dock icon.
+  requests, variables and mocks. Autosave waits half a second after an edit or after a
+  focused text field loses focus, including when the window loses focus. Moving straight
+  to another text field keeps the save pending. Each editor validates its changes before
+  writing. Why: a pause while typing could commit a partial variable value, or save a
+  variable with an empty value while its composer was focused. Enforced by
+  `autosave_leaves_a_focused_variable_value_in_the_composer_until_blur`,
+  `moving_from_a_new_variable_name_to_its_value_does_not_save_an_empty_value`,
+  `route_edits_autosave_after_the_field_loses_focus`, and
+  `new_requests_open_in_the_editor_and_autosave_after_window_focus_leaves`.
 
 - **Save states are one word** (`widgets::SaveWord`: "Saving…", "Save failed", "Invalid
   fields", "Loading…", "Not loaded") beside the Save icon, colored by tone, in the request
@@ -839,8 +863,7 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
 ### Screens (Variables, Settings, Mocks, Load, Run, History)
 
 - **Variables and Settings share a flat, resizable navigation column** with its own
-  scroll and a 1-point divider with a grip. Both columns begin against the rail below the
-  screen toolbar and share the workspace background. The default adapts from 144 to 192
+  scroll and a 1-point divider with a grip. The default adapts from 144 to 192
   points until the user resizes it; either screen then sets the shared width (144–320
   points, `WorkspaceLayout::list_width`), restored at startup. Rows have a left-aligned
   icon slot and caption, full-width hover and selected fills, and an accent bar on the
@@ -878,6 +901,10 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     Cookies use icon buttons to remove a row or clear the jar. Both ask in a dialog before
     writing the change.
   - "Define in" and "Open definition" select the matching tab and focus the row's name field.
+  - An empty value uses the muted, italic, proportional placeholder `empty` in value chips
+    and both inspector lists. Its accessible label ends in `(empty)`. Why: a placeholder
+    presented as a value can be confused with the same text typed by the user. Enforced by
+    `empty_values_have_distinct_labels_and_placeholder_styling`.
   The owner's review found that the stacked page mixed variables, secrets and cookies and
   hid scope choices in the "Editing" picker (Q4). Tooltips keep the precedence and usage
   guidance nearby while leaving the tables easier to scan (Q6).
@@ -901,6 +928,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
     "Verify TLS certificates" and keeps host client certificates in compact bordered
     blocks, with a Plus in the section header and a two-click remove icon in each block
     header so removal stays beside the certificate it applies to.
+  - A host certificate's heading uses its optional display name, then its host and port,
+    then its numbered caption. The name labels the block and leaves TLS matching by host
+    and port. Why: numbered headings gave users no way to identify saved certificates.
+    Enforced by `host_certificate_headings_use_names_or_addresses_and_names_survive_restart`
+    and `host_identity_names_are_optional_in_settings_and_do_not_affect_matching`.
 
 - **Mocks shows the server state in its toolbar.** The port reads `auto` at zero.
   Start is the primary action with Play, and Stop uses the danger style with Stop. The
@@ -911,6 +943,9 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   and a "Stopped" notice under the toolbar's "Stopped" said the same thing twice.
   Enforced by `the_server_state_reads_in_words_and_its_controls_stay_put` and
   `occupied_ports_report_an_error_and_mock_controls_fit_the_minimum_window`.
+  - Save and Revert are available when the configuration has loaded, has unsaved edits,
+    and no save or reload is in progress. Why: Revert has nothing to discard on a clean
+    screen. Enforced by `revert_is_available_only_with_unsaved_mock_edits`.
   - Drag the route list's divider grip to resize it from 200 to 480 points. The list
     defaults to 260 points and keeps its preferred width across restarts. The window can
     constrain the list so the route editor always has at least 372 points, the space it
@@ -956,6 +991,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing egui/e
   "Run Collection" and "Go to Run"), through the same runner as `imposter run`. Its target
   is chosen by id (`profile::select_under`), so a renamed folder cannot make it run
   another. Opened with nothing chosen it takes the open collection.
+  - The What to run button opens a searchable palette with every collection and folder
+    in sidebar order, including empty ones. Why: the toolbar picker only showed the
+    collection open on Requests, so users could not find their other collections.
+    Enforced by `picker_lists_all_collections_and_folders_and_runs_the_selected_folder`
+    and `the_run_target_index_includes_empty_collections_and_folders_in_tree_order`.
   - **Configuration:** Run shares Load's adjacent panes at wide sizes and stacks the
     environment and "Keep going after a failure" above results at narrow sizes. The active
     environment is the default, and the user can choose another. The toolbar's Run action

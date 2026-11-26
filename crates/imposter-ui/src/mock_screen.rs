@@ -150,28 +150,61 @@ const MIN_EDITOR_WIDTH: f32 = 372.0;
 const HALF_DIVIDER: i8 = 6;
 
 pub fn draw(state: &mut State, ui: &mut Ui) {
+    // Checked every frame, so a problem shows while it is typed.
+    let mut problems = state.mocks.form.problems();
+    problems.extend(script_problems(&state.mocks.form));
+    crate::workspace::list_screen(state, ui, route_list, |state, ui, list| {
+        draw_editor(state, ui, list, &problems);
+    });
+}
+
+fn route_list(state: &mut State, ui: &mut Ui) -> Ui {
+    let (min, max) = MOCK_LIST_WIDTH;
+    let inset = f32::from(HALF_DIVIDER);
+    let max_width = (ui.available_width() - 32.0 - 2.0 * inset - MIN_EDITOR_WIDTH)
+        .floor()
+        .clamp(min, max);
+    let width = state.layout.mock_list_width.min(max_width);
+    let frame = egui::Frame::new()
+        .fill(palette().background)
+        .inner_margin(egui::Margin {
+            left: 12,
+            top: 12,
+            // The panel's separator already reserves one point of the gutter.
+            right: HALF_DIVIDER - 1,
+            ..egui::Margin::ZERO
+        });
+    let (resized, list) = widgets::resizable_list_panel(
+        ui,
+        "Mock routes",
+        frame,
+        width + inset,
+        min + inset..=max_width + inset,
+    );
+    if let Some(resized) = resized {
+        state.layout.mock_list_width = resized - inset;
+    }
+    list
+}
+
+fn draw_editor(state: &mut State, ui: &mut Ui, list: &mut Ui, problems: &[RouteProblem]) {
     let screen = &mut state.mocks;
-    let mut edited = false;
-    // Checked every frame, so a problem shows while it is typed, not only on Save.
-    let mut problems = screen.form.problems();
-    problems.extend(script_problems(&screen.form));
     let mut actions = Vec::new();
     let mut port = screen.form.port;
     let mut server_action = None;
-    widgets::screen_toolbar(
+    widgets::toolbar_row(
         ui,
-        "Mocks",
         |ui| {
             port_field(ui, screen, &mut port);
             server_state(ui, screen);
         },
         |ui| {
-            server_action = server_controls(ui, screen, &problems);
+            server_action = server_controls(ui, screen, problems);
             save_controls(ui, screen, &mut actions);
         },
     );
     actions.extend(server_action.map(Action::Mock));
-    edited |= port != screen.form.port;
+    let mut edited = port != screen.form.port;
     screen.form.port = port;
     if let Some(run) = &screen.run
         && screen
@@ -186,43 +219,12 @@ pub fn draw(state: &mut State, ui: &mut Ui) {
     }
     ui.add_space(6.0);
     let loaded = screen.loaded() && !screen.loading;
-    ui.add_enabled_ui(loaded, |ui| {
-        let area = ui.available_rect_before_wrap();
-        let (min, max) = MOCK_LIST_WIDTH;
-        let inset = f32::from(HALF_DIVIDER);
-        let max_width = (area.width() - 2.0 * inset - MIN_EDITOR_WIDTH)
-            .floor()
-            .clamp(min, max);
-        let width = state.layout.mock_list_width.min(max_width);
-        let frame = egui::Frame::new().inner_margin(egui::Margin {
-            // The panel's separator already reserves one point of the gutter.
-            right: HALF_DIVIDER - 1,
-            ..egui::Margin::ZERO
-        });
-        if let Some(resized) = widgets::resizable_list_panel(
-            ui,
-            "mock routes",
-            frame,
-            width + inset,
-            min + inset..=max_width + inset,
-            |ui| {
-                edited |= routes(ui, screen, &problems);
-            },
-        ) {
-            state.layout.mock_list_width = resized - inset;
-        }
-        let mut editor = ui.available_rect_before_wrap();
-        editor.min.x += inset;
-        ui.scope_builder(
-            egui::UiBuilder::new()
-                .max_rect(editor)
-                .id_salt("mock route"),
-            |ui| {
-                edited |= route_editor(ui, screen, &problems);
-            },
-        );
-        ui.allocate_rect(area, egui::Sense::hover());
-    });
+    edited |= list
+        .add_enabled_ui(loaded, |ui| routes(ui, screen, problems))
+        .inner;
+    edited |= ui
+        .add_enabled_ui(loaded, |ui| route_editor(ui, screen, problems))
+        .inner;
     if edited {
         actions.push(Action::Mock(MockAction::Edited));
     }
@@ -310,7 +312,7 @@ fn save_controls(ui: &mut Ui, screen: &MockScreen, actions: &mut Vec<Action>) {
         actions.push(Action::Save);
     }
     let revert = ui
-        .add_enabled_ui(!screen.saving && !screen.loading, |ui| {
+        .add_enabled_ui(status.enabled, |ui| {
             icons::button(ui, Icon::Revert, "Revert to saved mocks", false)
         })
         .inner;

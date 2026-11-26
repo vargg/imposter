@@ -83,6 +83,10 @@ impl Saver {
         !self.pending.is_empty() || self.in_flight.is_some()
     }
 
+    pub fn is_writing(&self) -> bool {
+        self.in_flight.is_some()
+    }
+
     pub fn state(&self, id: RequestId) -> State {
         if self
             .in_flight

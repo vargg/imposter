@@ -245,7 +245,8 @@ fn palette_shift_p_opens_the_command_palette() {
         .key_press_modifiers(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P);
     settle(&mut app.harness);
 
-    app.harness.get_by_label("Command palette");
+    app.harness
+        .get_by_role_and_label(egui::Role::Label, "Command palette");
     assert!(app.harness.query_by_label("Recent requests").is_none());
     support::text_input(&app.harness, "Command palette search").type_text("Go to Settings");
     app.harness.run_steps(2);
@@ -261,7 +262,12 @@ fn palette_p_finds_requests_only() {
     app.harness.get_by_label("Recent requests");
     app.harness.get_by_label("GET API › Get");
     for label in ["Command palette", "Actions", "Environments"] {
-        assert!(app.harness.query_by_label(label).is_none(), "{label}");
+        assert!(
+            app.harness
+                .query_by_role_and_label(egui::Role::Label, label)
+                .is_none(),
+            "{label}"
+        );
     }
 }
 

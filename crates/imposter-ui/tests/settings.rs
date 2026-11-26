@@ -362,6 +362,10 @@ fn host_certificates_save_only_on_save_and_validate_duplicates() {
     settle(&mut app.harness);
     assert_eq!(stored(&app).host_identities[0].port, 443);
     assert_eq!(stored(&app).host_identities[0].password, "secret");
+    app.harness
+        .get_by_label("Add host certificate")
+        .scroll_to_me();
+    app.harness.run_steps(12);
     click(&mut app.harness, "Add host certificate");
     type_into(&mut app.harness, "Host certificate 2 Host", "example.com");
     type_into(
@@ -380,6 +384,65 @@ fn host_certificates_save_only_on_save_and_validate_duplicates() {
     app.harness.get_by_label("Unsaved application settings");
     click(&mut app.harness, "Cancel");
     assert_eq!(app.harness.state().close_state(), CloseState::Open);
+}
+
+#[test]
+fn host_certificate_headings_use_names_or_addresses_and_names_survive_restart() {
+    let mut app = start();
+    let size = egui::vec2(1200.0, 1500.0);
+    app.harness.set_size(size);
+    app.harness.run_steps(2);
+    open_settings(&mut app);
+    open_settings_category(&mut app.harness, "TLS");
+    click(&mut app.harness, "Add host certificate");
+    assert!(
+        app.harness
+            .query_by_role_and_label(Role::TextInput, "Host certificate 1 Name")
+            .is_some(),
+        "the certificate needs an optional name field"
+    );
+    type_into(
+        &mut app.harness,
+        "Host certificate 1 Name",
+        "  Staging API  ",
+    );
+    app.harness.get_by_label("Staging API");
+    app.harness
+        .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    app.harness.key_press(egui::Key::Backspace);
+    app.harness.run_steps(2);
+    type_into(
+        &mut app.harness,
+        "Host certificate 1 Host",
+        "staging.example.test",
+    );
+    app.harness.get_by_label("staging.example.test:443");
+    type_into(&mut app.harness, "Host certificate 1 Name", "  QA API  ");
+    type_into(
+        &mut app.harness,
+        "Host certificate 1 Certificate",
+        "client.pem",
+    );
+    assert_eq!(stored(&app).host_identities, []);
+    click(&mut app.harness, "Save settings");
+    settle(&mut app.harness);
+    assert_eq!(
+        serde_json::to_value(stored(&app)).unwrap()["host_identities"][0]["name"],
+        "QA API"
+    );
+
+    drop(app.harness);
+    let mut again = support::harness_at(app.dir.path(), size);
+    support::open_screen(&mut again, "Settings");
+    settle(&mut again);
+    open_settings_category(&mut again, "TLS");
+    again.get_by_label("QA API");
+    assert_eq!(
+        support::text_input(&again, "Host certificate 1 Name")
+            .value()
+            .as_deref(),
+        Some("QA API")
+    );
 }
 
 #[test]

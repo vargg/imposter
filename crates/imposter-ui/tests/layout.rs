@@ -850,6 +850,11 @@ fn walk(app: &mut support::App, label: &str, stream: &StreamServer) -> Vec<Strin
                         .scroll_to_me();
                     check(app, "host certificates header");
                     click(&mut app.harness, "Add host certificate");
+                    type_into(
+                        &mut app.harness,
+                        "Host certificate 1 Name",
+                        &"A very long certificate name ".repeat(16),
+                    );
                     check(app, "host certificate block");
                     support::text_input(&app.harness, "Host certificate 1 Key").scroll_to_me();
                     check(app, "host certificate fields");

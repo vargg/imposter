@@ -7,10 +7,13 @@ mod support;
 
 use egui::accesskit::Role;
 use egui_kittest::kittest::{NodeT, Queryable};
+use imposter_app::core::model::{RequestTemplate, Scripts};
 use imposter_app::store::{collections, executions};
 use imposter_testkit::{Server, response};
 use imposter_ui::app::ResponseTab;
+use imposter_ui::layout::{MIN_WINDOW, Orientation};
 use imposter_ui::scripts_tab::{AFTER_EDITOR, BEFORE_EDITOR};
+use imposter_ui::theme::{self, Density};
 use support::{click, click_button, collection, request, settle, start_with};
 
 struct Fixture {
@@ -145,11 +148,166 @@ fn compile_state_shares_each_header_and_the_editors_share_the_pane() {
 }
 
 #[test]
+fn script_editors_fit_and_reveal_the_last_line_in_every_layout() {
+    let mut failures = Vec::new();
+    for inherited in [false, true] {
+        let mut app = start_with(|store| {
+            let api = collection(store, "API");
+            store
+                .call_blocking(move |db| {
+                    let folder = collections::create_folder(db, api.id, None, "Users", "", 0)?;
+                    let scripts = Scripts {
+                        before: "let outer = 1;".into(),
+                        ..Default::default()
+                    };
+                    if inherited {
+                        collections::set_collection_scripts(db, api.id, &scripts)?;
+                        collections::set_folder_scripts(db, folder.id, &scripts)?;
+                    }
+                    collections::create_request(
+                        db,
+                        api.id,
+                        Some(folder.id),
+                        &RequestTemplate {
+                            name: "Items".into(),
+                            url: "http://example.test/items".into(),
+                            scripts: Scripts {
+                                before: "let first = 1;".into(),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                    )
+                    .map(drop)
+                })
+                .unwrap();
+        });
+        click(&mut app.harness, "GET Items");
+        settle(&mut app.harness);
+        open_scripts(&mut app);
+        for size in [MIN_WINDOW, [1500.0, 850.0]] {
+            for density in [Density::Compact, Density::Comfortable] {
+                for orientation in [Orientation::SideBySide, Orientation::Stacked] {
+                    failures.extend(check_script_layout(
+                        &mut app,
+                        size,
+                        density,
+                        orientation,
+                        inherited,
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn check_script_layout(
+    app: &mut support::App,
+    size: [f32; 2],
+    density: Density,
+    orientation: Orientation,
+    inherited: bool,
+) -> Option<String> {
+    app.harness.set_size(size.into());
+    let state = &mut app.harness.state_mut().state;
+    state.appearance.density = density;
+    state.layout.orientation = orientation;
+    set_scripts(app, "let first = 1;", "");
+    let code = format!("{}let last_line = ;", "// line\n".repeat(64));
+    app.harness.get_by_label(AFTER_EDITOR).focus();
+    app.harness.step();
+    app.harness.event(egui::Event::Paste(code.clone()));
+    app.harness.step();
+    app.harness.key_press(egui::Key::Home);
+    app.harness.key_press(egui::Key::End);
+    app.harness.run_steps(24);
+    let harness = &mut app.harness;
+    assert_eq!(
+        harness.get_by_label(AFTER_EDITOR).value().as_deref(),
+        Some(code.as_str()),
+        "{size:?} {density:?} {orientation:?} inherited={inherited}"
+    );
+    harness.get_by_label_contains("Line 65, column");
+    assert_eq!(
+        harness
+            .query_by_label("Also runs, before this request's:")
+            .is_some(),
+        inherited
+    );
+
+    let before = script_view(harness, BEFORE_EDITOR);
+    let after = script_view(harness, AFTER_EDITOR);
+    let pane = harness.get_by_label("Request pane").rect();
+    let before_header = script_header(harness, BEFORE_EDITOR);
+    let after_header = script_header(harness, AFTER_EDITOR);
+    let line_bottom = harness.output().shapes.iter().find_map(|clipped| {
+        let egui::Shape::Text(shape) = &clipped.shape else {
+            return None;
+        };
+        shape
+            .galley
+            .job
+            .text
+            .ends_with("let last_line = ;")
+            .then(|| shape.pos.y + shape.galley.rows.last().unwrap().rect().bottom())
+    });
+
+    harness.hover_at(before_header.center());
+    harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -400.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run_steps(24);
+    let after_scroll = script_header(harness, BEFORE_EDITOR);
+    let padded_bottom = pane.bottom() - theme::spacing().sm;
+    if after.bottom() > padded_bottom + 0.5
+        || (before.height() - after.height()).abs() > 0.5
+        || before_header.bottom() > before.top() + 0.5
+        || before.shrink(0.5).intersects(after_header)
+        || before.shrink(0.5).intersects(after)
+        || after_header.bottom() > after.top() + 0.5
+        || (after_scroll.top() - before_header.top()).abs() > 0.5
+        || line_bottom.is_none_or(|bottom| bottom > after.bottom() + 0.5 || bottom <= after.top())
+    {
+        Some(format!(
+            "{size:?} {density:?} {orientation:?} inherited={inherited}: padded pane bottom {padded_bottom}, before {before:?}, after {after:?}, headers {before_header:?} {after_header:?}, scrolled header {after_scroll:?}, last line bottom {line_bottom:?}"
+        ))
+    } else {
+        None
+    }
+}
+
+fn script_view(
+    harness: &egui_kittest::Harness<'_, imposter_ui::app::ImposterApp>,
+    label: &str,
+) -> egui::Rect {
+    let mut parent = harness.get_by_label(label).parent();
+    while let Some(node) = parent {
+        if node.accesskit_node().role() == Role::ScrollView {
+            return node.rect();
+        }
+        parent = node.parent();
+    }
+    panic!("{label} has no scroll view");
+}
+
+fn script_header(
+    harness: &egui_kittest::Harness<'_, imposter_ui::app::ImposterApp>,
+    label: &str,
+) -> egui::Rect {
+    harness
+        .get_by_label(&format!("Insert an example into the {label}"))
+        .rect()
+}
+
+#[test]
 fn a_compile_error_is_shown_with_its_line() {
     let mut f = fixture();
-    f.app
-        .harness
-        .set_size(egui::Vec2::from(imposter_ui::layout::MIN_WINDOW));
+    f.app.harness.set_size(egui::Vec2::from(MIN_WINDOW));
     f.app.harness.run_steps(2);
     open_scripts(&mut f.app);
     set_scripts(&mut f.app, "", "let a = 1;\nlet b = ;");
@@ -280,7 +438,7 @@ fn in_folder() -> Fixture {
         store
             .call_blocking(move |db| {
                 let users = collections::create_folder(db, api.id, None, "Users", "", 0)?;
-                let template = imposter_app::core::model::RequestTemplate {
+                let template = RequestTemplate {
                     name: "Items".into(),
                     url,
                     ..Default::default()
@@ -298,12 +456,7 @@ fn in_folder() -> Fixture {
     }
 }
 
-fn stored_scripts(
-    app: &support::App,
-) -> (
-    imposter_app::core::model::Scripts,
-    imposter_app::core::model::Scripts,
-) {
+fn stored_scripts(app: &support::App) -> (Scripts, Scripts) {
     app.harness
         .state()
         .store()
@@ -322,6 +475,19 @@ fn a_folders_scripts_are_edited_in_a_dialog_and_run_around_its_requests() {
     f.app.harness.run_steps(2);
     click(&mut f.app.harness, "Scripts…");
     f.app.harness.run_steps(3);
+    let before = script_view(&f.app.harness, "Folder \"Users\" before-sending script");
+    let after = script_view(&f.app.harness, "Folder \"Users\" after-response script");
+    let save = f
+        .app
+        .harness
+        .get_by_role_and_label(Role::Button, "Save")
+        .rect();
+    assert!((before.height() - after.height()).abs() <= 0.5);
+    assert!(before.bottom() < after.top());
+    assert!(
+        after.bottom() < save.top(),
+        "the editors fit above the footer"
+    );
     support::type_into(
         &mut f.app.harness,
         "Folder \"Users\" before-sending script",

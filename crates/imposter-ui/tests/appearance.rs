@@ -198,7 +198,7 @@ fn font_in(app: &support::App, whole: &str, needle: &str, region: egui::Rect) ->
 }
 
 #[test]
-fn titles_use_the_title_style() {
+fn breadcrumbs_dialogs_and_section_headings_use_their_title_styles() {
     let mut app = many_requests();
     click(&mut app.harness, "GET Request 03");
     settle(&mut app.harness);
@@ -214,14 +214,19 @@ fn titles_use_the_title_style() {
         egui::FontFamily::Proportional,
         "its place stays regular"
     );
+    let shortcut = imposter_ui::shortcuts::SHORTCUTS;
+    app.harness
+        .key_press_modifiers(shortcut.modifiers, shortcut.logical_key);
+    app.harness.run_steps(3);
+    assert_eq!(
+        font_of(&app, "Keyboard shortcuts", "Keyboard shortcuts"),
+        title,
+        "dialog title"
+    );
+    app.harness.key_press(egui::Key::Escape);
+    app.harness.run_steps(2);
     support::open_screen(&mut app.harness, "Settings");
     settle(&mut app.harness);
-    app.harness.run_steps(1);
-    assert_eq!(
-        font_of(&app, "Settings", "Settings"),
-        title,
-        "Settings page title"
-    );
     let group_font = |app: &support::App, title| {
         let region = app.harness.get_by_role_and_label(Role::Label, title).rect();
         font_in(app, title, title, region.expand(0.5))

@@ -86,19 +86,19 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
     navigation_rail(state, ui);
     let screen_draw: Option<fn(&mut State, &mut Ui)> = match state.screen {
         Screen::Requests => None,
-        Screen::Variables | Screen::Settings => {
-            let draw = if state.screen == Screen::Variables {
-                crate::variables_screen::draw
-            } else {
-                crate::settings_screen::draw
-            };
-            egui::CentralPanel::default()
-                .frame(egui::Frame::new().fill(palette().background))
-                .show(ui, |ui| draw(state, ui));
+        Screen::Variables => {
+            crate::variables_screen::draw(state, ui);
+            return;
+        }
+        Screen::Settings => {
+            crate::settings_screen::draw(state, ui);
+            return;
+        }
+        Screen::Mocks => {
+            crate::mock_screen::draw(state, ui);
             return;
         }
         Screen::History => Some(crate::history_screen::draw),
-        Screen::Mocks => Some(crate::mock_screen::draw),
         Screen::Load => Some(crate::load_screen::draw),
         Screen::Run => Some(crate::run_screen::draw),
     };
@@ -124,8 +124,11 @@ pub fn draw(app: &mut ImposterApp, ui: &mut Ui) {
             .resizable(true)
             .default_size(state.layout.sidebar_width)
             .size_range(SIDEBAR_WIDTH.0..=max_width)
-            .show(ui, |ui| sidebar(state, ui));
+            .show(ui, |ui| {
+                widgets::list_group(ui, "Collections sidebar", |ui| sidebar(state, ui))
+            });
         let edge = panel.response.rect;
+        widgets::set_region_bounds(ui.ctx(), panel.inner, edge);
         let preferred = state.layout.sidebar_width;
         if preferred > max_width && edge.width().round() >= max_width.round() {
             // Keep the preferred width in the panel's cache too, so a window resize
@@ -203,8 +206,23 @@ pub(crate) fn screen_frame() -> egui::Frame {
         .inner_margin(SCREEN_MARGIN)
 }
 
+pub(crate) fn list_screen(
+    state: &mut State,
+    ui: &mut Ui,
+    list: impl FnOnce(&mut State, &mut Ui) -> Ui,
+    content: impl FnOnce(&mut State, &mut Ui, &mut Ui),
+) {
+    // Reserve the full-height panel first. Draw its controls after the toolbar to keep Tab order.
+    let mut list = list(state, ui);
+    egui::CentralPanel::default()
+        .frame(screen_frame())
+        .show(ui, |ui| content(state, ui, &mut list));
+}
+
 pub(crate) fn sidebar_frame() -> egui::Frame {
-    egui::Frame::new().fill(palette().surface).inner_margin(12)
+    egui::Frame::new()
+        .fill(palette().background)
+        .inner_margin(12)
 }
 
 // ---- sidebar ------------------------------------------------------------------------------
@@ -1116,28 +1134,26 @@ fn context_bar(
     save: Option<widgets::SaveStatus<'static>>,
     save_text: &str,
 ) {
-    let path = match &state.editor {
-        None => "Requests".to_owned(),
-        Some(pane) => match pane.editor.id() {
-            None => format!(
-                "Unsaved draft / {}",
-                if pane.editor.name().is_empty() {
-                    "Untitled request"
-                } else {
-                    pane.editor.name()
-                }
-            ),
-            Some(id) => state
-                .tree
-                .as_ref()
-                .and_then(|t| t.request_path(id))
-                .unwrap_or_else(|| pane.editor.name().to_owned()),
-        },
-    };
-    let has_editor = state.editor.is_some();
+    let path = state.editor.as_ref().map(|pane| match pane.editor.id() {
+        None => format!(
+            "Unsaved draft / {}",
+            if pane.editor.name().is_empty() {
+                "Untitled request"
+            } else {
+                pane.editor.name()
+            }
+        ),
+        Some(id) => state
+            .tree
+            .as_ref()
+            .and_then(|t| t.request_path(id))
+            .unwrap_or_else(|| pane.editor.name().to_owned()),
+    });
     let left = |ui: &mut Ui| {
-        ui.add(egui::Label::new(breadcrumb(&path)).truncate())
-            .on_hover_text(&path);
+        if let Some(path) = &path {
+            ui.add(egui::Label::new(breadcrumb(path)).truncate())
+                .on_hover_text(path);
+        }
     };
     let right = |ui: &mut Ui| {
         if layout_switch(ui, state.layout.orientation) {
@@ -1169,11 +1185,7 @@ fn context_bar(
             }
         }
     };
-    if has_editor {
-        widgets::toolbar_row(ui, left, right);
-    } else {
-        widgets::screen_toolbar(ui, &path, |_| {}, right);
-    }
+    widgets::toolbar_row(ui, left, right);
 }
 
 fn header(state: &mut State, ui: &mut Ui) {
@@ -1219,10 +1231,37 @@ fn navigation_rail(state: &mut State, ui: &mut Ui) {
                 for screen in [Screen::Mocks, Screen::Load, Screen::Run] {
                     rail_item(state, ui, screen, size);
                 }
-                ui.add_space((ui.available_height() - size).max(0.0));
+                ui.add_space((ui.available_height() - 2.0 * size - spacing.xs).max(0.0));
+                rail_palette(state, ui, size);
                 rail_item(state, ui, Screen::Settings, size);
             });
         });
+}
+
+fn rail_palette(state: &mut State, ui: &mut Ui, size: f32) {
+    use crate::shortcuts::{self, Command};
+    let label = "Command palette";
+    let hint = format!(
+        "{}\n{}",
+        rail_shortcut_hint(ui, label, Command::Palette),
+        rail_shortcut_hint(ui, "Requests only", Command::Recent),
+    );
+    let button = widgets::rail_button(ui, Icon::Search, label, size, false);
+    if widgets::describe(button, &hint).clicked() {
+        shortcuts::run(state, Command::Palette);
+    }
+}
+
+fn rail_shortcut_hint(ui: &Ui, label: &str, command: crate::shortcuts::Command) -> String {
+    use crate::shortcuts;
+    shortcuts::ALL
+        .iter()
+        .find(|entry| entry.command == command)
+        .and_then(|entry| entry.keys.first())
+        .map_or_else(
+            || label.to_owned(),
+            |key| shortcuts::hint(ui.ctx(), label, key),
+        )
 }
 
 fn activity(stopping: bool) -> (Tone, &'static str) {
@@ -1234,7 +1273,7 @@ fn activity(stopping: bool) -> (Tone, &'static str) {
 }
 
 fn rail_item(state: &mut State, ui: &mut Ui, screen: Screen, size: f32) {
-    use crate::shortcuts::{self, Command};
+    use crate::shortcuts::Command;
 
     let (icon, label) = match screen {
         Screen::Requests => (Icon::Requests, "Requests"),
@@ -1271,14 +1310,7 @@ fn rail_item(state: &mut State, ui: &mut Ui, screen: Screen, size: f32) {
         widgets::corner_dot(ui, button.rect, Align::Max, tone);
     }
     let mut hint = if screen == Screen::Settings {
-        shortcuts::ALL
-            .iter()
-            .find(|entry| entry.command == Command::Settings)
-            .and_then(|entry| entry.keys.first())
-            .map_or_else(
-                || label.to_owned(),
-                |key| shortcuts::hint(ui.ctx(), label, key),
-            )
+        rail_shortcut_hint(ui, label, Command::Settings)
     } else {
         label.to_owned()
     };
@@ -1602,12 +1634,20 @@ fn split(state: &mut State, ui: &mut Ui) {
             )
         }
         Orientation::Stacked => {
-            let height = crate::layout::split(
-                area.height() - SEPARATOR,
-                ratio,
-                crate::layout::MIN_PANE_TALL,
-                crate::layout::MIN_PANE_TALL,
-            );
+            let total = area.height() - SEPARATOR;
+            // Scripts need room for phase controls and at least one line in each editor.
+            // Give them more of a short split while preserving room for response controls.
+            let (min_request, min_response) = if state
+                .editor
+                .as_ref()
+                .is_some_and(|pane| pane.tab == EditorTab::Scripts)
+            {
+                let min_response = (total - 260.0).clamp(56.0, crate::layout::MIN_PANE_TALL);
+                (260.0_f32.min(total - min_response), min_response)
+            } else {
+                (crate::layout::MIN_PANE_TALL, crate::layout::MIN_PANE_TALL)
+            };
+            let height = crate::layout::split(total, ratio, min_request, min_response);
             let first = Rect::from_min_size(area.min, vec2(area.width(), height));
             let handle = Rect::from_min_size(first.left_bottom(), vec2(area.width(), SEPARATOR));
             (
@@ -1851,7 +1891,7 @@ fn outer_scripts(state: &State) -> Vec<crate::scripts_tab::Outer> {
         return Vec::new();
     };
     let mut levels = vec![Outer {
-        owner: format!("Collection \"{}\"", collection.name),
+        name: collection.name.clone(),
         target: ScriptTarget::Collection(collection.id),
         scripts: collection.scripts.clone(),
     }];
@@ -1867,7 +1907,7 @@ fn outer_scripts(state: &State) -> Vec<crate::scripts_tab::Outer> {
             break;
         }
         folders.push(Outer {
-            owner: format!("Folder \"{}\"", folder.name),
+            name: folder.name.clone(),
             target: ScriptTarget::Folder(folder.id),
             scripts: folder.scripts.clone(),
         });

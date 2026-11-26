@@ -211,7 +211,7 @@ fn enter_adds_or_selects_a_value_and_escape_clears_the_draft() {
     support::text_input(&app.harness, "Add value to variable 2").click();
     app.harness.run_steps(2);
     press(&mut app, egui::Key::Enter);
-    app.harness.get_by_label("Variable 2 value 4: Empty value");
+    app.harness.get_by_label("Variable 2 value 4 (empty)");
     assert_eq!(
         app.harness.state().state.variables.rows[1].current(),
         Some("")
@@ -219,7 +219,7 @@ fn enter_adds_or_selects_a_value_and_escape_clears_the_draft() {
     support::type_into(&mut app.harness, "New variable name", "blank");
     click(&mut app.harness, "Save variables");
     settle(&mut app.harness);
-    app.harness.get_by_label("Variable 3 value 1: Empty value");
+    app.harness.get_by_label("Variable 3 value 1 (empty)");
     assert_eq!(stored(&app).0["blank"], "");
 }
 

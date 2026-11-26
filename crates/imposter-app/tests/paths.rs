@@ -107,6 +107,7 @@ fn only_relative_paths_are_joined() {
             certificate_path: "certs/client.pem".into(),
             key_file: String::new(),
             password: String::new(),
+            ..HostIdentity::default()
         }],
         ..AppSettings::default()
     };
