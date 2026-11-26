@@ -256,7 +256,11 @@ Part of the [Imposter agent manual](../../AGENTS.md). Decisions governing SQLite
   in place. Why: the editable current field created a separate path to an active value,
   and the far-right add control and reserved remove spaces broke up the rows. Right-click,
   Shift+F10 and the accessibility action open the same chip menu. It copies or removes
-  a value, with the last value removed through whole-row deletion.
+  a value, with the last value removed through whole-row deletion. Double-click or
+  Edit value from the menu opens the full saved value in a multiline dialog. Apply
+  replaces the choice in the scope draft, preserving the active choice when editing an
+  alternative. A replacement already in the list keeps its place. Why: a correction
+  should preserve the choice's role and the scope's existing save and revert flow.
   Capture and `vars.set` replace one SQLite slot per variable and activate it for request
   chaining. It stays available after selecting another chip or restarting. Keep in list
   adds it to the ordinary list and preserves the effective selection. A value already in

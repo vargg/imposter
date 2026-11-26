@@ -110,6 +110,14 @@ pub enum Dialog {
     },
     /// Unsaved rows on the Variables screen.
     VariablesGuard,
+    VariableValue {
+        scope: Scope,
+        row: u64,
+        variable: String,
+        original: String,
+        value: String,
+        available: bool,
+    },
     /// Unsaved application settings while closing.
     SettingsGuard,
     MocksGuard,
@@ -171,6 +179,7 @@ pub enum Outcome {
     Confirmed(ConfirmPurpose),
     Guard(GuardChoice),
     VariablesGuard(GuardChoice),
+    ApplyVariableValue,
     SettingsGuard(GuardChoice),
     MocksGuard(GuardChoice),
     Move(NodeId, Option<FolderId>),
@@ -398,6 +407,7 @@ impl Dialog {
             Self::Guard { draft: Some(_), .. } => "Keep this draft?".into(),
             Self::Guard { .. } => "Unsaved request changes".into(),
             Self::VariablesGuard => "Unsaved variables".into(),
+            Self::VariableValue { variable, .. } => format!("Edit value for {variable}").into(),
             Self::MocksGuard => "Unsaved mocks".into(),
             Self::SettingsGuard => "Unsaved application settings".into(),
             Self::Move { .. } => "Move".into(),
@@ -418,7 +428,7 @@ impl Dialog {
                 560.0
             }
             Self::Shortcuts | Self::Import { .. } => 520.0,
-            Self::Export { .. } => 480.0,
+            Self::Export { .. } | Self::VariableValue { .. } => 480.0,
             Self::Guard { .. } => 440.0,
             _ => 360.0,
         }
@@ -471,8 +481,10 @@ impl Dialog {
         let content_height = window.y - top - spacing.lg - insets.y;
         let body_height = content_height - spacing.control - spacing.md - footer_height;
         // Read before the body: a single-line field consumes Enter.
-        let enter = !matches!(self, Self::Scripts { .. } | Self::Curl { .. })
-            && !egui::Popup::is_any_open(ctx)
+        let enter = !matches!(
+            self,
+            Self::Scripts { .. } | Self::Curl { .. } | Self::VariableValue { .. }
+        ) && !egui::Popup::is_any_open(ctx)
             && ctx.input(|i| i.key_pressed(egui::Key::Enter));
 
         let response = modal.show(ctx, |ui| {
@@ -497,11 +509,21 @@ impl Dialog {
             };
             (close, outcome)
         });
-        if response.inner.0 || (response.inner.1 == Outcome::Open && response.should_close()) {
-            self.cancel()
-        } else {
-            response.inner.1
+        let outcome =
+            if response.inner.0 || (response.inner.1 == Outcome::Open && response.should_close()) {
+                self.cancel()
+            } else {
+                response.inner.1
+            };
+        if matches!(self, Self::VariableValue { .. })
+            && outcome != Outcome::Open
+            && let Some(focused) = focused_widget(ctx)
+            && focused.layer_id == response.response.layer_id
+        {
+            // Autosave can resume as soon as the editor closes.
+            focused.surrender_focus();
         }
+        outcome
     }
 
     fn body(&mut self, ui: &mut Ui) -> Option<Footer<'_>> {
@@ -518,6 +540,26 @@ impl Dialog {
                     (!value.trim().is_empty())
                         .then(|| Outcome::Name(*purpose, value.trim().to_owned())),
                 )
+            }
+            Self::VariableValue {
+                value, available, ..
+            } => {
+                let caption = ui.label("Value");
+                let field = ui
+                    .add(
+                        egui::TextEdit::multiline(value)
+                            .desired_rows(4)
+                            .desired_width(f32::INFINITY),
+                    )
+                    .labelled_by(caption.id);
+                initial_focus(ui, &field);
+                if !*available {
+                    ui.label(tone_text(
+                        "This value changed while the editor was open.",
+                        Tone::Error,
+                    ));
+                }
+                Footer::new("Apply", available.then_some(Outcome::ApplyVariableValue))
             }
             Self::Environment {
                 id,

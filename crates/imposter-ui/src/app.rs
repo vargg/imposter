@@ -468,6 +468,7 @@ pub enum Action {
         name: String,
         value: String,
     },
+    DeferVariableSelection(ValueClick),
     Variables(VariablesAction),
     History(HistoryAction),
     /// Pick a collection file and review its import.
@@ -673,6 +674,11 @@ fn show_result_step(history: &mut HistoryScreen, limit: crate::viewer::PreviewLi
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VariablesAction {
     SelectScope(Scope),
+    EditValue {
+        row: u64,
+        index: usize,
+        chip: egui::Id,
+    },
     Save,
     /// Back to the stored rows, after asking.
     Revert,
@@ -738,6 +744,7 @@ pub struct VariablesScreen {
     pub(crate) tab: VariablesTab,
     pub rows: Vec<vars::VariableRow>,
     baseline: Vec<vars::VariableRow>,
+    pub(crate) value_click: Option<ValueClick>,
     /// The scope's secrets, edited and saved with its variables; a collection has none.
     pub secrets: Vec<vars::Row>,
     secret_baseline: Vec<vars::SecretEntry>,
@@ -759,6 +766,15 @@ pub struct VariablesScreen {
     autosave_due: Option<f64>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValueClick {
+    pub(crate) row: u64,
+    pub(crate) value: String,
+    pub(crate) chip: egui::Id,
+    pub(crate) rect: egui::Rect,
+    pub(crate) deadline: f64,
+}
+
 #[derive(Debug)]
 struct VariableSave {
     rows: Vec<vars::VariableRow>,
@@ -766,6 +782,13 @@ struct VariableSave {
 }
 
 impl VariablesScreen {
+    fn value_row(&mut self, key: u64) -> Option<&mut vars::VariableRow> {
+        if !self.loaded {
+            return None;
+        }
+        self.rows.iter_mut().find(|row| row.key == key)
+    }
+
     pub fn dirty(&self) -> bool {
         self.loaded
             && (self
@@ -778,6 +801,14 @@ impl VariablesScreen {
 
     pub fn is_saving(&self) -> bool {
         self.saving.is_some()
+    }
+
+    pub(crate) fn has_pending_selection_change(&self) -> bool {
+        self.value_click.as_ref().is_some_and(|click| {
+            self.rows
+                .iter()
+                .any(|row| row.key == click.row && row.ordinary_selection_changes(&click.value))
+        })
     }
 }
 
@@ -3676,6 +3707,13 @@ impl ImposterApp {
     // ---- actions ----------------------------------------------------------------------------------
 
     pub fn handle(&mut self, action: Action, now: f64) {
+        if !matches!(
+            action,
+            Action::DeferVariableSelection(_)
+                | Action::Variables(VariablesAction::EditValue { .. })
+        ) {
+            self.resolve_variable_selection(now);
+        }
         match action {
             Action::SelectCollection(id) if Some(id) != self.state.collection => {
                 self.navigate(Navigation::SelectCollection(id));
@@ -3861,6 +3899,18 @@ impl ImposterApp {
                 self.variables_navigate(VarTransition::Define(scope, name));
             }
             Action::ChooseValue { scope, name, value } => self.choose_value(scope, name, value),
+            Action::DeferVariableSelection(click) => {
+                if self
+                    .state
+                    .variables
+                    .value_click
+                    .as_ref()
+                    .is_some_and(|previous| previous.chip != click.chip)
+                {
+                    self.resolve_variable_selection(now);
+                }
+                self.state.variables.value_click = Some(click);
+            }
             Action::Variables(action) => self.variables_action(action, now),
             Action::History(action) => self.history_action(action),
         }
@@ -3991,6 +4041,21 @@ impl ImposterApp {
             Outcome::VariablesGuard(choice) => {
                 self.state.dialog = None;
                 self.variables_choice(choice);
+            }
+            Outcome::ApplyVariableValue => {
+                if let Some(Dialog::VariableValue {
+                    scope,
+                    row,
+                    original,
+                    value,
+                    ..
+                }) = self.state.dialog.take()
+                    && self.state.variables.scope == scope
+                    && let Some(row) = self.state.variables.value_row(row)
+                    && row.replace_value(&original, value)
+                {
+                    self.variables_edited(now);
+                }
             }
             Outcome::MocksGuard(choice) => {
                 self.state.dialog = None;
@@ -4334,6 +4399,7 @@ impl ImposterApp {
     fn load_variables(&mut self, scope: Scope) {
         self.state.variables_changed_on_disk = false;
         self.state.variables.autosave_due = None;
+        self.state.variables.value_click = None;
         self.state.variables.scope = scope;
         self.state.variables.loaded = false;
         self.task(
@@ -4770,11 +4836,70 @@ impl ImposterApp {
         screen.autosave_due = self.state.settings.autosave.then_some(now + AUTOSAVE_DELAY);
     }
 
+    fn resolve_variable_selection(&mut self, now: f64) {
+        let screen = &mut self.state.variables;
+        if let Some(click) = screen.value_click.take()
+            && let Some(row) = screen.value_row(click.row)
+            && let Some(index) = row.values().iter().position(|value| *value == click.value)
+        {
+            row.select(vars::Choice::Ordinary(index));
+            self.variables_edited(now);
+        }
+    }
+
+    fn variable_selection_tick(&mut self, ctx: &egui::Context, now: f64) {
+        let Some(click) = &self.state.variables.value_click else {
+            return;
+        };
+        // Resolve before drawing so a click on the toolbar sees the updated Save state.
+        let interrupted = ctx.input(|input| {
+            input.events.iter().any(|event| match event {
+                egui::Event::PointerButton { pos, button, .. } => {
+                    *button != egui::PointerButton::Primary || !click.rect.contains(*pos)
+                }
+                egui::Event::Key { pressed: true, .. } | egui::Event::AccessKitActionRequest(_) => {
+                    true
+                }
+                _ => false,
+            })
+        });
+        if now >= click.deadline || interrupted {
+            self.resolve_variable_selection(now);
+        } else {
+            ctx.request_repaint_after(Duration::from_secs_f64(click.deadline - now));
+        }
+    }
+
     fn variables_action(&mut self, action: VariablesAction, now: f64) {
         match action {
             VariablesAction::SelectScope(scope) => {
                 if scope != self.state.variables.scope || !self.state.variables.loaded {
                     self.variables_navigate(VarTransition::Scope(scope));
+                }
+            }
+            VariablesAction::EditValue { row, index, chip } => {
+                if self
+                    .state
+                    .variables
+                    .value_click
+                    .as_ref()
+                    .is_some_and(|click| click.chip == chip)
+                {
+                    self.state.variables.value_click = None;
+                }
+                self.resolve_variable_selection(now);
+                let scope = self.state.variables.scope;
+                if let Some(row) = self.state.variables.value_row(row)
+                    && let Some(value) = row.values().get(index)
+                {
+                    self.state.dialog = Some(Dialog::VariableValue {
+                        scope,
+                        row: row.key,
+                        variable: row.name.clone(),
+                        original: value.clone(),
+                        value: value.clone(),
+                        available: true,
+                    });
                 }
             }
             VariablesAction::Save => self.save_variables(),
@@ -5647,6 +5772,9 @@ impl ImposterApp {
         if self.state.close != CloseState::Open {
             return;
         }
+        if let Some(click) = &self.state.variables.value_click {
+            self.resolve_variable_selection(click.deadline);
+        }
         self.mock_action(crate::mock_screen::MockAction::Stop, 0.0);
         self.load_action(crate::load_screen::LoadAction::Stop, 0.0);
         self.run_action(crate::run_screen::RunAction::Stop);
@@ -5826,13 +5954,28 @@ impl eframe::App for ImposterApp {
             self.applied = Some(self.state.appearance);
         }
         theme::begin_frame(ui.ctx());
-        crate::workspace::draw(self, ui);
         let now = ui.input(|i| i.time);
+        self.variable_selection_tick(ui.ctx(), now);
+        crate::workspace::draw(self, ui);
         for action in std::mem::take(&mut self.state.actions) {
             self.handle(action, now);
         }
         self.start_filters();
         if let Some(dialog) = &mut self.state.dialog {
+            if let Dialog::VariableValue {
+                scope,
+                row,
+                original,
+                available,
+                ..
+            } = dialog
+            {
+                let screen = &mut self.state.variables;
+                *available = screen.scope == *scope
+                    && screen
+                        .value_row(*row)
+                        .is_some_and(|row| row.values().contains(original));
+            }
             let outcome = dialog.show(ui.ctx());
             self.dialog_outcome(outcome, now);
         }

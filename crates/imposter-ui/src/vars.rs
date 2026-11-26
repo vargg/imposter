@@ -340,6 +340,10 @@ impl VariableRow {
             .map(|ordinary| ordinary.values[ordinary.selected].as_str())
     }
 
+    pub(crate) fn ordinary_selection_changes(&self, value: &str) -> bool {
+        self.current() != Some(value) || self.capture.as_ref().is_some_and(|capture| capture.active)
+    }
+
     pub fn select(&mut self, choice: Choice) {
         if let Some(capture) = &mut self.capture {
             capture.active = choice == Choice::Capture;
@@ -349,6 +353,42 @@ impl VariableRow {
         {
             ordinary.selected = index;
         }
+    }
+
+    pub(crate) fn replace_value(&mut self, original: &str, replacement: String) -> bool {
+        if original == replacement {
+            return false;
+        }
+        let current = self.current() == Some(original);
+        let Some(ordinary) = &mut self.ordinary else {
+            return false;
+        };
+        let Some(index) = ordinary.values.iter().position(|value| value == original) else {
+            return false;
+        };
+        if let Some(existing) = ordinary
+            .values
+            .iter()
+            .position(|value| *value == replacement)
+        {
+            let selected = if current || ordinary.selected == index {
+                existing
+            } else {
+                ordinary.selected
+            };
+            ordinary.values.remove(index);
+            ordinary.selected = selected - usize::from(index < selected);
+        } else {
+            ordinary.values[index] = replacement;
+            if current {
+                ordinary.selected = index;
+            }
+        }
+        if current && let Some(capture) = &mut self.capture {
+            // A capture equal to a saved value shares its chip. Keep the slot available.
+            capture.active = false;
+        }
+        true
     }
 
     fn keep(&mut self, value: String) -> usize {

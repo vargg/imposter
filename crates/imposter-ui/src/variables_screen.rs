@@ -4,7 +4,7 @@
 use egui::{Align, Layout, Response, Ui, UiBuilder, vec2};
 use imposter_app::core::variables::{SecretScope, secret_name};
 
-use crate::app::{Action, State, VariablesAction, VariablesTab};
+use crate::app::{Action, State, ValueClick, VariablesAction, VariablesTab};
 use crate::icons::{self, Icon};
 use crate::theme::{self, Tone, palette};
 use crate::vars::{self, Choice, Scope};
@@ -333,6 +333,7 @@ fn scope_content(
 fn scope_actions(state: &State, ui: &mut Ui, actions: &mut Vec<Action>) {
     let screen = &state.variables;
     let dirty = screen.dirty();
+    let actionable = dirty || screen.has_pending_selection_change();
     let word = match screen.status {
         Some(word) => word,
         None if !screen.loaded => SaveWord::Loading,
@@ -348,11 +349,11 @@ fn scope_actions(state: &State, ui: &mut Ui, actions: &mut Vec<Action>) {
     let status = SaveStatus {
         word,
         detail,
-        enabled: dirty,
+        enabled: actionable,
     };
     if widgets::save_controls_with(ui, &status, "Save variables", |ui| {
         let revert = ui
-            .add_enabled_ui(dirty, |ui| {
+            .add_enabled_ui(actionable, |ui| {
                 icons::button(ui, Icon::Revert, "Revert unsaved changes", false)
             })
             .inner;
@@ -389,6 +390,7 @@ fn tabs_content(
     highlight: Option<&str>,
 ) {
     let screen = &mut state.variables;
+    let pending = screen.value_click.as_ref().map(|click| click.chip);
     let edited = egui::ScrollArea::vertical()
         .id_salt((screen.scope, screen.tab))
         .auto_shrink([false, false])
@@ -401,7 +403,7 @@ fn tabs_content(
             let columns = Columns::new(ui, remove_width);
             match screen.tab {
                 VariablesTab::Variables => {
-                    variables_table(ui, &mut screen.rows, &columns, highlight)
+                    variables_table(ui, &mut screen.rows, &columns, highlight, pending, actions)
                 }
                 VariablesTab::Secrets => secrets_table(
                     ui,
@@ -435,6 +437,8 @@ fn variables_table(
     rows: &mut Vec<vars::VariableRow>,
     columns: &Columns,
     highlight: Option<&str>,
+    pending: Option<egui::Id>,
+    actions: &mut Vec<Action>,
 ) -> bool {
     ui.horizontal(|ui| {
         heading_cell(ui, columns.name, "Variable name");
@@ -443,7 +447,8 @@ fn variables_table(
     let mut edited = false;
     let mut remove = None;
     for (index, row) in rows.iter_mut().enumerate() {
-        let (changed, removed) = variable_row(ui, row, index + 1, columns, highlight);
+        let (changed, removed) =
+            variable_row(ui, row, index + 1, columns, highlight, pending, actions);
         edited |= changed;
         if removed {
             remove = Some(index);
@@ -476,6 +481,8 @@ fn variable_row(
     number: usize,
     columns: &Columns,
     highlight: Option<&str>,
+    pending: Option<egui::Id>,
+    actions: &mut Vec<Action>,
 ) -> (bool, bool) {
     let Columns {
         name: name_width,
@@ -494,7 +501,7 @@ fn variable_row(
             Layout::left_to_right(Align::Center).with_main_wrap(true),
             |ui| {
                 ui.set_min_width(value_width);
-                values_editor(ui, row, number, value_width)
+                values_editor(ui, row, number, value_width, pending, actions)
             },
         );
         let id = egui::Id::unique(("remove variable", row.key));
@@ -715,33 +722,53 @@ pub fn cookie_place(cookie: &imposter_app::http::cookies::StoredCookie) -> Strin
     parts.join(" · ")
 }
 
-#[derive(Clone, Copy)]
 enum ChipAction {
     Select,
+    DeferSelection(ValueClick),
+    Edit { index: usize, chip: egui::Id },
     Remove,
     Keep,
 }
 
-fn values_editor(ui: &mut Ui, row: &mut vars::VariableRow, number: usize, line_width: f32) -> bool {
+fn values_editor(
+    ui: &mut Ui,
+    row: &mut vars::VariableRow,
+    number: usize,
+    line_width: f32,
+    pending: Option<egui::Id>,
+    actions: &mut Vec<Action>,
+) -> bool {
     let mut action = None;
     for (index, value) in row.values().iter().enumerate() {
         let choice = Choice::Ordinary(index);
         let title = format!("Variable {number} value {}", index + 1);
-        if let Some(picked) = value_chip(ui, row, choice, &title, value, line_width) {
+        if let Some(picked) = value_chip(ui, row, choice, &title, value, line_width, pending) {
             action = Some((choice, picked));
         }
     }
     if let Some(value) = row.distinct_capture() {
         let choice = Choice::Capture;
         let title = format!("Variable {number} latest capture");
-        if let Some(picked) = value_chip(ui, row, choice, &title, value, line_width) {
+        if let Some(picked) = value_chip(ui, row, choice, &title, value, line_width, pending) {
             action = Some((choice, picked));
         }
     }
+    let refocus = matches!(action, Some((_, ChipAction::Remove | ChipAction::Keep)));
+    let edited = refocus || matches!(action, Some((_, ChipAction::Select)));
     match action {
         Some((choice, ChipAction::Select)) => row.select(choice),
         Some((choice, ChipAction::Remove)) => row.remove(choice),
         Some((_, ChipAction::Keep)) => row.keep_capture(),
+        Some((_, ChipAction::DeferSelection(click))) => {
+            actions.push(Action::DeferVariableSelection(click));
+        }
+        Some((_, ChipAction::Edit { index, chip })) => {
+            actions.push(Action::Variables(VariablesAction::EditValue {
+                row: row.key,
+                index,
+                chip,
+            }));
+        }
         None => {}
     }
 
@@ -768,11 +795,11 @@ fn values_editor(ui: &mut Ui, row: &mut vars::VariableRow, number: usize, line_w
         composer.request_focus();
     } else if escape {
         row.draft.clear();
-    } else if matches!(action, Some((_, ChipAction::Remove | ChipAction::Keep))) {
+    } else if refocus {
         // The old chip may disappear with its menu.
         composer.request_focus();
     }
-    action.is_some() || composer.changed() || entered || escape
+    edited || composer.changed() || entered || escape
 }
 
 fn value_chip(
@@ -782,6 +809,7 @@ fn value_chip(
     title: &str,
     value: &str,
     line_width: f32,
+    pending: Option<egui::Id>,
 ) -> Option<ChipAction> {
     let label = saved_label(value, false);
     let capture = choice == Choice::Capture;
@@ -836,7 +864,15 @@ fn value_chip(
     } else {
         None
     };
-    let mut action = chip.clicked().then_some(ChipAction::Select);
+    let mut action = chip.clicked().then(|| {
+        if let Choice::Ordinary(index) = choice
+            && chip.clicked_by(egui::PointerButton::Primary)
+        {
+            ordinary_chip_click(&chip, row.key, index, value, pending)
+        } else {
+            ChipAction::Select
+        }
+    });
     egui::Popup::menu(&chip).open_memory(open).show(|ui| {
         ui.set_max_width(280.0);
         ui.add(
@@ -850,6 +886,15 @@ fn value_chip(
         if copy.clicked() {
             ui.ctx().copy_text(value.to_owned());
             chip.request_focus();
+            ui.close();
+        }
+        if let Choice::Ordinary(index) = choice
+            && ui.button("Edit value…").clicked()
+        {
+            action = Some(ChipAction::Edit {
+                index,
+                chip: chip.id,
+            });
             ui.close();
         }
         if capture && ui.button("Keep in list").clicked() {
@@ -867,6 +912,45 @@ fn value_chip(
     });
     chip.on_hover_text(value);
     action
+}
+
+fn ordinary_chip_click(
+    chip: &Response,
+    row: u64,
+    index: usize,
+    value: &str,
+    pending: Option<egui::Id>,
+) -> ChipAction {
+    // Egui counts nearby clicks globally. Both clicks must land on this chip, even
+    // when both releases are delivered in the same frame.
+    if (chip.double_clicked() || chip.triple_clicked())
+        && (pending == Some(chip.id)
+            || chip.ctx.input(|input| {
+                let mut releases = input.events.iter().filter(|event| {
+                    matches!(event, egui::Event::PointerButton {
+                        pos, button: egui::PointerButton::Primary, pressed: false, ..
+                    } if chip.interact_rect.contains(*pos))
+                });
+                releases.nth(1).is_some()
+            }))
+    {
+        return ChipAction::Edit {
+            index,
+            chip: chip.id,
+        };
+    }
+    let delay = chip
+        .ctx
+        .options(|options| options.input_options.max_double_click_delay);
+    chip.ctx
+        .request_repaint_after(std::time::Duration::from_secs_f64(delay));
+    ChipAction::DeferSelection(ValueClick {
+        row,
+        value: value.to_owned(),
+        chip: chip.id,
+        rect: chip.interact_rect,
+        deadline: chip.ctx.input(|input| input.time) + delay,
+    })
 }
 
 fn chip_focus(ui: &Ui, chip: &Response) {

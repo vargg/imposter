@@ -97,7 +97,10 @@ figures. See the [machine, method and all samples](docs/validation.md#packaged-0
   Cookies are kept only on this computer.
 - In Variables, each row shows its values as chips. Type in **Add value**, then press
   Enter to add and select it or Save to add it while saving the scope. Click a chip to
-  select it. Right-click or press Shift+F10 on a focused chip to copy or remove it.
+  select it. Double-click a saved value to edit it, or choose **Edit value…** from the
+  chip's menu. Right-click or press Shift+F10 on a focused chip to open the menu.
+  **Apply** updates the scope draft, which is written when you save the scope or when
+  autosave runs. The menu also lets you copy or remove values.
   The filled chip marks the selection. Each capture or script update replaces one
   **Latest capture** chip on this device and selects it for the next request. Use
   **Keep in list** to keep that value alongside the ordinary choices. Native exports carry
